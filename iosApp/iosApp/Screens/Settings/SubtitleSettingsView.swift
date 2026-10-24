@@ -314,9 +314,22 @@ struct SubtitleSettingsView: View {
 /// iOS, menu on macOS) so every option gets a full-size tap target,
 /// unlike the previous row of 24pt swatches.
 private struct ColorChoicePicker: View {
-    let title: String
+    private let title: Text
     let colors: [(hex: String, label: String)]
     @Binding var selection: String
+
+    init(title: LocalizedStringKey, colors: [(hex: String, label: String)], selection: Binding<String>) {
+        self.title = Text(title)
+        self.colors = colors
+        self._selection = selection
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, colors: [(hex: String, label: String)], selection: Binding<String>) {
+        self.title = Text(title)
+        self.colors = colors
+        self._selection = selection
+    }
 
     var body: some View {
         Picker(selection: normalizedSelection) {
@@ -334,7 +347,7 @@ private struct ColorChoicePicker: View {
                 .tag(color.hex)
             }
         } label: {
-            Text(title)
+            title
                 .foregroundStyle(Color.vividOnSurface)
         }
         #if os(macOS)

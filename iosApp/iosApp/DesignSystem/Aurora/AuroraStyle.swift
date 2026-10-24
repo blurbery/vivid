@@ -27,8 +27,20 @@ extension Color {
 // MARK: - Eyebrow
 
 struct AuroraEyebrow: View {
-    let text: String
+    private let text: Text
     var centered: Bool = false
+
+    init(text: LocalizedStringKey, centered: Bool = false) {
+        self.text = Text(text)
+        self.centered = centered
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(text: S, centered: Bool = false) {
+        self.text = Text(text)
+        self.centered = centered
+    }
 
     var body: some View {
         HStack(spacing: eyebrowSpacing) {
@@ -41,10 +53,11 @@ struct AuroraEyebrow: View {
                         startPoint: .leading, endPoint: .trailing))
                     .frame(width: lineWidth, height: 1)
             }
-            Text(text.uppercased())
+            text
                 .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
                 .tracking(tracking)
                 .foregroundStyle(Color.auroraAccent)
+                .textCase(.uppercase)
         }
         .frame(maxWidth: centered ? .infinity : nil)
         .accessibilityAddTraits(.isHeader)
@@ -257,10 +270,27 @@ enum AuroraControl {
 // MARK: - Aurora segmented option (equal-width, single-line chip)
 
 struct AuroraSegment: View {
-    let title: String
+    private let title: Text
     let isSelected: Bool
     let isFocused: Bool
     var height: CGFloat = AuroraControl.height
+
+    init(title: LocalizedStringKey, isSelected: Bool, isFocused: Bool, height: CGFloat = AuroraControl.height) {
+        self.init(title: Text(title), isSelected: isSelected, isFocused: isFocused, height: height)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, isSelected: Bool, isFocused: Bool, height: CGFloat = AuroraControl.height) {
+        self.init(title: Text(title), isSelected: isSelected, isFocused: isFocused, height: height)
+    }
+
+    private init(title: Text, isSelected: Bool, isFocused: Bool, height: CGFloat) {
+        self.title = title
+        self.isSelected = isSelected
+        self.isFocused = isFocused
+        self.height = height
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -268,7 +298,7 @@ struct AuroraSegment: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: segmentCheckSize, weight: .bold))
             }
-            Text(title)
+            title
         }
             .font(.system(size: segmentFontSize, weight: .semibold))
             .lineLimit(1)

@@ -475,7 +475,7 @@ private struct TVProfileServerNameView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
-                TVSettingsPageHeader(title: "Rename Server", subtitle: serverURL)
+                TVSettingsPageHeader(title: Text("Rename Server"), subtitle: Text(serverURL))
                     .padding(.horizontal, TVSettingsLayout.scaled(24))
                     .padding(.bottom, TVSettingsLayout.scaled(18))
 

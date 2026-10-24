@@ -244,8 +244,8 @@ private struct LatestPlaybackView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Latest Playback",
-                               subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened),
+            SettingsPageHeader(title: Text("Latest Playback"),
+                               subtitle: Text(report.startedAt.formatted(date: .abbreviated, time: .shortened)),
                                systemImage: "play.rectangle")
                 .settingsPageHeaderRow()
             Section {
@@ -306,10 +306,24 @@ private struct LatestPlaybackView: View {
 /// Sends the given reports to Vivid and marks them sent only when the
 /// diagnostics service confirms it has them.
 private struct DiagnosticsSendButton: View {
-    let title: String
+    private let title: Text
     let reports: [AppHealthReport]
     var note: String? = nil
     @State private var status: DiagnosticsSendStatus = .idle
+
+    init(title: LocalizedStringKey, reports: [AppHealthReport], note: String? = nil) {
+        self.title = Text(title)
+        self.reports = reports
+        self.note = note
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, reports: [AppHealthReport], note: String? = nil) {
+        self.title = Text(title)
+        self.reports = reports
+        self.note = note
+    }
 
     var body: some View {
         DiagnosticsSendRow(title: title, status: status, disabled: reports.isEmpty, action: send)
@@ -349,15 +363,32 @@ private struct DiagnosticsNoteField: View {
 
 /// A send button with its progress and result underneath.
 private struct DiagnosticsSendRow: View {
-    let title: String
+    private let title: Text
     let status: DiagnosticsSendStatus
     let disabled: Bool
     let action: () -> Void
 
+    init(title: LocalizedStringKey, status: DiagnosticsSendStatus, disabled: Bool, action: @escaping () -> Void) {
+        self.init(title: Text(title), status: status, disabled: disabled, action: action)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, status: DiagnosticsSendStatus, disabled: Bool, action: @escaping () -> Void) {
+        self.init(title: Text(title), status: status, disabled: disabled, action: action)
+    }
+
+    init(title: Text, status: DiagnosticsSendStatus, disabled: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.status = status
+        self.disabled = disabled
+        self.action = action
+    }
+
     var body: some View {
         Button(action: action) {
             HStack {
-                Text(failedRetryable ? "Try Again" : title)
+                failedRetryable ? Text("Try Again") : title
                 Spacer()
                 if status.isSending { ProgressView() }
             }

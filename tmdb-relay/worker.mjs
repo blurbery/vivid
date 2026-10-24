@@ -27,14 +27,18 @@ export const limits = Object.freeze({
 const id = '[1-9][0-9]{0,9}';
 const idList = new RegExp(`^${id}(\\|${id}){0,19}$`);
 const day = /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/;
+// The app's language, for titles and overviews. Optional: older app versions
+// don't send it.
+const language = /^[a-z]{2}-[A-Z]{2}$/;
 
 // Every path the app requests, with the query each one may carry. Anything
 // else, including TMDb's own account and authentication endpoints, is a 404.
 const routes = [
-  {path: new RegExp(`^movie/${id}(/videos)?$`), query: {}},
+  {path: new RegExp(`^(movie|tv|collection)/${id}$`), query: {language}},
+  {path: new RegExp(`^movie/${id}/videos$`), query: {}},
   // `external_ids` finds a series' TVDB or IMDb ID for its TVmaze air times.
-  {path: new RegExp(`^tv/${id}(/videos|/season/[0-9]{1,4}/videos|/external_ids)?$`), query: {}},
-  {path: new RegExp(`^(collection|company|network)/${id}$`), query: {}},
+  {path: new RegExp(`^tv/${id}(/videos|/season/[0-9]{1,4}/videos|/external_ids)$`), query: {}},
+  {path: new RegExp(`^(company|network)/${id}$`), query: {}},
   {path: /^find\/tt[0-9]{7,10}$/, query: {external_source: /^imdb_id$/}, required: ['external_source']},
   {
     path: /^discover\/(movie|tv)$/,
@@ -55,6 +59,7 @@ const routes = [
       // The Calendar's series coming soon.
       'first_air_date.gte': day,
       'first_air_date.lte': day,
+      language,
     },
     required: ['sort_by', 'include_adult', 'page'],
   },

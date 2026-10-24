@@ -267,20 +267,27 @@ private struct HUDTabPillBody: View {
 // MARK: - Shared column header
 
 private struct PaneColumn<Content: View>: View {
-    let header: String
+    let header: Text
     let content: () -> Content
 
-    init(_ header: String, @ViewBuilder content: @escaping () -> Content) {
-        self.header = header
+    init(_ header: LocalizedStringKey, @ViewBuilder content: @escaping () -> Content) {
+        self.header = Text(header)
+        self.content = content
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ header: S, @ViewBuilder content: @escaping () -> Content) {
+        self.header = Text(header)
         self.content = content
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(header.uppercased())
+            header
                 .font(.system(size: 14, weight: .semibold))
                 .tracking(1.6)
                 .foregroundStyle(.white.opacity(0.5))
+                .textCase(.uppercase)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

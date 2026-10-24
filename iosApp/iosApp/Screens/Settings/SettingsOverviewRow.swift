@@ -5,12 +5,35 @@ import SwiftUI
 /// optional current value. The containing NavigationLink or Button owns the
 /// interaction so the full row remains a native 44-point target.
 struct SettingsOverviewRow: View {
-    let title: String
-    let subtitle: String
+    private let title: Text
+    private let subtitle: Text
     let systemImage: String
     var tint: Color = .vividAccent
     var value: String? = nil
     var showsChevron = true
+
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey, systemImage: String,
+         tint: Color = .vividAccent, value: String? = nil, showsChevron: Bool = true) {
+        self.init(title: Text(title), subtitle: Text(subtitle), systemImage: systemImage,
+                  tint: tint, value: value, showsChevron: showsChevron)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, S: StringProtocol>(title: T, subtitle: S, systemImage: String,
+                                               tint: Color = .vividAccent, value: String? = nil, showsChevron: Bool = true) {
+        self.init(title: Text(title), subtitle: Text(subtitle), systemImage: systemImage,
+                  tint: tint, value: value, showsChevron: showsChevron)
+    }
+
+    private init(title: Text, subtitle: Text, systemImage: String, tint: Color, value: String?, showsChevron: Bool) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.tint = tint
+        self.value = value
+        self.showsChevron = showsChevron
+    }
 
     var body: some View {
         HStack(spacing: 13) {
@@ -30,11 +53,11 @@ struct SettingsOverviewRow: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                title
                     .font(.headline)
                     .foregroundStyle(Color.vividOnSurface)
 
-                Text(subtitle)
+                subtitle
                     .font(.footnote)
                     .foregroundStyle(Color.vividSecondaryText)
                     .lineLimit(2)

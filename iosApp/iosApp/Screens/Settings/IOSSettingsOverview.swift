@@ -652,7 +652,7 @@ struct PhoneSavedAccountEditor: View {
     private var active: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
     var body: some View {
         List {
-            SettingsPageHeader(title: account?.displayName ?? "Add Profile", subtitle: "Account details and access on this device.", systemImage: "person.crop.circle").settingsPageHeaderRow()
+            SettingsPageHeader(title: Text(account?.displayName ?? "Add Profile"), subtitle: Text("Account details and access on this device."), systemImage: "person.crop.circle").settingsPageHeaderRow()
             if account == nil {
                 Section {
                     Picker("Server Provider", selection: $provider) {

@@ -295,7 +295,7 @@ struct TVStudiosNetworksSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
-                TVSettingsPageHeader(title: "Studios & Networks", subtitle: subtitle) {
+                TVSettingsPageHeader(title: Text("Studios & Networks"), subtitle: Text(subtitle)) {
                     Button("Done") { dismiss() }
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($focus, equals: .done)

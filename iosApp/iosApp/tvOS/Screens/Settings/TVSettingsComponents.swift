@@ -31,11 +31,22 @@ enum TVSettingsPalette {
 }
 
 struct TVSettingsPageHeader<Actions: View>: View {
-    let title: String
-    let subtitle: String?
+    private let title: Text
+    private let subtitle: Text?
     @ViewBuilder let actions: () -> Actions
 
-    init(title: String, subtitle: String? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        self.init(title: Text(title), subtitle: subtitle.map { Text($0) }, actions: actions)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, subtitle: String? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        self.init(title: Text(title), subtitle: subtitle.map { Text($0) }, actions: actions)
+    }
+
+    /// Mixes a localised and a verbatim string, e.g. `Text("Title")` and `Text(value)`.
+    init(title: Text, subtitle: Text? = nil, @ViewBuilder actions: @escaping () -> Actions) {
         self.title = title
         self.subtitle = subtitle
         self.actions = actions
@@ -44,11 +55,11 @@ struct TVSettingsPageHeader<Actions: View>: View {
     var body: some View {
         HStack(spacing: TVSettingsLayout.scaled(24)) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
-                Text(title)
+                title
                     .font(.tvSettings(40, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 if let subtitle {
-                    Text(subtitle)
+                    subtitle
                         .font(.tvSettings(20))
                         .foregroundStyle(.white.opacity(0.68))
                 }
@@ -62,7 +73,16 @@ struct TVSettingsPageHeader<Actions: View>: View {
 }
 
 extension TVSettingsPageHeader where Actions == EmptyView {
-    init(title: String, subtitle: String? = nil) {
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
+    }
+
+    init(title: Text, subtitle: Text? = nil) {
         self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }
@@ -118,12 +138,24 @@ struct TVSettingsGroup<Content: View>: View {
 }
 
 struct TVSettingsFieldRow<Content: View>: View {
-    let title: String
-    let detail: String
-    @ViewBuilder let content: Content
+    private let label: TVSettingsRowLabel
+    private let content: Content
+
+    init(title: LocalizedStringResource, detail: LocalizedStringResource, @ViewBuilder content: () -> Content) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.content = content()
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, detail: String, @ViewBuilder content: () -> Content) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.content = content()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
-            TVSettingsRowLabel(title: title, detail: detail)
+            label
             content
         }
         .padding(TVSettingsLayout.scaled(24))
@@ -132,19 +164,41 @@ struct TVSettingsFieldRow<Content: View>: View {
 }
 
 struct TVSettingsRowLabel: View {
-    let title: String
-    var detail: String? = nil
+    private let title: Text
+    private let detail: Text?
+
+    /// Takes a `LocalizedStringResource` rather than a `LocalizedStringKey` so
+    /// the English key can still find the row's built-in description.
+    init(title: LocalizedStringResource, detail: LocalizedStringResource? = nil) {
+        self.title = Text(title)
+        self.detail = (detail ?? Self.descriptions[title.key]).map { Text($0) }
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, detail: String? = nil) {
+        self.title = Text(title)
+        self.detail = detail.map { Text($0) } ?? Self.descriptions[String(title)].map { Text($0) }
+    }
+
+    /// Mixes a localised and a verbatim string, e.g. `Text("Title")` and
+    /// `Text(value)`. Built-in descriptions don't apply.
+    init(title: Text, detail: Text?) {
+        self.title = title
+        self.detail = detail
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(6)) {
-            Text(title).font(.tvSettings(26, weight: .medium))
-            if let text = detail ?? Self.descriptions[title] {
-                Text(text).font(.tvSettings(19)).opacity(0.7)
+            title.font(.tvSettings(26, weight: .medium))
+            if let detail {
+                detail.font(.tvSettings(19)).opacity(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    private static let descriptions: [String: String] = [
+    private static let descriptions: [String: LocalizedStringResource] = [
         "Spotlight": "Choose up to three rows for your discovery spotlight.",
         "Home Sections": "Choose which rows appear on Home and arrange their order.",
         "Poster Size": "Adjust card sizes on Home only.",
@@ -447,17 +501,31 @@ private struct TVSettingsPaneRowBody: View {
 /// Picker row: title, current value, chevron. Activating it presents the
 /// option sheet.
 struct TVSettingsPickerRow: View {
-    let title: String
-    let value: String
-    var detail: String? = nil
+    private let label: TVSettingsRowLabel
+    private let value: Text
     let action: () -> Void
+
+    init(title: LocalizedStringResource, value: LocalizedStringResource, detail: LocalizedStringResource? = nil,
+         action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = Text(value)
+        self.action = action
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, V: StringProtocol>(title: T, value: V, detail: String? = nil, action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = Text(value)
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: TVSettingsLayout.scaled(16)) {
-                TVSettingsRowLabel(title: title, detail: detail)
+                label
                 Spacer(minLength: TVSettingsLayout.scaled(16))
-                Text(value)
+                value
                     .font(.tvSettings(24))
                     .opacity(0.68)
                     .lineLimit(1)
@@ -473,11 +541,30 @@ struct TVSettingsPickerRow: View {
 
 /// The system owns option presentation, selection and focus return.
 struct TVSettingsOptionMenu: View {
-    let title: String
+    private let label: TVSettingsRowLabel
     let value: String
-    var detail: String? = nil
     let options: [TVSettingsOption]
     let selection: Binding<String>
+
+    /// `value` is the current option's label, shown verbatim like a
+    /// `LabeledContent` value.
+    init<V: StringProtocol>(title: LocalizedStringResource, value: V, detail: LocalizedStringResource? = nil,
+                            options: [TVSettingsOption], selection: Binding<String>) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = String(value)
+        self.options = options
+        self.selection = selection
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, V: StringProtocol>(title: T, value: V, detail: String? = nil,
+                                               options: [TVSettingsOption], selection: Binding<String>) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = String(value)
+        self.options = options
+        self.selection = selection
+    }
 
     var body: some View {
         Menu {
@@ -493,7 +580,7 @@ struct TVSettingsOptionMenu: View {
             }
         } label: {
             HStack(spacing: TVSettingsLayout.scaled(16)) {
-                TVSettingsRowLabel(title: title, detail: detail)
+                label
                 Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(value)
                     .font(.tvSettings(24))
@@ -514,15 +601,28 @@ struct TVSettingsOptionMenu: View {
 /// value, the trailing text reads On / Off. (Same pattern as the player
 /// info HUD — no `Toggle`, whose system chrome fights the custom layout.)
 struct TVSettingsToggleRow: View {
-    let title: String
+    private let label: TVSettingsRowLabel
     let isOn: Bool
-    var detail: String? = nil
     let action: () -> Void
+
+    init(title: LocalizedStringResource, isOn: Bool, detail: LocalizedStringResource? = nil, action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.isOn = isOn
+        self.action = action
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, isOn: Bool, detail: String? = nil, action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.isOn = isOn
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: TVSettingsLayout.scaled(16)) {
-                TVSettingsRowLabel(title: title, detail: detail)
+                label
                 Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(isOn ? "On" : "Off")
                     .font(.tvSettings(24, weight: isOn ? .semibold : .regular))
@@ -557,14 +657,29 @@ struct TVSettingsNestedGroup<Content: View>: View {
 /// Read-only fact row (server name, version). It is deliberately not a
 /// focus target; focus should land only on actionable settings rows.
 struct TVSettingsInfoRow: View {
-    let title: String
+    private let title: Text
     let value: String
     var showsConnectedDot = false
+
+    /// `value` is shown verbatim like a `LabeledContent` value.
+    init<V: StringProtocol>(title: LocalizedStringKey, value: V, showsConnectedDot: Bool = false) {
+        self.title = Text(title)
+        self.value = String(value)
+        self.showsConnectedDot = showsConnectedDot
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, V: StringProtocol>(title: T, value: V, showsConnectedDot: Bool = false) {
+        self.title = Text(title)
+        self.value = String(value)
+        self.showsConnectedDot = showsConnectedDot
+    }
 
     @Environment(\.tvSettingsJoinedRows) private var joined
     var body: some View {
         HStack(spacing: TVSettingsLayout.scaled(16)) {
-            Text(title)
+            title
                 .font(.tvSettings(26))
                 .lineLimit(1)
             Spacer(minLength: TVSettingsLayout.scaled(16))
@@ -601,13 +716,15 @@ struct TVSettingsInfoRow: View {
 /// Mono uppercase section eyebrow, matching the Skyline dropdown and
 /// filter-panel header grammar.
 struct TVSettingsSectionHeader: View {
-    let title: String
+    private let title: Text
     var topInset: CGFloat = 26
 
-    init(_ title: String, topInset: CGFloat = 26) { self.title = title; self.topInset = topInset }
+    init(_ title: LocalizedStringKey, topInset: CGFloat = 26) { self.title = Text(title); self.topInset = topInset }
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ title: S, topInset: CGFloat = 26) { self.title = Text(title); self.topInset = topInset }
 
     var body: some View {
-        Text(title)
+        title
             .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)
             .foregroundStyle(TVSettingsPalette.sectionText)
@@ -619,12 +736,13 @@ struct TVSettingsSectionHeader: View {
 
 /// Explanatory caption under a section's rows.
 struct TVSettingsFooter: View {
-    let text: String
+    private let text: Text
 
-    init(_ text: String) { self.text = text }
+    init(_ text: LocalizedStringKey) { self.text = Text(text) }
+    @_disfavoredOverload init<S: StringProtocol>(_ text: S) { self.text = Text(text) }
 
     var body: some View {
-        Text(text)
+        text
             .font(.tvSettings(19))
             .foregroundColor(.vividSecondaryText)
             .padding(.horizontal, TVSettingsLayout.scaled(24))

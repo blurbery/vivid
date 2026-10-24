@@ -172,7 +172,7 @@ struct PhoneStudiosNetworksSettingsView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Studios & Networks", subtitle: statusText, systemImage: "square.grid.3x1.below.line.grid.1x2")
+            SettingsPageHeader(title: Text("Studios & Networks"), subtitle: Text(statusText), systemImage: "square.grid.3x1.below.line.grid.1x2")
                 .settingsPageHeaderRow()
 
             switch store.status {

@@ -31,9 +31,9 @@ struct ServerSetupView: View {
 
             VStack(alignment: .leading, spacing: 18) {
                 AuroraTextField(
-                    label: "Server address",
+                    label: Text("Server address"),
                     text: $viewModel.host,
-                    placeholder: provider.serverPlaceholder,
+                    placeholder: Text(provider.serverPlaceholder),
                     focus: $focusedField,
                     equals: .host,
                     contentType: .url,

@@ -25,10 +25,10 @@ struct TVDiagnosticsSettingsPane: View {
                 TVSettingsGroup {
                     NavigationLink { TVLatestPlaybackPage(report: latestPlayback) } label: {
                         TVSettingsRowLabel(
-                            title: "Latest Playback",
-                            detail: ([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
+                            title: Text("Latest Playback"),
+                            detail: Text(([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
                                      + (latestPlayback.headline.isEmpty ? [] : [latestPlayback.headline]))
-                                .joined(separator: " · "))
+                                .joined(separator: " · ")))
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                 }
@@ -253,8 +253,8 @@ private struct TVLatestPlaybackPage: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
-                TVSettingsPageHeader(title: "Latest Playback",
-                                     subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened))
+                TVSettingsPageHeader(title: Text("Latest Playback"),
+                                     subtitle: Text(report.startedAt.formatted(date: .abbreviated, time: .shortened)))
                 TVSettingsGroup {
                     TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send Latest Playback", status: status, action: send)
@@ -322,13 +322,27 @@ private struct TVDiagnosticsNoteRow: View {
 
 /// A send row whose detail shows progress and the result.
 private struct TVDiagnosticsSendRow: View {
-    let title: String
+    private let title: Text
     let status: DiagnosticsSendStatus
     let action: () -> Void
 
+    init(title: LocalizedStringKey, status: DiagnosticsSendStatus, action: @escaping () -> Void) {
+        self.title = Text(title)
+        self.status = status
+        self.action = action
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, status: DiagnosticsSendStatus, action: @escaping () -> Void) {
+        self.title = Text(title)
+        self.status = status
+        self.action = action
+    }
+
     var body: some View {
         Button(action: action) {
-            TVSettingsRowLabel(title: retryable ? "Try Again" : title, detail: status.detail)
+            TVSettingsRowLabel(title: retryable ? Text("Try Again") : title, detail: status.detail.map { Text($0) })
         }
         // Stays enabled while sending: a disabled control can't hold focus on
         // tvOS, so focus would jump away. The send actions ignore repeats.

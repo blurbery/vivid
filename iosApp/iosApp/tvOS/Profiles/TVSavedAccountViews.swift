@@ -444,8 +444,8 @@ struct TVSavedAccountEditor: View {
                     if let service = CodeSignIn.Service(selectedProvider) {
                         // One row for starting and replacing a code, so focus stays put.
                         Button { startCodeSignIn(service) } label: {
-                            TVSettingsRowLabel(title: codeSignIn.isActive ? "Get a New \(service.codeTitle)" : "Use \(service.title)",
-                                               detail: codeSignIn.isActive ? "Replace the \(service.codeName) below with a new one." : service.summary)
+                            TVSettingsRowLabel(title: Text(codeSignIn.isActive ? "Get a New \(service.codeTitle)" : "Use \(service.title)"),
+                                               detail: Text(codeSignIn.isActive ? "Replace the \(service.codeName) below with a new one." : service.summary))
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
                         .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

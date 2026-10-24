@@ -4,11 +4,33 @@ import SwiftUI
 /// Consistent introduction for Settings detail pages, matching the web
 /// client's icon, title, and concise explanatory copy.
 struct SettingsPageHeader: View {
-    let title: String
-    let subtitle: String
+    private let title: Text
+    private let subtitle: Text
     let systemImage: String
     var tint: Color = .white.opacity(0.85)
     var imageName: String? = nil
+
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey, systemImage: String,
+         tint: Color = .white.opacity(0.85), imageName: String? = nil) {
+        self.init(title: Text(title), subtitle: Text(subtitle), systemImage: systemImage, tint: tint, imageName: imageName)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, S: StringProtocol>(title: T, subtitle: S, systemImage: String,
+                                               tint: Color = .white.opacity(0.85), imageName: String? = nil) {
+        self.init(title: Text(title), subtitle: Text(subtitle), systemImage: systemImage, tint: tint, imageName: imageName)
+    }
+
+    /// Mixes a localised and a verbatim string, e.g. `Text("Title")` and `Text(value)`.
+    init(title: Text, subtitle: Text, systemImage: String,
+         tint: Color = .white.opacity(0.85), imageName: String? = nil) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.tint = tint
+        self.imageName = imageName
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -29,11 +51,11 @@ struct SettingsPageHeader: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                title
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.vividOnSurface)
 
-                Text(subtitle)
+                subtitle
                     .font(.subheadline)
                     .foregroundStyle(Color.vividSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -45,13 +67,15 @@ struct SettingsPageHeader: View {
 }
 
 struct PhoneSettingsSectionHeader: View {
-    let title: String
-    init(_ title: String) { self.title = title }
+    private let title: Text
+    init(_ title: LocalizedStringKey) { self.title = Text(title) }
+    @_disfavoredOverload init<S: StringProtocol>(_ title: S) { self.title = Text(title) }
     var body: some View {
-        Text(title.uppercased())
+        title
             .font(.system(size: 13, weight: .bold, design: .rounded))
             .tracking(1)
             .foregroundStyle(Color(white: 0.62))
+            .textCase(.uppercase)
     }
 }
 

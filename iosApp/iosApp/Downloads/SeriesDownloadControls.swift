@@ -786,9 +786,25 @@ private struct SeriesDownloadOptionsSheet: View {
 /// An icon row with a title, detail line and chevron. The series and movie
 /// download sheets share it.
 struct DownloadOptionRow: View {
-    let title: String
+    private let title: Text
     let detail: String
     let icon: String
+
+    /// `detail` is built at runtime, so it's shown verbatim like a
+    /// `LabeledContent` value.
+    init<D: StringProtocol>(title: LocalizedStringKey, detail: D, icon: String) {
+        self.title = Text(title)
+        self.detail = String(detail)
+        self.icon = icon
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, D: StringProtocol>(title: T, detail: D, icon: String) {
+        self.title = Text(title)
+        self.detail = String(detail)
+        self.icon = icon
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -797,7 +813,7 @@ struct DownloadOptionRow: View {
                 .foregroundColor(.vividOnSurface)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                title
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.vividOnSurface)
                 Text(detail)

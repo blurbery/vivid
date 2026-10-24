@@ -694,7 +694,7 @@ private struct TVMenuCustomizationSheet: View {
     private func visibleRow(_ item: PrimaryMenuItem) -> some View {
         let index = visibleItems.firstIndex(where: { $0.id == item.id }) ?? 0
         return HStack(spacing: TVSettingsLayout.scaled(12)) {
-            TVSettingsRowLabel(title: item.title, detail: "Shown in the tab bar. Use the arrows to change its position.")
+            TVSettingsRowLabel(title: Text(item.title), detail: Text("Shown in the tab bar. Use the arrows to change its position."))
             Spacer(minLength: TVSettingsLayout.scaled(12))
 
             Button {

@@ -349,14 +349,27 @@ private struct PlaybackOptionPage<Value: Hashable>: View {
         var id: Value { value }
     }
 
-    let title: String
+    private let title: Text
     let options: [Option]
     @Binding var selection: Value
     @Environment(\.dismiss) private var dismiss
 
+    init(title: LocalizedStringKey, options: [Option], selection: Binding<Value>) {
+        self.title = Text(title)
+        self.options = options
+        self._selection = selection
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, options: [Option], selection: Binding<Value>) {
+        self.title = Text(title)
+        self.options = options
+        self._selection = selection
+    }
+
     var body: some View {
         List {
-            Picker(title, selection: Binding(
+            Picker(selection: Binding(
                 get: { selection },
                 set: { newValue in
                     selection = newValue
@@ -366,6 +379,8 @@ private struct PlaybackOptionPage<Value: Hashable>: View {
                 ForEach(options) { option in
                     Text(option.label).tag(option.value)
                 }
+            } label: {
+                title
             }
             .pickerStyle(.inline)
             .foregroundStyle(Color.vividOnSurface)

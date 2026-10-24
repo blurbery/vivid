@@ -29,6 +29,9 @@
     "%@ Download anyway?" : {
       "extractionState" : "manual"
     },
+    "%@ Episodes" : {
+      "extractionState" : "manual"
+    },
     "%@ of %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -201,6 +204,9 @@
     "%lld items saved" : {
       "extractionState" : "manual"
     },
+    "%lld of 6 rows enabled. Hide a row before showing another when all six are enabled. Hidden rows keep their settings and can still supply Spotlight." : {
+      "extractionState" : "manual"
+    },
     "%lld of 6 rows enabled. Hide a row before showing another when all six are enabled. Open eye: shown on Home. Closed eye: hidden and dimmed here. Tap Edit to drag rows into a new order. Changes save automatically for this profile on this device." : {
       "extractionState" : "manual"
     },
@@ -227,6 +233,9 @@
       }
     },
     "%lld percent" : {
+      "extractionState" : "manual"
+    },
+    "%lld reports" : {
       "extractionState" : "manual"
     },
     "%lld result%@" : {
@@ -261,6 +270,9 @@
     "1 hour" : {
       "extractionState" : "manual"
     },
+    "1 report" : {
+      "extractionState" : "manual"
+    },
     "15 min" : {
       "extractionState" : "manual"
     },
@@ -279,7 +291,37 @@
     "5 min" : {
       "extractionState" : "manual"
     },
+    "8096" : {
+      "extractionState" : "manual"
+    },
+    "ABOUT TMDB" : {
+      "extractionState" : "manual"
+    },
+    "ACCOUNT" : {
+      "extractionState" : "manual"
+    },
+    "ACCOUNT PIN" : {
+      "extractionState" : "manual"
+    },
+    "ACTIVE SERVER" : {
+      "extractionState" : "manual"
+    },
+    "APPEARANCE" : {
+      "extractionState" : "manual"
+    },
+    "AUDIO" : {
+      "extractionState" : "manual"
+    },
+    "About" : {
+      "extractionState" : "manual"
+    },
+    "Account" : {
+      "extractionState" : "manual"
+    },
     "Account details and access on this Apple TV." : {
+      "extractionState" : "manual"
+    },
+    "Account details and access on this device." : {
       "extractionState" : "manual"
     },
     "Acknowledgements" : {
@@ -297,7 +339,16 @@
     "Add Server" : {
       "extractionState" : "manual"
     },
+    "Add Server & Profile" : {
+      "extractionState" : "manual"
+    },
     "Add favorites from any detail page and they will appear here." : {
+      "extractionState" : "manual"
+    },
+    "Add items from their detail pages" : {
+      "extractionState" : "manual"
+    },
+    "Add media to your libraries or start watching to see it here." : {
       "extractionState" : "manual"
     },
     "Add to Favorites" : {
@@ -309,6 +360,18 @@
     "Address" : {
       "extractionState" : "manual"
     },
+    "Adjust card sizes on Home only." : {
+      "extractionState" : "manual"
+    },
+    "Adjust subtitle text size." : {
+      "extractionState" : "manual"
+    },
+    "Adjust the opacity of the subtitle box." : {
+      "extractionState" : "manual"
+    },
+    "Adjust where subtitles appear." : {
+      "extractionState" : "manual"
+    },
     "Advanced" : {
       "extractionState" : "manual"
     },
@@ -318,6 +381,18 @@
     "Air times from [TVmaze](https://www.tvmaze.com), shown in your time zone." : {
       "extractionState" : "manual"
     },
+    "All Caught Up" : {
+      "extractionState" : "manual"
+    },
+    "All reports have been sent. Send them again to %@." : {
+      "extractionState" : "manual"
+    },
+    "Allow entry without a local account PIN." : {
+      "extractionState" : "manual"
+    },
+    "Allow forced subtitles for translated dialogue and signs. Not used when Behavior is Off." : {
+      "extractionState" : "manual"
+    },
     "Allows video to follow phone orientation" : {
       "extractionState" : "manual"
     },
@@ -325,6 +400,12 @@
       "extractionState" : "manual"
     },
     "Anime" : {
+      "extractionState" : "manual"
+    },
+    "App privacy information · Updated 19 October 2026" : {
+      "extractionState" : "manual"
+    },
+    "App-level options for this device." : {
       "extractionState" : "manual"
     },
     "Appearance" : {
@@ -360,7 +441,13 @@
     "Audio Language" : {
       "extractionState" : "manual"
     },
+    "Audio Tracks" : {
+      "extractionState" : "manual"
+    },
     "Audio and subtitles are chosen automatically for the selected file. Available subtitles are saved for offline playback." : {
+      "extractionState" : "manual"
+    },
+    "Audio, %@" : {
       "extractionState" : "manual"
     },
     "Auto" : {
@@ -411,6 +498,9 @@
     "Background" : {
       "extractionState" : "manual"
     },
+    "Background Color" : {
+      "extractionState" : "manual"
+    },
     "Background Opacity" : {
       "extractionState" : "manual"
     },
@@ -444,6 +534,12 @@
     "Buffer Ahead" : {
       "extractionState" : "manual"
     },
+    "CONNECTION" : {
+      "extractionState" : "manual"
+    },
+    "CONNECTIONS" : {
+      "extractionState" : "manual"
+    },
     "Calendar" : {
       "extractionState" : "manual"
     },
@@ -460,6 +556,9 @@
       "extractionState" : "manual"
     },
     "Cancel" : {
+      "extractionState" : "manual"
+    },
+    "Cancel %@" : {
       "extractionState" : "manual"
     },
     "Cancel %lld Downloads" : {
@@ -489,6 +588,9 @@
     "Captions apply across Home, Search, Movies, Series and For You. Title & Year, Title Only and Artwork Only keep the same text size and left alignment. Episodes show episode details instead of the year." : {
       "extractionState" : "manual"
     },
+    "Cast & Crew" : {
+      "extractionState" : "manual"
+    },
     "Change PIN" : {
       "extractionState" : "manual"
     },
@@ -496,6 +598,9 @@
       "extractionState" : "manual"
     },
     "Changes apply the next time a video starts. While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels." : {
+      "extractionState" : "manual"
+    },
+    "Changes save automatically. Home stays visible; press Back to return." : {
       "extractionState" : "manual"
     },
     "Chapters" : {
@@ -528,7 +633,40 @@
     "Choose a matching release. Each download uses your OpenSubtitles quota." : {
       "extractionState" : "manual"
     },
+    "Choose and arrange your navigation tabs." : {
+      "extractionState" : "manual"
+    },
+    "Choose another day or show all." : {
+      "extractionState" : "manual"
+    },
     "Choose filters" : {
+      "extractionState" : "manual"
+    },
+    "Choose how much louder Volume Boost plays." : {
+      "extractionState" : "manual"
+    },
+    "Choose how the subtitle background is drawn." : {
+      "extractionState" : "manual"
+    },
+    "Choose no rows to hide the spotlight. Changes save automatically." : {
+      "extractionState" : "manual"
+    },
+    "Choose subtitle text colour." : {
+      "extractionState" : "manual"
+    },
+    "Choose the subtitle box colour." : {
+      "extractionState" : "manual"
+    },
+    "Choose the viewing profile used by this server account." : {
+      "extractionState" : "manual"
+    },
+    "Choose titles and years, titles only, or artwork only." : {
+      "extractionState" : "manual"
+    },
+    "Choose up to 3 spotlight rows. %lld selected." : {
+      "extractionState" : "manual"
+    },
+    "Choose up to 6 Home rows. A seventh slot is reserved for Spotlight, even when hidden." : {
       "extractionState" : "manual"
     },
     "Choose up to three Home sections for Discovery Spotlight." : {
@@ -537,7 +675,16 @@
     "Choose up to three rows for your discovery spotlight." : {
       "extractionState" : "manual"
     },
+    "Choose when subtitles should appear." : {
+      "extractionState" : "manual"
+    },
+    "Choose when the next-episode prompt appears." : {
+      "extractionState" : "manual"
+    },
     "Choose which Home rows are visible and the order they appear in." : {
+      "extractionState" : "manual"
+    },
+    "Choose which rows appear in Settings → General → Home Sections." : {
       "extractionState" : "manual"
     },
     "Choose which rows appear on Home and arrange their order." : {
@@ -582,10 +729,16 @@
     "Collection" : {
       "extractionState" : "manual"
     },
+    "Collection is empty" : {
+      "extractionState" : "manual"
+    },
     "Collection name" : {
       "extractionState" : "manual"
     },
     "Collections" : {
+      "extractionState" : "manual"
+    },
+    "Collections created on the server will appear here." : {
       "extractionState" : "manual"
     },
     "Collections in this group will move to Ungrouped. This cannot be undone." : {
@@ -595,6 +748,9 @@
       "extractionState" : "manual"
     },
     "Combine Next Up with Continue Watching" : {
+      "extractionState" : "manual"
+    },
+    "Coming Soon" : {
       "extractionState" : "manual"
     },
     "Coming soon" : {
@@ -607,6 +763,9 @@
       "extractionState" : "manual"
     },
     "Connect OpenSubtitles" : {
+      "extractionState" : "manual"
+    },
+    "Connect another media server." : {
       "extractionState" : "manual"
     },
     "Connect this Apple TV" : {
@@ -636,6 +795,9 @@
     "Connecting…" : {
       "extractionState" : "manual"
     },
+    "Connection" : {
+      "extractionState" : "manual"
+    },
     "Contact" : {
       "extractionState" : "manual"
     },
@@ -654,6 +816,12 @@
     "Couldn't Save Monitoring" : {
       "extractionState" : "manual"
     },
+    "Couldn't load what's coming" : {
+      "extractionState" : "manual"
+    },
+    "Couldn't load your calendar" : {
+      "extractionState" : "manual"
+    },
     "Couldn’t Update Item" : {
       "extractionState" : "manual"
     },
@@ -663,13 +831,25 @@
     "Couldn’t load trailers. Try again" : {
       "extractionState" : "manual"
     },
+    "Couldn’t load your Home rows." : {
+      "extractionState" : "manual"
+    },
     "Couldn’t update season" : {
       "extractionState" : "manual"
     },
     "Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least %lld." : {
       "extractionState" : "manual"
     },
+    "Crash and hang reports kept on this device." : {
+      "extractionState" : "manual"
+    },
     "Create Collection" : {
+      "extractionState" : "manual"
+    },
+    "Create a collection to organize your media" : {
+      "extractionState" : "manual"
+    },
+    "Create library collections in the web app to feature curated shelves here." : {
       "extractionState" : "manual"
     },
     "Current season" : {
@@ -688,6 +868,9 @@
       "extractionState" : "manual"
     },
     "Custom Appearance" : {
+      "extractionState" : "manual"
+    },
+    "Custom Subtitle Appearance" : {
       "extractionState" : "manual"
     },
     "Customise Tab Bar" : {
@@ -749,6 +932,9 @@
     "Deselect All" : {
       "extractionState" : "manual"
     },
+    "Details" : {
+      "extractionState" : "manual"
+    },
     "Diagnostics" : {
       "extractionState" : "manual"
     },
@@ -756,6 +942,9 @@
       "extractionState" : "manual"
     },
     "Disconnect" : {
+      "extractionState" : "manual"
+    },
+    "Discovery Spotlight" : {
       "extractionState" : "manual"
     },
     "Done" : {
@@ -773,10 +962,19 @@
     "Download Anyway" : {
       "extractionState" : "manual"
     },
+    "Download Episode" : {
+      "extractionState" : "manual"
+    },
     "Download Failed" : {
       "extractionState" : "manual"
     },
+    "Download Movie" : {
+      "extractionState" : "manual"
+    },
     "Download Options…" : {
+      "extractionState" : "manual"
+    },
+    "Download Removed" : {
       "extractionState" : "manual"
     },
     "Download failed" : {
@@ -818,6 +1016,9 @@
     "Downloads aren't enabled for this account" : {
       "extractionState" : "manual"
     },
+    "Downloads aren't enabled for this account." : {
+      "extractionState" : "manual"
+    },
     "Downloads aren't enabled for this account. The server's admin can allow them." : {
       "extractionState" : "manual"
     },
@@ -833,7 +1034,13 @@
     "Duration" : {
       "extractionState" : "manual"
     },
+    "EMBEDDED SUBTITLES" : {
+      "extractionState" : "manual"
+    },
     "EPISODE %lld" : {
+      "extractionState" : "manual"
+    },
+    "EPISODES" : {
       "extractionState" : "manual"
     },
     "Each episode downloads its own file in this version. Episodes without one use the server's usual file." : {
@@ -846,6 +1053,9 @@
       "extractionState" : "manual"
     },
     "Edition" : {
+      "extractionState" : "manual"
+    },
+    "Embedded Subtitles" : {
       "extractionState" : "manual"
     },
     "Emby" : {
@@ -870,6 +1080,12 @@
       "extractionState" : "manual"
     },
     "Enter the address you use to open %@ in a browser." : {
+      "extractionState" : "manual"
+    },
+    "Enter the current password to update your saved login." : {
+      "extractionState" : "manual"
+    },
+    "Enter the same four digits again." : {
       "extractionState" : "manual"
     },
     "Enter the server address" : {
@@ -908,7 +1124,19 @@
     "Find Trailers" : {
       "extractionState" : "manual"
     },
+    "Find and download subtitles from the detail page or player." : {
+      "extractionState" : "manual"
+    },
+    "Find movies and series" : {
+      "extractionState" : "manual"
+    },
     "Find on OpenSubtitles" : {
+      "extractionState" : "manual"
+    },
+    "Find subtitles while watching." : {
+      "extractionState" : "manual"
+    },
+    "Find the other profiles on this Silo account and add them to this Apple TV." : {
       "extractionState" : "manual"
     },
     "Find the other profiles on this Silo account and add them to this device. Each one gets its own Vivid profile." : {
@@ -923,10 +1151,16 @@
     "Finished episodes are kept." : {
       "extractionState" : "manual"
     },
+    "Follow this Apple TV’s Accessibility caption settings." : {
+      "extractionState" : "manual"
+    },
     "Following this device's caption language, behavior, CC/SDH preference, and complete style from Accessibility settings." : {
       "extractionState" : "manual"
     },
     "Following this device's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Accessibility → Subtitles & Captioning." : {
+      "extractionState" : "manual"
+    },
+    "Font Color" : {
       "extractionState" : "manual"
     },
     "Font Size" : {
@@ -956,6 +1190,9 @@
     "From TMDb." : {
       "extractionState" : "manual"
     },
+    "General" : {
+      "extractionState" : "manual"
+    },
     "Get a New %@" : {
       "extractionState" : "manual"
     },
@@ -968,6 +1205,12 @@
     "Get your free API key" : {
       "extractionState" : "manual"
     },
+    "Get your free key at mdblist.com/preferences." : {
+      "extractionState" : "manual"
+    },
+    "Get your key at opensubtitles.com/en/consumers." : {
+      "extractionState" : "manual"
+    },
     "Go to Season" : {
       "extractionState" : "manual"
     },
@@ -975,6 +1218,15 @@
       "extractionState" : "manual"
     },
     "Graphite uses the charcoal background, Black uses solid black, and Native removes Vivid’s background and uses the system appearance." : {
+      "extractionState" : "manual"
+    },
+    "HOME SCREEN" : {
+      "extractionState" : "manual"
+    },
+    "HOUSEHOLD" : {
+      "extractionState" : "manual"
+    },
+    "Hidden from the tab bar." : {
       "extractionState" : "manual"
     },
     "Hide %@" : {
@@ -1001,6 +1253,9 @@
     "Hold and drag onto another profile to reorder. Release to save." : {
       "extractionState" : "manual"
     },
+    "Home" : {
+      "extractionState" : "manual"
+    },
     "Home Screen" : {
       "extractionState" : "manual"
     },
@@ -1011,6 +1266,12 @@
       "extractionState" : "manual"
     },
     "Home is required. Use the arrows to reorder tabs. Downloads (when available), Search, and Profile stay automatic." : {
+      "extractionState" : "manual"
+    },
+    "Home sections are hidden" : {
+      "extractionState" : "manual"
+    },
+    "Household" : {
       "extractionState" : "manual"
     },
     "IN PROGRESS" : {
@@ -1025,10 +1286,16 @@
     "Info and playback options" : {
       "extractionState" : "manual"
     },
+    "Interface" : {
+      "extractionState" : "manual"
+    },
     "Intro" : {
       "extractionState" : "manual"
     },
     "Intro & Credit Skipper" : {
+      "extractionState" : "manual"
+    },
+    "Items you watch will appear here" : {
       "extractionState" : "manual"
     },
     "Jellyfin" : {
@@ -1049,7 +1316,16 @@
     "Keep Watching" : {
       "extractionState" : "manual"
     },
+    "Keep this profile saved and require credentials next time." : {
+      "extractionState" : "manual"
+    },
     "Keep watched downloads" : {
+      "extractionState" : "manual"
+    },
+    "LATEST PLAYBACK" : {
+      "extractionState" : "manual"
+    },
+    "LICENCE TEXTS" : {
       "extractionState" : "manual"
     },
     "Language" : {
@@ -1058,16 +1334,34 @@
     "Language code, e.g. en" : {
       "extractionState" : "manual"
     },
+    "Language, behavior, and on-screen appearance." : {
+      "extractionState" : "manual"
+    },
+    "Language, display behavior, forced captions, and CC/SDH preference follow this Apple TV's Accessibility settings." : {
+      "extractionState" : "manual"
+    },
     "Language, display behavior, forced captions, and CC/SDH preference follow this device's Accessibility settings." : {
       "extractionState" : "manual"
     },
     "Large Download" : {
       "extractionState" : "manual"
     },
+    "Latest Playback" : {
+      "extractionState" : "manual"
+    },
     "Layout" : {
       "extractionState" : "manual"
     },
+    "Leave blank to keep the saved password." : {
+      "extractionState" : "manual"
+    },
     "Libraries" : {
+      "extractionState" : "manual"
+    },
+    "Libraries visible to this profile will appear here." : {
+      "extractionState" : "manual"
+    },
+    "Licence texts" : {
       "extractionState" : "manual"
     },
     "Limit" : {
@@ -1118,6 +1412,12 @@
     "Lower music and effects so voices are easier to hear." : {
       "extractionState" : "manual"
     },
+    "Lucid manages buffering automatically." : {
+      "extractionState" : "manual"
+    },
+    "Lucid manages buffering automatically. Preferences are saved for this profile on this Apple TV." : {
+      "extractionState" : "manual"
+    },
     "MDBList" : {
       "extractionState" : "manual"
     },
@@ -1127,7 +1427,13 @@
     "Mail unavailable" : {
       "extractionState" : "manual"
     },
+    "Manage Home content saved on this device." : {
+      "extractionState" : "manual"
+    },
     "Manage Servers" : {
+      "extractionState" : "manual"
+    },
+    "Manage saved media servers for this device." : {
       "extractionState" : "manual"
     },
     "Manage the servers shared by your saved profiles." : {
@@ -1184,6 +1490,9 @@
     "Match all selected filters" : {
       "extractionState" : "manual"
     },
+    "Media Information" : {
+      "extractionState" : "manual"
+    },
     "Media Type" : {
       "extractionState" : "manual"
     },
@@ -1191,6 +1500,9 @@
       "extractionState" : "manual"
     },
     "Message" : {
+      "extractionState" : "manual"
+    },
+    "Metadata" : {
       "extractionState" : "manual"
     },
     "Monitor Series" : {
@@ -1205,7 +1517,16 @@
     "Month" : {
       "extractionState" : "manual"
     },
+    "More" : {
+      "extractionState" : "manual"
+    },
+    "More Like This" : {
+      "extractionState" : "manual"
+    },
     "More like this" : {
+      "extractionState" : "manual"
+    },
+    "More options" : {
       "extractionState" : "manual"
     },
     "Move" : {
@@ -1235,6 +1556,12 @@
     "Move later" : {
       "extractionState" : "manual"
     },
+    "Move left or right, then press centre to drop. Press Play/Pause to remove." : {
+      "extractionState" : "manual"
+    },
+    "Move rows into your preferred order." : {
+      "extractionState" : "manual"
+    },
     "Move “%@” to" : {
       "extractionState" : "manual"
     },
@@ -1244,10 +1571,22 @@
     "Movie or series title" : {
       "extractionState" : "manual"
     },
+    "Movies and series you request will show up here" : {
+      "extractionState" : "manual"
+    },
     "My Requests" : {
       "extractionState" : "manual"
     },
+    "Name" : {
+      "extractionState" : "manual"
+    },
+    "Needs sign-in" : {
+      "extractionState" : "manual"
+    },
     "New Collection" : {
+      "extractionState" : "manual"
+    },
+    "New Home data replaces stale items automatically. Use a bin to clear a section’s saved metadata and unused artwork. It caches again the next time Home refreshes." : {
       "extractionState" : "manual"
     },
     "New PIN" : {
@@ -1256,13 +1595,31 @@
     "New episodes" : {
       "extractionState" : "manual"
     },
+    "New episodes of shows in your Continue Watching, Watchlist and history appear here." : {
+      "extractionState" : "manual"
+    },
     "New four-digit PIN" : {
       "extractionState" : "manual"
     },
     "No Downloads" : {
       "extractionState" : "manual"
     },
+    "No Episodes" : {
+      "extractionState" : "manual"
+    },
     "No Home Sections" : {
+      "extractionState" : "manual"
+    },
+    "No collections" : {
+      "extractionState" : "manual"
+    },
+    "No collections match these filters" : {
+      "extractionState" : "manual"
+    },
+    "No collections yet" : {
+      "extractionState" : "manual"
+    },
+    "No downloadable episodes were found for this season." : {
       "extractionState" : "manual"
     },
     "No episodes available" : {
@@ -1271,10 +1628,31 @@
     "No favorite %@" : {
       "extractionState" : "manual"
     },
+    "No favorites" : {
+      "extractionState" : "manual"
+    },
+    "No items found" : {
+      "extractionState" : "manual"
+    },
+    "No libraries" : {
+      "extractionState" : "manual"
+    },
+    "No libraries available" : {
+      "extractionState" : "manual"
+    },
+    "No matches" : {
+      "extractionState" : "manual"
+    },
     "No matching subtitles" : {
       "extractionState" : "manual"
     },
     "No playback recorded yet" : {
+      "extractionState" : "manual"
+    },
+    "No playback recorded yet." : {
+      "extractionState" : "manual"
+    },
+    "No recommendations yet" : {
       "extractionState" : "manual"
     },
     "No recommendations yet — showing your saved titles." : {
@@ -1283,10 +1661,34 @@
     "No reports" : {
       "extractionState" : "manual"
     },
+    "No reports." : {
+      "extractionState" : "manual"
+    },
+    "No requests yet" : {
+      "extractionState" : "manual"
+    },
+    "No results" : {
+      "extractionState" : "manual"
+    },
+    "No servers have been saved on this Apple TV." : {
+      "extractionState" : "manual"
+    },
     "No subtitles" : {
       "extractionState" : "manual"
     },
+    "No titles found" : {
+      "extractionState" : "manual"
+    },
+    "No titles match" : {
+      "extractionState" : "manual"
+    },
+    "No titles match these filters" : {
+      "extractionState" : "manual"
+    },
     "No trailers available for this title." : {
+      "extractionState" : "manual"
+    },
+    "No watch history" : {
       "extractionState" : "manual"
     },
     "None" : {
@@ -1314,6 +1716,24 @@
       "extractionState" : "manual"
     },
     "Nothing airing" : {
+      "extractionState" : "manual"
+    },
+    "Nothing airing soon" : {
+      "extractionState" : "manual"
+    },
+    "Nothing coming out that day" : {
+      "extractionState" : "manual"
+    },
+    "Nothing coming soon" : {
+      "extractionState" : "manual"
+    },
+    "Nothing here yet" : {
+      "extractionState" : "manual"
+    },
+    "Nothing on TMDB matched that search" : {
+      "extractionState" : "manual"
+    },
+    "Nothing to watch yet" : {
       "extractionState" : "manual"
     },
     "OK" : {
@@ -1367,6 +1787,15 @@
     "Opens the full description" : {
       "extractionState" : "manual"
     },
+    "Optional. Describe what you saw, in a sentence or two." : {
+      "extractionState" : "manual"
+    },
+    "Optional: use four digits to protect account entry." : {
+      "extractionState" : "manual"
+    },
+    "Options" : {
+      "extractionState" : "manual"
+    },
     "Original Language" : {
       "extractionState" : "manual"
     },
@@ -1379,7 +1808,25 @@
     "Outline color" : {
       "extractionState" : "manual"
     },
+    "Overview" : {
+      "extractionState" : "manual"
+    },
     "PIN" : {
+      "extractionState" : "manual"
+    },
+    "PIN Protection" : {
+      "extractionState" : "manual"
+    },
+    "PLAYBACK" : {
+      "extractionState" : "manual"
+    },
+    "POSTER CONFIGURATION" : {
+      "extractionState" : "manual"
+    },
+    "PREVIEW" : {
+      "extractionState" : "manual"
+    },
+    "PROFILES" : {
       "extractionState" : "manual"
     },
     "Password" : {
@@ -1392,6 +1839,12 @@
       "extractionState" : "manual"
     },
     "Paused" : {
+      "extractionState" : "manual"
+    },
+    "Person not found" : {
+      "extractionState" : "manual"
+    },
+    "Personal API key" : {
       "extractionState" : "manual"
     },
     "Play" : {
@@ -1443,6 +1896,9 @@
     "Playback options" : {
       "extractionState" : "manual"
     },
+    "Playback, buffering, and episode preferences saved on this device." : {
+      "extractionState" : "manual"
+    },
     "Playing next in %lld seconds" : {
       "extractionState" : "manual"
     },
@@ -1452,10 +1908,28 @@
     "Please try again." : {
       "extractionState" : "manual"
     },
+    "Plugins" : {
+      "extractionState" : "manual"
+    },
+    "Port" : {
+      "extractionState" : "manual"
+    },
     "Position" : {
       "extractionState" : "manual"
     },
+    "Poster Configuration" : {
+      "extractionState" : "manual"
+    },
     "Poster Size" : {
+      "extractionState" : "manual"
+    },
+    "Prefer a matching audio track when available." : {
+      "extractionState" : "manual"
+    },
+    "Prefer a matching subtitle track when available." : {
+      "extractionState" : "manual"
+    },
+    "Preferred playback resolution and bitrate." : {
       "extractionState" : "manual"
     },
     "Premieres %@" : {
@@ -1470,10 +1944,19 @@
     "Preset" : {
       "extractionState" : "manual"
     },
+    "Press and hold a tile to rearrange. Changes save automatically." : {
+      "extractionState" : "manual"
+    },
     "Press to open settings" : {
       "extractionState" : "manual"
     },
     "Press to open. Swipe left or right to change the spotlight." : {
+      "extractionState" : "manual"
+    },
+    "Preview" : {
+      "extractionState" : "manual"
+    },
+    "Primary Menu" : {
       "extractionState" : "manual"
     },
     "Privacy Policy" : {
@@ -1482,16 +1965,37 @@
     "Profile" : {
       "extractionState" : "manual"
     },
+    "Profile on the left · Search on the right" : {
+      "extractionState" : "manual"
+    },
     "Profile on the left, Search on the right" : {
       "extractionState" : "manual"
     },
     "Profile settings" : {
       "extractionState" : "manual"
     },
+    "Profile setup" : {
+      "extractionState" : "manual"
+    },
+    "Profiles" : {
+      "extractionState" : "manual"
+    },
+    "Protocol" : {
+      "extractionState" : "manual"
+    },
     "Protocol and port" : {
       "extractionState" : "manual"
     },
+    "Pull down to try again." : {
+      "extractionState" : "manual"
+    },
     "Quality" : {
+      "extractionState" : "manual"
+    },
+    "REPORTS" : {
+      "extractionState" : "manual"
+    },
+    "Read how Vivid handles your information." : {
       "extractionState" : "manual"
     },
     "Read more" : {
@@ -1560,6 +2064,9 @@
     "Remove from Watchlist" : {
       "extractionState" : "manual"
     },
+    "Remove this Seerr connection from matching accounts and profiles across iCloud devices." : {
+      "extractionState" : "manual"
+    },
     "Remove this server?" : {
       "extractionState" : "manual"
     },
@@ -1575,13 +2082,31 @@
     "Reopen this library exactly as you left it" : {
       "extractionState" : "manual"
     },
+    "Reorder or hide tabs. Changes save automatically." : {
+      "extractionState" : "manual"
+    },
+    "Replace the four-digit account PIN." : {
+      "extractionState" : "manual"
+    },
+    "Reports" : {
+      "extractionState" : "manual"
+    },
+    "Reports stay on this Apple TV for up to 14 days and are never uploaded automatically. They contain no titles, account details or server addresses." : {
+      "extractionState" : "manual"
+    },
     "Reports stay on this device for up to 14 days and are never uploaded automatically. They contain no titles, account details or server addresses." : {
       "extractionState" : "manual"
     },
     "Requests" : {
       "extractionState" : "manual"
     },
+    "Require four digits when entering this account." : {
+      "extractionState" : "manual"
+    },
     "Reset" : {
+      "extractionState" : "manual"
+    },
+    "Reset Custom Appearance" : {
       "extractionState" : "manual"
     },
     "Reset Custom Appearance?" : {
@@ -1597,6 +2122,12 @@
       "extractionState" : "manual"
     },
     "Restart from beginning" : {
+      "extractionState" : "manual"
+    },
+    "Restore Large Home posters and Title & Year captions." : {
+      "extractionState" : "manual"
+    },
+    "Restore custom subtitle styling to its defaults." : {
       "extractionState" : "manual"
     },
     "Restore from iCloud" : {
@@ -1658,7 +2189,22 @@
     "Route & playback diagnostics" : {
       "extractionState" : "manual"
     },
+    "SAVED SERVERS" : {
+      "extractionState" : "manual"
+    },
     "SECONDARY" : {
+      "extractionState" : "manual"
+    },
+    "SERVER SUPPORT" : {
+      "extractionState" : "manual"
+    },
+    "SERVER TYPE" : {
+      "extractionState" : "manual"
+    },
+    "SESSION" : {
+      "extractionState" : "manual"
+    },
+    "SETTINGS" : {
       "extractionState" : "manual"
     },
     "SUBTITLE APPEARANCE" : {
@@ -1668,6 +2214,9 @@
       "extractionState" : "manual"
     },
     "Save Connection" : {
+      "extractionState" : "manual"
+    },
+    "Save updated credentials for this server account." : {
       "extractionState" : "manual"
     },
     "Saved" : {
@@ -1682,6 +2231,9 @@
     "Saved login unavailable" : {
       "extractionState" : "manual"
     },
+    "Saved securely in this Apple TV's Keychain." : {
+      "extractionState" : "manual"
+    },
     "Saved servers" : {
       "extractionState" : "manual"
     },
@@ -1689,6 +2241,9 @@
       "extractionState" : "manual"
     },
     "Scan to email a diagnostics summary to Vivid" : {
+      "extractionState" : "manual"
+    },
+    "Scan with your phone to email a short summary instead." : {
       "extractionState" : "manual"
     },
     "Scan with your phone to open an email form." : {
@@ -1712,10 +2267,16 @@
     "Search Vivid" : {
       "extractionState" : "manual"
     },
+    "Search and Profile stay at opposite ends. Only the tabs below move within the centre." : {
+      "extractionState" : "manual"
+    },
     "Search and Profile stay separate from your tabs and can only swap places." : {
       "extractionState" : "manual"
     },
     "Search for Accounts" : {
+      "extractionState" : "manual"
+    },
+    "Search for a movie or series to request it" : {
       "extractionState" : "manual"
     },
     "Search on the left, Profile on the right" : {
@@ -1745,13 +2306,22 @@
     "Seerr" : {
       "extractionState" : "manual"
     },
+    "Seerr URL" : {
+      "extractionState" : "manual"
+    },
     "Select" : {
       "extractionState" : "manual"
     },
     "Select All" : {
       "extractionState" : "manual"
     },
+    "Select Server to rename it for this profile." : {
+      "extractionState" : "manual"
+    },
     "Select a season" : {
+      "extractionState" : "manual"
+    },
+    "Select the trash icon to remove a saved server and its profiles from your Vivid devices." : {
       "extractionState" : "manual"
     },
     "Selected" : {
@@ -1760,7 +2330,19 @@
     "Selects matching subtitles embedded in the media. Backup Language is used when full subtitles would play but the title has none in your language. Preferences are saved on this device for the current profile." : {
       "extractionState" : "manual"
     },
+    "Send" : {
+      "extractionState" : "manual"
+    },
     "Send Latest Playback" : {
+      "extractionState" : "manual"
+    },
+    "Send These Reports" : {
+      "extractionState" : "manual"
+    },
+    "Send This Report" : {
+      "extractionState" : "manual"
+    },
+    "Send a message to Vivid support." : {
       "extractionState" : "manual"
     },
     "Send by QR Code" : {
@@ -1769,13 +2351,22 @@
     "Send completed watches to MDBList and sync watchlists both ways. Watchlist matches include titles on your active server." : {
       "extractionState" : "manual"
     },
+    "Send to Vivid" : {
+      "extractionState" : "manual"
+    },
     "Send with Mail" : {
       "extractionState" : "manual"
     },
     "Sends the reports to Vivid, where they're emailed to %@ and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own. Anything you write in the note is sent as written, so leave out passwords and server addresses." : {
       "extractionState" : "manual"
     },
+    "Sends these reports to Vivid, where they're emailed to %@ and kept for 30 days. Open a report in Diagnostics to see exactly what it contains. Anything you write in the note is sent as written, so leave out passwords and server addresses." : {
+      "extractionState" : "manual"
+    },
     "Sends this session to Vivid, where it's emailed to %@ and kept for 30 days. It contains no titles, account details or server addresses. Anything you write in the note is sent as written, so leave out passwords and server addresses." : {
+      "extractionState" : "manual"
+    },
+    "Sent Content" : {
       "extractionState" : "manual"
     },
     "Series" : {
@@ -1796,10 +2387,16 @@
     "Server address" : {
       "extractionState" : "manual"
     },
+    "Server setup" : {
+      "extractionState" : "manual"
+    },
     "Server setup required" : {
       "extractionState" : "manual"
     },
     "Server: %@" : {
+      "extractionState" : "manual"
+    },
+    "Servers" : {
       "extractionState" : "manual"
     },
     "Session" : {
@@ -1841,6 +2438,9 @@
     "Show Next Up" : {
       "extractionState" : "manual"
     },
+    "Show QR Code" : {
+      "extractionState" : "manual"
+    },
     "Show all" : {
       "extractionState" : "manual"
     },
@@ -1851,6 +2451,15 @@
       "extractionState" : "manual"
     },
     "Show password" : {
+      "extractionState" : "manual"
+    },
+    "Show “%@” for this profile again." : {
+      "extractionState" : "manual"
+    },
+    "Shown for this profile only, under its profile picture and on the Servers page. Leave it blank to show “%@”." : {
+      "extractionState" : "manual"
+    },
+    "Shown in the tab bar. Use the arrows to change its position." : {
       "extractionState" : "manual"
     },
     "Shows the months ahead, to jump to a day" : {
@@ -1880,6 +2489,9 @@
     "Signed out" : {
       "extractionState" : "manual"
     },
+    "Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile." : {
+      "extractionState" : "manual"
+    },
     "Signing in…" : {
       "extractionState" : "manual"
     },
@@ -1896,6 +2508,12 @@
       "extractionState" : "manual"
     },
     "Skip Forward 10 Seconds" : {
+      "extractionState" : "manual"
+    },
+    "Skip credits automatically when timestamps are available." : {
+      "extractionState" : "manual"
+    },
+    "Skip intros and recaps automatically when timestamps are available." : {
       "extractionState" : "manual"
     },
     "Skipping in %lld" : {
@@ -1938,6 +2556,12 @@
     "Speed" : {
       "extractionState" : "manual"
     },
+    "Spotlight" : {
+      "extractionState" : "manual"
+    },
+    "Spotlight and your enabled Home rows are saved on this Apple TV for the current server and profile. Each row keeps up to 20 items; Spotlight keeps up to 10 slides." : {
+      "extractionState" : "manual"
+    },
     "Spotlight and your enabled Home rows are saved on this device for the current server and profile. Each row keeps up to 20 items; Spotlight keeps up to 10 slides. New Home data replaces stale items automatically. Clearing a section removes its saved metadata and unused artwork; it caches again when Home refreshes." : {
       "extractionState" : "manual"
     },
@@ -1948,6 +2572,9 @@
       "extractionState" : "manual"
     },
     "Start Picture in Picture" : {
+      "extractionState" : "manual"
+    },
+    "Start the following episode automatically." : {
       "extractionState" : "manual"
     },
     "Start with Balanced, Compact, Cinema, or Artwork Only, then fine-tune size and captions. These choices sync with other %@ devices on this profile." : {
@@ -1983,7 +2610,13 @@
     "Storage limit: Unlimited" : {
       "extractionState" : "manual"
     },
+    "Stream" : {
+      "extractionState" : "manual"
+    },
     "Stream from Server" : {
+      "extractionState" : "manual"
+    },
+    "Streaming" : {
       "extractionState" : "manual"
     },
     "Streaming needs a connection to your server, which isn't responding right now. Downloaded titles can still be played." : {
@@ -2016,10 +2649,16 @@
     "Subtitles" : {
       "extractionState" : "manual"
     },
+    "Subtitles are read from the media. Backup Language is used when full subtitles would play but the title has none in your language. Preferences are saved in Vivid for this profile on this Apple TV." : {
+      "extractionState" : "manual"
+    },
     "Subtitles with their own built-in styling keep their original appearance; image-based subtitles keep their authored fonts and colors but follow the size, position, and background settings." : {
       "extractionState" : "manual"
     },
     "Subtitles, %@" : {
+      "extractionState" : "manual"
+    },
+    "Summary" : {
       "extractionState" : "manual"
     },
     "Swap Search and Profile" : {
@@ -2049,7 +2688,22 @@
     "Sync now" : {
       "extractionState" : "manual"
     },
+    "Sync watch history and watchlists." : {
+      "extractionState" : "manual"
+    },
+    "TAB BAR" : {
+      "extractionState" : "manual"
+    },
+    "THEMES" : {
+      "extractionState" : "manual"
+    },
     "TMDB" : {
+      "extractionState" : "manual"
+    },
+    "TMDB CONNECTION" : {
+      "extractionState" : "manual"
+    },
+    "TMDB Connection" : {
       "extractionState" : "manual"
     },
     "TMDb" : {
@@ -2058,10 +2712,22 @@
     "TMDb rating %@ out of 10" : {
       "extractionState" : "manual"
     },
+    "Tab Bar" : {
+      "extractionState" : "manual"
+    },
+    "Tab Bar Preview" : {
+      "extractionState" : "manual"
+    },
     "Tab bar preview" : {
       "extractionState" : "manual"
     },
     "Tap Server to rename it for this profile." : {
+      "extractionState" : "manual"
+    },
+    "Tap the bookmark icon on any item to add it here" : {
+      "extractionState" : "manual"
+    },
+    "Tap the heart icon on any item to add it here" : {
       "extractionState" : "manual"
     },
     "Text" : {
@@ -2073,6 +2739,12 @@
     "Text subtitles follow these controls. Styled ASS and image-based subtitles retain their authored appearance and placement." : {
       "extractionState" : "manual"
     },
+    "The address of your media server." : {
+      "extractionState" : "manual"
+    },
+    "The media server this device is connected to." : {
+      "extractionState" : "manual"
+    },
     "The saved server %@ and all its profiles will be removed from your Vivid devices through iCloud. Accounts and media on the server are not deleted." : {
       "extractionState" : "manual"
     },
@@ -2080,6 +2752,24 @@
       "extractionState" : "manual"
     },
     "Theme" : {
+      "extractionState" : "manual"
+    },
+    "Themes" : {
+      "extractionState" : "manual"
+    },
+    "There are no movies or series linked to this person yet." : {
+      "extractionState" : "manual"
+    },
+    "There are no watched downloads to clear right now." : {
+      "extractionState" : "manual"
+    },
+    "This Apple TV has an older tab-bar override." : {
+      "extractionState" : "manual"
+    },
+    "This Season" : {
+      "extractionState" : "manual"
+    },
+    "This collection does not have any items yet." : {
       "extractionState" : "manual"
     },
     "This device has older device-specific interface settings that override family sync." : {
@@ -2109,6 +2799,12 @@
     "This restores all custom subtitle appearance options to their defaults." : {
       "extractionState" : "manual"
     },
+    "This screen is under construction." : {
+      "extractionState" : "manual"
+    },
+    "This series has no downloaded episodes." : {
+      "extractionState" : "manual"
+    },
     "This server isn't ready" : {
       "extractionState" : "manual"
     },
@@ -2116,6 +2812,9 @@
       "extractionState" : "manual"
     },
     "Time Remaining" : {
+      "extractionState" : "manual"
+    },
+    "Title" : {
       "extractionState" : "manual"
     },
     "Titles starting with %@" : {
@@ -2127,13 +2826,34 @@
     "To" : {
       "extractionState" : "manual"
     },
+    "To choose a different row, turn off one of the selected rows first." : {
+      "extractionState" : "manual"
+    },
     "Toggle spotlight source" : {
       "extractionState" : "manual"
     },
     "Touch and hold a tile to rearrange. Changes save automatically." : {
       "extractionState" : "manual"
     },
+    "Tracks" : {
+      "extractionState" : "manual"
+    },
+    "Trailers" : {
+      "extractionState" : "manual"
+    },
+    "Trailers open in the YouTube app, which must be installed on your Apple TV." : {
+      "extractionState" : "manual"
+    },
     "Trailers, TMDB ratings, collections and Studios & Networks come from TMDB through Vivid. There’s nothing to set up." : {
+      "extractionState" : "manual"
+    },
+    "Trailers, TMDB ratings, collections, Studios & Networks, the Calendar's Trending and any air dates TVmaze doesn't have come from TMDB through Vivid. There's nothing to set up." : {
+      "extractionState" : "manual"
+    },
+    "Trailers, ratings and collections from TMDb. Connected through Vivid." : {
+      "extractionState" : "manual"
+    },
+    "Trailers, subtitles, watch history and watchlists." : {
       "extractionState" : "manual"
     },
     "Translate" : {
@@ -2148,6 +2868,18 @@
     "Try Anyway" : {
       "extractionState" : "manual"
     },
+    "Try a different letter or filter." : {
+      "extractionState" : "manual"
+    },
+    "Try a different search term" : {
+      "extractionState" : "manual"
+    },
+    "Try adjusting your filters" : {
+      "extractionState" : "manual"
+    },
+    "Try again in a moment." : {
+      "extractionState" : "manual"
+    },
     "Turn on the parent setting to make changes" : {
       "extractionState" : "manual"
     },
@@ -2155,6 +2887,9 @@
       "extractionState" : "manual"
     },
     "Unavailable" : {
+      "extractionState" : "manual"
+    },
+    "Unknown" : {
       "extractionState" : "manual"
     },
     "Unlimited" : {
@@ -2190,6 +2925,9 @@
     "Use Synced %@ Settings" : {
       "extractionState" : "manual"
     },
+    "Use a custom subtitle style on this Apple TV." : {
+      "extractionState" : "manual"
+    },
     "Use a different server" : {
       "extractionState" : "manual"
     },
@@ -2205,6 +2943,12 @@
     "Use the account credentials for %@." : {
       "extractionState" : "manual"
     },
+    "Use the arrow buttons to move rows. The new order saves immediately." : {
+      "extractionState" : "manual"
+    },
+    "Use your email for a local Seerr account, or your imported Jellyfin/Emby username." : {
+      "extractionState" : "manual"
+    },
     "Used" : {
       "extractionState" : "manual"
     },
@@ -2217,13 +2961,25 @@
     "Using Vivid’s default appearance. Turn on Custom Appearance to adjust it." : {
       "extractionState" : "manual"
     },
+    "Validate and save this account’s login on the Apple TV." : {
+      "extractionState" : "manual"
+    },
+    "Validate this account and enable requests in Search." : {
+      "extractionState" : "manual"
+    },
     "Version" : {
       "extractionState" : "manual"
     },
     "Video" : {
       "extractionState" : "manual"
     },
+    "View acknowledgements and dependency licences." : {
+      "extractionState" : "manual"
+    },
     "View online" : {
+      "extractionState" : "manual"
+    },
+    "View saved connections or add another server." : {
       "extractionState" : "manual"
     },
     "Vivid" : {
@@ -2238,6 +2994,9 @@
     "Vivid couldn’t refresh the Home rows. Try again when the server is reachable." : {
       "extractionState" : "manual"
     },
+    "Vivid for your Apple devices." : {
+      "extractionState" : "manual"
+    },
     "Vivid tries secure HTTPS automatically." : {
       "extractionState" : "manual"
     },
@@ -2247,10 +3006,19 @@
     "Volume adjustment is unavailable for this audio output" : {
       "extractionState" : "manual"
     },
+    "WHAT IS SENT" : {
+      "extractionState" : "manual"
+    },
+    "Watch or rate a few titles to build your personalised recommendations." : {
+      "extractionState" : "manual"
+    },
     "Watched" : {
       "extractionState" : "manual"
     },
     "Watchlist" : {
+      "extractionState" : "manual"
+    },
+    "Watchlist is empty" : {
       "extractionState" : "manual"
     },
     "Website" : {
@@ -2274,6 +3042,9 @@
     "Who’s watching?" : {
       "extractionState" : "manual"
     },
+    "Wi-Fi, cleanup, and storage preferences." : {
+      "extractionState" : "manual"
+    },
     "With thanks to the projects and communities that help make Vivid possible." : {
       "extractionState" : "manual"
     },
@@ -2292,13 +3063,31 @@
     "You're offline. Connect to a network to stream, or play a downloaded title." : {
       "extractionState" : "manual"
     },
+    "Your %@ is empty" : {
+      "extractionState" : "manual"
+    },
+    "Your Home rows will appear here when your server has media to show." : {
+      "extractionState" : "manual"
+    },
+    "Your Seerr address, including https:// or http://." : {
+      "extractionState" : "manual"
+    },
+    "Your collections will appear here." : {
+      "extractionState" : "manual"
+    },
     "Your requests" : {
+      "extractionState" : "manual"
+    },
+    "Your username on this server." : {
       "extractionState" : "manual"
     },
     "https://seerr.example.com" : {
       "extractionState" : "manual"
     },
     "themoviedb.org" : {
+      "extractionState" : "manual"
+    },
+    "yourname" : {
       "extractionState" : "manual"
     },
     "© 2026 Vivid™" : {
@@ -2311,6 +3100,9 @@
       "extractionState" : "manual"
     },
     "—" : {
+      "extractionState" : "manual"
+    },
+    "••••••" : {
       "extractionState" : "manual"
     },
     "−10s" : {

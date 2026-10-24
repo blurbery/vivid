@@ -74,7 +74,7 @@ struct AboutSettingsView: View {
                         TVSettingsRowLabel(title: "Privacy Policy")
                     }.buttonStyle(TVSettingsPaneRowStyle())
                     NavigationLink { VividContactSettingsView() } label: {
-                        TVSettingsRowLabel(title: "Contact", detail: VividAbout.email)
+                        TVSettingsRowLabel(title: Text("Contact"), detail: Text(VividAbout.email))
                     }.buttonStyle(TVSettingsPaneRowStyle())
                 }
                 VividCopyrightFooter().frame(maxWidth: .infinity)

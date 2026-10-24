@@ -104,8 +104,8 @@ struct TVCircleMenuButton<MenuContent: View>: View {
     let icon: String
     /// Short label revealed while focused ("Versions", "More"). Nil keeps the
     /// button a fixed icon-only circle.
-    let title: String?
-    let accessibilityLabel: String
+    private let title: Text?
+    private let accessibilityLabel: Text
     let stabilizesFocusMotion: Bool
     let onFocus: (Bool) -> Void
     @ViewBuilder let menu: () -> MenuContent
@@ -114,15 +114,34 @@ struct TVCircleMenuButton<MenuContent: View>: View {
 
     init(
         icon: String = "ellipsis",
-        title: String? = nil,
-        accessibilityLabel: String,
+        title: LocalizedStringKey? = nil,
+        accessibilityLabel: LocalizedStringKey,
         stabilizesFocusMotion: Bool = false,
         onFocus: @escaping (Bool) -> Void = { _ in },
         @ViewBuilder menu: @escaping () -> MenuContent
     ) {
         self.icon = icon
-        self.title = title
-        self.accessibilityLabel = accessibilityLabel
+        self.title = title.map { Text($0) }
+        self.accessibilityLabel = Text(accessibilityLabel)
+        self.stabilizesFocusMotion = stabilizesFocusMotion
+        self.onFocus = onFocus
+        self.menu = menu
+    }
+
+    /// Shown verbatim, with an empty title kept icon-only. Disfavoured so
+    /// literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(
+        icon: String = "ellipsis",
+        title: String? = nil,
+        accessibilityLabel: S,
+        stabilizesFocusMotion: Bool = false,
+        onFocus: @escaping (Bool) -> Void = { _ in },
+        @ViewBuilder menu: @escaping () -> MenuContent
+    ) {
+        self.icon = icon
+        self.title = title.flatMap { $0.isEmpty ? nil : Text($0) }
+        self.accessibilityLabel = Text(accessibilityLabel)
         self.stabilizesFocusMotion = stabilizesFocusMotion
         self.onFocus = onFocus
         self.menu = menu
@@ -201,7 +220,7 @@ struct TVCircleActionButton: View {
     var body: some View {
         TVCirclePillSurface(
             icon: resolvedIcon,
-            title: title,
+            title: title.isEmpty ? nil : Text(title),
             isFocused: isFocused,
             isPressed: isPressed,
             stabilizesFocusMotion: stabilizesFocusMotion
@@ -230,7 +249,8 @@ struct TVCircleActionButton: View {
 /// the neighbours' reflow into one transaction.
 private struct TVCirclePillSurface: View {
     let icon: String
-    let title: String?
+    /// Nil for no title; callers pass nil rather than an empty string.
+    let title: Text?
     let isFocused: Bool
     let isPressed: Bool
     let stabilizesFocusMotion: Bool
@@ -238,8 +258,7 @@ private struct TVCirclePillSurface: View {
     @State private var isExpanded = false
 
     private var canExpand: Bool {
-        guard !stabilizesFocusMotion, let title else { return false }
-        return !title.isEmpty
+        !stabilizesFocusMotion && title != nil
     }
 
     var body: some View {
@@ -249,7 +268,7 @@ private struct TVCirclePillSurface: View {
                 .frame(width: 38, height: 38, alignment: .center)
                 .contentTransition(.symbolEffect(.replace))
             if isExpanded, let title {
-                Text(title)
+                title
                     .font(.system(size: 26, weight: .semibold))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

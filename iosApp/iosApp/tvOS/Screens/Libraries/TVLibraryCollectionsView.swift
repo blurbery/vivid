@@ -217,8 +217,8 @@ struct TVLibraryCollectionsView: View {
             } else {
                 EmptyStateView(
                     icon: activeFilter.isActive ? "line.3.horizontal.decrease" : "square.stack",
-                    title: emptyTitle,
-                    subtitle: activeFilter.isActive ? nil : "Collections created on the server will appear here."
+                    title: Text(emptyTitle),
+                    subtitle: activeFilter.isActive ? nil : Text("Collections created on the server will appear here.")
                 )
             }
         }
