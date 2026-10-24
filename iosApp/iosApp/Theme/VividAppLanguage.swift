@@ -1,4 +1,7 @@
 import Foundation
+#if os(tvOS)
+import TVServices
+#endif
 
 /// The language of Vivid's interface on this device. `system` follows the
 /// device's language order. Any other choice is saved as Vivid's own
@@ -48,6 +51,10 @@ enum VividAppLanguage: String, CaseIterable, Identifiable {
             UserDefaults.standard.set([language.rawValue], forKey: overrideKey)
             SharedStorage.suite.set(language.rawValue, forKey: SharedStorage.appLanguageKey)
         }
+        #if os(tvOS)
+        // Top Shelf looks its rows up in the saved language on every load.
+        TVTopShelfContentProvider.topShelfContentDidChange()
+        #endif
     }
 
     /// Whether Vivid has to reopen to show `language`: false when the choice

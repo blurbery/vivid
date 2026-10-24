@@ -24,7 +24,7 @@ Vivid is available in English, French, German, Spanish, Japanese and Simplified 
     <tr><td>Settings > General > Language</td><td>System, or one of the six languages, each named in its own language. The choice is saved as Vivid's own <code>AppleLanguages</code>, the same value iOS's per-app Language setting uses, and takes effect after Vivid is closed in the app switcher and opened again.</td></tr>
     <tr><td>iPhone and iPad</td><td>Settings > Vivid > Language changes the same value. iOS shows it when the device lists more than one language.</td></tr>
     <tr><td>Apple TV</td><td>tvOS has no per-app language setting, so Vivid's own setting is the way to choose.</td></tr>
-    <tr><td>Top Shelf</td><td>Follows Vivid's choice from the extension's next launch. Vivid saves the choice under <code>vivid.appLanguage.v1</code> in the App Group, and the extension copies it into its own <code>AppleLanguages</code>.</td></tr>
+    <tr><td>Top Shelf</td><td>Follows Vivid's choice the next time it loads. Vivid saves the choice under <code>vivid.appLanguage.v1</code> in the App Group and asks tvOS to reload Top Shelf. The extension looks its rows up in that language on every load and copies the choice into its own <code>AppleLanguages</code> for anything else it shows.</td></tr>
     <tr><td>Downloads Live Activity</td><td>Its labels follow the device's language. The titles Vivid sends it use Vivid's language.</td></tr>
   </tbody>
 </table>
