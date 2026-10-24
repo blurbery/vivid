@@ -41,9 +41,18 @@ final class TVLibraryGridViewModel {
     /// scoped by `library_id`.
     private let sendsType: Bool
     private let pageSize: Int = 70
+    private let requestCatalog: ([String: String]) async throws -> CatalogResponse
 
     private var snapshot: String? = nil
     private var nextOffset: Int = 0
+    /// Whether this grid has asked the server for page 1 yet; false while it
+    /// only has the cached page, which never expires. Set when the request
+    /// starts, so a failed or cancelled one isn't retried when returning from
+    /// a title.
+    private(set) var hasRequestedFirstPage = false
+    /// Set once a page past the first lands; `refreshFirstPage` then leaves
+    /// the grid alone so a deep scroll position survives.
+    private var hasLoadedMorePages = false
     @ObservationIgnored private var prefetchedPosterURLs: Set<URL> = []
     @ObservationIgnored private var visiblePosterRows: [Int: Range<Int>] = [:]
     /// Decoded into the memory cache so a cell scrolling into view paints the
@@ -58,8 +67,16 @@ final class TVLibraryGridViewModel {
     )
     private var generation: Int = 0
 
-    init(libraryId: Int, libraryType: String, initialFilter: CatalogFilterState = .none) {
+    init(
+        libraryId: Int,
+        libraryType: String,
+        initialFilter: CatalogFilterState = .none,
+        requestCatalog: @escaping ([String: String]) async throws -> CatalogResponse = {
+            try await VividAPI.shared.get("/api/v1/catalog", query: $0)
+        }
+    ) {
         self.libraryId = libraryId
+        self.requestCatalog = requestCatalog
         self.mediaType = BrowseMediaType.from(libraryType: libraryType)
         self.sendsType = VividMediaType.isSeries(libraryType) || VividMediaType.isMovieLibrary(libraryType)
         // A non-default initial filter (a deep-linked landing tap) wins;
@@ -100,6 +117,16 @@ final class TVLibraryGridViewModel {
     func loadMoreIfNeeded() async {
         guard hasMore, !isLoading, !isRefreshing else { return }
         await fetchPage(reset: false)
+    }
+
+    /// Fetch page 1 again behind the cards already on screen. The cached
+    /// page never expires and its snapshot fences every later page, so
+    /// without this, titles added since it was cached stay hidden until the
+    /// sort changes or the app restarts. Once more pages have loaded the grid
+    /// is left as it is.
+    func refreshFirstPage() async {
+        guard !items.isEmpty, !hasLoadedMorePages, !isLoading, !isRefreshing else { return }
+        await fetchPage(reset: true)
     }
 
     /// Jump to a name prefix (A–Z + "#"). Resets pagination. Like iPhone and
@@ -236,6 +263,7 @@ final class TVLibraryGridViewModel {
         nextOffset = 0
         hasMore = true
         snapshot = nil
+        hasLoadedMorePages = false
         error = nil
         if useCache { hydratePage1FromCache() }
         refreshPosterPrefetch()
@@ -244,6 +272,7 @@ final class TVLibraryGridViewModel {
 
     private func fetchPage(reset: Bool) async {
         let myGeneration = generation
+        if reset { hasRequestedFirstPage = true }
         if reset, !items.isEmpty {
             isRefreshing = true
         } else {
@@ -270,9 +299,7 @@ final class TVLibraryGridViewModel {
         )
 
         do {
-            let response: CatalogResponse = try await VividAPI.shared.get(
-                "/api/v1/catalog", query: query
-            )
+            let response = try await requestCatalog(query)
 
             // Discard if another reload superseded us while we awaited.
             guard myGeneration == generation else { return }
@@ -286,6 +313,7 @@ final class TVLibraryGridViewModel {
                 items.append(contentsOf: response.items)
                 nextOffset += response.items.count
                 if snapshot == nil { snapshot = response.snapshot }
+                hasLoadedMorePages = true
             }
             hasMore = response.hasMore ?? false
             refreshPosterPrefetch()
