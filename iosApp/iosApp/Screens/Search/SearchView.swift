@@ -8,6 +8,8 @@ struct SearchView: View {
     @State private var seerr = TVSeerrConnectionStore.shared
     #endif
     @Environment(AppRouter.self) private var router
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.usesDuoSideTabBar) private var usesDuoSideTabBar
     #if os(iOS)
     @FocusState private var isSearchFieldFocused: Bool
     #endif
@@ -53,7 +55,7 @@ struct SearchView: View {
                     .frame(maxWidth: .infinity)
                 }
                 #endif
-                if shouldShowFilters {
+                if shouldShowFilters, !usesDuoSideTabBar {
                     mediaTypeFilter
                     #if os(tvOS)
                         .padding(.horizontal, VividTheme.padding)
@@ -87,6 +89,18 @@ struct SearchView: View {
             .padding(.top, VividTheme.smallPadding)
             #endif
         }
+        #if os(iOS)
+        // On the Duo's landscape inner screen the media tabs sit at the
+        // bottom, as For You's do.
+        .safeAreaInset(edge: .bottom) {
+            if shouldShowFilters, usesDuoSideTabBar {
+                mediaTypeFilter
+                    .frame(height: PhoneDuo.pageTabsRowHeight)
+                    .padding(.horizontal, VividTheme.padding)
+                    .padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+            }
+        }
+        #endif
         #if os(tvOS)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #else
@@ -239,6 +253,7 @@ struct SearchView: View {
         }.padding(5).vividGlass(in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1).allowsHitTesting(false))
         .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
+        .frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
         .frame(maxWidth: .infinity)
         #elseif os(tvOS)
         HStack(spacing: 24) {

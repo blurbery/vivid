@@ -613,6 +613,9 @@ private struct PhoneDiscoverySpotlight: View {
                 .id(item.backdropUrl ?? item.contentId)
                 .transition(.opacity)
                 .allowsHitTesting(false)
+                // The Duo's vertical status bar insets one side; keep the
+                // artwork under it like the rows below. The text stays inset.
+                .ignoresSafeArea(.container, edges: PhoneDuo.isDuo ? .horizontal : [])
             }
             .animation(.easeInOut(duration: 0.4), value: selection)
             .padding(.bottom, -56)

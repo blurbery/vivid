@@ -29,6 +29,9 @@ struct VividStartupView: View {
                     }
                 }
             }
+            // The iPhone Duo's side status bar strip would push a safe-area
+            // centre sideways, so centre the logo on the whole screen there.
+            .ignoresSafeArea(edges: PhoneDuo.isDuo ? .all : [])
         }
         .overlay {
             if let statusText {

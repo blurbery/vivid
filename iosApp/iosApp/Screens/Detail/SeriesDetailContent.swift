@@ -123,7 +123,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     }
 
     private var heroToContentSpacing: CGFloat {
-        horizontalSizeClass == .regular ? 16 : 32
+        PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass) ? 32 : 16
     }
 
     // MARK: - Hero
@@ -171,53 +171,55 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     @ViewBuilder
     private var actionStack: some View {
         VStack(spacing: 14) {
-            PhonePrimaryPillButton(
-                icon: "play.fill",
-                title: nextUpEpisode.map(playButtonLabel) ?? "Play",
-                action: handlePrimaryPlayTap,
-                fullWidth: true,
-                resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
-            )
-
-            PhoneLabeledActionRow {
-                PhoneLabeledAction(
-                    icon: "heart",
-                    iconActive: "heart.fill",
-                    isActive: isFavorite,
-                    label: "Favorite",
-                    accessibilityLabelOverride: isFavorite
-                        ? "Remove from Favorites" : "Add to Favorites",
-                    action: onToggleFavorite
+            PhoneDetailPrimaryActions {
+                PhonePrimaryPillButton(
+                    icon: "play.fill",
+                    title: nextUpEpisode.map(playButtonLabel) ?? "Play",
+                    action: handlePrimaryPlayTap,
+                    fullWidth: true,
+                    resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
                 )
-                PhoneLabeledAction(
-                    icon: "bookmark",
-                    iconActive: "bookmark.fill",
-                    isActive: inWatchlist,
-                    label: "Watchlist",
-                    accessibilityLabelOverride: inWatchlist
-                        ? "Remove from Watchlist" : "Add to Watchlist",
-                    action: onToggleWatchlist
-                )
-                PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
-                    if let episode = nextUpEpisode {
-                        Button(episode.userData?.played == true ? "Mark Episode as Unwatched" : "Mark Episode as Watched") {
-                            Task { _ = await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
+            } actions: {
+                PhoneLabeledActionRow {
+                    PhoneLabeledAction(
+                        icon: "heart",
+                        iconActive: "heart.fill",
+                        isActive: isFavorite,
+                        label: "Favorite",
+                        accessibilityLabelOverride: isFavorite
+                            ? "Remove from Favorites" : "Add to Favorites",
+                        action: onToggleFavorite
+                    )
+                    PhoneLabeledAction(
+                        icon: "bookmark",
+                        iconActive: "bookmark.fill",
+                        isActive: inWatchlist,
+                        label: "Watchlist",
+                        accessibilityLabelOverride: inWatchlist
+                            ? "Remove from Watchlist" : "Add to Watchlist",
+                        action: onToggleWatchlist
+                    )
+                    PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+                        if let episode = nextUpEpisode {
+                            Button(episode.userData?.played == true ? "Mark Episode as Unwatched" : "Mark Episode as Watched") {
+                                Task { _ = await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
+                            }
                         }
+                        if let selectedSeason {
+                            Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
+                        }
+                        Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
                     }
-                    if let selectedSeason {
-                        Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
-                    }
-                    Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
-                }
-                SeriesDownloadMenuButton(
-                    detail: detail,
-                    seasons: seasons,
-                    selectedSeason: selectedSeason,
-                    episodes: episodes,
-                    episodesBySeason: episodesBySeason,
-                    style: .labeled
-                )
+                    SeriesDownloadMenuButton(
+                        detail: detail,
+                        seasons: seasons,
+                        selectedSeason: selectedSeason,
+                        episodes: episodes,
+                        episodesBySeason: episodesBySeason,
+                        style: .labeled
+                    )
 
+                }
             }
 
             if let trailerStatusMessage {

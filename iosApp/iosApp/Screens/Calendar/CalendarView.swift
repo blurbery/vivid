@@ -21,6 +21,8 @@ struct CalendarView: View {
     /// Feeds the shared glass strip behind the status bar, as on For You.
     @State private var chromeScrollState = PageChromeScrollState()
     @Environment(AppRouter.self) private var router
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.usesDuoSideTabBar) private var usesDuoSideTabBar
 
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
@@ -28,8 +30,14 @@ struct CalendarView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    header
-                        .id("top")
+                    // With the Duo's tab bar in its side strip, the page tabs
+                    // sit at the bottom, as on For You and Search.
+                    if usesDuoSideTabBar {
+                        Color.clear.frame(height: 0).id("top")
+                    } else {
+                        header
+                            .id("top")
+                    }
                     switch page {
                     case .upcoming: upcoming(proxy)
                     case .trending: trending
@@ -42,6 +50,11 @@ struct CalendarView: View {
                 .padding(.bottom, 32)
             }
             .reportsPageChromeScroll()
+            .safeAreaInset(edge: .bottom) {
+                if usesDuoSideTabBar {
+                    header.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+                }
+            }
             .sheet(isPresented: $showsMonth, onDismiss: {
                 guard let day = monthPick else { return }
                 monthPick = nil
@@ -108,6 +121,8 @@ struct CalendarView: View {
             .accessibilityLabel("Month")
             .accessibilityHint(page == .upcoming ? "Shows the months ahead, to jump to a day" : "Shows the months ahead, to see what's coming out on a day")
         }
+        .frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
+        .frame(maxWidth: .infinity)
     }
 
     /// Upcoming's month marks days with new episodes; Trending's marks

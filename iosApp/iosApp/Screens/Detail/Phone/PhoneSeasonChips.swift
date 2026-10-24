@@ -11,6 +11,8 @@ struct PhoneSeasonChips: View {
     let onSelect: (Season) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var rowWidth: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -23,6 +25,14 @@ struct PhoneSeasonChips: View {
                 }
                 .padding(.horizontal, VividTheme.safePadding)
                 .padding(.vertical, 4)
+                // On the iPhone Duo's inner screen the chips sit centred under
+                // the title while they fit, and scroll as usual when they don't.
+                .frame(minWidth: PhoneDuo.usesWideLayout(horizontalSizeClass) ? rowWidth : nil)
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                rowWidth = width
             }
             .onAppear {
                 scrollToSelection(selected?.id, using: proxy, animated: false)

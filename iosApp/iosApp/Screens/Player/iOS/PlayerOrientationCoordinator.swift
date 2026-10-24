@@ -100,9 +100,21 @@ final class PlayerOrientationCoordinator {
 
     private var currentBrowsingOrientations: UIInterfaceOrientationMask {
         Self.browsingOrientations(
-            isPad: UIDevice.current.userInterfaceIdiom == .pad,
+            isPad: rotatesBrowsing,
             portraitPagePresented: isPortraitPagePresented
         )
+    }
+
+    /// iPad, and the iPhone Duo's unfolded inner screen, browse in every
+    /// orientation. The Duo's cover screen stays portrait like other iPhones.
+    var rotatesBrowsing: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || isOnDuoInnerScreen
+    }
+
+    private var isOnDuoInnerScreen: Bool {
+        PhoneDuo.isDuo && activeWindowScenes().contains {
+            PhoneDuo.isInnerScreen($0.coordinateSpace.bounds.size)
+        }
     }
 
     var supportedOrientations: UIInterfaceOrientationMask {
@@ -211,10 +223,38 @@ final class PlayerOrientationCoordinator {
         applyCurrentPolicy(preferredOrientation: isPresented ? .portrait : currentBrowsingOrientations)
     }
 
+    /// Folding or unfolding the iPhone Duo moves the scene to the other
+    /// screen. Only re-query the supported orientations: iOS turns the cover
+    /// to portrait itself, and the inner screen follows the device. A
+    /// geometry request here is replayed after the next unfold and pins the
+    /// inner screen in portrait.
+    func duoScreenDidChange(portraitPagePresented: Bool) {
+        guard PhoneDuo.isDuo else { return }
+        isPortraitPagePresented = portraitPagePresented
+        guard !isPlayerActive else { return }
+        refreshSupportedOrientations()
+    }
+
+    private func refreshSupportedOrientations() {
+        for scene in activeWindowScenes() {
+            for window in scene.windows {
+                guard let rootViewController = window.rootViewController else { continue }
+                notifyOrientationChange(for: rootViewController)
+            }
+        }
+    }
+
     func deactivatePlayer() {
         guard isPlayerActive else { return }
         rotationState.deactivate()
         stopMotionUpdates()
+        // A geometry request on the iPhone Duo is replayed after the next
+        // unfold, so only re-query the orientations there: the cover returns
+        // to portrait and the inner screen keeps the video's orientation.
+        if PhoneDuo.isDuo {
+            UIView.performWithoutAnimation { refreshSupportedOrientations() }
+            return
+        }
         let preferredOrientation: UIInterfaceOrientationMask = currentBrowsingOrientations.contains(.portrait)
             ? .portrait : currentBrowsingOrientations
         if UIDevice.current.userInterfaceIdiom == .phone {

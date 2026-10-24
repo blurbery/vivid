@@ -189,6 +189,10 @@ struct MainTabView: View {
     @State private var tabBarScroll = MobileTabBarScrollState()
     @State private var showsSearchPage = false
     @State private var showsSettingsPage = false
+    /// The side the tab bar stands in on the iPhone Duo's landscape inner
+    /// screen, or nil for the usual bottom bar.
+    @State private var duoSideStrip: PhoneDuo.SideStrip?
+    private var duoSideBarEdge: HorizontalEdge? { duoSideStrip?.edge }
     @Bindable var router: AppRouter
     @State private var selectedDestinationID: MainTabDestinationID = .app(.home)
     @State private var uiCustomization = UICustomizationPreferences.shared
@@ -217,6 +221,12 @@ struct MainTabView: View {
                         .allowsHitTesting(!showsMobileUtilityPage)
                         .accessibilityHidden(showsMobileUtilityPage)
 
+                    if let edge = duoSideBarEdge, router.path.isEmpty {
+                        duoSideTabBar(edge: edge, endsAtPageTabs: !PhoneDuo.isInnerScreen(geometry))
+                            .allowsHitTesting(!showsMobileUtilityPage)
+                            .accessibilityHidden(showsMobileUtilityPage)
+                    }
+
                     if showsSearchPage {
                         MobileSearchPage(safeAreaInsets: geometry.safeAreaInsets, onDismiss: dismissSearchPage)
                             .transition(.move(edge: .bottom))
@@ -228,6 +238,17 @@ struct MainTabView: View {
                             .transition(.move(edge: .bottom))
                             .zIndex(10)
                     }
+                }
+                .environment(\.usesDuoSideTabBar, duoSideBarEdge != nil)
+                .environment(\.duoSideStrip, duoSideStrip)
+                // Folding the iPhone Duo moves the app between its screens.
+                .onChange(of: PhoneDuo.isInnerScreen(geometry)) { _, isInnerScreen in
+                    PlayerOrientationCoordinator.shared.duoScreenDidChange(
+                        portraitPagePresented: showsMobileUtilityPage && !isInnerScreen
+                    )
+                }
+                .onChange(of: PhoneDuo.sideStrip(geometry), initial: true) { _, strip in
+                    duoSideStrip = strip
                 }
             }
             // A keyboard inside the player must not lift the underlying Home tab bar.
@@ -447,12 +468,15 @@ struct MainTabView: View {
             }
             .navigationDestination(for: Route.self) { route in
                 routeContent(for: route)
+                    #if os(iOS)
+                    .duoStripBackButton()
+                    #endif
             }
             #if os(iOS)
             .toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 2) {
-                if router.path.isEmpty {
-                    mobileGlassTabBar
+            .safeAreaInset(edge: .bottom, spacing: duoSideBarEdge == nil ? 2 : 0) {
+                if router.path.isEmpty, duoSideBarEdge == nil {
+                    mobileGlassTabBar()
                         .offset(y: tabBarScroll.isHidden ? 90 : 0)
                         .opacity(tabBarScroll.isHidden ? 0 : 1)
                         .allowsHitTesting(!tabBarScroll.isHidden)
@@ -471,7 +495,7 @@ struct MainTabView: View {
     }
 
     #if os(iOS)
-    private var mobileGlassTabBar: some View {
+    private func mobileGlassTabBar(isVertical: Bool = false) -> some View {
         MobileGlassNavigationBar(
             items: visibleDestinations.map { .init(id: String(describing: $0.id), title: $0.title, icon: $0.icon, selectedIcon: $0.selectedIcon) },
             selectedID: String(describing: selectedDestinationID),
@@ -480,12 +504,31 @@ struct MainTabView: View {
                 selectedDestinationID = destination.id
             },
             onSearch: presentSearchPage,
-            onProfile: presentSettingsPage
+            onProfile: presentSettingsPage,
+            isVertical: isVertical
         )
     }
 
+    /// Stands the bar in the Duo's side strip, outside the safe area the
+    /// pages lay out in, on the same line as the status bar's icons: iOS
+    /// centres those 36 points in from the strip's inner edge. The icons take
+    /// the top of the strip, about 100 points on the inner screen and 140 on
+    /// the cover, where the camera sits above them. On the cover the bar ends
+    /// where the page tabs' row begins, on every tab so it never moves.
+    private func duoSideTabBar(edge: HorizontalEdge, endsAtPageTabs: Bool) -> some View {
+        let column: CGFloat = 2 * 36
+        let side: Alignment = edge == .trailing ? .trailing : .leading
+        let bottomSide: Alignment = edge == .trailing ? .bottomTrailing : .bottomLeading
+        return mobileGlassTabBar(isVertical: true)
+            .frame(width: column)
+            .padding(.top, 150)
+            .padding(.bottom, endsAtPageTabs ? PhoneDuo.pageTabsBottomPadding + PhoneDuo.pageTabsRowHeight : 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: endsAtPageTabs ? bottomSide : side)
+            .offset(x: edge == .trailing ? column : -column)
+    }
+
     private func presentSearchPage() {
-        PlayerOrientationCoordinator.shared.setPortraitPagePresented(UIDevice.current.userInterfaceIdiom != .pad)
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(!PlayerOrientationCoordinator.shared.rotatesBrowsing)
         showsSettingsPage = false
         withAnimation(.easeInOut(duration: 0.34)) {
             showsSearchPage = true
@@ -493,7 +536,7 @@ struct MainTabView: View {
     }
 
     private func presentSettingsPage() {
-        PlayerOrientationCoordinator.shared.setPortraitPagePresented(UIDevice.current.userInterfaceIdiom != .pad)
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(!PlayerOrientationCoordinator.shared.rotatesBrowsing)
         showsSearchPage = false
         withAnimation(.easeInOut(duration: 0.34)) {
             showsSettingsPage = true
@@ -518,7 +561,7 @@ struct MainTabView: View {
 
     private func updateMobileUtilityOrientationPolicy() {
         PlayerOrientationCoordinator.shared.setPortraitPagePresented(
-            (showsSettingsPage || showsSearchPage) && UIDevice.current.userInterfaceIdiom != .pad
+            (showsSettingsPage || showsSearchPage) && !PlayerOrientationCoordinator.shared.rotatesBrowsing
         )
     }
 

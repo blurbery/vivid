@@ -14,6 +14,10 @@ struct CollectionDetailView: View {
 
     private var columns: [GridItem] {
         #if os(iOS)
+        if PhoneDuo.usesWideLayout(hSize) {
+            return Array(repeating: GridItem(.flexible(), spacing: 12),
+                         count: AdaptiveColumns.duoPosterCount(containerWidth: gridWidth, spacing: 12))
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return Array(repeating: GridItem(.flexible(), spacing: 12),
                          count: AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth, spacing: 12))
@@ -116,6 +120,10 @@ struct CollectionDetailView: View {
 
     private var gridCardWidthOverride: CGFloat? {
         #if os(iOS)
+        if PhoneDuo.usesWideLayout(hSize) {
+            return AdaptiveColumns.duoPosterWidth(containerWidth: gridWidth, spacing: 12)
+                / uiCustomization.cardPresentation.posterSize.scale
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth, spacing: 12)
                 / uiCustomization.cardPresentation.posterSize.scale

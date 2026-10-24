@@ -102,7 +102,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
     }
 
     private var heroToContentSpacing: CGFloat {
-        horizontalSizeClass == .regular ? 16 : 32
+        PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass) ? 32 : 16
     }
 
     // MARK: - Hero
@@ -181,67 +181,69 @@ struct MovieDetailContent<BelowOverview: View>: View {
     @ViewBuilder
     private var actionStack: some View {
         VStack(spacing: 14) {
-            PhonePrimaryPillButton(
-                icon: "play.fill",
-                title: primaryPlayLabel,
-                action: handlePlayTap,
-                fullWidth: true,
-                resumeProgress: ResumePresentation(position: resumePositionSeconds, duration: detail.userData?.durationSeconds)
-            )
-
-            PhoneLabeledActionRow {
-                PhoneLabeledAction(
-                    icon: "heart",
-                    iconActive: "heart.fill",
-                    isActive: isFavorite,
-                    label: "Favorite",
-                    accessibilityLabelOverride: isFavorite
-                        ? "Remove from Favorites" : "Add to Favorites",
-                    action: onToggleFavorite
+            PhoneDetailPrimaryActions {
+                PhonePrimaryPillButton(
+                    icon: "play.fill",
+                    title: primaryPlayLabel,
+                    action: handlePlayTap,
+                    fullWidth: true,
+                    resumeProgress: ResumePresentation(position: resumePositionSeconds, duration: detail.userData?.durationSeconds)
                 )
-                PhoneLabeledAction(
-                    icon: "bookmark",
-                    iconActive: "bookmark.fill",
-                    isActive: inWatchlist,
-                    label: "Watchlist",
-                    accessibilityLabelOverride: inWatchlist
-                        ? "Remove from Watchlist" : "Add to Watchlist",
-                    action: onToggleWatchlist
-                )
-                if detail.type == "episode" {
-                    PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
-                        Button(isWatched ? "Mark Episode as Unwatched" : "Mark Episode as Watched", action: onToggleWatched)
-                        if let selectedSeason {
-                            Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
-                        }
-                        Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
-                    }
-                } else {
+            } actions: {
+                PhoneLabeledActionRow {
                     PhoneLabeledAction(
-                        icon: "checkmark.circle", iconActive: "checkmark.circle.fill",
-                        isActive: isWatched, label: "Watched",
-                        accessibilityLabelOverride: isWatched ? watchedLabelUnmark : watchedLabelMark,
-                        action: onToggleWatched
+                        icon: "heart",
+                        iconActive: "heart.fill",
+                        isActive: isFavorite,
+                        label: "Favorite",
+                        accessibilityLabelOverride: isFavorite
+                            ? "Remove from Favorites" : "Add to Favorites",
+                        action: onToggleFavorite
                     )
-                }
-                if showsDownloadButton {
-                    if detail.type == "episode", detail.seriesId != nil {
-                        SeriesDownloadMenuButton(
-                            detail: detail, seasons: seasons, selectedSeason: selectedSeason,
-                            episodes: seasonEpisodes, episodesBySeason: seasonEpisodesBySeason,
-                            episodeVersions: availableVersions,
-                            selectedVersionFileId: selectedVersionFileId,
-                            style: .labeled
-                        )
+                    PhoneLabeledAction(
+                        icon: "bookmark",
+                        iconActive: "bookmark.fill",
+                        isActive: inWatchlist,
+                        label: "Watchlist",
+                        accessibilityLabelOverride: inWatchlist
+                            ? "Remove from Watchlist" : "Add to Watchlist",
+                        action: onToggleWatchlist
+                    )
+                    if detail.type == "episode" {
+                        PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+                            Button(isWatched ? "Mark Episode as Unwatched" : "Mark Episode as Watched", action: onToggleWatched)
+                            if let selectedSeason {
+                                Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
+                            }
+                            Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
+                        }
                     } else {
-                        DownloadActionButton(
-                            detail: detail, versions: availableVersions,
-                            selectedVersionFileId: selectedVersionFileId,
-                            showOptions: $showDownloadOptions, style: .labeled
+                        PhoneLabeledAction(
+                            icon: "checkmark.circle", iconActive: "checkmark.circle.fill",
+                            isActive: isWatched, label: "Watched",
+                            accessibilityLabelOverride: isWatched ? watchedLabelUnmark : watchedLabelMark,
+                            action: onToggleWatched
                         )
                     }
-                }
+                    if showsDownloadButton {
+                        if detail.type == "episode", detail.seriesId != nil {
+                            SeriesDownloadMenuButton(
+                                detail: detail, seasons: seasons, selectedSeason: selectedSeason,
+                                episodes: seasonEpisodes, episodesBySeason: seasonEpisodesBySeason,
+                                episodeVersions: availableVersions,
+                                selectedVersionFileId: selectedVersionFileId,
+                                style: .labeled
+                            )
+                        } else {
+                            DownloadActionButton(
+                                detail: detail, versions: availableVersions,
+                                selectedVersionFileId: selectedVersionFileId,
+                                showOptions: $showDownloadOptions, style: .labeled
+                            )
+                        }
+                    }
 
+                }
             }
 
             if let trailerStatusMessage {

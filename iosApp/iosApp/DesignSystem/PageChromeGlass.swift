@@ -37,11 +37,22 @@ struct PageChromeGlass: View {
     let scrollState: PageChromeScrollState
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.usesDuoSideTabBar) private var usesDuoSideTabBar
 
     var body: some View {
         #if os(tvOS)
         EmptyView()
         #else
+        // The Duo's status bar runs down the side strip there, so there's no
+        // top status bar for the strip to sit behind.
+        if !usesDuoSideTabBar {
+            strip
+        }
+        #endif
+    }
+
+    #if !os(tvOS)
+    private var strip: some View {
         PageChromeStaticGlass(reduceTransparency: reduceTransparency)
             .equatable()
             .opacity(
@@ -54,8 +65,8 @@ struct PageChromeGlass: View {
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-        #endif
     }
+    #endif
 }
 
 private struct PageChromeStaticGlass: View, Equatable {

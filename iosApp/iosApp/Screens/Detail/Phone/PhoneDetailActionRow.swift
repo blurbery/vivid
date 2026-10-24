@@ -3,6 +3,22 @@ import SwiftUI
 
 // MARK: - Labelled secondary action
 
+extension EnvironmentValues {
+    /// True while the named actions share Play's row on the iPhone Duo.
+    @Entry var phoneDetailActionsShareRow = false
+}
+
+/// Circle and slot sizes for the named actions. Beside Play on the Duo the
+/// circles match Play's 52-point height and sit in equal slots, so every gap
+/// in the row is the same; captions may run a little wider than their slot.
+struct PhoneLabeledActionMetrics {
+    let sharesRow: Bool
+    var circle: CGFloat { sharesRow ? 52 : 42 }
+    var iconSize: CGFloat { sharesRow ? 21 : 19 }
+    var slotWidth: CGFloat? { sharesRow ? circle : nil }
+    static let rowSpacing: CGFloat = 12
+}
+
 /// One named secondary action — a filled circle with no outline, over a
 /// caption. This mirrors the approved detail treatment: the icon remains a
 /// generous touch target while the caption removes any guesswork.
@@ -23,6 +39,7 @@ struct PhoneLabeledAction: View {
     /// true now nor what activating will do.
     var accessibilityLabelOverride: String? = nil
     let action: () -> Void
+    @Environment(\.phoneDetailActionsShareRow) private var sharesRow
 
     private var resolvedIcon: String {
         if isActive, let iconActive { return iconActive }
@@ -30,12 +47,13 @@ struct PhoneLabeledAction: View {
     }
 
     var body: some View {
+        let metrics = PhoneLabeledActionMetrics(sharesRow: sharesRow)
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: resolvedIcon)
-                    .font(.system(size: 19, weight: .regular))
+                    .font(.system(size: metrics.iconSize, weight: .regular))
                     .foregroundStyle(Color.vividOnSurface)
-                    .frame(width: 42, height: 42)
+                    .frame(width: metrics.circle, height: metrics.circle)
                     .background(
                         Circle().fill(Color.white.opacity(isActive ? 0.18 : 0.10))
                     )
@@ -46,8 +64,10 @@ struct PhoneLabeledAction: View {
                     .foregroundStyle(Color.vividOnSurface.opacity(isActive ? 0.92 : 0.6))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: sharesRow, vertical: false)
             }
-            .frame(maxWidth: .infinity, minHeight: 58)
+            .frame(width: metrics.slotWidth)
+            .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: 58)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -62,23 +82,27 @@ struct PhoneLabeledMenu<MenuContent: View>: View {
     var icon: String = "ellipsis"
     let label: String
     @ViewBuilder let menu: () -> MenuContent
+    @Environment(\.phoneDetailActionsShareRow) private var sharesRow
 
     var body: some View {
+        let metrics = PhoneLabeledActionMetrics(sharesRow: sharesRow)
         Menu {
             menu()
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 19, weight: .regular))
+                    .font(.system(size: metrics.iconSize, weight: .regular))
                     .foregroundStyle(Color.vividOnSurface)
-                    .frame(width: 42, height: 42)
+                    .frame(width: metrics.circle, height: metrics.circle)
                     .background(Circle().fill(Color.white.opacity(0.10)))
                 Text(label)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Color.vividOnSurface.opacity(0.6))
                     .lineLimit(1)
+                    .fixedSize(horizontal: sharesRow, vertical: false)
             }
-            .frame(maxWidth: .infinity, minHeight: 58)
+            .frame(width: metrics.slotWidth)
+            .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: 58)
             .contentShape(Rectangle())
         }
         .accessibilityLabel(label)
@@ -92,18 +116,58 @@ struct PhoneLabeledMenu<MenuContent: View>: View {
 /// controls rather than loose ornaments.
 struct PhoneLabeledActionRow<Content: View>: View {
     @ViewBuilder let content: () -> Content
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
+        let sharesRow = PhoneDuo.usesWideLayout(horizontalSizeClass)
         VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .top, spacing: sharesRow ? PhoneLabeledActionMetrics.rowSpacing : 0) {
                 content()
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: sharesRow ? nil : .infinity)
 
-            Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(height: 0.5)
+            // Beside Play on the Duo, `PhoneDetailPrimaryActions` draws the
+            // rule under the whole row instead.
+            if !PhoneDuo.usesWideLayout(horizontalSizeClass) {
+                PhoneDetailActionRule()
+            }
         }
+    }
+}
+
+/// Play above the named actions. On the iPhone Duo's inner screen, which is
+/// too wide for a full-width Play, they share one row instead.
+struct PhoneDetailPrimaryActions<Play: View, Actions: View>: View {
+    @ViewBuilder let play: () -> Play
+    @ViewBuilder let actions: () -> Actions
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    var body: some View {
+        let sharesRow = PhoneDuo.usesWideLayout(horizontalSizeClass)
+        // Top alignment lines Play up with the circles; captions hang below.
+        // Play takes the rest of the row, so the row spans the same width as
+        // the playback selectors under it.
+        let layout = sharesRow
+            ? AnyLayout(HStackLayout(alignment: .top, spacing: PhoneLabeledActionMetrics.rowSpacing))
+            : AnyLayout(VStackLayout(spacing: 14))
+        VStack(spacing: 12) {
+            layout {
+                play()
+                actions()
+                    .environment(\.phoneDetailActionsShareRow, sharesRow)
+            }
+            if sharesRow {
+                PhoneDetailActionRule()
+            }
+        }
+    }
+}
+
+private struct PhoneDetailActionRule: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 0.5)
     }
 }
 #endif
