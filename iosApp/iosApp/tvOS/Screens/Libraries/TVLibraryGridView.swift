@@ -109,9 +109,10 @@ struct TVLibraryGridView: View {
             async let facetLoad: Void = model.loadFacetsIfNeeded()
             if model.items.isEmpty {
                 await model.loadInitial()
-            } else if !model.hasFetchedFirstPage {
-                // Checked once per visit: returning from a title keeps the
-                // page it left, so an inserted title can't shift its card.
+            } else if !model.hasRequestedFirstPage {
+                // Checked once per visit, even if that check fails: returning
+                // from a title keeps the page it left, so an inserted title
+                // can't shift its card.
                 await model.refreshFirstPage()
             }
             await facetLoad

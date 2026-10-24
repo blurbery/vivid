@@ -44,8 +44,11 @@ final class TVLibraryGridViewModel {
 
     private var snapshot: String? = nil
     private var nextOffset: Int = 0
-    /// False while page 1 has only come from the cache, which never expires.
-    private(set) var hasFetchedFirstPage = false
+    /// Whether this grid has asked the server for page 1 yet; false while it
+    /// only has the cached page, which never expires. Set when the request
+    /// starts, so a failed or cancelled one isn't retried when returning from
+    /// a title.
+    private(set) var hasRequestedFirstPage = false
     /// Set once a page past the first lands; `refreshFirstPage` then leaves
     /// the grid alone so a deep scroll position survives.
     private var hasLoadedMorePages = false
@@ -251,7 +254,6 @@ final class TVLibraryGridViewModel {
         nextOffset = 0
         hasMore = true
         snapshot = nil
-        hasFetchedFirstPage = false
         hasLoadedMorePages = false
         error = nil
         if useCache { hydratePage1FromCache() }
@@ -261,6 +263,7 @@ final class TVLibraryGridViewModel {
 
     private func fetchPage(reset: Bool) async {
         let myGeneration = generation
+        if reset { hasRequestedFirstPage = true }
         if reset, !items.isEmpty {
             isRefreshing = true
         } else {
@@ -299,7 +302,6 @@ final class TVLibraryGridViewModel {
                 ResponseCache.shared.set(response, for: currentCacheKey)
                 nextOffset = response.items.count
                 snapshot = response.snapshot
-                hasFetchedFirstPage = true
             } else {
                 items.append(contentsOf: response.items)
                 nextOffset += response.items.count
