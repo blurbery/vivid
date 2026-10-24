@@ -63,17 +63,23 @@ Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keep
 
 ## Languages
 
-Vivid speaks English, French, German, Spanish, Japanese and Simplified Chinese on iPhone, iPad and Apple TV. It follows your device's language, or you can pick one for Vivid in Settings > General > Language. Top Shelf, TMDb collection names and the Calendar's Trending list follow your choice too, while titles and descriptions from your server stay in its metadata language.
+Vivid is available in six languages on iPhone, iPad and Apple TV.
 
-```mermaid
-xychart-beta
-    title "Interface strings translated (%)"
-    x-axis ["English", "French", "German", "Spanish", "Japanese", "Chinese"]
-    y-axis "Translated (%)" 0 --> 100
-    bar [100, 97.9, 97.1, 96.3, 97.2, 97.0]
-```
+<table width="100%">
+  <thead>
+    <tr><th align="left">Language</th><th align="left" width="10000">Shown in Settings as</th><th align="left">Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>English</strong></td><td>English</td><td><a href="docs/localisation.md">Available</a></td></tr>
+    <tr><td><strong>French</strong></td><td>Français</td><td><a href="docs/localisation.md">Available</a></td></tr>
+    <tr><td><strong>German</strong></td><td>Deutsch</td><td><a href="docs/localisation.md">Available</a></td></tr>
+    <tr><td><strong>Spanish</strong></td><td>Español</td><td><a href="docs/localisation.md">Available</a></td></tr>
+    <tr><td><strong>Japanese</strong></td><td>日本語</td><td><a href="docs/localisation.md">Available</a></td></tr>
+    <tr><td><strong>Simplified Chinese</strong></td><td>简体中文</td><td><a href="docs/localisation.md">Available</a></td></tr>
+  </tbody>
+</table>
 
-As of release 0.47.0 there are 2,111 interface strings. The few left in English in each language are symbols, number formats and product names that read the same everywhere. The translations were made with AI help and haven't been reviewed by native speakers yet, so corrections are very welcome. The [localisation guide](docs/localisation.md) covers how Vivid picks its language and how to add one.
+Vivid follows your device's language, or you can pick one for Vivid in Settings > General > Language. Top Shelf, TMDb collection names and the Calendar's Trending list follow your choice too, while titles and descriptions from your server stay in its metadata language. The translations were made with AI help and haven't been reviewed by native speakers yet, so corrections are very welcome. The [localisation guide](docs/localisation.md) covers how Vivid picks its language and how to add one.
 
 ## Plugins
 
