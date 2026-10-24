@@ -240,7 +240,7 @@ final class StudiosNetworksStore {
         .init(id: "20thcentury", name: "20th Century Studios", kind: .studio, tmdbId: 127928, labelIds: [25], logoHeightScale: 1.35),
     ]
 
-    static let firstLoadNotice = "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly."
+    static let firstLoadNotice = String(localized: "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly.")
 
     enum Status: Equatable { case idle, needsAccount, loading, ready, failed }
 
@@ -392,8 +392,8 @@ final class StudiosNetworksStore {
         func pick(recent: [BrowseItem], allTime: [BrowseItem]) -> [BrowseItem] {
             isStudio || recent.count < minimumCount ? allTime : recent
         }
-        let series = (title: "Popular Series", items: pick(recent: result.recentSeries, allTime: result.series))
-        let movies = (title: "Popular Movies", items: pick(recent: result.recentMovies, allTime: result.movies))
+        let series = (title: String(localized: "Popular Series"), items: pick(recent: result.recentSeries, allTime: result.series))
+        let movies = (title: String(localized: "Popular Movies"), items: pick(recent: result.recentMovies, allTime: result.movies))
         return (isStudio ? [movies, series] : [series, movies])
             .filter { $0.items.count >= minimumCount }
             .map { (title: $0.title, items: Array($0.items.prefix(rowLimit))) }
@@ -566,7 +566,7 @@ final class StudiosNetworksStore {
     /// Library progress shows until the library is read, then TMDb's.
     private func showMatchingProgress() {
         guard libraryIsRead, status != .ready else { return }
-        progressText = "Matching with TMDb… \(listsLoaded) of \(Self.catalogue.count)"
+        progressText = String(localized: "Matching with TMDb… \(listsLoaded) of \(Self.catalogue.count)", comment: "Studios & Networks first-load progress: brands matched of the total")
     }
 
     // MARK: Poster refresh
@@ -664,7 +664,8 @@ final class StudiosNetworksStore {
         let report: @MainActor (String, Int) -> Void = { [weak self] type, count in
             guard reportsProgress, let self, self.loadedScope == scope else { return }
             self.titlesRead[type] = count
-            self.progressText = "Reading your library… \(self.titlesRead.values.reduce(0, +).formatted()) titles"
+            let titles = self.titlesRead.values.reduce(0, +).formatted()
+            self.progressText = String(localized: "Reading your library… \(titles) titles", comment: "Studios & Networks first-load progress. The count is already formatted, e.g. 1,234")
         }
         async let movies = Self.libraryIndex(type: "movie", report: report)
         async let series = Self.libraryIndex(type: "series", report: report)

@@ -774,11 +774,11 @@ enum TVHeroMetadata {
     private static func episodeNumberLabel(from detail: ItemDetail) -> String? {
         let seasonPart: String?
         if let season = detail.seasonNumber {
-            seasonPart = season == 0 ? "Specials" : "Season \(season)"
+            seasonPart = season == 0 ? String(localized: "Specials") : String(localized: "Season \(String(season))")
         } else {
             seasonPart = nil
         }
-        let episodePart = detail.episodeNumber.flatMap { n in n > 0 ? "Episode \(n)" : nil }
+        let episodePart = detail.episodeNumber.flatMap { n in n > 0 ? String(localized: "Episode \(String(n))") : nil }
 
         switch (seasonPart, episodePart) {
         case let (.some(s), .some(e)): return "\(s) \u{00B7} \(e)"
@@ -824,7 +824,7 @@ enum TVHeroMetadata {
             tokens.append(.text(String(year)))
         }
         if let count = detail.seasonCount, count > 0 {
-            tokens.append(.text("\(count) Season\(count == 1 ? "" : "s")"))
+            tokens.append(.text(String(localized: "\(count) Seasons")))
         }
         return tokens
     }
@@ -911,7 +911,7 @@ enum TVHeroMetadata {
         var facts: [String] = []
         if let year, year > 0 { facts.append(String(year)) }
         if let runtime, runtime > 0 {
-            facts.append(runtime >= 60 ? "\(runtime / 60)h \(runtime % 60)m" : "\(runtime)m")
+            facts.append(runtime >= 60 ? String(localized: "\(runtime / 60)h \(runtime % 60)m") : String(localized: "\(runtime)m"))
         }
         return facts
     }
@@ -949,11 +949,11 @@ enum TVHeroMetadata {
            detail.type == "series" {
             switch status.lowercased() {
             case "continuing", "returning series", "returning":
-                return "Continuing Series"
+                return String(localized: "Continuing Series")
             case "ended":
-                return "Complete Series"
+                return String(localized: "Complete Series")
             case "in production":
-                return "New Season Coming"
+                return String(localized: "New Season Coming")
             default: break
             }
         }
@@ -968,21 +968,23 @@ enum TVHeroMetadata {
                 .filter { $0.job?.caseInsensitiveCompare("Director") == .orderedSame }
                 .map(\.name) ?? []
             guard !directors.isEmpty else { return nil }
-            return "Directed by " + directors.prefix(2).joined(separator: ", ")
+            let names = directors.prefix(2).joined(separator: ", ")
+            return String(localized: "Directed by \(names)")
         }
         guard let cast = detail.cast, !cast.isEmpty else { return nil }
         let names = cast.prefix(3).map(\.name)
         guard !names.isEmpty else { return nil }
-        return "Starring " + names.joined(separator: ", ")
+        let joined = names.joined(separator: ", ")
+        return String(localized: "Starring \(joined)")
     }
 
     // MARK: - Helpers
 
     private static func formatRuntime(_ minutes: Int) -> String {
         if minutes >= 60 {
-            return "\(minutes / 60)h \(minutes % 60)m"
+            return String(localized: "\(minutes / 60)h \(minutes % 60)m")
         }
-        return "\(minutes) min"
+        return String(localized: "\(minutes) min")
     }
 }
 
@@ -1077,13 +1079,13 @@ struct TVPlaybackSelectionSummaryView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             summaryItem(
-                label: "Version",
+                label: String(localized: "Version"),
                 symbol: "square.stack",
                 value: summary.version,
                 placeholderWidth: 84
             )
             summaryItem(
-                label: "Audio",
+                label: String(localized: "Audio"),
                 symbol: "speaker.wave.2",
                 value: summary.audio,
                 placeholderWidth: 84
@@ -1130,7 +1132,7 @@ struct TVPlaybackSelectionSummaryView: View {
         .background(Color.white.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label.capitalized), \(value ?? "loading")")
+        .accessibilityLabel(value.map { Text("\(label), \($0)") } ?? Text("\(label), loading"))
     }
 }
 

@@ -10,9 +10,9 @@ enum PersonMediaFilter: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: "All"
-        case .movies: "Movies"
-        case .series: "Series"
+        case .all: String(localized: "All")
+        case .movies: String(localized: "Movies")
+        case .series: String(localized: "Series")
         }
     }
 
@@ -338,7 +338,7 @@ struct PersonDetailView: View {
                     isScrollGlassEnabled: false,
                     scrollState: topChromeScrollState,
                     leadingSystemName: "chevron.left",
-                    leadingAccessibilityLabel: "Back",
+                    leadingAccessibilityLabel: String(localized: "Back"),
                     onLeadingTap: {
                         if let goBack { goBack() } else { dismiss() }
                     }
@@ -484,7 +484,7 @@ private struct TVPersonDetailContent: View {
                     .buttonStyle(TVSynopsisButtonStyle())
                     .accessibilityHint("Opens the full biography")
                     .fullScreenCover(isPresented: $showsFullBiography) {
-                        TVFullSynopsis(overview: bio, title: "Biography")
+                        TVFullSynopsis(overview: bio, title: String(localized: "Biography"))
                             .presentationBackground(.clear)
                     }
                 }
@@ -884,12 +884,12 @@ private extension Person {
     var personMetadataBadges: [String] {
         var badges: [String] = []
         if let birthDate = formattedPersonDate(birthDate) {
-            badges.append("Born \(birthDate)")
+            badges.append(String(localized: "Born \(birthDate)"))
         }
         if let deathDate = formattedPersonDate(deathDate) {
-            badges.append("Died \(deathDate)")
+            badges.append(String(localized: "Died \(deathDate)"))
         } else if let age = personAge(from: birthDate, to: nil) {
-            badges.append("\(age) years old")
+            badges.append(String(localized: "\(age) years old"))
         }
         if let birthplace = clean(birthplace) {
             badges.append(birthplace)
@@ -900,10 +900,11 @@ private extension Person {
 
 private func personFilmographyCountLabel(total: Int?, loaded: Int, hasMore: Bool) -> String? {
     if let total {
-        return total == 1 ? "1 title" : "\(total) titles"
+        return String(localized: "\(total) titles")
     }
     guard loaded > 0 else { return nil }
-    return hasMore ? "\(loaded)+ titles" : (loaded == 1 ? "1 title" : "\(loaded) titles")
+    // A lower bound, so English keeps "titles" even for "1+ titles".
+    return hasMore ? String(localized: "\(loaded)+ titles") : String(localized: "\(loaded) titles")
 }
 
 private func clean(_ value: String?) -> String? {

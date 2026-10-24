@@ -19,7 +19,7 @@ struct MainTabDestination: Identifiable, Equatable {
     let selectedIcon: String
 
     static func app(_ tab: AppTab) -> MainTabDestination {
-        .init(id: .app(tab), title: tab.rawValue, icon: tab.icon, selectedIcon: tab.selectedIcon)
+        .init(id: .app(tab), title: tab.title, icon: tab.icon, selectedIcon: tab.selectedIcon)
     }
 
 
@@ -438,7 +438,7 @@ struct MainTabView: View {
     }
 
     private var sidebarTitle: String {
-        serverRegistry.activeServer?.displayName ?? "Media Server"
+        serverRegistry.activeServer?.displayName ?? String(localized: "Media Server")
     }
 
     /// iPhone + iPad compact width: bottom tab bar, single navigation stack.

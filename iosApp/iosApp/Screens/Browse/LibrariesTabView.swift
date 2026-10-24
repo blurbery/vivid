@@ -486,10 +486,10 @@ private struct LibrarySelectorButton: View {
     }
 
     private var typeLabel: String {
-        if library.isMixedLibrary { return "Movies & Series" }
-        if library.isSeriesLibrary { return "Series" }
-        if library.type == "movies" { return "Movies" }
-        return "Library"
+        if library.isMixedLibrary { return String(localized: "Movies & Series") }
+        if library.isSeriesLibrary { return String(localized: "Series") }
+        if library.type == "movies" { return String(localized: "Movies") }
+        return String(localized: "Library")
     }
 }
 
@@ -614,9 +614,9 @@ private struct LibraryPickerRow: View {
     /// libraries keep their caption since they stand out from the scope.
     private var typeLabel: String? {
         if scopedCategory != nil && !library.isMixedLibrary { return nil }
-        if library.isMixedLibrary { return "Movies & Series library" }
-        if library.isSeriesLibrary { return "TV library" }
-        if library.type == "movies" { return "Movies library" }
-        return "Library"
+        if library.isMixedLibrary { return String(localized: "Movies & Series library") }
+        if library.isSeriesLibrary { return String(localized: "TV library") }
+        if library.type == "movies" { return String(localized: "Movies library") }
+        return String(localized: "Library")
     }
 }

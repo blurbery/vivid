@@ -153,16 +153,16 @@ struct DownloadOptionsSheet: View {
     private var downloadDetail: String {
         var parts = [manager.qualityLabel(rawValue: chosenQuality), choices.versionLabel]
         if let estimate = choices.estimate(quality: chosenQuality) {
-            parts.append(estimate.isRange ? "\(estimate.sizeLabel) depending on server choice" : estimate.sizeLabel)
+            parts.append(estimate.isRange ? String(localized: "\(estimate.sizeLabel) depending on server choice") : estimate.sizeLabel)
         }
         return parts.joined(separator: " · ")
     }
 
     private var chooseVersionDetail: String {
-        if isEmbyConversion { return "Emby chooses the version for smaller downloads" }
+        if isEmbyConversion { return String(localized: "Emby chooses the version for smaller downloads") }
         guard fileId != nil, let version = choices.effectiveVersion else {
             let candidates = choices.scopedVersions.map(DetailPlaybackFormatting.versionPrimaryText).uniqued()
-            return (["Auto"] + [candidates.prefix(3).joined(separator: ", ")].filter { !$0.isEmpty })
+            return ([String(localized: "Auto")] + [candidates.prefix(3).joined(separator: ", ")].filter { !$0.isEmpty })
                 .joined(separator: " · ")
         }
         return [DetailPlaybackFormatting.versionPrimaryText(version), DetailPlaybackFormatting.versionSecondaryText(version)]
@@ -173,7 +173,7 @@ struct DownloadOptionsSheet: View {
     @ViewBuilder
     private var downloadFooter: some View {
         let warning = isEmbyConversion ? nil : choices.sizeWarning(quality: quality)
-        let note = formats.count > 1 ? nil : "Downloads use original quality. Smaller qualities appear when the server allows download transcoding."
+        let note = formats.count > 1 ? nil : String(localized: "Downloads use original quality. Smaller qualities appear when the server allows download transcoding.")
         if warning != nil || note != nil {
             VStack(alignment: .leading, spacing: 6) {
                 if let warning {
@@ -231,8 +231,8 @@ private struct DownloadVersionChoices {
 
     var versionLabel: String {
         fileId == nil
-            ? "Auto version"
-            : (effectiveVersion.map(DetailPlaybackFormatting.versionPrimaryText) ?? "Selected version")
+            ? String(localized: "Auto version")
+            : (effectiveVersion.map(DetailPlaybackFormatting.versionPrimaryText) ?? String(localized: "Selected version"))
     }
 
     /// Size expectation for what the current selection would download:
@@ -255,12 +255,12 @@ private struct DownloadVersionChoices {
     /// candidate range rather than pretending the size is unknown.
     var autoVersionDetail: String {
         guard let estimate = DownloadSizeEstimate.estimate(versions: versions, fileId: nil) else {
-            return "Let the server choose the file"
+            return String(localized: "Let the server choose the file")
         }
         if estimate.isRange {
-            return "\(estimate.sizeLabel) depending on server choice"
+            return String(localized: "\(estimate.sizeLabel) depending on server choice")
         }
-        return "\(estimate.sizeLabel) · Let the server choose the file"
+        return String(localized: "\(estimate.sizeLabel) · Let the server choose the file")
     }
 
     /// Version rows with a disambiguator appended when two distinct files
@@ -290,15 +290,20 @@ private struct DownloadVersionChoices {
     /// Edition name when the file has one, else a filename fragment — just
     /// enough to tell apart two files whose technical summary reads the same.
     private static func disambiguator(for version: FileVersion) -> String {
+        // Checks the server's edition fields rather than the label alone, as
+        // the label's no-edition fallback may be translated.
         let edition = version.editionDisplayLabel
-        if edition != "Standard" { return edition }
+        let hasEdition = [version.editionRaw, version.edition].contains {
+            !($0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }
+        if hasEdition, edition != "Standard" { return edition }
         if let fragment = version.fileName?
             .components(separatedBy: "/").last?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !fragment.isEmpty {
             return fragment
         }
-        return "File \(version.fileId)"
+        return String(localized: "File \(String(version.fileId))")
     }
 }
 
@@ -370,7 +375,7 @@ private struct DownloadVersionSections: View {
             ForEach(choices.editions) { edition in
                 DownloadChoiceRow(
                     title: edition.label,
-                    detail: "\(edition.versions.count) version\(edition.versions.count == 1 ? "" : "s")",
+                    detail: String(localized: "\(edition.versions.count) versions"),
                     isSelected: choices.currentEdition?.id == edition.id
                 ) {
                     let best = DetailVersionSelection.displayVersion(
@@ -388,7 +393,7 @@ private struct DownloadVersionSections: View {
     private var versionSection: some View {
         Section {
             DownloadChoiceRow(
-                title: "Auto",
+                title: String(localized: "Auto"),
                 detail: choices.autoVersionDetail,
                 isSelected: fileId == nil
             ) {
@@ -427,8 +432,8 @@ private struct DownloadIncludedMediaSection: View {
     var body: some View {
         Section {
             if quality != DownloadFormat.original.rawValue {
-                row(title: "Audio", detail: "Prepared by the server")
-                row(title: "Subtitles", detail: "Available tracks")
+                row(title: "Audio", detail: String(localized: "Prepared by the server"))
+                row(title: "Subtitles", detail: String(localized: "Available tracks"))
             } else if let version = choices.effectiveVersion {
                 row(
                     title: "Audio",
@@ -439,8 +444,8 @@ private struct DownloadIncludedMediaSection: View {
                 )
                 row(title: "Subtitles", detail: subtitleSummary(for: version))
             } else {
-                row(title: "Audio", detail: "File default")
-                row(title: "Subtitles", detail: "Available tracks")
+                row(title: "Audio", detail: String(localized: "File default"))
+                row(title: "Subtitles", detail: String(localized: "Available tracks"))
             }
         } header: {
             Text("Included Media")
@@ -455,16 +460,16 @@ private struct DownloadIncludedMediaSection: View {
 
     private func subtitleSummary(for version: FileVersion) -> String {
         let tracks = version.subtitleTracks ?? []
-        guard !tracks.isEmpty else { return "None" }
+        guard !tracks.isEmpty else { return String(localized: "None") }
         let languages = tracks
             .compactMap { languageDisplayName($0.language) }
             .uniqued()
         if languages.isEmpty {
-            return "\(tracks.count) track\(tracks.count == 1 ? "" : "s")"
+            return String(localized: "\(tracks.count) tracks")
         }
         let shown = languages.prefix(Self.subtitleLanguageDisplayCap).joined(separator: ", ")
         let remainder = languages.count - Self.subtitleLanguageDisplayCap
-        return remainder > 0 ? "\(shown) +\(remainder) more" : shown
+        return remainder > 0 ? String(localized: "\(shown) +\(remainder) more") : shown
     }
 
     private func languageDisplayName(_ value: String?) -> String? {
@@ -479,7 +484,7 @@ private struct DownloadIncludedMediaSection: View {
         return value
     }
 
-    private func row(title: String, detail: String) -> some View {
+    private func row(title: LocalizedStringKey, detail: String) -> some View {
         HStack {
             Text(title)
             Spacer(minLength: 12)

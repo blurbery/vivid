@@ -18,6 +18,9 @@ final class TVHomeMetadataCache {
 
     struct Snapshot: Codable {
         var version = 1
+        /// The language Vivid showed when this was saved, nil for English:
+        /// the row titles Vivid names itself are in it.
+        var language = VividAppLanguage.tmdbLanguage
         var rows: [Row] = []
         var spotlight: [TVHomeSpotlightSlide] = []
         var spotlightUpdatedAt: Date?
@@ -111,7 +114,7 @@ final class TVHomeMetadataCache {
               size <= maximumSnapshotBytes,
               let data = try? Data(contentsOf: url),
               let value = try? JSONDecoder().decode(Snapshot.self, from: data),
-              value.version == 1 else { return nil }
+              value.version == 1, value.language == VividAppLanguage.tmdbLanguage else { return nil }
         return value
     }
 
@@ -271,7 +274,7 @@ final class TVHomeMetadataCache {
     }
 
     var statuses: [Status] {
-        var statuses = [Status(id: Self.spotlightID, title: "Spotlight",
+        var statuses = [Status(id: Self.spotlightID, title: String(localized: "Spotlight"),
                                count: snapshot.spotlight.count, updatedAt: snapshot.spotlightUpdatedAt)]
         let live: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
         let sourceRows = live?.sections ?? snapshot.rows.map(\.section)
@@ -556,7 +559,7 @@ final class TVHomeMetadataCache {
                     guard let self, self.loadedScope == scope,
                           self.generation == expectedGeneration,
                           self.persistenceRevision == revision else { return }
-                    self.storageError = "Couldn’t save the Home cache. It will retry on the next refresh."
+                    self.storageError = String(localized: "Couldn’t save the Home cache. It will retry on the next refresh.")
                 }
             }
         }

@@ -685,7 +685,7 @@ struct MediaRow: View {
         guard showsPlayInContextMenu,
               VividMediaType.isDirectlyPlayable(item.type),
               onItemPlay != nil else { return nil }
-        return (item.positionSeconds ?? 0) > 0 ? "Resume" : "Play"
+        return (item.positionSeconds ?? 0) > 0 ? String(localized: "Resume") : String(localized: "Play")
     }
 
     private func contextDetailAction(for item: SectionItem) -> (() -> Void)? {
@@ -697,12 +697,12 @@ struct MediaRow: View {
         guard onOpenContextDetail != nil else { return nil }
         let type = item.type.lowercased()
         if VividMediaType.isSeries(type) || type == "episode" || type == "season" {
-            return "Go to Series Page"
+            return String(localized: "Go to Series Page")
         }
         if VividMediaType.isMovieLibrary(type) {
-            return "Go to Movie Page"
+            return String(localized: "Go to Movie Page")
         }
-        return "Go to Details"
+        return String(localized: "Go to Details")
     }
 
     private func watchedToggleAction(for item: SectionItem) -> ((Bool) async -> Bool)? {

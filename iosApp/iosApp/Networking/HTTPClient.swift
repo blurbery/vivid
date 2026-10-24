@@ -2394,24 +2394,24 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
     var errorDescription: String? {
         switch self {
         case .serverUrlNotConfigured:
-            return "Server URL is not configured."
+            return String(localized: "Server URL is not configured.")
         case .requestIdentityChanged:
-            return "The active server or profile changed before the request could start."
+            return String(localized: "The active server or profile changed before the request could start.")
         case .invalidURL(let url):
-            return "Invalid URL: \(url)"
+            return String(localized: "Invalid URL: \(url)")
         case .invalidResponse:
-            return "Invalid server response."
+            return String(localized: "Invalid server response.")
         case .network(let error):
-            return "Network error: \(error.localizedDescription)"
+            return String(localized: "Network error: \(error.localizedDescription)")
         case .encodingFailed(let error):
-            return "Failed to encode request body: \(error.localizedDescription)"
+            return String(localized: "Failed to encode request body: \(error.localizedDescription)")
         case .decodingFailed(let type, let error):
-            return "Failed to decode \(type): \(error.localizedDescription)"
+            return String(localized: "Failed to decode \(type): \(error.localizedDescription)")
         case .http(let statusCode, let body):
             if let message = Self.parseServerMessage(body) {
                 return message
             }
-            return "Server returned status \(statusCode)"
+            return String(localized: "Server returned status \(statusCode)")
         }
     }
 

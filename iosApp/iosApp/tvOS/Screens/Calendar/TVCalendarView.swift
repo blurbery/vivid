@@ -6,7 +6,16 @@ import SwiftUI
 /// A–Z. One scroll view holds both sub-tabs, so the tab row stays mounted and
 /// keeps focus when the selection changes.
 struct TVCalendarView: View {
-    enum Page: String, CaseIterable { case upcoming = "Upcoming", trending = "Trending" }
+    enum Page: String, CaseIterable {
+        case upcoming = "Upcoming", trending = "Trending"
+
+        var title: String {
+            switch self {
+            case .upcoming: String(localized: "Upcoming")
+            case .trending: String(localized: "Trending")
+            }
+        }
+    }
 
     @Binding var page: Page
     let focusRequest: Int
@@ -84,7 +93,7 @@ struct TVCalendarView: View {
                 Button {
                     page = tab
                 } label: {
-                    Text(tab.rawValue)
+                    Text(tab.title)
                         .font(.system(size: 26, weight: .semibold))
                         .padding(.horizontal, 22)
                         .padding(.vertical, 10)
@@ -136,8 +145,8 @@ struct TVCalendarView: View {
             } else {
                 EmptyStateView(
                     icon: store.upcomingFailed ? "wifi.exclamationmark" : "calendar",
-                    title: store.upcomingFailed ? "Couldn't load your calendar" : "Nothing airing soon",
-                    subtitle: store.upcomingFailed ? "Try again in a moment." : "New episodes of shows in your Continue Watching, Watchlist and history appear here."
+                    title: Text(store.upcomingFailed ? "Couldn't load your calendar" : "Nothing airing soon"),
+                    subtitle: Text(store.upcomingFailed ? "Try again in a moment." : "New episodes of shows in your Continue Watching, Watchlist and history appear here.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 360)
                 .focusable()
@@ -172,8 +181,8 @@ struct TVCalendarView: View {
     static func dayTitle(_ day: Date) -> String {
         let date = day.formatted(.dateTime.weekday(.wide).day().month(.wide))
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Today · \(date)".uppercased() }
-        if calendar.isDateInTomorrow(day) { return "Tomorrow · \(date)".uppercased() }
+        if calendar.isDateInToday(day) { return String(localized: "Today · \(date)").uppercased() }
+        if calendar.isDateInTomorrow(day) { return String(localized: "Tomorrow · \(date)").uppercased() }
         return date.uppercased()
     }
 
@@ -187,8 +196,8 @@ struct TVCalendarView: View {
             } else {
                 EmptyStateView(
                     icon: store.trendingFailed ? "wifi.exclamationmark" : "sparkles",
-                    title: store.trendingFailed ? "Couldn't load what's coming" : "Nothing coming soon",
-                    subtitle: store.trendingFailed ? "Try again in a moment." : nil
+                    title: Text(store.trendingFailed ? "Couldn't load what's coming" : "Nothing coming soon"),
+                    subtitle: store.trendingFailed ? Text("Try again in a moment.") : nil
                 )
                 .frame(maxWidth: .infinity, minHeight: 360)
                 .focusable()
@@ -223,7 +232,7 @@ struct TVCalendarView: View {
     }
 
     @ViewBuilder
-    private func trendingRail(_ heading: String, titles: [TrendingTitle]) -> some View {
+    private func trendingRail(_ heading: LocalizedStringKey, titles: [TrendingTitle]) -> some View {
         if !titles.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
                 Text(heading)
@@ -271,8 +280,8 @@ private struct TVUpcomingEpisodeCard: View {
 
     private var episodeLine: String {
         var parts: [String] = []
-        if let season = episode.season { parts.append("S\(season)") }
-        if let number = episode.number { parts.append("E\(number)") }
+        if let season = episode.season { parts.append(String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1")) }
+        if let number = episode.number { parts.append(String(localized: "E\(String(number))", comment: "Episode number in an episode code, e.g. E2")) }
         if let name = episode.name, !name.isEmpty { parts.append(name) }
         return parts.joined(separator: " · ")
     }
@@ -305,7 +314,7 @@ private struct TVUpcomingEpisodeCard: View {
                         TVCalendarChip(text: airsAt.formatted(date: .omitted, time: .shortened))
                     }
                     if episode.isPremiere {
-                        TVCalendarChip(text: "Premiere", tint: .vividBrandOrange)
+                        TVCalendarChip(text: String(localized: "Premiere"), tint: .vividBrandOrange)
                     }
                     TVCalendarChip(text: episode.source.label)
                 }
@@ -348,17 +357,22 @@ private struct TVTrendingPoster: View {
         VStack(alignment: .leading, spacing: 20) {
             Button(action: action) { artwork }
                 .buttonStyle(.card)
-                .accessibilityLabel("\(title.title), \(title.kind == .movie ? "movie" : "series"), \(title.day.formatted(.dateTime.day().month(.wide)))")
+                .accessibilityLabel(spokenLabel)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.title)
                     .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(title.kind == .movie ? "Movie" : "Series")
+                Text(title.kind == .movie ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series"))
                     .font(.system(size: 19))
                     .foregroundStyle(Color.vividSecondaryText)
             }
         }
+    }
+
+    private var spokenLabel: Text {
+        let day = title.day.formatted(.dateTime.day().month(.wide))
+        return title.kind == .movie ? Text("\(title.title), movie, \(day)") : Text("\(title.title), series, \(day)")
     }
 
     private var artwork: some View {
@@ -395,7 +409,7 @@ private struct TVTrendingTitleSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             VStack(alignment: .leading, spacing: 16) {
                 Text(title.title).font(.system(size: 52, weight: .bold)).foregroundStyle(.white)
-                Text(title.kind == .movie ? "Movie" : "Series").font(.system(size: 26)).foregroundStyle(Color.vividSecondaryText)
+                Text(title.kind == .movie ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")).font(.system(size: 26)).foregroundStyle(Color.vividSecondaryText)
                 Text(title.kind == .movie ? "Out \(title.day.formatted(date: .long, time: .omitted))" : "Premieres \(title.day.formatted(date: .long, time: .omitted))")
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
@@ -419,9 +433,9 @@ private struct TVTrendingTitleSheet: View {
 private struct TVCalendarMonthSheet: View {
     let markedDays: Set<Date>
     let windowDays: Int
-    let caption: String
+    let caption: LocalizedStringKey
     /// What VoiceOver says for a day with a dot.
-    let markedValue: String
+    let markedValue: LocalizedStringKey
     let onPick: (Date) -> Void
 
     @State private var month = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
@@ -476,7 +490,7 @@ private struct TVCalendarMonthSheet: View {
         .padding(60)
     }
 
-    private func monthButton(_ symbol: String, label: String, enabled: Bool, by offset: Int) -> some View {
+    private func monthButton(_ symbol: String, label: LocalizedStringKey, enabled: Bool, by offset: Int) -> some View {
         Button {
             if let next = calendar.date(byAdding: .month, value: offset, to: month) { month = next }
         } label: {

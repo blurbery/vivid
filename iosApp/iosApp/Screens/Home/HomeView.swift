@@ -276,7 +276,7 @@ struct HomeView: View {
         ) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(viewModel.actionError?.message ?? "The item could not be updated. Try again.")
+            Text(viewModel.actionError?.message ?? String(localized: "The item could not be updated. Try again."))
         }
     }
 

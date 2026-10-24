@@ -191,9 +191,9 @@ struct TVCloudRestoreView: View {
             if !TVSavedAccountStore.shared.accounts.isEmpty {
                 onRestored()
             } else if VividCloudAccountSync.shared.bootstrapFailed {
-                message = "Couldn’t restore from iCloud. Try again, or go back to set up your server manually."
+                message = String(localized: "Couldn’t restore from iCloud. Try again, or go back to set up your server manually.")
             } else {
-                message = "No saved accounts are available from iCloud. Go back to set up your server manually."
+                message = String(localized: "No saved accounts are available from iCloud. Go back to set up your server manually.")
             }
         }
     }

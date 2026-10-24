@@ -27,7 +27,7 @@ struct RequestsHubView: View {
         .vividNavigationTitleDisplayMode(.inline)
         .vividToolbarColorSchemeDark()
         .vividNavigationBarSurfaceBackground()
-        .vividSearchable(text: $viewModel.query, prompt: "Search movies & series to request")
+        .vividSearchable(text: $viewModel.query, prompt: String(localized: "Search movies & series to request"))
         .task {
             await viewModel.load()
         }

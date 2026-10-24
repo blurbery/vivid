@@ -38,7 +38,7 @@ struct PlaybackSettingsView: View {
             }
             .foregroundStyle(Color.vividOnSurface)
 
-            LabeledContent("Buffer Ahead", value: "Automatic")
+            LabeledContent("Buffer Ahead", value: String(localized: "Automatic"))
                 .foregroundStyle(Color.vividOnSurface)
 
             Text(BufferAheadMode.explanation)
@@ -94,7 +94,7 @@ struct PlaybackSettingsView: View {
             NavigationLink {
                 boostLevelChoices
             } label: {
-                LabeledContent("Boost Level", value: "\(viewModel.volumeBoostPercent)%")
+                LabeledContent("Boost Level", value: viewModel.volumeBoostPercent.formatted(.percent))
             }
             .foregroundStyle(Color.vividOnSurface)
             .disabled(!viewModel.volumeBoostEnabled)
@@ -124,7 +124,7 @@ struct PlaybackSettingsView: View {
     }
 
     private var audioLanguageUnsetLabel: String {
-        SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel ?? "No preference"
+        SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.displayUnsetLabel ?? String(localized: "No preference")
     }
 
     private var audioLanguageLabel: String {
@@ -150,7 +150,7 @@ struct PlaybackSettingsView: View {
     private var boostLevelChoices: some View {
         PlaybackOptionPage<Int>(
             title: "Boost Level",
-            options: VividAudioEnhancement.boostLevels.map { .init(value: $0, label: "\($0)%") },
+            options: VividAudioEnhancement.boostLevels.map { .init(value: $0, label: $0.formatted(.percent)) },
             selection: Binding(
                 get: { viewModel.volumeBoostPercent },
                 set: { percent in
@@ -163,7 +163,7 @@ struct PlaybackSettingsView: View {
 
     private var nextUpPromptLabel: String {
         nextUpPromptOptions.first { $0.0 == viewModel.nextUpPromptSeconds }?.1
-            ?? "\(viewModel.nextUpPromptSeconds) seconds before end"
+            ?? String(localized: "\(viewModel.nextUpPromptSeconds) seconds before end")
     }
 
     private var nextUpPromptChoices: some View {
@@ -331,11 +331,11 @@ struct PlaybackSettingsView: View {
 
     private var nextUpPromptOptions: [(Int, String)] {
         [
-            (0, "At end"),
-            (10, "10 seconds before end"),
-            (30, "30 seconds before end"),
-            (60, "1 minute before end"),
-            (120, "2 minutes before end"),
+            (0, String(localized: "At end")),
+            (10, String(localized: "10 seconds before end")),
+            (30, String(localized: "30 seconds before end")),
+            (60, String(localized: "1 minute before end")),
+            (120, String(localized: "2 minutes before end")),
         ]
     }
 }
@@ -349,14 +349,27 @@ private struct PlaybackOptionPage<Value: Hashable>: View {
         var id: Value { value }
     }
 
-    let title: String
+    private let title: Text
     let options: [Option]
     @Binding var selection: Value
     @Environment(\.dismiss) private var dismiss
 
+    init(title: LocalizedStringKey, options: [Option], selection: Binding<Value>) {
+        self.title = Text(title)
+        self.options = options
+        self._selection = selection
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, options: [Option], selection: Binding<Value>) {
+        self.title = Text(title)
+        self.options = options
+        self._selection = selection
+    }
+
     var body: some View {
         List {
-            Picker(title, selection: Binding(
+            Picker(selection: Binding(
                 get: { selection },
                 set: { newValue in
                     selection = newValue
@@ -366,6 +379,8 @@ private struct PlaybackOptionPage<Value: Hashable>: View {
                 ForEach(options) { option in
                     Text(option.label).tag(option.value)
                 }
+            } label: {
+                title
             }
             .pickerStyle(.inline)
             .foregroundStyle(Color.vividOnSurface)

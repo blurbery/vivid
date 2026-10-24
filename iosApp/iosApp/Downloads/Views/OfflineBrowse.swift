@@ -32,7 +32,7 @@ struct OfflineSeriesBrowseView: View {
             }
         }
         .vividPageBackground()
-        .navigationTitle(group?.title ?? "Series")
+        .navigationTitle(group?.title ?? String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series"))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -66,7 +66,7 @@ struct OfflineSeriesBrowseView: View {
                     posterURL: group.allRecords.lazy
                         .compactMap { manager.posterImageURL(for: $0) }
                         .first,
-                    availability: "Downloaded · \(group.episodeCount) episode\(group.episodeCount == 1 ? "" : "s") · \(DownloadFormatting.bytes(group.totalBytes))",
+                    availability: String(localized: "Downloaded · \(group.episodeCount) episodes · \(DownloadFormatting.bytes(group.totalBytes))"),
                     isMonitored: group.isMonitored,
                     playTitle: playTitle(season),
                     onPlay: { if let record = playTarget(season) { play(record) } }
@@ -105,7 +105,7 @@ struct OfflineSeriesBrowseView: View {
                     Button {
                         selectedSeasonNumber = season.seasonNumber
                     } label: {
-                        Text(season.isSpecials ? "Specials" : "Season \(season.seasonNumber)")
+                        Text(season.isSpecials ? "Specials" : "Season \(String(season.seasonNumber))")
                             .font(.system(size: 13.5, weight: .semibold))
                             .foregroundColor(isSelected ? .vividOnSurface : .vividSecondaryText)
                             .padding(.horizontal, 14)
@@ -154,7 +154,9 @@ struct OfflineSeriesBrowseView: View {
 
     private func heroEyebrow(_ group: DownloadSeriesGroup) -> String {
         let seasons = group.seasonCount
-        return seasons > 1 ? "Series · \(seasons) seasons" : "Series"
+        return seasons > 1
+            ? String(localized: "Series · \(seasons) seasons", comment: "Eyebrow above a downloaded series' title, e.g. Series · 3 seasons")
+            : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
     }
 
     private func playTarget(_ season: DownloadSeasonGroup?) -> DownloadRecord? {
@@ -162,18 +164,22 @@ struct OfflineSeriesBrowseView: View {
         return season.records.first(where: { !manager.isWatched($0) }) ?? season.records.first
     }
 
+    /// Whole phrases rather than "Play" plus a tag, so translators can
+    /// reorder them.
     private func playTitle(_ season: DownloadSeasonGroup?) -> String {
-        guard let record = playTarget(season) else { return "Play" }
-        if manager.localProgress(forMediaItemId: record.leafMediaItemId)?.position ?? 0 > 30 {
-            return "Resume\(episodeTag(record))"
+        guard let record = playTarget(season) else { return String(localized: "Play") }
+        let resume = manager.localProgress(forMediaItemId: record.leafMediaItemId)?.position ?? 0 > 30
+        guard let episode = record.episodeNumber else {
+            return resume ? String(localized: "Resume") : String(localized: "Play")
         }
-        return "Play\(episodeTag(record))"
-    }
-
-    private func episodeTag(_ record: DownloadRecord) -> String {
-        guard let episode = record.episodeNumber else { return "" }
-        if let season = record.seasonNumber, season > 0 { return " S\(season)·E\(episode)" }
-        return " E\(episode)"
+        if let season = record.seasonNumber, season > 0 {
+            return resume
+                ? String(localized: "Resume S\(String(season))·E\(String(episode))", comment: "Button that resumes a season and episode, e.g. Resume S1·E4")
+                : String(localized: "Play S\(String(season))·E\(String(episode))", comment: "Button that plays a season and episode, e.g. Play S1·E4")
+        }
+        return resume
+            ? String(localized: "Resume E\(String(episode))", comment: "Button that resumes an episode, e.g. Resume E4")
+            : String(localized: "Play E\(String(episode))", comment: "Button that plays an episode, e.g. Play E4")
     }
 
     private func play(_ record: DownloadRecord) {
@@ -394,7 +400,10 @@ struct OfflineDownloadDetailView: View {
 
     private func episodeEyebrow(_ record: DownloadRecord) -> String {
         let series = (record.seriesTitle ?? manifest?.seriesTitle ?? "").uppercased()
-        let tag = [record.seasonNumber.map { "S\($0)" }, record.episodeNumber.map { "E\($0)" }]
+        let tag = [
+            record.seasonNumber.map { String(localized: "S\(String($0))", comment: "Season number abbreviation, e.g. S1") },
+            record.episodeNumber.map { String(localized: "E\(String($0))", comment: "Episode number abbreviation, e.g. E4") }
+        ]
             .compactMap { $0 }
             .joined(separator: " · ")
         return [series, tag].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -402,13 +411,13 @@ struct OfflineDownloadDetailView: View {
 
     private func metaLine(_ record: DownloadRecord) -> String {
         var parts: [String] = []
-        if let runtime = manifest?.runtime, runtime > 0 { parts.append("\(runtime) min") }
+        if let runtime = manifest?.runtime, runtime > 0 { parts.append(String(localized: "\(runtime) min")) }
         if let year = manifest?.year { parts.append(String(year)) }
         return parts.joined(separator: " · ")
     }
 
     private func availabilityText(_ record: DownloadRecord) -> String {
-        var parts = ["Downloaded", DownloadFormatting.bytes(record.fileSize)]
+        var parts = [String(localized: "Downloaded"), DownloadFormatting.bytes(record.fileSize)]
         if let resolution = manifest?.resolution, !resolution.isEmpty { parts.append(resolution) }
         return parts.joined(separator: " · ")
     }
@@ -416,7 +425,7 @@ struct OfflineDownloadDetailView: View {
     private func factRows(_ record: DownloadRecord) -> [(String, String)] {
         var rows: [(String, String)] = []
         if let audio = manifest?.codecAudio, !audio.isEmpty {
-            rows.append(("Audio", audio.uppercased()))
+            rows.append((String(localized: "Audio"), audio.uppercased()))
         }
 
         var quality: [String] = []
@@ -430,25 +439,25 @@ struct OfflineDownloadDetailView: View {
            !delivery.isEmpty {
             quality.append(deliveryDisplayName(delivery))
         }
-        if !quality.isEmpty { rows.append(("Quality", quality.joined(separator: " · "))) }
+        if !quality.isEmpty { rows.append((String(localized: "Quality"), quality.joined(separator: " · "))) }
         if let date = record.downloadedAt {
-            rows.append(("Downloaded", date.formatted(date: .abbreviated, time: .omitted)))
+            rows.append((String(localized: "Downloaded"), date.formatted(date: .abbreviated, time: .omitted)))
         }
         return rows
     }
 
     private func deliveryDisplayName(_ raw: String) -> String {
         switch raw {
-        case "remux": return "Remux"
-        case "transcode": return "Transcode"
+        case "remux": return String(localized: "Remux")
+        case "transcode": return String(localized: "Transcode")
         default: return raw.capitalized
         }
     }
 
     private func playLabel(_ record: DownloadRecord) -> String {
         guard let progress = manager.localProgress(forMediaItemId: record.leafMediaItemId),
-              progress.position > 30 else { return "Play" }
-        return "Resume \(PlayerTimeFormatter.formatHMS(progress.position))"
+              progress.position > 30 else { return String(localized: "Play") }
+        return String(localized: "Resume \(PlayerTimeFormatter.formatHMS(progress.position))", comment: "Button that resumes from a time, e.g. Resume 1:02:30")
     }
 
     private func resumeFraction(_ record: DownloadRecord) -> Double? {

@@ -46,8 +46,8 @@ struct PreparedPlayback {
 
     var displayTitle: String {
         if watchDetail.type == "episode" {
-            let season = watchDetail.seasonNumber.map { "S\($0)" } ?? nil
-            let episode = watchDetail.episodeNumber.map { "E\($0)" } ?? nil
+            let season = watchDetail.seasonNumber.map { String(localized: "S\(String($0))", comment: "Season number, abbreviated, for example S2") } ?? nil
+            let episode = watchDetail.episodeNumber.map { String(localized: "E\(String($0))", comment: "Episode number, abbreviated, for example E3") } ?? nil
             let episodeTag = [season, episode].compactMap { $0 }.joined()
 
             if let seriesTitle = watchDetail.seriesTitle, !seriesTitle.isEmpty, !episodeTag.isEmpty {
@@ -66,8 +66,8 @@ struct PreparedPlayback {
         let isEpisode = watchDetail.type == "episode"
         let episodeTag: String? = {
             guard isEpisode else { return nil }
-            let s = watchDetail.seasonNumber.map { "S\($0)" }
-            let e = watchDetail.episodeNumber.map { "E\($0)" }
+            let s = watchDetail.seasonNumber.map { String(localized: "S\(String($0))", comment: "Season number, abbreviated, for example S2") }
+            let e = watchDetail.episodeNumber.map { String(localized: "E\(String($0))", comment: "Episode number, abbreviated, for example E3") }
             let joined = [s, e].compactMap { $0 }.joined(separator: " · ")
             return joined.isEmpty ? nil : joined
         }()

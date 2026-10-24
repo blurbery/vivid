@@ -207,10 +207,10 @@ extension PlayerViewModel {
 
     private func showServerBurnInNotice(temporary: Bool = false) {
         showNotice(
-            title: "Couldn't show subtitles",
+            title: String(localized: "Couldn't show subtitles"),
             message: temporary
-                ? "The server didn't add this subtitle this time, so subtitles are off. Choose it again to retry."
-                : "The server couldn't add this subtitle to the video, so subtitles are off.",
+                ? String(localized: "The server didn't add this subtitle this time, so subtitles are off. Choose it again to retry.")
+                : String(localized: "The server couldn't add this subtitle to the video, so subtitles are off."),
             tone: .warning,
             duration: 6
         )

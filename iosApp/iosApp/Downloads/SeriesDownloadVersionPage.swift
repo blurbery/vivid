@@ -14,10 +14,11 @@ struct SeriesDownloadVersion: Hashable {
     /// "All 8 episodes · about 85.69 GB" or "6 of 8 episodes".
     var detail: String {
         let count = episodes == totalEpisodes
-            ? "All \(totalEpisodes) episode\(totalEpisodes == 1 ? "" : "s")"
-            : "\(episodes) of \(totalEpisodes) episodes"
+            ? String(localized: "All \(totalEpisodes) episodes")
+            : String(localized: "\(episodes) of \(totalEpisodes) episodes")
         guard bytes > 0 else { return count }
-        return "\(count) · about \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))"
+        let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        return String(localized: "\(count) · about \(size)")
     }
 
     /// One entry per version among the episodes' files, highest first. The
@@ -50,7 +51,7 @@ struct SeriesDownloadVersion: Hashable {
             return "\(match.title) · \(match.detail)"
         }
         let names = versions.prefix(3).map(\.title).joined(separator: ", ")
-        return names.isEmpty ? "Auto" : "Auto · \(names)"
+        return names.isEmpty ? String(localized: "Auto") : String(localized: "Auto · \(names)")
     }
 }
 
@@ -70,8 +71,8 @@ struct SeriesDownloadVersionPage: View {
         Form {
             Section {
                 DownloadChoiceRow(
-                    title: "Auto",
-                    detail: "Each episode uses the server's usual file",
+                    title: String(localized: "Auto"),
+                    detail: String(localized: "Each episode uses the server's usual file"),
                     isSelected: version == nil
                 ) {
                     version = nil

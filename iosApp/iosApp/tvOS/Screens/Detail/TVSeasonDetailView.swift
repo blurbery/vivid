@@ -122,10 +122,10 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     private var actionRow: some View {
         TVDetailActionRow(
             playTitle: nextUpEpisode.map {
-                $0.userData?.isInProgress == true ? "Resume" : "Play"
+                $0.userData?.isInProgress == true ? String(localized: "Resume") : String(localized: "Play")
             },
             playSubtitle: nextUpEpisode.map(playButtonSubtitle(for:)),
-            resumeProgress: ResumePresentation(position: nextUpEpisode?.userData?.positionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" }),
+            resumeProgress: ResumePresentation(position: nextUpEpisode?.userData?.positionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map(Self.episodeCode)),
             onPlay: {
                 guard let nextUp = nextUpEpisode else { return }
                 onPlayEpisode(nextUp.contentId, selectedNextUpFileId, false)
@@ -221,7 +221,13 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     }
 
     private func playButtonSubtitle(for episode: EpisodeListItem) -> String {
-        "S\(episode.seasonNumber):E\(episode.episodeNumber)"
+        String(localized: "S\(String(episode.seasonNumber)):E\(String(episode.episodeNumber))")
+    }
+
+    /// "S1 E2", built like the episode cards' code.
+    private static func episodeCode(_ episode: EpisodeListItem) -> String {
+        String(localized: "S\(String(episode.seasonNumber))", comment: "Season number in an episode code, e.g. S1") + " "
+            + String(localized: "E\(String(episode.episodeNumber))", comment: "Episode number in an episode code, e.g. E2")
     }
 
     private var effectiveNextUpVersion: FileVersion? {
@@ -242,9 +248,9 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     private var sourceTokens: [String] {
         var tokens: [String] = []
         if let count = detail.episodeCount, count > 0 {
-            tokens.append("\(count) Episode\(count == 1 ? "" : "s")")
+            tokens.append(String(localized: "\(count) Episodes"))
         } else if !episodes.isEmpty {
-            tokens.append("\(episodes.count) Episode\(episodes.count == 1 ? "" : "s")")
+            tokens.append(String(localized: "\(episodes.count) Episodes"))
         }
         if let genres = detail.genres, !genres.isEmpty {
             tokens.append(contentsOf: genres.prefix(2))

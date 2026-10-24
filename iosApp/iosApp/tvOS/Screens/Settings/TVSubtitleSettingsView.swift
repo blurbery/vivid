@@ -12,14 +12,15 @@ struct TVSubtitleSettingsPane: View {
             profileSection
             appearanceSection
         }
-        .alert("Reset Custom Appearance?", isPresented: $showResetConfirmation) {
-            Button("Reset", role: .destructive) {
-                Task { await viewModel.resetSubtitleAppearance() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This restores all custom subtitle appearance options to their defaults.")
-        }
+        .tvSystemAlert(
+            "Reset Custom Appearance?",
+            isPresented: $showResetConfirmation,
+            message: "This restores all custom subtitle appearance options to their defaults.",
+            buttons: [
+                .destructive("Reset") { Task { await viewModel.resetSubtitleAppearance() } },
+                .cancel("Cancel"),
+            ]
+        )
     }
 
     // MARK: - Sections
@@ -122,7 +123,7 @@ struct TVSubtitleSettingsPane: View {
                 TVSettingsOptionMenu(
                     title: "Background Opacity",
                     value: viewModel.subtitleAppearance.backgroundStyle == .box
-                        ? "\(viewModel.subtitleAppearance.backgroundOpacity)%"
+                        ? String(localized: "\(viewModel.subtitleAppearance.backgroundOpacity)%")
                         : "—",
                     options: pickerRequest(for: .backgroundOpacity).options,
                     selection: pickerRequest(for: .backgroundOpacity).selection
@@ -166,19 +167,19 @@ struct TVSubtitleSettingsPane: View {
     private var appearanceFooterText: String {
         let source: String
         if viewModel.subtitleMatchesSystemAppearance {
-            source = "Following this Apple TV's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Settings → Accessibility."
+            source = String(localized: "Following this Apple TV's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Settings → Accessibility.")
         } else if viewModel.subtitleUsesDeviceAppearanceOverride {
-            source = "Appearance is saved in Vivid for this profile on this Apple TV."
+            source = String(localized: "Appearance is saved in Vivid for this profile on this Apple TV.")
         } else {
-            source = "Using Vivid’s default subtitle appearance."
+            source = String(localized: "Using Vivid’s default subtitle appearance.")
         }
-        return source + " Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement."
+        return String(localized: "\(source) Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
     }
 
     // MARK: - Rows
 
     private func pickerRow(
-        _ title: String,
+        _ title: LocalizedStringResource,
         options: [TVSettingsOption],
         selection: String,
         kind: PickerKind

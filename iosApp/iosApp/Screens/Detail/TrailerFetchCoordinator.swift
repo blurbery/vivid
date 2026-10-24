@@ -67,15 +67,15 @@ final class TrailerFetchCoordinator {
     var statusMessage: String? {
         switch phase {
         case .idle, .found: return nil
-        case .requesting, .polling: return "Finding trailers…"
-        case .cooldown: return "Trailers were checked recently"
-        case .disabled: return "Trailers are disabled for this library"
-        case .foundUnplayable: return "No playable trailers here"
-        case .exhausted: return "No trailers found"
+        case .requesting, .polling: return String(localized: "Finding trailers…")
+        case .cooldown: return String(localized: "Trailers were checked recently")
+        case .disabled: return String(localized: "Trailers are disabled for this library")
+        case .foundUnplayable: return String(localized: "No playable trailers here")
+        case .exhausted: return String(localized: "No trailers found")
         case .requestFailed(let rateLimited):
             return rateLimited
-                ? "Please wait a moment and try again"
-                : "Couldn't reach the server — try again"
+                ? String(localized: "Please wait a moment and try again")
+                : String(localized: "Couldn't reach the server — try again")
         }
     }
 

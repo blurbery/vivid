@@ -12,25 +12,29 @@ enum AuroraFieldKeyboard { case `default`, url, email, number }
 // MARK: - Field label
 
 struct AuroraFieldLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
+    private let text: Text
+    init(_ text: LocalizedStringKey) { self.text = Text(text) }
+    @_disfavoredOverload init<S: StringProtocol>(_ text: S) { self.text = Text(text) }
+    init(_ text: Text) { self.text = text }
     var body: some View {
-        Text(text.uppercased())
+        text
             .font(.system(size: 12, weight: .semibold, design: .monospaced))
             .tracking(1.6)
             .foregroundStyle(Color.auroraInkTertiary)
+            .textCase(.uppercase)
     }
 }
 
 // MARK: - Inline error row
 
 struct AuroraErrorLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
+    private let text: Text
+    init(_ text: LocalizedStringKey) { self.text = Text(text) }
+    @_disfavoredOverload init<S: StringProtocol>(_ text: S) { self.text = Text(text) }
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
-            Text(text)
+            text
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.vividCaption)
@@ -48,9 +52,9 @@ struct AuroraErrorLabel: View {
 // the live `TextField`/`SecureField` owns caret, selection, and keyboard.
 
 struct AuroraTextField<F: Hashable>: View {
-    let label: String
+    private let label: Text
     @Binding var text: String
-    var placeholder: String = ""
+    private let placeholder: Text
     var focus: FocusState<F?>.Binding
     var equals: F
     var isSecure: Bool = false
@@ -59,6 +63,44 @@ struct AuroraTextField<F: Hashable>: View {
     var keyboard: AuroraFieldKeyboard = .default
     var submitLabel: SubmitLabel = .next
     var onSubmit: () -> Void = {}
+
+    init(label: LocalizedStringKey, text: Binding<String>, placeholder: LocalizedStringKey? = nil,
+         focus: FocusState<F?>.Binding, equals: F, isSecure: Bool = false, showsRevealToggle: Bool = false,
+         contentType: AuroraFieldContentType? = nil, keyboard: AuroraFieldKeyboard = .default,
+         submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void = {}) {
+        self.init(label: Text(label), text: text, placeholder: placeholder.map { Text($0) } ?? Text(verbatim: ""),
+                  focus: focus, equals: equals, isSecure: isSecure, showsRevealToggle: showsRevealToggle,
+                  contentType: contentType, keyboard: keyboard, submitLabel: submitLabel, onSubmit: onSubmit)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(label: S, text: Binding<String>, placeholder: String = "",
+                            focus: FocusState<F?>.Binding, equals: F, isSecure: Bool = false, showsRevealToggle: Bool = false,
+                            contentType: AuroraFieldContentType? = nil, keyboard: AuroraFieldKeyboard = .default,
+                            submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void = {}) {
+        self.init(label: Text(label), text: text, placeholder: Text(placeholder),
+                  focus: focus, equals: equals, isSecure: isSecure, showsRevealToggle: showsRevealToggle,
+                  contentType: contentType, keyboard: keyboard, submitLabel: submitLabel, onSubmit: onSubmit)
+    }
+
+    /// Mixes a localised and a verbatim string, e.g. `Text("Label")` and `Text(value)`.
+    init(label: Text, text: Binding<String>, placeholder: Text = Text(verbatim: ""),
+         focus: FocusState<F?>.Binding, equals: F, isSecure: Bool = false, showsRevealToggle: Bool = false,
+         contentType: AuroraFieldContentType? = nil, keyboard: AuroraFieldKeyboard = .default,
+         submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void = {}) {
+        self.label = label
+        self._text = text
+        self.placeholder = placeholder
+        self.focus = focus
+        self.equals = equals
+        self.isSecure = isSecure
+        self.showsRevealToggle = showsRevealToggle
+        self.contentType = contentType
+        self.keyboard = keyboard
+        self.submitLabel = submitLabel
+        self.onSubmit = onSubmit
+    }
 
     @State private var reveal = false
     private var isFocused: Bool { focus.wrappedValue == equals }
@@ -70,12 +112,12 @@ struct AuroraTextField<F: Hashable>: View {
             HStack(spacing: 10) {
                 ZStack(alignment: .leading) {
                     if text.isEmpty {
-                        Text(placeholder)
+                        placeholder
                             .foregroundStyle(isFocused ? AuroraControl.activePlaceholder : Color.auroraInkTertiary)
                             .allowsHitTesting(false)
                     }
                     inputField
-                        .accessibilityLabel(Text(label))
+                        .accessibilityLabel(label)
                         .focused(focus, equals: equals)
                         .foregroundStyle(isFocused ? AuroraControl.activeInk : Color.auroraInk)
                         .tint(isFocused ? AuroraControl.activeInk : Color.auroraAccent)

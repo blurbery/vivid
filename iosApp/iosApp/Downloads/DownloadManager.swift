@@ -26,11 +26,11 @@ enum DownloadError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "Downloads aren't available for this profile."
-        case .fileURLUnavailable: return "Could not resolve the download URL."
-        case .emptyRegistrationResponse: return "The server didn't create a download."
-        case .registrationAlreadyInFlight: return "This download is already being prepared."
-        case .scopeChangedDuringRegistration: return "The active profile changed before the download could start."
+        case .unavailable: return String(localized: "Downloads aren't available for this profile.")
+        case .fileURLUnavailable: return String(localized: "Could not resolve the download URL.")
+        case .emptyRegistrationResponse: return String(localized: "The server didn't create a download.")
+        case .registrationAlreadyInFlight: return String(localized: "This download is already being prepared.")
+        case .scopeChangedDuringRegistration: return String(localized: "The active profile changed before the download could start.")
         }
     }
 
@@ -249,13 +249,6 @@ final class DownloadManager {
 
     func qualityLabel(rawValue: String) -> String {
         DownloadFormat(rawValue: rawValue).map(qualityLabel) ?? rawValue
-    }
-
-    /// "About 4.59 GB per hour" for a smaller preset, nil for original.
-    static func sizePerHour(_ format: DownloadFormat) -> String? {
-        StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600)
-            // Not `DownloadFormatting`, which only the iOS views compile.
-            .map { "About \(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)) per hour" }
     }
 
     var availableFormats: [DownloadFormat] {

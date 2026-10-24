@@ -81,7 +81,7 @@ struct PhoneStudioNetworkPage: View {
 
                 if !result.all.isEmpty {
                     VStack(alignment: .leading, spacing: HomeFeedMetrics.headerGap) {
-                        header("All in Your Library")
+                        header(String(localized: "All in Your Library"))
                         CatalogGrid(
                             items: result.all,
                             isLoading: false,
@@ -161,18 +161,18 @@ struct PhoneStudiosNetworksSettingsView: View {
 
     private var statusText: String {
         switch store.status {
-        case .needsAccount: "Sign in to a server and choose a profile to use Studios & Networks."
-        case .loading, .idle: "Matching your library with TMDb…"
-        case .failed: "Couldn’t load from TMDb or your server. Check your connection and try again."
+        case .needsAccount: String(localized: "Sign in to a server and choose a profile to use Studios & Networks.")
+        case .loading, .idle: String(localized: "Matching your library with TMDb…")
+        case .failed: String(localized: "Couldn’t load from TMDb or your server. Check your connection and try again.")
         case .ready where store.needsMorePicks:
-            "Choose \(store.missingPicks) more to finish, or turn off Show on Home."
-        case .ready: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen."
+            String(localized: "Choose \(store.missingPicks) more to finish, or turn off Show on Home.")
+        case .ready: String(localized: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen.")
         }
     }
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Studios & Networks", subtitle: statusText, systemImage: "square.grid.3x1.below.line.grid.1x2")
+            SettingsPageHeader(title: Text("Studios & Networks"), subtitle: Text(statusText), systemImage: "square.grid.3x1.below.line.grid.1x2")
                 .settingsPageHeaderRow()
 
             switch store.status {
@@ -379,7 +379,7 @@ struct PhoneStudiosNetworksSettingsView: View {
 
     // MARK: Pick grid
 
-    private func pickSection(title: String, kind: StudioNetworkBrand.Kind) -> some View {
+    private func pickSection(title: LocalizedStringKey, kind: StudioNetworkBrand.Kind) -> some View {
         Section {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
                       alignment: .leading, spacing: 16) {
@@ -415,7 +415,7 @@ struct PhoneStudiosNetworksSettingsView: View {
         .buttonStyle(.plain)
         .disabled(unavailable)
         .opacity(unavailable ? 0.4 : 1)
-        .accessibilityLabel("\(brand.name), \(count) titles\(picked ? ", chosen" : "")")
+        .accessibilityLabel(picked ? "\(brand.name), \(count) titles, chosen" : "\(brand.name), \(count) titles")
     }
 }
 

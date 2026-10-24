@@ -20,9 +20,43 @@ struct TVGeneralSettingsPane: View {
     @State private var librarySnapshot = MainTabLibrarySnapshot.cachedForCurrentAuthority()
     let detailFocus: FocusState<TVSettingsDetailFocus?>.Binding
     @Environment(\.scenePhase) private var scenePhase
+    @State private var language = VividAppLanguage.saved
+    @State private var reopenLanguage: VividAppLanguage?
+
+    private func reopenMessage(for language: VividAppLanguage) -> LocalizedStringResource {
+        if let name = language.nativeName {
+            return "Vivid will use \(name) the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again."
+        }
+        return "Vivid will use this Apple TV’s language the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again."
+    }
+
+    /// Languages are named in their own language; only System is translated.
+    private func languageLabel(_ language: VividAppLanguage) -> String {
+        language.nativeName ?? String(localized: "System")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
+            TVSettingsSectionHeader("LANGUAGE")
+            TVSettingsGroup {
+                TVSettingsOptionMenu(
+                    title: "Language", value: languageLabel(language),
+                    detail: "Vivid follows this Apple TV’s language unless you choose one.",
+                    options: VividAppLanguage.allCases.map { .init(id: $0.rawValue, label: languageLabel($0)) },
+                    selection: Binding(
+                        get: { language.rawValue },
+                        set: {
+                            guard let value = VividAppLanguage(rawValue: $0) else { return }
+                            language = value
+                            VividAppLanguage.save(value)
+                            reopenLanguage = VividAppLanguage.needsReopen(for: value) ? value : nil
+                        }
+                    )
+                )
+                .focused(detailFocus, equals: .generalLanguage)
+            }
+            TVSettingsFooter("A new choice takes effect after you close Vivid in the app switcher and open it again.")
+
             TVSettingsSectionHeader("THEMES")
             TVSettingsGroup {
                 TVSettingsOptionMenu(
@@ -146,6 +180,12 @@ struct TVGeneralSettingsPane: View {
             studiosNetworks.refresh()
         }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
+        .tvSystemAlert(
+            "Reopen Vivid",
+            isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } }),
+            message: reopenLanguage.map(reopenMessage(for:)),
+            buttons: [.cancel("OK")]
+        )
         .task {
             await preferences.refresh()
         }
@@ -282,8 +322,8 @@ private struct TVHomeSectionsCustomizationSheet: View {
 
     private var editorControlsCard: some View {
         TVSettingsPageHeader(
-            title: "Home Sections",
-            subtitle: isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. A seventh slot is reserved for Spotlight, even when hidden."
+            title: Text("Home Sections"),
+            subtitle: Text(isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. A seventh slot is reserved for Spotlight, even when hidden.")
         ) {
             Button(isEditing ? "Done Editing" : "Edit") {
                 withAnimation(.easeOut(duration: VividTheme.fastDuration)) {
@@ -311,7 +351,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
                     .font(.tvSettings(26, weight: .medium))
                     .lineLimit(1)
 
-                Text("\(section.items.count) item\(section.items.count == 1 ? "" : "s")")
+                Text("\(section.items.count) items")
                     .font(.tvSettings(18))
                     .foregroundStyle(Color.vividSecondaryText)
             }
@@ -441,7 +481,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         }
     }
 
-    private func sectionHeader(_ title: String) -> some View {
+    private func sectionHeader(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)
@@ -517,8 +557,8 @@ private struct TVMenuCustomizationSheet: View {
                 sectionHeader("SEARCH & PROFILE")
                 TVSettingsGroup {
                     Button { utilitiesSwapped.toggle() } label: {
-                        TVSettingsRowLabel(title: "Swap Search and Profile",
-                            detail: utilitiesSwapped ? "Profile on the left · Search on the right" : "Search on the left · Profile on the right")
+                        TVSettingsRowLabel(title: Text("Swap Search and Profile"),
+                            detail: Text(utilitiesSwapped ? "Profile on the left · Search on the right" : "Search on the left · Profile on the right"))
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                 }
@@ -570,10 +610,10 @@ private struct TVMenuCustomizationSheet: View {
                 TVSettingsGroup {
                     HStack(spacing: TVSettingsLayout.scaled(12)) {
                         TVSettingsRowLabel(
-                            title: "Calendar",
-                            detail: !showCalendarTab ? "Hidden from the tab bar."
+                            title: Text("Calendar"),
+                            detail: Text(!showCalendarTab ? "Hidden from the tab bar."
                                 : visibleItems.contains(.builtin(.forYou)) ? "Shown in the tab bar, just after For You."
-                                : "Shown at the end of the tab bar."
+                                : "Shown at the end of the tab bar.")
                         )
                         Spacer(minLength: TVSettingsLayout.scaled(12))
                         Button {
@@ -607,13 +647,13 @@ private struct TVMenuCustomizationSheet: View {
             Image(systemName: utilitiesSwapped ? "person.crop.circle.fill" : "magnifyingglass")
                 .frame(width: TVSettingsLayout.scaled(42))
             Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: TVSettingsLayout.scaled(24))
-            ForEach(previewTitles, id: \.self) { title in
-                Text(title)
+            ForEach(previewTabs) { tab in
+                Text(tab.title)
                     .font(.tvSettings(20, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.6)
                     .padding(.horizontal, TVSettingsLayout.scaled(12)).padding(.vertical, TVSettingsLayout.scaled(9))
-                    .foregroundStyle(title == "Home" ? Color.black : Color.white)
-                    .background(title == "Home" ? Color.white : Color.clear, in: Capsule())
+                    .foregroundStyle(tab.isHome ? Color.black : Color.white)
+                    .background(tab.isHome ? Color.white : Color.clear, in: Capsule())
             }
             Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: TVSettingsLayout.scaled(24))
             Image(systemName: utilitiesSwapped ? "magnifyingglass" : "person.crop.circle.fill")
@@ -627,17 +667,26 @@ private struct TVMenuCustomizationSheet: View {
         .accessibilityLabel("Tab bar preview")
     }
 
+    /// One tab in the preview. Home is found by its item, not its title,
+    /// which is in the app's language.
+    private struct PreviewTab: Identifiable {
+        let id: String
+        let title: String
+        let isHome: Bool
+    }
+
     /// The bar as it will look, with Calendar in its fixed place.
-    private var previewTitles: [String] {
-        var titles = visibleItems.map(\.title)
+    private var previewTabs: [PreviewTab] {
+        var tabs = visibleItems.map { PreviewTab(id: $0.id, title: $0.title, isHome: $0.isHome) }
         if showCalendarTab {
+            let calendar = PreviewTab(id: "calendar", title: String(localized: "Calendar"), isHome: false)
             if let forYou = visibleItems.firstIndex(of: .builtin(.forYou)) {
-                titles.insert("Calendar", at: forYou + 1)
+                tabs.insert(calendar, at: forYou + 1)
             } else {
-                titles.append("Calendar")
+                tabs.append(calendar)
             }
         }
-        return titles
+        return tabs
     }
 
     private var visibleItems: [PrimaryMenuItem] {
@@ -694,7 +743,7 @@ private struct TVMenuCustomizationSheet: View {
     private func visibleRow(_ item: PrimaryMenuItem) -> some View {
         let index = visibleItems.firstIndex(where: { $0.id == item.id }) ?? 0
         return HStack(spacing: TVSettingsLayout.scaled(12)) {
-            TVSettingsRowLabel(title: item.title, detail: "Shown in the tab bar. Use the arrows to change its position.")
+            TVSettingsRowLabel(title: Text(item.title), detail: Text("Shown in the tab bar. Use the arrows to change its position."))
             Spacer(minLength: TVSettingsLayout.scaled(12))
 
             Button {
@@ -782,7 +831,7 @@ private struct TVMenuCustomizationSheet: View {
         libraries.contains(where: { type.matches($0) })
     }
 
-    private func sectionHeader(_ title: String) -> some View {
+    private func sectionHeader(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)

@@ -51,9 +51,12 @@ final class TVTMDbStore {
         #endif
     }
 
+    /// Includes the app's TMDb language, so nothing looked up in one
+    /// language is kept for another.
     var contextKey: String {
         [ServerRegistry.shared.activeServerId ?? "", accountContext,
-         AuthService.shared.profileId ?? "", String(revision)].joined(separator: "|")
+         AuthService.shared.profileId ?? "", String(revision),
+         VividAppLanguage.tmdbLanguage ?? ""].joined(separator: "|")
     }
 
     init(sessionConfiguration: URLSessionConfiguration = .ephemeral) {
@@ -251,10 +254,16 @@ final class TVTMDbStore {
         membershipCache[cacheKey] = (Date(), membership)
     }
 
+    /// The films stay in English, because their titles are matched against
+    /// the library. Only the shown name is asked for in the app's language,
+    /// keeping the English one when TMDb has no translation.
     private func collection(id collectionID: Int, context: String) async throws -> CollectionFilms {
         let cacheKey = context + "|" + String(collectionID)
         if let cached = collectionCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
+        async let localizedName = localizedCollectionName(id: collectionID)
         let response: CollectionDetail = try await request("collection/\(collectionID)")
+        let localized = await localizedName
+        let shownName = localized.name ?? response.name
         try checkContext(context)
         let date: (CollectionPart) -> String? = { part in
             part.release_date.flatMap { $0.isEmpty ? nil : $0 }
@@ -274,10 +283,24 @@ final class TVTMDbStore {
                 originalTitle: part.original_title,
                 year: part.release_date.flatMap { Int($0.prefix(4)) })
         }
-        let films = CollectionFilms(id: response.id, name: response.name, parts: parts)
+        let films = CollectionFilms(id: response.id, name: shownName, parts: parts)
+        // A failed name lookup isn't kept, so the translated name is tried again.
+        guard !localized.failed else { return films }
         if collectionCache.count >= 200 { collectionCache.removeAll() }
         collectionCache[cacheKey] = (Date(), films)
         return films
+    }
+
+    /// The collection's name in the app's language: nil in English or when
+    /// TMDb has no translation. `failed` is true when the lookup itself
+    /// failed, which is retried rather than cached.
+    private func localizedCollectionName(id collectionID: Int) async -> (name: String?, failed: Bool) {
+        guard let language = VividAppLanguage.tmdbLanguage else { return (nil, false) }
+        guard let response: CollectionName = try? await request("collection/\(collectionID)", language: language) else {
+            return (nil, true)
+        }
+        guard let name = response.name, !name.isEmpty else { return (nil, false) }
+        return (name, false)
     }
 
     // MARK: Ratings
@@ -330,7 +353,7 @@ final class TVTMDbStore {
             let firstAirDate: String?
             /// The Calendar's Trending posters and details.
             let posterPath: String?
-            let overview: String?
+            var overview: String?
 
             private enum CodingKeys: String, CodingKey {
                 case id, popularity, title, name, overview
@@ -339,7 +362,7 @@ final class TVTMDbStore {
                 case posterPath = "poster_path"
             }
         }
-        let results: [Result]
+        var results: [Result]
         let totalPages: Int?
 
         private enum CodingKeys: String, CodingKey {
@@ -354,13 +377,28 @@ final class TVTMDbStore {
     }
 
     /// One page of popularity-ordered titles from TMDb's discover endpoint.
-    func discover(media: String, query: [String: String], page: Int) async throws -> DiscoverPage {
+    ///
+    /// Titles and overviews are in English unless `localized` is true. Pass
+    /// it only where they're shown: Studios & Networks matches the English
+    /// titles against the library. Overviews TMDb hasn't translated are
+    /// filled from English with a second request for the page, made only
+    /// when one is missing.
+    func discover(media: String, query: [String: String], page: Int, localized: Bool = false) async throws -> DiscoverPage {
         guard isConfigured else { throw Failure.unavailable }
         var q = query
         q["sort_by"] = "popularity.desc"
         q["include_adult"] = "false"
         q["page"] = String(page)
-        return try await request("discover/\(media)", query: q)
+        let path = "discover/\(media)"
+        guard localized, let language = VividAppLanguage.tmdbLanguage else { return try await request(path, query: q) }
+        var result: DiscoverPage = try await request(path, query: q, language: language)
+        guard result.results.contains(where: { ($0.overview ?? "").isEmpty }),
+              let english: DiscoverPage = try? await request(path, query: q) else { return result }
+        let overviews = Dictionary(english.results.map { ($0.id, $0.overview) }, uniquingKeysWith: { first, _ in first })
+        for index in result.results.indices where (result.results[index].overview ?? "").isEmpty {
+            if let overview = overviews[result.results[index].id] ?? nil { result.results[index].overview = overview }
+        }
+        return result
     }
 
     /// The logo for a TMDb company or network. `kind` is "company" or "network".
@@ -376,17 +414,25 @@ final class TVTMDbStore {
     }
 
     /// Every request goes to Vivid's relay, which adds Vivid's TMDb token.
-    /// The app never holds or sends a TMDb credential.
-    nonisolated static func urlRequest(_ path: String, query: [String: String] = [:]) -> URLRequest {
+    /// The app never holds or sends a TMDb credential. `language` is sent
+    /// only on the paths the relay takes it for; the others answer 400.
+    nonisolated static func urlRequest(_ path: String, query: [String: String] = [:], language: String? = nil) -> URLRequest {
         var components = URLComponents(string: relayBase + path)!
+        var query = query
+        if let language, acceptsLanguage(path) { query["language"] = language }
         if !query.isEmpty { components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) } }
         var request = URLRequest(url: components.url!)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request
     }
 
-    private func request<T: Decodable>(_ path: String, query: [String:String] = [:]) async throws -> T {
-        let request = Self.urlRequest(path, query: query)
+    /// `movie/{id}`, `tv/{id}`, `collection/{id}` and `discover/movie|tv`.
+    nonisolated static func acceptsLanguage(_ path: String) -> Bool {
+        path.range(of: "^((movie|tv|collection)/[0-9]+|discover/(movie|tv))$", options: .regularExpression) != nil
+    }
+
+    private func request<T: Decodable>(_ path: String, query: [String:String] = [:], language: String? = nil) async throws -> T {
+        let request = Self.urlRequest(path, query: query, language: language)
         do {
             let (data, response) = try await session.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw Failure.unavailable }
@@ -406,7 +452,7 @@ final class TVTMDbStore {
 
     enum Failure: LocalizedError {
         case unavailable
-        var errorDescription: String? { "TMDb is unavailable right now. Please try again." }
+        var errorDescription: String? { String(localized: "TMDb is unavailable right now. Please try again.") }
     }
     private static func rankedTrailers(_ videos: [Video]) -> [Video] {
         videos.filter {
@@ -429,6 +475,7 @@ final class TVTMDbStore {
     }
     private struct CollectionReference: Decodable { let id: Int }
     private struct CollectionDetail: Decodable { let id: Int; let name: String; let parts: [CollectionPart] }
+    private struct CollectionName: Decodable { let name: String? }
     private struct CollectionPart: Decodable {
         let id: Int; let title: String?; let original_title: String?; let release_date: String?
     }

@@ -404,7 +404,7 @@ struct MobilePlayerControls: View {
 
     private func deckSquare(
         systemImage: String,
-        accessibilityLabel: String,
+        accessibilityLabel: LocalizedStringKey,
         width: CGFloat = deckSquareSize,
         height: CGFloat = deckSquareSize,
         action: @escaping () -> Void
@@ -561,7 +561,7 @@ struct MobilePlayerControls: View {
 
     private func tabletopTile(
         systemImage: String,
-        accessibilityLabel: String,
+        accessibilityLabel: LocalizedStringKey,
         isPrimary: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
@@ -667,7 +667,8 @@ struct MobilePlayerControls: View {
 
     private var trailingTimeText: String {
         if showsRemainingTime {
-            return PlayerTimeFormatter.formatHMS(max(viewModel.duration - displayTime, 0)) + " left"
+            let remaining = PlayerTimeFormatter.formatHMS(max(viewModel.duration - displayTime, 0))
+            return String(localized: "\(remaining) left", comment: "Time remaining in the title, for example 1:02:03 left")
         }
         return PlayerTimeFormatter.formatHMS(viewModel.duration)
     }
@@ -809,7 +810,7 @@ struct MobilePlayerControls: View {
 
     private func chapterTitle(at time: Double) -> String? {
         guard let chapter = viewModel.chapters.last(where: { $0.time <= time }) else { return nil }
-        return chapter.title ?? "Chapter \(chapter.index + 1)"
+        return chapter.title ?? String(localized: "Chapter \(chapter.index + 1)", comment: "Fallback name for an untitled chapter")
     }
 
     @ViewBuilder
@@ -958,7 +959,7 @@ struct MobilePlayerControls: View {
                                 activePopover = nil
                             } label: {
                                 HStack(spacing: 12) {
-                                    Text(chapter.title ?? "Chapter \(chapter.index + 1)")
+                                    Text(chapter.title ?? String(localized: "Chapter \(chapter.index + 1)", comment: "Fallback name for an untitled chapter"))
                                         .foregroundStyle(.primary)
                                         .multilineTextAlignment(.leading)
                                     Spacer(minLength: 8)
@@ -1016,7 +1017,7 @@ struct MobilePlayerControls: View {
                                 .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
                         }
                         .buttonStyle(MobilePlayerGlassButtonStyle())
-                        .accessibilityLabel("Cancel " + viewModel.introSkipLabel)
+                        .accessibilityLabel(viewModel.introSkipCancelLabel)
                     }
 
                     Button {
@@ -1038,7 +1039,7 @@ struct MobilePlayerControls: View {
                     }
                     .buttonStyle(MobilePlayerGlassButtonStyle())
                     .accessibilityLabel(
-                        viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
+                        viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipNowLabel
                     )
                 }
             }
@@ -1185,7 +1186,7 @@ struct MobilePlayerRotationControls: View {
             } label: {
                 icon("rectangle.landscape.rotate")
             }
-            .accessibilityLabel("Rotate to \(orientationCoordinator.nextPlayerOrientation.title)")
+            .accessibilityLabel(orientationCoordinator.nextPlayerOrientation.rotateAccessibilityLabel)
             .accessibilityHint("Rotates the screen without interrupting playback")
             .accessibilityIdentifier("player.rotate")
 

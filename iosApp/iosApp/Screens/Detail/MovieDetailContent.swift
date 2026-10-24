@@ -195,32 +195,34 @@ struct MovieDetailContent<BelowOverview: View>: View {
                         icon: "heart",
                         iconActive: "heart.fill",
                         isActive: isFavorite,
-                        label: "Favorite",
+                        label: String(localized: "Favorite"),
                         accessibilityLabelOverride: isFavorite
-                            ? "Remove from Favorites" : "Add to Favorites",
+                            ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                         action: onToggleFavorite
                     )
                     PhoneLabeledAction(
                         icon: "bookmark",
                         iconActive: "bookmark.fill",
                         isActive: inWatchlist,
-                        label: "Watchlist",
+                        label: String(localized: "Watchlist"),
                         accessibilityLabelOverride: inWatchlist
-                            ? "Remove from Watchlist" : "Add to Watchlist",
+                            ? String(localized: "Remove from Watchlist") : String(localized: "Add to Watchlist"),
                         action: onToggleWatchlist
                     )
                     if detail.type == "episode" {
-                        PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+                        PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
                             Button(isWatched ? "Mark Episode as Unwatched" : "Mark Episode as Watched", action: onToggleWatched)
                             if let selectedSeason {
-                                Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
+                                Button(selectedSeason.userData?.played == true
+                                    ? String(localized: "Mark \(selectedSeason.downloadDisplayName) as Unwatched")
+                                    : String(localized: "Mark \(selectedSeason.downloadDisplayName) as Watched"), action: onToggleSeasonWatched)
                             }
                             Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
                         }
                     } else {
                         PhoneLabeledAction(
                             icon: "checkmark.circle", iconActive: "checkmark.circle.fill",
-                            isActive: isWatched, label: "Watched",
+                            isActive: isWatched, label: String(localized: "Watched"),
                             accessibilityLabelOverride: isWatched ? watchedLabelUnmark : watchedLabelMark,
                             action: onToggleWatched
                         )
@@ -377,9 +379,9 @@ struct MovieDetailContent<BelowOverview: View>: View {
     private var episodeRailEyebrow: String {
         if let seasonNumber = selectedSeason?.seasonNumber ?? detail.seasonNumber,
            seasonNumber > 0 {
-            return "Season \(seasonNumber)"
+            return String(localized: "Season \(String(seasonNumber))")
         }
-        return "This Season"
+        return String(localized: "This Season")
     }
 
     // MARK: - Cast
@@ -440,10 +442,10 @@ struct MovieDetailContent<BelowOverview: View>: View {
         if detail.type == "episode",
            let season = detail.seasonNumber,
            let episode = detail.episodeNumber {
-            if season == 0 { return "Play E\(episode)" }
-            return "Play S\(season)·E\(episode)"
+            if season == 0 { return String(localized: "Play E\(String(episode))") }
+            return String(localized: "Play S\(String(season))·E\(String(episode))")
         }
-        return "Play"
+        return String(localized: "Play")
     }
 
     private var resumeTimestamp: String {
@@ -452,11 +454,11 @@ struct MovieDetailContent<BelowOverview: View>: View {
     }
 
     private var watchedLabelMark: String {
-        detail.type == "episode" ? "Mark Episode Watched" : "Mark as Watched"
+        detail.type == "episode" ? String(localized: "Mark Episode Watched") : String(localized: "Mark as Watched")
     }
 
     private var watchedLabelUnmark: String {
-        detail.type == "episode" ? "Mark Episode Unwatched" : "Mark as Unwatched"
+        detail.type == "episode" ? String(localized: "Mark Episode Unwatched") : String(localized: "Mark as Unwatched")
     }
 
     // MARK: - Versions

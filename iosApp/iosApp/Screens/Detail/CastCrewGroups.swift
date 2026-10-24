@@ -46,17 +46,17 @@ enum CastCrewGrouping {
             return CastCrewGroup(id: id, label: label, people: people)
         }
 
-        let directors = crewGroup("directors", label: "Directors") { job in
-            normalised(job) == "director" ? "Director" : nil
+        let directors = crewGroup("directors", label: String(localized: "Directors")) { job in
+            normalised(job) == "director" ? String(localized: "Director") : nil
         }
-        let writers = crewGroup("writers", label: "Writers") { job in
+        let writers = crewGroup("writers", label: String(localized: "Writers")) { job in
             let job = normalised(job)
             guard writerJobs.contains(job) else { return nil }
-            return job == "creator" ? "Creator" : "Writer"
+            return job == "creator" ? String(localized: "Creator") : String(localized: "Writer")
         }
         let castGroup = CastCrewGroup(
             id: "cast",
-            label: "Cast",
+            label: String(localized: "Cast"),
             people: cast.prefix(maxCast).enumerated().map { index, member in
                 CastCrewPerson(
                     id: "cast-\(index)", personId: member.personId, name: member.name,

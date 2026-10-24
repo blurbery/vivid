@@ -134,7 +134,7 @@ extension PlayerViewModel {
                 completesQualitySwitch: true
             ) {
                 isQualitySwitching = false
-                qualitySwitchError = "Couldn't change quality right now. Try again."
+                qualitySwitchError = String(localized: "Couldn't change quality right now. Try again.")
             }
             return
         }
@@ -142,7 +142,7 @@ extension PlayerViewModel {
         guard var request = lastLoadRequest,
               request.offlineDownloadId == nil else {
             isQualitySwitching = false
-            qualitySwitchError = "Quality selection is unavailable for offline playback."
+            qualitySwitchError = String(localized: "Quality selection is unavailable for offline playback.")
             return
         }
         request = request.copyForRecovery(

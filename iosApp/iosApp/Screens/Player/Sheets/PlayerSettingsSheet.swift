@@ -6,7 +6,7 @@ import SwiftUI
 /// remote idiom better than a continuous stepper anyway).
 private struct RangeSpinner<Value: Hashable & Strideable>: View
 where Value.Stride: SignedInteger {
-    let title: String
+    let title: LocalizedStringKey
     @Binding var value: Value
     let range: ClosedRange<Value>
     let step: Value.Stride
@@ -219,7 +219,7 @@ struct PlayerSettingsSheet: View {
     /// "Large · Box · Bottom"-style value label for the Appearance row.
     private var appearanceSummary: String {
         if viewModel.settings.subtitleMatchesSystemAppearance {
-            return "Using Device"
+            return String(localized: "Using Device", comment: "Subtitle appearance summary when it follows the device's caption settings")
         }
         let appearance = viewModel.settings.subtitleAppearance
         return [
@@ -374,7 +374,7 @@ struct PlayerSettingsSheet: View {
                 set: { viewModel.setPlaybackSpeed($0) }
             )) {
                 ForEach(Self.speedOptions, id: \.self) { speed in
-                    Text(speed == 1.0 ? "1×" : String(format: "%g×", speed)).tag(speed)
+                    Text(speed == 1.0 ? String(localized: "1×", comment: "Normal playback speed") : Self.speedMultiplier(speed.formatted())).tag(speed)
                 }
             }
 
@@ -555,7 +555,9 @@ struct PlayerSettingsSheet: View {
                 }
             )) {
                 ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0], id: \.self) { speed in
-                    Text(speed == 1.0 ? "Normal (1.0×)" : String(format: "%.2f×", speed))
+                    Text(speed == 1.0
+                         ? String(localized: "Normal (1.0×)", comment: "Normal playback speed")
+                         : Self.speedMultiplier(speed.formatted(.number.precision(.fractionLength(2)))))
                         .tag(speed)
                 }
             }
@@ -736,7 +738,7 @@ struct PlayerSettingsSheet: View {
         }
     }
 
-    private var sleepTimerPickerTitle: String {
+    private var sleepTimerPickerTitle: LocalizedStringKey {
         #if os(iOS)
         return "Sleep Timer"
         #else
@@ -816,9 +818,13 @@ struct PlayerSettingsSheet: View {
     // MARK: - Helpers
 
     private func formatMs(_ ms: Int) -> String {
-        if ms == 0 { return "0 ms" }
-        let sign = ms > 0 ? "+" : ""
-        return "\(sign)\(ms) ms"
+        if ms > 0 { return String(localized: "+\(ms) ms", comment: "Subtitle delay in milliseconds, later") }
+        return String(localized: "\(ms) ms", comment: "Subtitle delay in milliseconds")
+    }
+
+    /// A playback speed such as "1.5×", from an already formatted number.
+    private static func speedMultiplier(_ number: String) -> String {
+        String(localized: "\(number)×", comment: "Playback speed multiplier, for example 1.5×")
     }
 
     /// Map the timer's remaining seconds back to the nearest whole-minute

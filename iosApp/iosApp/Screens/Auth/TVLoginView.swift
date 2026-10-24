@@ -134,7 +134,7 @@ struct TVLoginView: View {
                 .foregroundStyle(Color.auroraInkSecondary)
         }
 
-        fieldGroup(label: "Username") {
+        fieldGroup(label: String(localized: "Username")) {
             AuroraInputField(
                 text: $loginVM.username,
                 placeholder: "yourname",
@@ -148,12 +148,12 @@ struct TVLoginView: View {
             .onSubmit { moveFocusAfterUpdate(to: .password) }
         }
 
-        fieldGroup(label: "Password") {
+        fieldGroup(label: String(localized: "Password")) {
             HStack(spacing: 12) {
                 AuroraInputField(
                     text: $loginVM.password,
-                    placeholder: "••••••",
-                    inputTitle: "Password",
+                    placeholder: "••••••" as String,
+                    inputTitle: String(localized: "Password"),
                     focus: $focusedField,
                     equals: .password,
                     isSecure: !showPassword,
@@ -214,7 +214,7 @@ struct TVLoginView: View {
                 .font(.system(size: 76, weight: .semibold, design: .monospaced))
                 .tracking(14)
                 .foregroundStyle(Color.auroraInk)
-                .accessibilityLabel("\(codeSignIn.service.title) \(codeSignIn.service.codeName) \(code.map(String.init).joined(separator: " "))")
+                .accessibilityLabel(codeSignIn.service.codeAccessibilityLabel(code))
         }
 
         if let status = codeSignIn.status {
@@ -239,7 +239,7 @@ struct TVLoginView: View {
             Button {
                 startCodeSignIn(codeSignIn.service)
             } label: {
-                Text("Get a new \(codeSignIn.service.codeName)")
+                Text(codeSignIn.service.getNewLabel)
             }
             .buttonStyle(AuroraPrimaryButtonStyle())
             .focused($focusedField, equals: .newCode)

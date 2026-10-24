@@ -33,12 +33,12 @@ struct TVPlayerInfoHUD: View {
 
         var title: String {
             switch self {
-            case .info:      return "Info"
-            case .stats:     return "Stats"
-            case .video:     return "Video"
-            case .audio:     return "Audio"
-            case .subtitles: return "Subtitles"
-            case .chapters:  return "Chapters"
+            case .info:      return String(localized: "Info", comment: "Player HUD tab")
+            case .stats:     return String(localized: "Stats", comment: "Player HUD tab")
+            case .video:     return String(localized: "Video", comment: "Player HUD tab")
+            case .audio:     return String(localized: "Audio", comment: "Player HUD tab")
+            case .subtitles: return String(localized: "Subtitles", comment: "Player HUD tab")
+            case .chapters:  return String(localized: "Chapters", comment: "Player HUD tab")
             }
         }
     }
@@ -267,20 +267,27 @@ private struct HUDTabPillBody: View {
 // MARK: - Shared column header
 
 private struct PaneColumn<Content: View>: View {
-    let header: String
+    let header: Text
     let content: () -> Content
 
-    init(_ header: String, @ViewBuilder content: @escaping () -> Content) {
-        self.header = header
+    init(_ header: LocalizedStringKey, @ViewBuilder content: @escaping () -> Content) {
+        self.header = Text(header)
+        self.content = content
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ header: S, @ViewBuilder content: @escaping () -> Content) {
+        self.header = Text(header)
         self.content = content
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(header.uppercased())
+            header
                 .font(.system(size: 14, weight: .semibold))
                 .tracking(1.6)
                 .foregroundStyle(.white.opacity(0.5))
+                .textCase(.uppercase)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,7 +295,7 @@ private struct PaneColumn<Content: View>: View {
 }
 
 private struct HUDScrollablePane<Content: View>: View {
-    let accessibilityLabel: String
+    let accessibilityLabel: LocalizedStringKey
     let scrollTargetIDs: [String]
     @Binding var isAtTop: Bool
     let onMoveToTabs: () -> Void
@@ -298,7 +305,7 @@ private struct HUDScrollablePane<Content: View>: View {
     @FocusState private var isFocused: Bool
 
     init(
-        accessibilityLabel: String,
+        accessibilityLabel: LocalizedStringKey,
         scrollTargetIDs: [String] = [],
         isAtTop: Binding<Bool>,
         onMoveToTabs: @escaping () -> Void,
@@ -446,7 +453,7 @@ private struct HUDRowButtonBody: View {
 /// Chevron row that opens a picker dialog. Label/value colors invert when
 /// the row is focused; movement and Select handling are native.
 private struct HUDSettingRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
     var colorHex: String? = nil
     var systemImage: String? = nil
@@ -471,7 +478,7 @@ private struct HUDSettingRow: View {
 /// Boolean row that flips on Select — one press instead of the previous
 /// open-dialog → pick → close round-trip.
 private struct HUDToggleRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let isOn: Bool
     let onToggle: (Bool) -> Void
 
@@ -491,7 +498,7 @@ private struct HUDToggleRow: View {
 }
 
 private struct HUDSettingRowLabel: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
     var colorHex: String? = nil
     var systemImage: String? = nil
@@ -605,7 +612,7 @@ private struct InfoPane: View {
                         LabelValueRow(label: row.0, value: row.1)
                     }
                     if let chapter = currentChapterTitle {
-                        LabelValueRow(label: "Chapter", value: chapter)
+                        LabelValueRow(label: String(localized: "Chapter", comment: "Info row: the chapter playing now"), value: chapter)
                     }
                 }
                 }
@@ -633,12 +640,12 @@ private struct InfoPane: View {
         // One concise route line (engine · delivery). The decision trace
         // and full route diagnostics stay in the Stats pane / settings —
         // this pane is the casual "what am I watching" surface.
-        var rows: [(String, String)] = [("Route", viewModel.playbackRouteDisplay)]
+        var rows: [(String, String)] = [(String(localized: "Route", comment: "Info row: the playback engine and route"), viewModel.playbackRouteDisplay)]
         if let audio = viewModel.audioTracks.first(where: { $0.trackId == viewModel.selectedAudioId }) {
             var bits: [String] = []
             if let codec = PlayerStreamBadges.audioCodec(audio) { bits.append(codec) }
             if let channels = audio.channelCountLabel { bits.append(channels) }
-            if !bits.isEmpty { rows.append(("Audio", bits.joined(separator: " · "))) }
+            if !bits.isEmpty { rows.append((String(localized: "Audio", comment: "Info row: the audio playing now"), bits.joined(separator: " · "))) }
         }
         return rows
     }
@@ -648,7 +655,7 @@ private struct InfoPane: View {
               viewModel.chapters.indices.contains(index)
         else { return nil }
         let current = viewModel.chapters[index]
-        return current.title ?? "Chapter \(current.index + 1)"
+        return current.title ?? String(localized: "Chapter \(current.index + 1)", comment: "Fallback name for an untitled chapter")
     }
 }
 
@@ -831,7 +838,7 @@ private struct VideoPane: View {
 
     private var qualityValue: String {
         if viewModel.isQualitySwitching {
-            return "Switching..."
+            return String(localized: "Switching...", comment: "Quality row value while the quality changes")
         }
         if let error = viewModel.qualitySwitchError, !error.isEmpty {
             return error
@@ -862,14 +869,20 @@ private struct VideoPane: View {
     }
 
     private func speedLabel(_ value: Double) -> String {
-        value == 1.0 ? "1.0×" : String(format: "%.2f×", value)
+        Self.formattedSpeed(value)
+    }
+
+    private static func formattedSpeed(_ value: Double) -> String {
+        if value == 1.0 { return String(localized: "1.0×", comment: "Normal playback speed") }
+        let number = value.formatted(.number.precision(.fractionLength(2)))
+        return String(localized: "\(number)×", comment: "Playback speed multiplier, for example 1.5×")
     }
 
     private static let speedOptions: [HUDDropdownOption] = [0.75, 1.0, 1.25, 1.5, 2.0]
         .map { value in
             HUDDropdownOption(
                 id: String(format: "%.2f", value),
-                label: value == 1.0 ? "1.0×" : String(format: "%.2f×", value)
+                label: VideoPane.formattedSpeed(value)
             )
         }
 
@@ -886,12 +899,14 @@ private struct HUDDropdownOption: Identifiable, Hashable {
 
 private enum HUDPickerOptions {
     static func boolLabel(_ value: Bool) -> String {
-        value ? "On" : "Off"
+        value ? String(localized: "On") : String(localized: "Off")
     }
 
     static func delayLabel(_ milliseconds: Int) -> String {
-        if milliseconds == 0 { return "0 ms" }
-        return (milliseconds > 0 ? "+" : "") + "\(milliseconds) ms"
+        if milliseconds > 0 {
+            return String(localized: "+\(milliseconds) ms", comment: "Subtitle delay in milliseconds, later")
+        }
+        return String(localized: "\(milliseconds) ms", comment: "Subtitle delay in milliseconds")
     }
 
     /// Subtitle delay up to 10 seconds either way, like iPhone and iPad:
@@ -907,7 +922,7 @@ private enum HUDPickerOptions {
 
 private struct HUDPickerPresentation: Identifiable {
     let id = UUID()
-    let title: String
+    let title: LocalizedStringKey
     let options: [HUDDropdownOption]
     let selection: String
     let onSelect: (String) -> Void
@@ -918,7 +933,7 @@ private struct HUDPickerPresentation: Identifiable {
 /// keep-visible scrolling are native; focus is seeded onto the current
 /// selection when the dialog appears.
 private struct HUDPickerDialog: View {
-    let title: String
+    let title: LocalizedStringKey
     let options: [HUDDropdownOption]
     let selection: String
     let onSelect: (String) -> Void
@@ -1374,9 +1389,9 @@ private struct SubtitleAppearanceDialog: View {
     private var opacityLabel: String {
         guard viewModel.settings.subtitleAppearance.backgroundStyle == .box,
               viewModel.settings.subtitleAppearance.backgroundOpacity > 0 else {
-            return "Off"
+            return String(localized: "Off")
         }
-        return "\(viewModel.settings.subtitleAppearance.backgroundOpacity)%"
+        return String(localized: "\(viewModel.settings.subtitleAppearance.backgroundOpacity)%", comment: "Subtitle background opacity as a percentage")
     }
 
     private func label(for id: String, in options: [HUDDropdownOption]) -> String {
@@ -1396,7 +1411,11 @@ private struct SubtitleAppearanceDialog: View {
         SubtitlePositionPreset.allCases.map { .init(id: $0.rawValue, label: $0.label) }
 
     private static let opacityOptions: [HUDDropdownOption] =
-        stride(from: 0, through: 100, by: 25).map { .init(id: String($0), label: $0 == 0 ? "Off" : "\($0)%") }
+        stride(from: 0, through: 100, by: 25).map {
+            .init(id: String($0), label: $0 == 0
+                ? String(localized: "Off")
+                : String(localized: "\($0)%", comment: "Subtitle background opacity as a percentage"))
+        }
 
     private static let fontColorOptions: [HUDDropdownOption] =
         SubtitleAppearance.fontColors.map { .init(id: $0.hex, label: $0.label, colorHex: $0.hex) }
@@ -1467,8 +1486,8 @@ private struct AudioPane: View {
             .focusSection()
 
             PaneColumn("Options") {
-                LabelValueRow(label: "Channels", value: selectedChannels ?? "—")
-                LabelValueRow(label: "Codec",  value: selectedCodec ?? "—")
+                LabelValueRow(label: String(localized: "Channels", comment: "Audio row: channel layout"), value: selectedChannels ?? "—")
+                LabelValueRow(label: String(localized: "Codec", comment: "Audio row: audio codec"),  value: selectedCodec ?? "—")
             }
         }
     }
@@ -1628,7 +1647,10 @@ private struct SubtitlesPane: View {
 
     private var appearanceSummary: String {
         let appearance = viewModel.settings.subtitleAppearance
-        return "\(appearance.backgroundStyle.label), \(appearance.fontSize.label), \(appearance.position.label)"
+        return String(
+            localized: "\(appearance.backgroundStyle.label), \(appearance.fontSize.label), \(appearance.position.label)",
+            comment: "Subtitle appearance summary: background style, size and position"
+        )
     }
 
     private func setAppearance(_ mutate: @escaping (inout SubtitleAppearance) -> Void) {
@@ -1668,7 +1690,7 @@ private struct SubtitlesPane: View {
             // graph, and the ScrollView performs its own keep-visible motion.
             VStack(alignment: .leading, spacing: 2) {
                 HUDTrackRow(
-                    name: "Off",
+                    name: String(localized: "Off"),
                     attributes: nil,
                     isSelected: viewModel.selectedSubtitleId == nil
                 ) {
@@ -1699,7 +1721,7 @@ private struct SubtitlesPane: View {
                         .padding(.bottom, 4)
                         .padding(.leading, 14)
                     HUDTrackRow(
-                        name: "Off",
+                        name: String(localized: "Off"),
                         attributes: nil,
                         isSelected: viewModel.selectedSecondarySubtitleId == nil
                     ) {
@@ -1838,7 +1860,7 @@ private struct ChaptersPane: View {
                     ForEach(Array(viewModel.chapters.enumerated()), id: \.offset) { index, chapter in
                         HUDChapterRow(
                             number: index + 1,
-                            title: chapter.title ?? "Chapter \(index + 1)",
+                            title: chapter.title ?? String(localized: "Chapter \(index + 1)", comment: "Fallback name for an untitled chapter"),
                             time: PlayerTimeFormatter.formatHMS(chapter.time),
                             isCurrent: currentIndex == index
                         ) {

@@ -166,7 +166,7 @@ struct SearchView: View {
     }
 
     private var searchPrompt: String {
-        "Search movies and series..."
+        String(localized: "Search movies and series...")
     }
 
     private var contentSpacing: CGFloat {
@@ -205,7 +205,7 @@ struct SearchView: View {
             }
         } else {
             VStack(alignment: .leading, spacing: contentSpacing) {
-                Text("\(viewModel.total) result\(viewModel.total == 1 ? "" : "s")")
+                Text("\(viewModel.total) results")
                     .font(.vividCaption)
                     .foregroundColor(.vividSecondaryText)
 
@@ -253,7 +253,7 @@ struct SearchView: View {
         HStack(spacing: 4) {
             ForEach([SearchMediaType.all, .movie, .series]) { type in
                 Button { viewModel.selectedMediaType = type } label: {
-                    Text(type == .all ? "Top Results" : type.title)
+                    Text(type == .all ? String(localized: "Top Results") : type.title)
                         .font(.system(size: 14, weight: .semibold)).lineLimit(1)
                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                         .foregroundStyle(viewModel.selectedMediaType == type ? Color.black : .white)
@@ -271,7 +271,7 @@ struct SearchView: View {
             HStack(spacing: 8) {
                 ForEach([SearchMediaType.all, .movie, .series]) { type in
                     Button { viewModel.selectedMediaType = type } label: {
-                        Text(type == .all ? "Top Results" : type.title)
+                        Text(type == .all ? String(localized: "Top Results") : type.title)
                             .font(.system(size: 23, weight: .semibold))
                             .padding(.horizontal, 24).padding(.vertical, 13)
                     }

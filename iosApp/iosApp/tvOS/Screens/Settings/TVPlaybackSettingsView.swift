@@ -29,7 +29,7 @@ struct TVPlaybackSettingsPane: View {
             )
             .focused(detailFocus, equals: .top)
 
-            TVSettingsInfoRow(title: "Buffer Ahead", value: "Automatic")
+            TVSettingsInfoRow(title: "Buffer Ahead", value: String(localized: "Automatic"))
 
         }
         TVSettingsFooter("Lucid manages buffering automatically. Preferences are saved for this profile on this Apple TV.")

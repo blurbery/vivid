@@ -35,13 +35,13 @@ enum MDBListFailure: LocalizedError {
     case invalidKey, invalidResponse, quota, unavailable, storage, noProfile, incomplete
     var errorDescription: String? {
         switch self {
-        case .invalidKey: return "Check your MDBList API key and try again."
-        case .invalidResponse: return "MDBList returned an unreadable response. Sync will try again later."
-        case .quota: return "MDBList’s request limit was reached. Sync will try again later."
-        case .unavailable: return "MDBList is unavailable. Sync will try again later."
-        case .storage: return "Vivid couldn’t save the MDBList connection securely."
-        case .noProfile: return "Select a signed-in server account and viewing profile first."
-        case .incomplete: return "Sync is incomplete. It will continue on the next check."
+        case .invalidKey: return String(localized: "Check your MDBList API key and try again.")
+        case .invalidResponse: return String(localized: "MDBList returned an unreadable response. Sync will try again later.")
+        case .quota: return String(localized: "MDBList’s request limit was reached. Sync will try again later.")
+        case .unavailable: return String(localized: "MDBList is unavailable. Sync will try again later.")
+        case .storage: return String(localized: "Vivid couldn’t save the MDBList connection securely.")
+        case .noProfile: return String(localized: "Select a signed-in server account and viewing profile first.")
+        case .incomplete: return String(localized: "Sync is incomplete. It will continue on the next check.")
         }
     }
 }
@@ -360,8 +360,10 @@ struct MDBListSyncProgress: Equatable, Sendable {
         return min(1, max(0, Double(completed) / Double(total)))
     }
     var description: String {
-        let stage = "Step \(step) of 2 · \(label)"
+        let stage = String(localized: "Step \(step) of 2 · \(label)", comment: "MDBList sync progress, e.g. Step 2 of 2 · Reading watchlists")
         guard let total else { return stage }
-        return stage + " · \(min(max(0, completed), max(0, total))) of \(max(0, total))"
+        let done = min(max(0, completed), max(0, total))
+        let count = max(0, total)
+        return String(localized: "\(stage) · \(done) of \(count)", comment: "MDBList sync progress with a count, e.g. Step 2 of 2 · Matching · 5 of 20")
     }
 }

@@ -152,15 +152,15 @@ final class TVLibraryGridViewModel {
             facetsLoadFailed = true
             if MediaServerProvider.active == .emby {
                 switch error {
-                case EmbyError.filterRequestFailed(let step, let status): facetsFailureReason = "\(step): HTTP \(status)"
+                case EmbyError.filterRequestFailed(let step, let status): facetsFailureReason = filterRequestFailureText(step: step, status: status)
                 case HTTPError.http(let status, _): facetsFailureReason = "HTTP \(status)"
-                case HTTPError.decodingFailed: facetsFailureReason = "Unreadable response"
-                case HTTPError.requestIdentityChanged: facetsFailureReason = "Account changed"
-                case EmbyError.signInRequired: facetsFailureReason = "Sign-in required"
-                case EmbyError.invalidResponse: facetsFailureReason = "Unexpected response"
-                case EmbyError.unsupportedFeature: facetsFailureReason = "Unsupported request"
-                case let error as URLError: facetsFailureReason = "Network \(error.code.rawValue)"
-                default: facetsFailureReason = "Request failed"
+                case HTTPError.decodingFailed: facetsFailureReason = String(localized: "Unreadable response")
+                case HTTPError.requestIdentityChanged: facetsFailureReason = String(localized: "Account changed")
+                case EmbyError.signInRequired: facetsFailureReason = String(localized: "Sign-in required")
+                case EmbyError.invalidResponse: facetsFailureReason = String(localized: "Unexpected response")
+                case EmbyError.unsupportedFeature: facetsFailureReason = String(localized: "Unsupported request")
+                case let error as URLError: facetsFailureReason = String(localized: "Network \(String(error.code.rawValue))")
+                default: facetsFailureReason = String(localized: "Request failed")
                 }
             }
         }

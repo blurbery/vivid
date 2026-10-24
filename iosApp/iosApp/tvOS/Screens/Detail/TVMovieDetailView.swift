@@ -118,7 +118,7 @@ TVDetailHero(
             allowsSynopsisFocus: didEstablishPlayFocus,
                             qualityVersion: currentVersion,
                             qualitySummary: selectedVersionFileId == nil ? detail.overlaySummary : nil,
-                            metadataHeading: ["Movie"],
+                            metadataHeading: [String(localized: "Movie")],
                             releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: detail.runtime),
                             tmdbRating: tmdbRating?.value(for: detail.contentId),
                             heroHeight: height,
@@ -362,11 +362,11 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
     }
 
     private var watchedLabelMark: String {
-        detail.type == "episode" ? "Mark Episode Watched" : "Mark as Watched"
+        detail.type == "episode" ? String(localized: "Mark Episode Watched") : String(localized: "Mark as Watched")
     }
 
     private var watchedLabelUnmark: String {
-        detail.type == "episode" ? "Mark Episode Unwatched" : "Mark as Unwatched"
+        detail.type == "episode" ? String(localized: "Mark Episode Unwatched") : String(localized: "Mark as Unwatched")
     }
 
     private var resumePositionSeconds: Double? {
@@ -380,8 +380,8 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
     private var hasResumeProgress: Bool { resumePositionSeconds != nil }
 
     private var primaryPlayLabel: String {
-        guard let pos = resumePositionSeconds else { return "Play" }
-        return "Resume \(PlayerTimeFormatter.formatHMS(pos))"
+        guard let pos = resumePositionSeconds else { return String(localized: "Play") }
+        return String(localized: "Resume \(PlayerTimeFormatter.formatHMS(pos))")
     }
 
     /// Episode payloads do not consistently carry parent-series artwork.
@@ -460,15 +460,14 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
 
     private var episodeSectionTitle: String {
         if let season = selectedSeason {
-            let label = season.seasonNumber > 0
-                ? "Season \(season.seasonNumber)"
-                : (season.title ?? "Specials")
-            return "\(label) Episodes"
+            if season.seasonNumber > 0 { return String(localized: "Season \(String(season.seasonNumber)) Episodes") }
+            if let title = season.title { return String(localized: "\(title) Episodes") }
+            return String(localized: "Specials Episodes")
         }
         if let seasonNumber = detail.seasonNumber, seasonNumber > 0 {
-            return "Season \(seasonNumber) Episodes"
+            return String(localized: "Season \(String(seasonNumber)) Episodes")
         }
-        return "Episodes"
+        return String(localized: "Episodes")
     }
 
     // MARK: - More Like This

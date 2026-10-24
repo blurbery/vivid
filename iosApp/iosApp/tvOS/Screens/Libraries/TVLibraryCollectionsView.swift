@@ -217,8 +217,8 @@ struct TVLibraryCollectionsView: View {
             } else {
                 EmptyStateView(
                     icon: activeFilter.isActive ? "line.3.horizontal.decrease" : "square.stack",
-                    title: emptyTitle,
-                    subtitle: activeFilter.isActive ? nil : "Collections created on the server will appear here."
+                    title: Text(emptyTitle),
+                    subtitle: activeFilter.isActive ? nil : Text("Collections created on the server will appear here.")
                 )
             }
         }
@@ -227,7 +227,7 @@ struct TVLibraryCollectionsView: View {
         .focusable(true)
         .focused($isEmptyContentFocused)
         .focusEffectDisabled()
-        .accessibilityLabel(isLoadingCollections ? "Loading collections" : emptyTitle)
+        .accessibilityLabel(isLoadingCollections ? String(localized: "Loading collections") : emptyTitle)
         .onMoveCommand { direction in
             if direction == .up {
                 onMoveUp?()
@@ -242,7 +242,7 @@ struct TVLibraryCollectionsView: View {
     }
 
     private var emptyTitle: String {
-        activeFilter.isActive ? "No collections match these filters" : "No collections yet"
+        activeFilter.isActive ? String(localized: "No collections match these filters") : String(localized: "No collections yet")
     }
 
     // MARK: - Focus hand-down
@@ -355,7 +355,7 @@ struct TVLibraryCollectionsView: View {
                 guard let items = combined[kind], !items.isEmpty else { return nil }
                 return LibraryCollectionSection(
                     id: kind.rawValue,
-                    name: kind == .regular ? "Collections" : "User Collections",
+                    name: kind == .regular ? String(localized: "Collections") : String(localized: "User Collections"),
                     kind: kind,
                     collections: items.sorted { lhs, rhs in
                         let order = lhs.name.localizedStandardCompare(rhs.name)

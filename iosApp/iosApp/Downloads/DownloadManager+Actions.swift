@@ -105,16 +105,18 @@ extension DownloadManager {
 
         /// What to tell the user, or nil when everything asked for was added.
         var problem: String? {
-            let addedText = "\(added) episode\(added == 1 ? " was" : "s were") added."
+            // Whole sentences, each with its own count, so each can be
+            // translated (and pluralised) on its own.
+            let addedText = String(localized: "\(added) episodes were added.")
             if stoppedBySwitch {
-                return "The server or profile changed, so the rest weren't added. " + addedText
+                return String(localized: "The server or profile changed, so the rest weren't added.") + " " + addedText
             }
             if let first = failures.first {
                 let count = failures.count
-                return "\(count) episode\(count == 1 ? "" : "s") couldn't be added: \(first.localizedDescription) " + addedText
+                return String(localized: "\(count) episodes couldn't be added: \(first.localizedDescription)", comment: "The second part is the reason, e.g. The server didn't create a download.") + " " + addedText
             }
             if added == 0, waiting == 0, skipped > 0 {
-                return "Nothing new to add. These episodes are already downloaded, on their way, or don't have a file yet."
+                return String(localized: "Nothing new to add. These episodes are already downloaded, on their way, or don't have a file yet.")
             }
             return nil
         }
@@ -173,7 +175,7 @@ extension DownloadManager {
                 try await downloadEpisode(
                     seriesId: seriesId,
                     episodeId: episode.contentId,
-                    displayTitle: episode.title ?? "Episode \(episode.episodeNumber)",
+                    displayTitle: episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))"),
                     displaySubtitle: "S\(episode.seasonNumber) · E\(episode.episodeNumber)",
                     seriesTitle: seriesTitle,
                     posterThumbhash: posterThumbhash,
@@ -200,7 +202,7 @@ extension DownloadManager {
                     waiting.append(WaitingDownload(
                         id: candidate.contentId,
                         seriesId: seriesId,
-                        title: candidate.title ?? "Episode \(candidate.episodeNumber)",
+                        title: candidate.title ?? String(localized: "Episode \(String(candidate.episodeNumber))"),
                         subtitle: "S\(candidate.seasonNumber) · E\(candidate.episodeNumber)",
                         seriesTitle: seriesTitle,
                         seasonNumber: candidate.seasonNumber,

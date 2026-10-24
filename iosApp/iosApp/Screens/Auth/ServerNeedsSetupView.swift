@@ -84,7 +84,7 @@ struct ServerNeedsSetupView: View {
                     guard !Task.isCancelled,
                           AuthService.shared.serverUrl == expectedServerURL else { return }
                     if status.needsSetup {
-                        error = "This server still needs administrator setup."
+                        error = String(localized: "This server still needs administrator setup.")
                     } else {
                         router.goBack()
                     }
@@ -93,7 +93,7 @@ struct ServerNeedsSetupView: View {
                 await MainActor.run {
                     isChecking = false
                     guard !Task.isCancelled else { return }
-                    self.error = "Couldn't reach the server. Check it's running and try again."
+                    self.error = String(localized: "Couldn't reach the server. Check it's running and try again.")
                 }
             }
         }

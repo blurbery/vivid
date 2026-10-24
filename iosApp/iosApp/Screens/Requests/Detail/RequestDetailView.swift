@@ -217,9 +217,9 @@ struct RequestDetailView: View {
     }
 
     private func eyebrow(_ detail: RequestMediaDetail) -> String {
-        var parts = ["REQUEST", detail.mediaType.displayName.uppercased()]
+        var parts = [String(localized: "REQUEST", comment: "Eyebrow above a requestable title on Apple TV"), detail.mediaType.displayName.uppercased()]
         if detail.availability != .available {
-            parts.append("NOT IN YOUR LIBRARY")
+            parts.append(String(localized: "NOT IN YOUR LIBRARY", comment: "Eyebrow above a requestable title on Apple TV"))
         }
         return parts.joined(separator: " · ")
     }
@@ -308,22 +308,22 @@ struct RequestDetailView: View {
     private func buttonTitle(for action: RequestPrimaryAction) -> String {
         switch action {
         case .loading: ""
-        case .request: viewModel.mediaType == .series ? "Request Series" : "Request Movie"
-        case .submitting: "Requesting…"
-        case .openInLibrary: "In Your Library · Open"
+        case .request: viewModel.mediaType == .series ? String(localized: "Request Series") : String(localized: "Request Movie")
+        case .submitting: String(localized: "Requesting…")
+        case .openInLibrary: String(localized: "In Your Library · Open")
         case .status(let state): statusTitle(state)
         }
     }
 
     private func statusTitle(_ state: RequestDisplayState) -> String {
         switch state {
-        case .pending: "Requested · Pending"
-        case .onTheWay: "On the way"
-        case .inLibrary: "In your library"
+        case .pending: String(localized: "Requested · Pending")
+        case .onTheWay: String(localized: "On the way")
+        case .inLibrary: String(localized: "In your library")
         case .needsAttention(let reason):
-            RequestErrorCopy.message(forToken: reason).map { "Declined · \($0)" } ?? "Needs attention"
+            RequestErrorCopy.message(forToken: reason).map { String(localized: "Declined · \($0)") } ?? String(localized: "Needs attention")
         case .unavailable(let reason):
-            RequestErrorCopy.message(forToken: reason) ?? "Unavailable"
+            RequestErrorCopy.message(forToken: reason) ?? String(localized: "Unavailable")
         }
     }
 
@@ -369,10 +369,10 @@ struct RequestDetailView: View {
         }
         if detail.mediaType == .series {
             if let seasons = detail.numberOfSeasons, seasons > 0 {
-                parts.append("\(seasons) season\(seasons == 1 ? "" : "s")")
+                parts.append(String(localized: "\(seasons) seasons"))
             }
         } else if let runtime = detail.runtime, runtime > 0 {
-            parts.append("\(runtime) min")
+            parts.append(String(localized: "\(runtime) min", comment: "Runtime in minutes"))
         }
         if let director = detail.director, !director.isEmpty {
             parts.append(director)
@@ -380,7 +380,7 @@ struct RequestDetailView: View {
             parts.append(creators.prefix(2).joined(separator: ", "))
         }
         if let rating = detail.voteAverage, rating > 0 {
-            parts.append(String(format: "TMDB %.1f", rating))
+            parts.append("TMDB \(rating.formatted(.number.precision(.fractionLength(1))))")
         }
         return parts.joined(separator: " · ")
     }

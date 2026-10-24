@@ -60,6 +60,8 @@ test('every path the app uses is accepted', async () => {
     `/3/discover/tv?${discover}&first_air_date.gte=2026-10-23&first_air_date.lte=2026-12-22`,
     `/3/discover/movie?${discover}&primary_release_date.gte=2026-10-23&primary_release_date.lte=2026-12-22`,
     '/3/tv/1399/external_ids', '/tvmaze/shows/82/seasons', '/tvmaze/seasons/307/episodes',
+    '/3/movie/603?language=fr-FR', '/3/tv/1399?language=ja-JP', '/3/collection/10?language=zh-CN',
+    `/3/discover/tv?${discover}&with_networks=213&language=de-DE`,
   ]) {
     const response = await run(path, makeEnv());
     assert.equal(response.status, 200, path);
@@ -87,7 +89,9 @@ test('only GET is allowed', async () => {
 test('queries are checked against what the app sends', async () => {
   const env = makeEnv();
   for (const path of [
-    '/3/movie/7?api_key=abc', '/3/movie/7?language=en', '/3/find/tt0944947', '/3/find/tt0944947?external_source=tvdb_id',
+    '/3/movie/7?api_key=abc', '/3/movie/7?language=en', '/3/movie/7?language=FR-fr', '/3/movie/7?language=fr-FR&language=de-DE',
+    '/3/movie/7/videos?language=fr-FR', '/3/company/420?language=fr-FR', '/3/tv/1399/external_ids?language=fr-FR',
+    '/3/find/tt0944947', '/3/find/tt0944947?external_source=tvdb_id',
     `/3/discover/movie?sort_by=popularity.desc&include_adult=true&page=1`,
     `/3/discover/movie?sort_by=vote_count.desc&include_adult=false&page=1`,
     '/3/discover/movie?sort_by=popularity.desc&include_adult=false',

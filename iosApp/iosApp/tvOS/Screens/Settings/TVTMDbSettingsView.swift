@@ -24,7 +24,7 @@ struct TVTMDbSettingsView: View {
                 }.padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.bottom, TVSettingsLayout.scaled(18))
                 TVSettingsSectionHeader("TMDB CONNECTION")
                 TVSettingsGroup {
-                    TVSettingsInfoRow(title: "Status", value: store.isConfigured ? "Connected" : "Not available", showsConnectedDot: store.isConfigured)
+                    TVSettingsInfoRow(title: "Status", value: store.isConfigured ? String(localized: "Connected") : String(localized: "Not available"), showsConnectedDot: store.isConfigured)
                 }
                 TVSettingsFooter("Trailers open in the YouTube app, which must be installed on your Apple TV.")
                 TVSettingsSectionHeader("ABOUT TMDB")
@@ -43,9 +43,10 @@ struct TVTMDbAttribution: View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(16)) {
             Image("TMDbAttributionLogo").resizable().scaledToFit()
                 .frame(width: TVSettingsLayout.scaled(140), height: TVSettingsLayout.scaled(54)).accessibilityLabel("TMDB")
-            Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+            // TMDB's required notice stays in English.
+            Text(verbatim: "This product uses the TMDB API but is not endorsed or certified by TMDB.")
                 .font(.tvSettings(19)).foregroundStyle(.secondary)
-            Text("themoviedb.org").font(.tvSettings(19)).foregroundStyle(.secondary)
+            Text(verbatim: "themoviedb.org").font(.tvSettings(19)).foregroundStyle(.secondary)
         }.padding(TVSettingsLayout.scaled(24))
     }
 }

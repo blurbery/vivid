@@ -63,7 +63,7 @@ struct DownloadReclaimSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("\(records.count) item\(records.count == 1 ? "" : "s") you've finished watching")
+            Text("\(records.count) items you've finished watching")
                 .font(.system(size: 13))
                 .foregroundColor(.vividSecondaryText)
         }

@@ -27,6 +27,8 @@ Vivid reads chapters and embedded subtitle tracks from the opened media. The opt
 
 ## Current implementation
 
+Vivid's own sign-in, profile and error text follows Vivid's language; titles and other metadata come from Silo in the profile's metadata language (`catalog.metadata_language`). See [Localisation](../localisation.md).
+
 - [AuthService](../../iosApp/iosApp/Screens/Auth/AuthService.swift): Silo authentication and viewing-profile flows.
 - [SiloProfileChoiceView](../../iosApp/iosApp/tvOS/Profiles/SiloProfileChoiceView.swift) and [SiloHouseholdSearch](../../iosApp/iosApp/tvOS/Profiles/SiloHouseholdSearch.swift): choosing a household member's viewing profile and Search for Accounts.
 - [ServerRegistry](../../iosApp/iosApp/Networking/ServerRegistry.swift): registered server identity and selection.

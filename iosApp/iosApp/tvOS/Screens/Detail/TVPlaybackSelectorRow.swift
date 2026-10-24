@@ -45,8 +45,8 @@ struct TVPlaybackActionSelectors: View {
         ) {
             Button { onSelectAudioTrack(nil) } label: {
                 menuItem(
-                    title: "Auto",
-                    detail: "Use your Playback audio preference",
+                    title: String(localized: "Auto"),
+                    detail: String(localized: "Use your Playback audio preference"),
                     isSelected: selectedAudioTrackIndex == nil
                 )
             }
@@ -114,10 +114,10 @@ struct TVPlaybackActionSelectors: View {
     /// What playback picks from Settings > Subtitles while nothing is chosen
     /// here, the same answer on every server.
     private var subtitleFallback: String {
-        selectedSubtitleTrackIndex == -1 ? "Off" : selectedSubtitleTrackIndex == nil
+        selectedSubtitleTrackIndex == -1 ? String(localized: "Off") : selectedSubtitleTrackIndex == nil
             ? DetailPlaybackFormatting.automaticSubtitleLabel(
                 version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex)
-            : "On"
+            : String(localized: "On")
     }
 
     private var hasSubtitleChoice: Bool {
@@ -140,7 +140,7 @@ struct TVPlaybackActionSelectors: View {
                 }
                 onSelectSubtitleTrack(nil)
             } label: {
-                menuItem(title: "Auto",
+                menuItem(title: String(localized: "Auto"),
                          detail: DetailPlaybackFormatting.automaticSubtitleOutcome(
                              version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex),
                          isSelected: !hasSubtitleChoice)
@@ -191,7 +191,7 @@ struct TVPlaybackActionSelectors: View {
 
     private var versionValue: String {
         let value = DetailPlaybackFormatting.versionCompactLabel(currentVersion)
-        return selectedVersionFileId == nil ? "Auto, \(value)" : value
+        return selectedVersionFileId == nil ? String(localized: "Auto, \(value)") : value
     }
 
     private var audioValue: String {
@@ -265,10 +265,10 @@ struct TVPlaybackSelectionSummary: Equatable {
         selectedSubtitleTrackIndex: Int?,
         subtitleContext: OpenSubtitlePlaybackContext? = nil
     ) -> TVPlaybackSelectionSummary {
-        let fallback = selectedSubtitleTrackIndex == -1 ? "Off" : selectedSubtitleTrackIndex == nil
+        let fallback = selectedSubtitleTrackIndex == -1 ? String(localized: "Off") : selectedSubtitleTrackIndex == nil
             ? DetailPlaybackFormatting.automaticSubtitleLabel(
                 version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex)
-            : "On"
+            : String(localized: "On")
         guard let currentVersion else {
             return TVPlaybackSelectionSummary(
                 version: nil,
@@ -292,14 +292,14 @@ struct TVPlaybackSelectionSummary: Equatable {
         let range = DetailPlaybackFormatting.dynamicRangeLabel(currentVersion)
         let codec = DetailPlaybackFormatting.normalizedVideoCodec(currentVersion.codecVideo)
         let versionParts = [quality, range ?? codec].compactMap { $0 }
-        let version = versionParts.isEmpty ? "Auto" : versionParts.joined(separator: " · ")
+        let version = versionParts.isEmpty ? String(localized: "Auto") : versionParts.joined(separator: " · ")
         // Describe the source file, not the audio preference or device's
         // playback output. Track selection and compatibility remain automatic.
         let sourceAudioIndex = currentVersion.audioTracks?.firstIndex { $0.isDefault == true }
             ?? currentVersion.audioTracks?.indices.first
         let audio = DetailPlaybackFormatting.audioTechnicalSummary(
             version: currentVersion, selectedAudioTrackIndex: sourceAudioIndex
-        ) ?? "Auto"
+        ) ?? String(localized: "Auto")
 
         var context = subtitleContext
         context?.fileID = currentVersion.fileId

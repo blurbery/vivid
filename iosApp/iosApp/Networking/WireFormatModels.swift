@@ -261,7 +261,7 @@ private struct LibraryTabGroupWire: Decodable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Group"
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? String(localized: "Group", comment: "Fallback name for a library collection group the server sent without one")
         // Default unknown / missing raw values to .regular instead of
         // aborting the whole group decode.
         let rawKind = try c.decodeIfPresent(String.self, forKey: .kind)

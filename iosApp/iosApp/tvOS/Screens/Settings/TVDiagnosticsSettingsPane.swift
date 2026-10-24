@@ -25,10 +25,10 @@ struct TVDiagnosticsSettingsPane: View {
                 TVSettingsGroup {
                     NavigationLink { TVLatestPlaybackPage(report: latestPlayback) } label: {
                         TVSettingsRowLabel(
-                            title: "Latest Playback",
-                            detail: ([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
+                            title: Text("Latest Playback"),
+                            detail: Text(([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
                                      + (latestPlayback.headline.isEmpty ? [] : [latestPlayback.headline]))
-                                .joined(separator: " · "))
+                                .joined(separator: " · ")))
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                 }
@@ -43,7 +43,7 @@ struct TVDiagnosticsSettingsPane: View {
                 TVSettingsGroup {
                     ForEach(groups) { group in
                         NavigationLink { TVDiagnosticsGroupPage(group: group) } label: {
-                            TVSettingsRowLabel(title: group.summary, detail: groupDetail(group))
+                            TVSettingsRowLabel(title: group.displaySummary, detail: groupDetail(group))
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
                     }
@@ -53,9 +53,9 @@ struct TVDiagnosticsSettingsPane: View {
             if !reports.isEmpty {
                 TVSettingsGroup {
                     NavigationLink { TVDiagnosticsSendPage(reports: toSend) } label: {
-                        TVSettingsRowLabel(title: "Send to Vivid", detail: unsent.isEmpty
+                        TVSettingsRowLabel(title: Text("Send to Vivid"), detail: Text(unsent.isEmpty
                             ? "All reports have been sent. Send them again to \(VividAbout.diagnosticsEmail)."
-                            : "Send \(unsent.count == 1 ? "1 new report" : "\(unsent.count) new reports") to \(VividAbout.diagnosticsEmail).")
+                            : "Send \(unsent.count) new reports to \(VividAbout.diagnosticsEmail)."))
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                     Button { showsDeleteConfirm = true } label: {
@@ -88,10 +88,11 @@ struct TVDiagnosticsSettingsPane: View {
 
     private func groupDetail(_ group: AppHealthReportGroup) -> String {
         let latest = group.latest.lastOccurredAt.formatted(.relative(presentation: .named))
-        let count = group.reports.count == 1 ? "1 report" : "\(group.reports.count) reports"
-        let times = group.occurrenceCount > group.reports.count ? " · happened \(group.occurrenceCount) times" : ""
-        let allSent = group.reports.allSatisfy { sentIDs.contains($0.id) }
-        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)" + (allSent ? " · Sent" : "")
+        var parts = [group.kind.title, String(localized: "\(group.reports.count) reports")]
+        if group.occurrenceCount > group.reports.count { parts.append(String(localized: "happened \(group.occurrenceCount) times")) }
+        parts += [String(localized: "latest \(latest)"), group.latest.issueID]
+        if group.reports.allSatisfy({ sentIDs.contains($0.id) }) { parts.append(String(localized: "Sent")) }
+        return parts.joined(separator: " · ")
     }
 
     private func reload() async {
@@ -109,7 +110,7 @@ private struct TVDiagnosticsGroupPage: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(24)) {
                 TVSettingsPageHeader(
-                    title: group.summary,
+                    title: group.displaySummary,
                     subtitle: [group.kind.title, group.latest.technicalCode, group.latest.issueID]
                         .compactMap { $0 }.joined(separator: " · ")
                 )
@@ -142,30 +143,31 @@ private struct TVDiagnosticsReportPage: View {
 
     private var sections: [(title: String, lines: [String])] {
         var sections: [(String, [String])] = []
+        let when = report.recordedAt.formatted(date: .abbreviated, time: .standard)
         var summary = [
-            "Issue ID: \(report.issueID)",
-            "When: \(report.recordedAt.formatted(date: .abbreviated, time: .standard))",
+            String(localized: "Issue ID: \(report.issueID)"),
+            String(localized: "When: \(when)"),
         ]
         if report.occurrenceCount > 1 { summary.append(report.repeatSummary) }
         summary += [
-            "App: \(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)",
+            String(localized: "App: \(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)"),
         ]
-        if let code = report.technicalCode { summary.append("Code: \(code)") }
-        sections.append(("Summary", summary))
+        if let code = report.technicalCode { summary.append(String(localized: "Code: \(code)")) }
+        sections.append((String(localized: "Summary"), summary))
         if let context = report.context, !context.isEmpty {
-            sections.append(("What was happening", Self.lines(context)))
+            sections.append((String(localized: "What was happening"), Self.lines(context)))
         }
         if !report.details.isEmpty {
-            sections.append(("Details", Self.lines(report.details)))
+            sections.append((String(localized: "Details"), Self.lines(report.details)))
         }
         let events = report.recentEvents ?? []
         // Small blocks so each focus step scrolls a readable amount.
         stride(from: 0, to: events.count, by: 8).forEach { start in
             let block = Array(events[start..<min(start + 8, events.count)])
-            sections.append((start == 0 ? "Recent events" : "Recent events (continued)", block))
+            sections.append((start == 0 ? String(localized: "Recent events") : String(localized: "Recent events (continued)"), block))
         }
         if report.callStackTree != nil {
-            sections.append(("Call stack", ["Included in the full report for symbolication."]))
+            sections.append((String(localized: "Call stack"), [String(localized: "Included in the full report for symbolication.")]))
         }
         return sections
     }
@@ -173,7 +175,7 @@ private struct TVDiagnosticsReportPage: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
-                TVSettingsPageHeader(title: report.groupSummary, subtitle: report.kind.title)
+                TVSettingsPageHeader(title: report.displaySummary, subtitle: report.kind.title)
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                     VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
                         Text(section.title).font(.tvSettings(27, weight: .semibold))
@@ -226,25 +228,26 @@ private struct TVLatestPlaybackPage: View {
 
     private var sections: [(title: String, lines: [String])] {
         var sections: [(String, [String])] = [
-            ("Summary", report.summaryRows.map { "\($0.label): \($0.value)" }),
-            ("App", ["\(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)"]),
+            (String(localized: "Summary"), report.summaryRows.map { "\($0.label): \($0.value)" }),
+            (String(localized: "App"), [String(localized: "\(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)")]),
         ]
         // Every minute carries a memory reading; the summary covers those, so
         // this list stays on the minutes that had a problem.
         let minutes = report.timeline.filter { !$0.isQuiet }.map { minute -> String in
             var parts: [String] = []
-            if minute.droppedFrames > 0 { parts.append("\(minute.droppedFrames) dropped") }
-            if minute.decoderDroppedFrames > 0 { parts.append("\(minute.decoderDroppedFrames) decoder dropped") }
-            if minute.delayedFrames > 0 { parts.append("\(minute.delayedFrames) late") }
-            if let sync = minute.maxAvSyncMs, sync > 100 { parts.append("A/V sync \(Int(sync)) ms") }
-            if minute.rebufferSeconds > 0 { parts.append("rebuffering \(Int(minute.rebufferSeconds)) s") }
-            if minute.stallSeconds > 0 { parts.append("stalled \(Int(minute.stallSeconds)) s") }
+            if minute.droppedFrames > 0 { parts.append(String(localized: "\(minute.droppedFrames) dropped")) }
+            if minute.decoderDroppedFrames > 0 { parts.append(String(localized: "\(minute.decoderDroppedFrames) decoder dropped")) }
+            if minute.delayedFrames > 0 { parts.append(String(localized: "\(minute.delayedFrames) late")) }
+            if let sync = minute.maxAvSyncMs, sync > 100 { parts.append(String(localized: "A/V sync \(Int(sync)) ms")) }
+            if minute.rebufferSeconds > 0 { parts.append(String(localized: "rebuffering \(Int(minute.rebufferSeconds)) s")) }
+            if minute.stallSeconds > 0 { parts.append(String(localized: "stalled \(Int(minute.stallSeconds)) s")) }
             for (fault, count) in minute.faults.sorted(by: { $0.key < $1.key }) { parts.append("\(fault) ×\(count)") }
-            if let memory = minute.memoryMB { parts.append("memory \(memory) MB") }
-            return "Minute \(minute.minute): " + parts.joined(separator: ", ")
+            if let memory = minute.memoryMB { parts.append(String(localized: "memory \(memory) MB")) }
+            let problems = parts.joined(separator: ", ")
+            return String(localized: "Minute \(minute.minute): \(problems)")
         }
         stride(from: 0, to: minutes.count, by: 8).forEach { start in
-            sections.append((start == 0 ? "When it happened" : "When it happened (continued)",
+            sections.append((start == 0 ? String(localized: "When it happened") : String(localized: "When it happened (continued)"),
                              Array(minutes[start..<min(start + 8, minutes.count)])))
         }
         return sections
@@ -253,8 +256,8 @@ private struct TVLatestPlaybackPage: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
-                TVSettingsPageHeader(title: "Latest Playback",
-                                     subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened))
+                TVSettingsPageHeader(title: Text("Latest Playback"),
+                                     subtitle: Text(report.startedAt.formatted(date: .abbreviated, time: .shortened)))
                 TVSettingsGroup {
                     TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send Latest Playback", status: status, action: send)
@@ -322,13 +325,27 @@ private struct TVDiagnosticsNoteRow: View {
 
 /// A send row whose detail shows progress and the result.
 private struct TVDiagnosticsSendRow: View {
-    let title: String
+    private let title: Text
     let status: DiagnosticsSendStatus
     let action: () -> Void
 
+    init(title: LocalizedStringKey, status: DiagnosticsSendStatus, action: @escaping () -> Void) {
+        self.title = Text(title)
+        self.status = status
+        self.action = action
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, status: DiagnosticsSendStatus, action: @escaping () -> Void) {
+        self.title = Text(title)
+        self.status = status
+        self.action = action
+    }
+
     var body: some View {
         Button(action: action) {
-            TVSettingsRowLabel(title: retryable ? "Try Again" : title, detail: status.detail)
+            TVSettingsRowLabel(title: retryable ? Text("Try Again") : title, detail: status.detail.map { Text($0) })
         }
         // Stays enabled while sending: a disabled control can't hold focus on
         // tvOS, so focus would jump away. The send actions ignore repeats.
@@ -352,7 +369,7 @@ private struct TVDiagnosticsSendPage: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: "Send to Vivid",
-                                     subtitle: reports.count == 1 ? "1 report" : "\(reports.count) reports")
+                                     subtitle: "\(reports.count) reports")
                 TVSettingsGroup {
                     TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send", status: status, action: send)
@@ -415,7 +432,7 @@ private struct TVDiagnosticsQRPage: View {
             Text("Scan with your phone to open an email with a summary of these reports. Review it before sending.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: TVSettingsLayout.scaled(900))
             if code.omittedGroups > 0 {
-                Text("\(code.omittedGroups) older \(code.omittedGroups == 1 ? "problem" : "problems") didn’t fit in the code.")
+                Text("\(code.omittedGroups) older problems didn’t fit in the code.")
                     .font(.tvSettings(20)).foregroundStyle(.secondary)
             }
             Text(VividAbout.diagnosticsEmail)

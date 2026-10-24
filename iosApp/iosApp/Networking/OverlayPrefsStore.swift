@@ -297,7 +297,7 @@ final class OverlayPrefsStore: ObservableObject {
             return
         }
         guard let value = Self.jsonValue(from: json) else {
-            throw SettingsAPIError.invalidValue(message: "Overlay prefs did not serialize to JSON.")
+            throw SettingsAPIError.invalidValue(message: String(localized: "Overlay prefs did not serialize to JSON."))
         }
         do {
             try await VividAPI.shared.putValue(

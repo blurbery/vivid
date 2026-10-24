@@ -134,7 +134,7 @@ struct DownloadActionButton: View {
         contentId = episode.contentId
         isEpisode = true
         seriesId = context.seriesId
-        displayTitle = episode.title ?? "Episode \(episode.episodeNumber)"
+        displayTitle = episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
         displaySubtitle = Self.episodeSubtitle(
             seasonNumber: episode.seasonNumber,
             episodeNumber: episode.episodeNumber,
@@ -188,7 +188,7 @@ struct DownloadActionButton: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("\(largeDownloadWarning ?? "This download is large.") Download anyway?")
+                Text("\(largeDownloadWarning ?? String(localized: "This download is large.")) Download anyway?")
             }
     }
 
@@ -372,7 +372,7 @@ struct DownloadActionButton: View {
     /// cards in the rail.
     private func announceStart() {
         startFeedbackCount += 1
-        showNotice("Download started")
+        showNotice(String(localized: "Download started"))
     }
 
     /// A registration that fails before a record exists (offline, 4xx)
@@ -380,7 +380,7 @@ struct DownloadActionButton: View {
     /// or the tap silently evaporates.
     private func announceStartFailure() {
         failFeedbackCount += 1
-        showNotice("Couldn't start download")
+        showNotice(String(localized: "Couldn't start download"))
     }
 
     private func showNotice(_ text: String) {
@@ -453,9 +453,9 @@ struct DownloadActionButton: View {
     /// nothing has transferred yet.
     private var cancelPrompt: String {
         if let bytes = record?.bytesDownloaded, bytes > 0 {
-            return "Discard \(DownloadFormatting.bytes(bytes)) of downloaded data?"
+            return String(localized: "Discard \(DownloadFormatting.bytes(bytes)) of downloaded data?")
         }
-        return "Cancel this download?"
+        return String(localized: "Cancel this download?")
     }
 
     static func episodeSubtitle(
@@ -516,14 +516,14 @@ struct DownloadActionButton: View {
     /// A static "Download" caption under a green tick would misreport the
     /// state, so the caption tracks the record like the glyph does.
     private var captionText: String {
-        if isRegistrationPending, record == nil { return "Preparing" }
+        if isRegistrationPending, record == nil { return String(localized: "Preparing") }
         switch record?.localStatus {
-        case .none: return manager.downloadsDisallowed ? "Unavailable" : "Download"
-        case .downloading: return "Downloading"
-        case .paused: return "Paused"
-        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return "Preparing"
-        case .completed, .revoked: return "Downloaded"
-        case .failed: return "Failed"
+        case .none: return manager.downloadsDisallowed ? String(localized: "Unavailable") : String(localized: "Download")
+        case .downloading: return String(localized: "Downloading")
+        case .paused: return String(localized: "Paused")
+        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return String(localized: "Preparing")
+        case .completed, .revoked: return String(localized: "Downloaded")
+        case .failed: return String(localized: "Failed")
         }
     }
 
@@ -678,7 +678,7 @@ struct DownloadActionButton: View {
     }
 
     private var progressAccessibilityValue: String {
-        "\(progressPercent(record?.progressFraction ?? 0)) percent"
+        String(localized: "\(progressPercent(record?.progressFraction ?? 0)) percent")
     }
 
     private func progressPercent(_ fraction: Double) -> Int {

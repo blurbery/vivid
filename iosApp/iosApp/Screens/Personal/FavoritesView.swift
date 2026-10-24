@@ -192,7 +192,7 @@ struct FavoritesView: View {
         }
         }
         .vividBackground()
-        .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Favorites" : nil))
+        .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? String(localized: "Favorites") : nil))
         .task(id: filter) {
             await loadFavorites()
         }
@@ -288,7 +288,7 @@ struct FavoritesView: View {
                         selectedSection = section
                     }
                 } label: {
-                    Text(section.rawValue)
+                    Text(section.title)
                         .font(.system(size: 24, weight: .semibold))
                         .lineLimit(1)
                 }
@@ -313,7 +313,7 @@ struct FavoritesView: View {
                 .font(.system(size: 54, weight: .light))
                 .foregroundStyle(Color.vividOnSurface.opacity(0.34))
 
-            Text("No favorite \(selectedSection.rawValue.lowercased())")
+            Text(selectedSection.emptyTitle)
                 .font(.system(size: 30, weight: .semibold))
                 .foregroundStyle(Color.vividOnSurface)
 
@@ -338,7 +338,7 @@ struct FavoritesView: View {
             playAction: playAction(for: item),
             contentId: item.contentId,
             cardWidthOverride: tvCardWidthOverride,
-            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
+            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series"),
             onUserStateChanged: { state in
                 guard !state.isFavorite else { return }
                 withAnimation(.easeInOut(duration: VividTheme.normalDuration)) {
@@ -439,6 +439,21 @@ private enum FavoriteMediaSection: String, CaseIterable, Identifiable {
     case tvShows = "TV Shows"
 
     var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .movies: String(localized: "Movies")
+        case .tvShows: String(localized: "TV Shows")
+        }
+    }
+
+    /// The heading shown when the selected section has no favourites.
+    var emptyTitle: String {
+        switch self {
+        case .movies: String(localized: "No favorite movies")
+        case .tvShows: String(localized: "No favorite tv shows")
+        }
+    }
 
     func includes(_ item: BrowseItem) -> Bool {
         switch self {

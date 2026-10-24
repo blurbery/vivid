@@ -22,9 +22,9 @@ struct SiloProfileChoiceView: View {
 
     private var subtitle: String {
         guard let name = ServerRegistry.shared.activeServer?.displayName, !name.isEmpty else {
-            return "Choose the profile to add."
+            return String(localized: "Choose the profile to add.")
         }
-        return "Choose the \(name) profile to add."
+        return String(localized: "Choose the \(name) profile to add.")
     }
 
     var body: some View {
@@ -169,7 +169,7 @@ struct SiloProfileChoiceView: View {
         .frame(width: 142)
         #endif
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(profile.name + (profile.hasPin ? ", PIN required" : ""))
+        .accessibilityLabel(profile.hasPin ? Text("\(profile.name), PIN required") : Text(profile.name))
     }
 
     private func cacheScope(for profile: UserProfile) -> String? {

@@ -14,7 +14,9 @@ struct SubtitleAppearancePreview: View {
     let appearance: SubtitleAppearance
     var height: CGFloat = Self.defaultHeight
 
-    static let sampleLine = "A little dialogue, a lot of story."
+    static var sampleLine: String {
+        String(localized: "A little dialogue, a lot of story.", comment: "Sample subtitle line in the appearance preview")
+    }
     static let defaultHeight: CGFloat = 150
     private static let fontScale: CGFloat = 0.5
 

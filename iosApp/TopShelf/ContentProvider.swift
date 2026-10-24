@@ -18,6 +18,17 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     override func loadTopShelfContent() async -> (any TVTopShelfContent)? {
         let defaults = SharedStorage.suite
+        // Follow the language chosen in Vivid's settings. The extension can
+        // keep running across a change, so its rows are looked up in that
+        // language on every load; AppleLanguages covers the rest of the
+        // extension from its next launch.
+        let language = defaults.string(forKey: SharedStorage.appLanguageKey)
+        if let language {
+            UserDefaults.standard.set([language], forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        }
+        let strings = Self.stringsBundle(for: language)
         defaults.set(
             Self.timestampFormatter.string(from: Date()),
             forKey: SharedStorage.topShelfLastRunAtKey
@@ -55,14 +66,16 @@ final class ContentProvider: TVTopShelfContentProvider {
         guard http.isPersonalizedContentAllowed, http.contentIdentity == identity else { return nil }
 
         let continueWatching = collection(
-            title: "Continue Watching",
+            title: String(localized: "Continue Watching", bundle: strings, comment: "Top Shelf row title"),
             items: cwItems,
-            seriesPosters: seriesPosters
+            seriesPosters: seriesPosters,
+            strings: strings
         )
         let nextUp = collection(
-            title: "Next Up",
+            title: String(localized: "Next Up", bundle: strings, comment: "Top Shelf row title"),
             items: nuItems,
-            seriesPosters: seriesPosters
+            seriesPosters: seriesPosters,
+            strings: strings
         )
 
         let collections = [continueWatching, nextUp].compactMap { $0 }
@@ -75,6 +88,19 @@ final class ContentProvider: TVTopShelfContentProvider {
         guard !collections.isEmpty else { return nil }
 
         return TVTopShelfSectionedContent(sections: collections)
+    }
+
+    /// The strings for `language`, Vivid's saved choice, or for the device's
+    /// language when Vivid follows the system. Falls back to the extension's
+    /// own localisation.
+    private static func stringsBundle(for language: String?) -> Bundle {
+        let preferences = language.map { [$0] }
+            ?? CFPreferencesCopyValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication,
+                                      kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String] ?? []
+        guard let localization = Bundle.preferredLocalizations(from: Bundle.main.localizations, forPreferences: preferences).first,
+              let path = Bundle.main.path(forResource: localization, ofType: "lproj"),
+              let bundle = Bundle(path: path) else { return .main }
+        return bundle
     }
 
     // MARK: - Series / season poster lookup
@@ -214,10 +240,11 @@ final class ContentProvider: TVTopShelfContentProvider {
     private func collection(
         title: String,
         items: [TopShelfItem],
-        seriesPosters: EpisodePosters
+        seriesPosters: EpisodePosters,
+        strings: Bundle
     ) -> TVTopShelfItemCollection<TVTopShelfSectionedItem>? {
         guard !items.isEmpty else { return nil }
-        let shelfItems = items.map { sectionedItem(from: $0, seriesPosters: seriesPosters) }
+        let shelfItems = items.map { sectionedItem(from: $0, seriesPosters: seriesPosters, strings: strings) }
         let collection = TVTopShelfItemCollection(items: shelfItems)
         collection.title = title
         return collection
@@ -225,10 +252,11 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     private func sectionedItem(
         from item: TopShelfItem,
-        seriesPosters: EpisodePosters
+        seriesPosters: EpisodePosters,
+        strings: Bundle
     ) -> TVTopShelfSectionedItem {
         let shelfItem = TVTopShelfSectionedItem(identifier: item.contentId)
-        shelfItem.title = displayTitle(for: item)
+        shelfItem.title = displayTitle(for: item, strings: strings)
         shelfItem.imageShape = .poster
         if let progress = item.playbackProgress {
             shelfItem.playbackProgress = progress
@@ -267,13 +295,13 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     /// Episodes benefit from a "Series Name · S1E3" label instead of
     /// just the episode title. Movies use the bare title.
-    private func displayTitle(for item: TopShelfItem) -> String {
+    private func displayTitle(for item: TopShelfItem, strings: Bundle) -> String {
         guard item.type == "episode",
               let seriesTitle = item.seriesTitle,
               let season = item.seasonNumber,
               let episode = item.episodeNumber else {
             return item.title
         }
-        return "\(seriesTitle) · S\(season)E\(episode)"
+        return String(localized: "\(seriesTitle) · S\(String(season))E\(String(episode))", bundle: strings, comment: "Top Shelf episode tile: series name, then season and episode numbers")
     }
 }

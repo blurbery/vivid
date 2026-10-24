@@ -98,7 +98,7 @@ actor SiloLocalInterfaceSettings {
             let data = try SettingsWireCoding.makeEncoder().encode(value)
             let menu = try SettingsWireCoding.makeDecoder().decode(PrimaryMenuPreference.self, from: data)
             guard menu.isValid else {
-                throw SettingsAPIError.invalidValue(message: "The primary menu value is not valid.")
+                throw SettingsAPIError.invalidValue(message: String(localized: "The primary menu value is not valid."))
             }
         }
         var rows = load(serverId: serverId, profileId: profileId)

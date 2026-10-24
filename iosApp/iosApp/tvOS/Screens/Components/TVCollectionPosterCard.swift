@@ -130,29 +130,25 @@ struct TVCollectionPosterCard: View {
     /// the type is known, else the neutral `ITEMS`.
     private var countText: String? {
         guard let count = collection.itemCount, count > 0 else { return nil }
-        return "\(count) \(countNoun(for: count))".uppercased()
-    }
-
-    private func countNoun(for count: Int) -> String {
-        let plural = count != 1
+        let text: String
         switch collection.collectionType?.lowercased() {
         case "movie", "movies":
-            return plural ? "movies" : "movie"
+            text = String(localized: "\(count) movies")
         case "series", "show", "shows", "tvshows":
-            return plural ? "shows" : "show"
+            text = String(localized: "\(count) shows")
         case "album", "albums":
-            return plural ? "albums" : "album"
+            text = String(localized: "\(count) albums")
         default:
-            return plural ? "items" : "item"
+            text = String(localized: "\(count) items")
         }
+        return text.uppercased()
     }
 
     private var accessibilityLabel: String {
-        var label = "\(collection.name), collection"
-        if let count = collection.itemCount, count > 0 {
-            label += ", \(count) \(count == 1 ? "item" : "items")"
+        guard let count = collection.itemCount, count > 0 else {
+            return String(localized: "\(collection.name), collection")
         }
-        return label
+        return String(localized: "\(collection.name), collection, \(count) items")
     }
 
     /// Stable hue for the art-less placeholder, derived from the id so a

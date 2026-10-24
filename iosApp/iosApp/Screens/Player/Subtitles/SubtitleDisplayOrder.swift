@@ -133,6 +133,17 @@ enum SubtitleDisplayOrder {
         return key.uppercased()
     }
 
+    /// The language's name in the app's language, for display only. Group
+    /// ordering stays on the English `languageDisplayName(_:)`. Falls back
+    /// to the uppercased code.
+    static func displayLanguageName(_ key: String) -> String {
+        guard let name = Locale.current.localizedString(forLanguageCode: key), let first = name.first else {
+            return key.uppercased()
+        }
+        // Only the first letter: "Portugais brésilien", not "Portugais Brésilien".
+        return String(first).uppercased(with: Locale.current) + name.dropFirst()
+    }
+
     // MARK: - Private
 
     /// 3-letter ISO 639-2 (B and T) → 2-letter ISO 639-1, for the

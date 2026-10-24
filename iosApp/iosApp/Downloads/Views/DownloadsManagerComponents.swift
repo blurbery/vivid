@@ -15,14 +15,9 @@ struct DownloadsStorageHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            (
-                Text(DownloadFormatting.bytes(used))
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(.vividOnSurface)
-                + Text(contextSuffix)
-                    .font(.system(size: 14))
-                    .foregroundColor(.vividSecondaryText)
-            )
+            headline
+                .font(.system(size: 14))
+                .foregroundColor(.vividSecondaryText)
 
             if activeCount > 0 {
                 Text(inProgressLine)
@@ -50,21 +45,25 @@ struct DownloadsStorageHeader: View {
         .padding(.horizontal, 16)
     }
 
-    private var contextSuffix: String {
-        device.total > 0
-            ? "  of \(DownloadFormatting.bytes(device.total)) on this device"
-            : "  downloaded"
+    /// One sentence so translators can reorder it; the used figure keeps its
+    /// own larger style inside it.
+    private var headline: Text {
+        let usedText = Text(DownloadFormatting.bytes(used))
+            .font(.system(size: 26, weight: .bold))
+            .foregroundColor(.vividOnSurface)
+        return device.total > 0
+            ? Text("\(usedText)  of \(DownloadFormatting.bytes(device.total)) on this device", comment: "Downloads storage summary, e.g. 12 GB of 128 GB on this device")
+            : Text("\(usedText)  downloaded", comment: "Downloads storage summary when device capacity is unknown, e.g. 12 GB downloaded")
     }
 
     /// Mid-flight transfers are invisible to `used` (partial media sits in
     /// the session's staging area), so this line keeps the hero honest
     /// while something is downloading.
     private var inProgressLine: String {
-        var line = "\(activeCount) download\(activeCount == 1 ? "" : "s") in progress"
         if breakdown.inProgress > 0 {
-            line += " · \(DownloadFormatting.bytes(breakdown.inProgress)) so far"
+            return String(localized: "\(activeCount) downloads in progress · \(DownloadFormatting.bytes(breakdown.inProgress)) so far")
         }
-        return line
+        return String(localized: "\(activeCount) downloads in progress")
     }
 
     private var breakdownBar: some View {
@@ -95,7 +94,7 @@ struct DownloadsStorageHeader: View {
         }
     }
 
-    @ViewBuilder private func legendItem(opacity: Double, bytes: Int64, label: String) -> some View {
+    @ViewBuilder private func legendItem(opacity: Double, bytes: Int64, label: LocalizedStringKey) -> some View {
         if bytes > 0 {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2)
@@ -141,7 +140,7 @@ struct DownloadReclaimBanner: View {
                     Text("Free up \(DownloadFormatting.bytes(bytes))")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
-                    Text("\(episodeCount) item\(episodeCount == 1 ? "" : "s") you've finished")
+                    Text("\(episodeCount) items you've finished")
                         .font(.system(size: 12.5))
                         .foregroundColor(.vividSecondaryText)
                 }
@@ -203,7 +202,7 @@ struct DownloadSortControl: View {
 
             Spacer()
 
-            Text("\(itemCount) item\(itemCount == 1 ? "" : "s")")
+            Text("\(itemCount) items")
                 .font(.system(size: 12.5))
                 .foregroundColor(.vividOnSurface.opacity(0.38))
         }
@@ -297,10 +296,10 @@ struct DownloadActivityRing: View {
 
 /// "MOVIE" / "SERIES" capsule chip used in Manager rows.
 struct DownloadKindChip: View {
-    let text: String
+    let text: LocalizedStringResource
 
     var body: some View {
-        Text(text.uppercased())
+        Text(String(localized: text).uppercased())
             .font(.system(size: 9.5, weight: .semibold))
             .tracking(0.4)
             .foregroundColor(.vividSecondaryText)

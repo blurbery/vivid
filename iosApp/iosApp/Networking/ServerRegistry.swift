@@ -93,7 +93,7 @@ enum ServerRegistryError: LocalizedError {
     case persistenceFailed
 
     var errorDescription: String? {
-        "Vivid couldn't save the server list. Please try again."
+        String(localized: "Vivid couldn't save the server list. Please try again.")
     }
 }
 

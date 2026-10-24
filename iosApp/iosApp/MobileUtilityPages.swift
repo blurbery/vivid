@@ -150,7 +150,7 @@ private struct MobileUtilityPage<Content: View>: View {
 }
 
 private struct MobileUtilityCloseToolbar: ToolbarContent {
-    let accessibilityLabel: String
+    let accessibilityLabel: LocalizedStringKey
     let action: () -> Void
 
     var body: some ToolbarContent {
@@ -169,7 +169,7 @@ private struct MobileUtilityCloseToolbar: ToolbarContent {
 }
 
 private struct MobileUtilityCloseButton: View {
-    let accessibilityLabel: String
+    let accessibilityLabel: LocalizedStringKey
     let action: () -> Void
 
     var body: some View {

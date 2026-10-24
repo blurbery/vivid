@@ -15,7 +15,7 @@ struct PhoneDetailFactsSection: View {
         if !facts.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .center, spacing: 0) {
-                    ForEach(Array(facts.enumerated()), id: \.element.label) { index, fact in
+                    ForEach(Array(facts.enumerated()), id: \.element.id) { index, fact in
                         if index > 0 {
                             Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 42)
                         }
@@ -38,6 +38,8 @@ struct PhoneDetailFactsSection: View {
     }
 
     private struct Fact {
+        /// The English label, so a row keeps its identity in every language.
+        let id: String
         let label: String
         let value: String
     }
@@ -46,38 +48,38 @@ struct PhoneDetailFactsSection: View {
         var facts: [Fact] = []
 
         if let directors = creditNames(forJobs: ["Director"]), !directors.isEmpty {
-            facts.append(Fact(label: "Director", value: directors))
+            facts.append(Fact(id: "Director", label: String(localized: "Director"), value: directors))
         }
         if let writers = creditNames(forJobs: ["Writer", "Screenplay", "Story"]), !writers.isEmpty {
-            facts.append(Fact(label: writerLabel, value: writers))
+            facts.append(Fact(id: "Writer", label: writerLabel, value: writers))
         }
         if let studios = detail.studios, !studios.isEmpty {
-            facts.append(Fact(label: "Studio", value: studios.prefix(3).joined(separator: ", ")))
+            facts.append(Fact(id: "Studio", label: String(localized: "Studio"), value: studios.prefix(3).joined(separator: ", ")))
         }
         if let networks = detail.networks, !networks.isEmpty {
-            facts.append(Fact(label: "Network", value: networks.prefix(3).joined(separator: ", ")))
+            facts.append(Fact(id: "Network", label: String(localized: "Network"), value: networks.prefix(3).joined(separator: ", ")))
         }
         if let countries = detail.countries, !countries.isEmpty {
-            facts.append(Fact(label: "Country", value: countries.prefix(3).joined(separator: ", ")))
+            facts.append(Fact(id: "Country", label: String(localized: "Country"), value: countries.prefix(3).joined(separator: ", ")))
         }
         if let airDate = DetailDateFormatting.longDate(detail.airDate) {
-            facts.append(Fact(label: "Aired", value: airDate))
+            facts.append(Fact(id: "Aired", label: String(localized: "Aired"), value: airDate))
         }
         if let releaseDate = DetailDateFormatting.longDate(detail.releaseDate) {
-            facts.append(Fact(label: "Released", value: releaseDate))
+            facts.append(Fact(id: "Released", label: String(localized: "Released"), value: releaseDate))
         }
         if let firstAired = DetailDateFormatting.longDate(detail.firstAirDate) {
-            facts.append(Fact(label: "First Aired", value: firstAired))
+            facts.append(Fact(id: "First Aired", label: String(localized: "First Aired"), value: firstAired))
         }
         if let lastAired = DetailDateFormatting.longDate(detail.lastAirDate) {
-            facts.append(Fact(label: "Last Aired", value: lastAired))
+            facts.append(Fact(id: "Last Aired", label: String(localized: "Last Aired"), value: lastAired))
         }
         return facts
     }
 
     private var writerLabel: String {
         let hasScreenplay = detail.crew?.contains { $0.job?.lowercased() == "screenplay" } ?? false
-        return hasScreenplay ? "Writer" : "Written by"
+        return hasScreenplay ? String(localized: "Writer") : String(localized: "Written by")
     }
 
     private func creditNames(forJobs jobs: [String]) -> String? {
@@ -134,7 +136,7 @@ struct DetailMediaSection: View {
                     panel(title: "Audio", icon: "music.note") {
                         ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
                             if index > 0 { Divider().overlay(.white.opacity(0.12)) }
-                            Text(clean(track.title) ?? "Track \(index + 1)")
+                            Text(clean(track.title) ?? String(localized: "Track \(index + 1)"))
                                 .font(.system(size: isTV ? 22 : 14, weight: .semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                             fields(audioFields(track))
@@ -142,7 +144,7 @@ struct DetailMediaSection: View {
                     }
                 } else if let codec = clean(version.codecAudio) {
                     panel(title: "Audio", icon: "music.note") {
-                        fields([Field(label: "Codec", value: codec.uppercased())])
+                        fields([Field(label: String(localized: "Codec"), value: codec.uppercased())])
                     }
                 }
             }
@@ -153,7 +155,7 @@ struct DetailMediaSection: View {
         }
     }
 
-    private func panel<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+    private func panel<Content: View>(title: LocalizedStringKey, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Label(title, systemImage: icon)
                 .font(.system(size: isTV ? 26 : 16, weight: .semibold))
@@ -191,8 +193,8 @@ struct DetailMediaSection: View {
     private func videoFields(_ file: FileVersion) -> [Field] {
         let video = file.videoTracks?.first
         var result: [Field] = []
-        func add(_ label: String, _ value: String?) {
-            if let value = clean(value) { result.append(Field(label: label, value: value)) }
+        func add(_ label: LocalizedStringResource, _ value: String?) {
+            if let value = clean(value) { result.append(Field(label: String(localized: label), value: value)) }
         }
         add("Container", file.container?.uppercased())
         if let size = file.fileSize, size > 0 {
@@ -205,14 +207,15 @@ struct DetailMediaSection: View {
         if let width = video?.width, let height = video?.height, width > 0, height > 0 {
             add("Resolution", "\(width) × \(height)")
         } else { add("Resolution", file.resolution) }
-        add("Profile", video?.profile)
+        // Its own key: "Profile" elsewhere is a person's profile.
+        add(LocalizedStringResource("mediaInfo.videoProfile", defaultValue: "Profile", comment: "Video codec profile, e.g. Main 10, in the media information panel"), video?.profile)
         if let level = video?.level, level > 0 { add("Level", String(level)) }
-        if let rate = clean(video?.frameRate) { add("Frame rate", "\(rate) fps") }
+        if let rate = clean(video?.frameRate) { add("Frame rate", String(localized: "\(rate) fps")) }
         add("Video bitrate", bitrate(video?.bitrate, useMbps: true))
         add("Overall bitrate", bitrate(file.bitrate, useMbps: true))
         add("Video range", PlayerStreamBadges.dynamicRange(file) ?? video?.videoRange ?? file.hdr.map { $0 ? "HDR" : "SDR" })
         add("Dolby Vision", video?.dolbyVision)
-        if let depth = video?.bitDepth, depth > 0 { add("Bit depth", "\(depth) bit") }
+        if let depth = video?.bitDepth, depth > 0 { add("Bit depth", String(localized: "\(depth) bit")) }
         add("Color range", video?.colorRange)
         add("Color primaries", video?.colorPrimaries)
         add("Color space", video?.colorSpace)
@@ -222,8 +225,8 @@ struct DetailMediaSection: View {
 
     private func audioFields(_ track: AudioTrack) -> [Field] {
         var result: [Field] = []
-        func add(_ label: String, _ value: String?) {
-            if let value = clean(value) { result.append(Field(label: label, value: value)) }
+        func add(_ label: LocalizedStringResource, _ value: String?) {
+            if let value = clean(value) { result.append(Field(label: String(localized: label), value: value)) }
         }
         if let language = clean(track.language) {
             add("Language", Locale.current.localizedString(forLanguageCode: language) ?? language)
@@ -233,16 +236,19 @@ struct DetailMediaSection: View {
         if let channels = track.channels, channels > 0 { add("Channels", String(channels)) }
         if let rate = track.sampleRate, rate > 0 { add("Sample rate", "\(rate) Hz") }
         add("Bitrate", bitrate(track.bitrate))
-        if let isDefault = track.isDefault { add("Default", isDefault ? "Yes" : "No") }
+        if let isDefault = track.isDefault { add("Default", isDefault ? String(localized: "Yes") : String(localized: "No")) }
         return result
     }
 
     private func bitrate(_ value: Int?, useMbps: Bool = false) -> String? {
         guard let value, value > 0 else { return nil }
         let kbps = MediaServerProvider.active.usesNativeUser ? Double(value) / 1_000 : Double(value)
-        return useMbps || kbps >= 1_000
-            ? String(format: "%.2f Mbps", kbps / 1_000)
-            : String(format: "%.0f kbps", kbps)
+        if useMbps || kbps >= 1_000 {
+            let mbps = (kbps / 1_000).formatted(.number.precision(.fractionLength(2)).grouping(.never))
+            return String(localized: "\(mbps) Mbps")
+        }
+        let rounded = kbps.formatted(.number.precision(.fractionLength(0)).grouping(.never))
+        return String(localized: "\(rounded) kbps")
     }
 
     private func clean(_ value: String?) -> String? {

@@ -31,9 +31,9 @@ struct ServerSetupView: View {
 
             VStack(alignment: .leading, spacing: 18) {
                 AuroraTextField(
-                    label: "Server address",
+                    label: Text("Server address"),
                     text: $viewModel.host,
-                    placeholder: provider.serverPlaceholder,
+                    placeholder: Text(provider.serverPlaceholder),
                     focus: $focusedField,
                     equals: .host,
                     contentType: .url,
@@ -100,7 +100,7 @@ struct ServerSetupView: View {
                                 viewModel.selectedScheme = scheme
                             } label: {
                                 AuroraSegment(
-                                    title: scheme.rawValue,
+                                    title: scheme.title,
                                     isSelected: viewModel.selectedScheme == scheme,
                                     isFocused: false
                                 )
@@ -110,9 +110,9 @@ struct ServerSetupView: View {
                     }
                 }
                 AuroraTextField(
-                    label: "Port",
+                    label: Text("Port"),
                     text: $viewModel.port,
-                    placeholder: "8096",
+                    placeholder: Text(verbatim: "8096"),
                     focus: $focusedField,
                     equals: .port,
                     keyboard: .number
@@ -181,7 +181,7 @@ struct PhoneProviderSelectionView: View {
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.18), lineWidth: 1))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(available ? name : "\(name), coming soon")
+        .accessibilityLabel(available ? name : String(localized: "\(name), coming soon"))
     }
 }
 #endif

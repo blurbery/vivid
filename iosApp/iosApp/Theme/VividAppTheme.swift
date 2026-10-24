@@ -12,9 +12,9 @@ enum VividAppTheme: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .graphite: "Graphite"
-        case .black: "Black"
-        case .native: "Native"
+        case .graphite: String(localized: "Graphite", comment: "Appearance theme name")
+        case .black: String(localized: "Black", comment: "Appearance theme name")
+        case .native: String(localized: "Native", comment: "Appearance theme name")
         }
     }
 }

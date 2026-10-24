@@ -749,8 +749,8 @@ extension PlayerViewModel {
             showNextUpScreen = true
             nextUpScreenVideoEnded = true
             showNotice(
-                title: "Couldn't start the next episode",
-                message: message,
+                title: String(localized: "Couldn't start the next episode"),
+                message: PlaybackFailureText.localized(message),
                 tone: .warning,
                 duration: 6
             )
@@ -763,8 +763,8 @@ extension PlayerViewModel {
             isLoading = false
             isPlaying = false
             showNotice(
-                title: "Playback recovery failed",
-                message: message,
+                title: String(localized: "Playback recovery failed"),
+                message: PlaybackFailureText.localized(message),
                 tone: .warning,
                 duration: 6
             )

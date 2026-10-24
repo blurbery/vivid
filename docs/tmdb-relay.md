@@ -20,13 +20,15 @@ Only `GET /3/<path>` for the paths the app uses, each with only the query the ap
 
 | Path | Query | Used for |
 | --- | --- | --- |
-| `movie/{id}`, `tv/{id}` | none | Ratings, collection membership, a series' seasons, and the Calendar's next air date when TVmaze has none |
+| `movie/{id}`, `tv/{id}` | `language` (optional) | Ratings, collection membership, a series' seasons, and the Calendar's next air date when TVmaze has none |
 | `tv/{id}/external_ids` | none | A series' TVDB or IMDb ID, when the server only has its TMDb ID, for its TVmaze air times |
 | `movie/{id}/videos`, `tv/{id}/videos`, `tv/{id}/season/{n}/videos` | none | Trailers |
-| `collection/{id}` | none | Collection rows |
+| `collection/{id}` | `language` (optional) | Collection rows |
 | `company/{id}`, `network/{id}` | none | Studios & Networks logos |
 | `find/tt…` | `external_source=imdb_id` | TMDb IDs for Emby and Jellyfin titles that only have an IMDb ID |
-| `discover/movie`, `discover/tv` | `sort_by=popularity.desc`, `include_adult=false`, `page` (1 to 10), the studio, network, streaming provider, region and date filters Studios & Networks sends, and the `primary_release_date` and `first_air_date` windows the Calendar sends | Studios & Networks lists, and the Calendar's Trending movies and series coming soon |
+| `discover/movie`, `discover/tv` | `sort_by=popularity.desc`, `include_adult=false`, `page` (1 to 10), the studio, network, streaming provider, region and date filters Studios & Networks sends, the `primary_release_date` and `first_air_date` windows the Calendar sends, and an optional `language` | Studios & Networks lists, and the Calendar's Trending movies and series coming soon |
+
+`language` is the app's language with its region, such as `fr-FR` or `zh-CN`, so TMDb answers with titles and overviews in that language. It's optional, so app versions that don't send it work unchanged, and it's refused on the video, logo and ID paths.
 
 Anything else gets `404`, including TMDb's account and authentication endpoints, so the relay can't be used as a general TMDb gateway. An unknown or repeated query parameter, or a value in the wrong format, gets `400`. Other methods get `405`. The query is sorted before it's used, so the same lookup always shares one cache entry.
 
@@ -58,7 +60,7 @@ TVmaze answers a lookup with a redirect to the show. The relay never follows it:
 
 The client's address is used only as the rate-limit key. It isn't stored, logged or sent to TMDb. Workers observability is off, so request details aren't retained. TMDb answers are cached by Cloudflare for up to a day and TVmaze answers for the times in the [TVmaze](#tvmaze) table, keyed only by the path and query. TMDb's terms allow caching for up to six months.
 
-The relay sees which TMDb, TVDB or IMDb IDs are looked up, which Studios & Networks lists are read and which TVmaze shows the Calendar asks for. TVmaze never receives the client's address. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
+The relay sees which TMDb, TVDB or IMDb IDs are looked up, which Studios & Networks lists are read, which TVmaze shows the Calendar asks for, and Vivid's language when it isn't English (for example `fr-FR`). TVmaze never receives the client's address. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
 
 > [!IMPORTANT]
 > The relay must be deployed, with the token set, and the privacy policy must be live, before an app build that uses the relay ships. Without the relay, TMDb features in that build show nothing.

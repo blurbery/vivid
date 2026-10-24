@@ -25,7 +25,7 @@ func mediaCardAccessibilityLabel(
         components.append(String(year))
     }
     if isWatched {
-        components.append("Watched")
+        components.append(String(localized: "Watched", comment: "Spoken status of a watched title"))
     }
     return components.joined(separator: ", ")
 }
@@ -38,8 +38,9 @@ func episodeRailAccessibilityLabel(
     isCurrent: Bool,
     isPlayed: Bool
 ) -> String {
-    let seasonLabel = seasonNumber == 0 ? "Specials" : "Season \(seasonNumber)"
-    var components = ["\(seasonLabel), Episode \(episodeNumber)"]
+    var components = [seasonNumber == 0
+        ? String(localized: "Specials, Episode \(String(episodeNumber))", comment: "Spoken episode position in the specials season")
+        : String(localized: "Season \(String(seasonNumber)), Episode \(String(episodeNumber))", comment: "Spoken episode position")]
     if let title, !title.isEmpty {
         components.append(title)
     }
@@ -47,10 +48,10 @@ func episodeRailAccessibilityLabel(
         components.append(metadata)
     }
     if isCurrent {
-        components.append("Now viewing")
+        components.append(String(localized: "Now viewing", comment: "Spoken status of the episode whose page is open"))
     }
     if isPlayed {
-        components.append("Watched")
+        components.append(String(localized: "Watched", comment: "Spoken status of a watched title"))
     }
     return components.joined(separator: ", ")
 }
@@ -769,7 +770,10 @@ private extension View {
 /// Shared saved-title badge, including the native tvOS catalogue cards.
 struct MediaTypePill: View {
     let title: String
-    private var tint: Color { title == "Movie" ? Color(red: 0.40, green: 0.70, blue: 1) : Color(red: 0.78, green: 0.58, blue: 1) }
+    /// Callers pass the shown label, so it's matched in English and in the
+    /// app's language.
+    private var isMovie: Bool { title == "Movie" || title == String(localized: "Movie") }
+    private var tint: Color { isMovie ? Color(red: 0.40, green: 0.70, blue: 1) : Color(red: 0.78, green: 0.58, blue: 1) }
     private var fontSize: CGFloat {
         #if os(tvOS)
         18

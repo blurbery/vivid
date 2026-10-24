@@ -38,10 +38,11 @@ struct VividQualityPreset: Identifiable, Hashable {
     let bitrateKbps: Int?
 
     var menuLabel: String {
-        if id == "auto" { return "Auto (Recommended)" }
-        if id == "original" { return "Original Quality" }
+        if id == "auto" { return String(localized: "Auto (Recommended)") }
+        if id == "original" { return String(localized: "Original Quality") }
         guard let bitrateKbps, bitrateKbps > 0 else { return label }
-        return "\(label) (\(ApplePlaybackQuality.formatBitrate(kbps: bitrateKbps)))"
+        let bitrate = ApplePlaybackQuality.formatBitrate(kbps: bitrateKbps)
+        return String(localized: "\(label) (\(bitrate))", comment: "Quality picker option: preset name and its bitrate, e.g. 1080p High (10 Mbps)")
     }
 }
 
@@ -57,64 +58,64 @@ enum VividQualityPresets {
     static let all: [VividQualityPreset] = [
         .init(
             id: "auto",
-            label: "Auto",
-            description: "Direct or server transcoding.",
+            label: String(localized: "Auto"),
+            description: String(localized: "Direct or server transcoding."),
             resolution: resolutionAuto,
             bitrateKbps: nil
         ),
         .init(
             id: "original",
-            label: "Original",
-            description: "Source quality, no transcoding.",
+            label: String(localized: "Original"),
+            description: String(localized: "Source quality, no transcoding."),
             resolution: resolutionOriginal,
             bitrateKbps: nil
         ),
         .init(
             id: "2160p",
             label: "4K",
-            description: "Up to 2160p.",
+            description: String(localized: "Up to 2160p."),
             resolution: "2160p",
             bitrateKbps: nil
         ),
         .init(
             id: "1080p-high",
-            label: "1080p High",
-            description: "1080p at up to 10 Mbps.",
+            label: String(localized: "1080p High"),
+            description: String(localized: "1080p at up to 10 Mbps."),
             resolution: "1080p",
             bitrateKbps: 10_000
         ),
         .init(
             id: "1080p",
             label: "1080p",
-            description: "1080p at up to 6 Mbps.",
+            description: String(localized: "1080p at up to 6 Mbps."),
             resolution: "1080p",
             bitrateKbps: 6_000
         ),
         .init(
             id: "1080p-low",
-            label: "1080p Low",
-            description: "1080p at up to 3 Mbps, for a slower link.",
+            label: String(localized: "1080p Low"),
+            description: String(localized: "1080p at up to 3 Mbps, for a slower link."),
             resolution: "1080p",
             bitrateKbps: 3_000
         ),
         .init(
             id: "720p-high",
-            label: "720p High",
-            description: "720p at up to 4 Mbps.",
+            label: String(localized: "720p High"),
+            description: String(localized: "720p at up to 4 Mbps."),
             resolution: "720p",
             bitrateKbps: 4_000
         ),
         .init(
             id: "720p",
             label: "720p",
-            description: "720p at up to 2 Mbps.",
+            description: String(localized: "720p at up to 2 Mbps."),
             resolution: "720p",
             bitrateKbps: 2_000
         ),
         .init(
             id: "480p",
             label: "480p",
-            description: "480p at up to 1.5 Mbps, for the tightest connections.",
+            description: String(localized: "480p at up to 1.5 Mbps, for the tightest connections."),
             resolution: "480p",
             bitrateKbps: 1_500
         ),
@@ -153,14 +154,15 @@ enum VividQualityPresets {
         let normalized = normalizeResolution(resolution)
         let resolutionLabel: String
         switch normalized {
-        case resolutionAuto: resolutionLabel = "Auto"
-        case resolutionOriginal: resolutionLabel = "Original"
+        case resolutionAuto: resolutionLabel = String(localized: "Auto")
+        case resolutionOriginal: resolutionLabel = String(localized: "Original")
         case "2160p": resolutionLabel = "4K"
         default: resolutionLabel = normalized
         }
 
         guard let capped = bitrateKbps, capped > 0 else { return resolutionLabel }
-        return "\(resolutionLabel) at \(formatMbps(kbps: capped)) Mbps"
+        let mbps = formatMbps(kbps: capped)
+        return String(localized: "\(resolutionLabel) at \(mbps) Mbps", comment: "A stored quality no preset covers, e.g. 1080p at 8 Mbps")
     }
 
     /// Reduces any stored resolution — including the compound transcode-ladder
@@ -185,10 +187,11 @@ enum VividQualityPresets {
     }
 
     /// Mbps with collapsed integers ("6" not "6.0"), matching the web's and
-    /// Android's preset descriptions so the three read identically.
+    /// Android's preset descriptions so the three read identically. The
+    /// decimal separator follows the person's locale.
     private static func formatMbps(kbps: Int) -> String {
-        if kbps % 1000 == 0 { return String(kbps / 1000) }
+        if kbps % 1000 == 0 { return (kbps / 1000).formatted(.number.grouping(.never)) }
         let tenths = Int((Double(kbps) / 100.0).rounded())
-        return "\(tenths / 10).\(tenths % 10)"
+        return (Double(tenths) / 10).formatted(.number.grouping(.never).precision(.fractionLength(1)))
     }
 }

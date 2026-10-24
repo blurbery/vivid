@@ -65,13 +65,13 @@ enum CatalogSortKey: String, CaseIterable, Codable, Hashable {
 
     var label: String {
         switch self {
-        case .title: return "Title"
-        case .addedAt: return "Date Added"
-        case .releaseDate: return "Release Date"
-        case .year: return "Year"
-        case .ratingImdb: return "Rating"
-        case .runtime: return "Runtime"
-        case .resolution: return "Resolution"
+        case .title: return String(localized: "Title")
+        case .addedAt: return String(localized: "Date Added")
+        case .releaseDate: return String(localized: "Release Date")
+        case .year: return String(localized: "Year")
+        case .ratingImdb: return String(localized: "Rating")
+        case .runtime: return String(localized: "Runtime")
+        case .resolution: return String(localized: "Resolution")
         }
     }
 
@@ -79,13 +79,13 @@ enum CatalogSortKey: String, CaseIterable, Codable, Hashable {
     func directionLabel(for order: CatalogSortOrder) -> String {
         switch self {
         case .title:
-            return order == .asc ? "A–Z" : "Z–A"
+            return order == .asc ? String(localized: "A–Z") : String(localized: "Z–A")
         case .year, .addedAt, .releaseDate:
-            return order == .asc ? "Oldest" : "Newest"
+            return order == .asc ? String(localized: "Oldest") : String(localized: "Newest")
         case .runtime:
-            return order == .asc ? "Shortest" : "Longest"
+            return order == .asc ? String(localized: "Shortest") : String(localized: "Longest")
         case .ratingImdb, .resolution:
-            return order == .asc ? "Lowest" : "Highest"
+            return order == .asc ? String(localized: "Lowest") : String(localized: "Highest")
         }
     }
 

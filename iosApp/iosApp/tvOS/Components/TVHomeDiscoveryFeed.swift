@@ -1137,7 +1137,7 @@ private struct TVHomeSpotlightArtwork: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 760, alignment: .center)
                     }
-                    Text(([slide.item.type.capitalized] + spotlightMetaParts
+                    Text(([typeLabel] + spotlightMetaParts
                           + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
                         .font(.system(size: 23, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
@@ -1169,6 +1169,18 @@ private struct TVHomeSpotlightArtwork: View {
             guard !Task.isCancelled else { return }
             logo = image
         }
+    }
+
+    /// The item's type in the app's language. Types without a label of
+    /// their own show as the server names them.
+    private var typeLabel: String {
+        let type = slide.item.type
+        if type.lowercased() == "movie" { return String(localized: "Movie") }
+        if type.lowercased() == "episode" { return String(localized: "Episode") }
+        if type.lowercased() == "series" {
+            return String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
+        }
+        return type.capitalized
     }
 
     private var spotlightMetaParts: [String] {

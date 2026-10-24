@@ -7,17 +7,30 @@ enum EmbyError: LocalizedError {
     case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
-        case .filterRequestFailed(let step, let status): "\(step): HTTP \(status)"
-        case .invalidResponse: "Emby returned an unexpected response."
-        case .invalidURL: "The Emby server returned an invalid address."
-        case .unsupportedFeature: "This feature is not available with Emby yet."
-        case .signInRequired: "Please sign in to Emby again."
-        case .playbackUnavailable: "Emby could not provide a playable media source."
-        case .connectUnavailable: "Emby Connect couldn’t be reached. Please try again later."
-        case .connectPINExpired: "This Emby Connect PIN has expired."
-        case .connectServerNotLinked: "This Emby Connect account isn’t linked to a user on this server."
+        case .filterRequestFailed(let step, let status): filterRequestFailureText(step: step, status: status)
+        case .invalidResponse: String(localized: "Emby returned an unexpected response.")
+        case .invalidURL: String(localized: "The Emby server returned an invalid address.")
+        case .unsupportedFeature: String(localized: "This feature is not available with Emby yet.")
+        case .signInRequired: String(localized: "Please sign in to Emby again.")
+        case .playbackUnavailable: String(localized: "Emby could not provide a playable media source.")
+        case .connectUnavailable: String(localized: "Emby Connect couldn’t be reached. Please try again later.")
+        case .connectPINExpired: String(localized: "This Emby Connect PIN has expired.")
+        case .connectServerNotLinked: String(localized: "This Emby Connect account isn’t linked to a user on this server.")
         }
     }
+}
+
+/// "Genres: HTTP 500" in the app language. `step` stays the English value
+/// the error carries ("Library lookup", "Genres", "Ratings"); only its
+/// displayed name is translated.
+func filterRequestFailureText(step: String, status: Int) -> String {
+    let stepTitle = switch step {
+    case "Library lookup": String(localized: "Library lookup", comment: "Filter loading step that failed: finding the library")
+    case "Genres": String(localized: "Genres", comment: "Filter loading step that failed: the genre list")
+    case "Ratings": String(localized: "Ratings", comment: "Filter loading step that failed: the age rating list")
+    default: step
+    }
+    return String(localized: "\(stepTitle): HTTP \(status)", comment: "Filter loading failure: the step that failed, then the HTTP status code")
 }
 
 final class EmbyRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
@@ -474,7 +487,7 @@ struct EmbyAdapter {
             value["episodeCount"] = raw["RecursiveItemCount"] as? Int ?? raw["ChildCount"] as? Int ?? 0
             value["isSpecials"] = seasonNumber == 0
             if let seasonNumber, seasonNumber >= 0 {
-                value["title"] = seasonNumber == 0 ? "Specials" : "Season \(seasonNumber)"
+                value["title"] = seasonNumber == 0 ? String(localized: "Specials") : String(localized: "Season \(String(seasonNumber))")
             }
         }
         if kind == "episode" { value["seasonNumber"] = raw["ParentIndexNumber"] as? Int ?? 0; value["episodeNumber"] = raw["IndexNumber"] as? Int ?? 0; value["files"] = value["versions"] }
@@ -490,7 +503,7 @@ struct EmbyAdapter {
             "audioTracks": audios.enumerated().map { ordinal, stream in track(stream, index: ordinal) },
             "subtitleTracks": streams.filter { $0["Type"] as? String == "Subtitle" }.map { track($0, index: $0["Index"] as? Int ?? -1) },
             "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0).merging(Self.dynamicRange($0)) { current, _ in current } },
-            "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? "Chapter \(index + 1)"] }]
+            "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? String(localized: "Chapter \(index + 1)")] }]
         value["fileName"] = raw["Name"]
         value["container"] = raw["Container"]; value["fileSize"] = raw["Size"]; value["bitrate"] = raw["Bitrate"]
         value["codecVideo"] = video["Codec"]; value["codecAudio"] = audios.first?["Codec"]
@@ -643,11 +656,11 @@ struct EmbyAdapter {
         for type in types {
             switch type {
             case "resume":
-                requests.append(HomeSectionRequest(section: section("continue_watching", "Continue Watching", [:])) {
+                requests.append(HomeSectionRequest(section: section("continue_watching", String(localized: "Continue Watching"), [:])) {
                     try await items("/Users/\(userID)/Items/Resume", query: ["Limit":"20", "Fields":Self.homeFields, "MediaTypes":"Video", "IncludeNextUp":types.contains("nextup") ? "false" : "true"])
                 })
             case "nextup":
-                requests.append(HomeSectionRequest(section: section("next_up", "Next Up", [:])) {
+                requests.append(HomeSectionRequest(section: section("next_up", String(localized: "Next Up"), [:])) {
                     try await items("/Shows/NextUp", query: ["Limit":"20", "Fields":Self.homeFields, "LegacyNextUp":"true"])
                 })
             case "latestmedia":
@@ -659,18 +672,18 @@ struct EmbyAdapter {
                     guard let id = view["Id"] as? String, let name = view["Name"] as? String,
                           ["movies","tvshows","mixed", ""].contains(view["CollectionType"] as? String ?? ""),
                           !excluded.contains(id), !excluded.contains(view["Guid"] as? String ?? "") else { continue }
-                    requests.append(HomeSectionRequest(section: section("latestmedia_" + id, "Latest " + name, [:])) {
+                    requests.append(HomeSectionRequest(section: section("latestmedia_" + id, String(localized: "Latest \(name)", comment: "Home row of a library's newest items; the library name comes from the server"), [:])) {
                         let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest", query: ["ParentId":id, "Limit":"20", "Fields":Self.homeFields, "EnableUserData":"true"])
                         let rows = try convert(latest as? [[String:Any]] ?? [])
                         return ["items":rows, "total":rows.count]
                     })
                 }
             case "collections":
-                requests.append(HomeSectionRequest(section: section("collections", "Collections", [:])) {
+                requests.append(HomeSectionRequest(section: section("collections", String(localized: "Collections"), [:])) {
                     try await items(query: ["IncludeItemTypes":"BoxSet", "Limit":"20", "Fields":Self.homeFields, "SortBy":"SortName"])
                 })
             case "latestmoviereleases":
-                requests.append(HomeSectionRequest(section: section(type, "Recently Released Movies", [:])) {
+                requests.append(HomeSectionRequest(section: section(type, String(localized: "Recently Released Movies"), [:])) {
                     let since = Calendar(identifier:.gregorian).date(byAdding:.year, value:-1, to:Date()) ?? Date()
                     return try await items(query: ["IncludeItemTypes":"Movie", "Limit":"20", "Fields":Self.homeFields, "SortBy":"ProductionYear,PremiereDate,SortName", "SortOrder":"Descending", "MinPremiereDate":ISO8601DateFormatter().string(from:since)])
                 })
@@ -686,7 +699,7 @@ struct EmbyAdapter {
             let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest",
                 query:["ParentId":parent,"Limit":"20","Fields":Self.homeFields,"EnableUserData":"true"])
             let rows = try convert(latest as? [[String:Any]] ?? [])
-            return ["sections":[section("latest-" + parent,"Latest",["items":rows,"total":rows.count])]]
+            return ["sections":[section("latest-" + parent,String(localized: "Latest", comment: "Home row of a library's newest items"),["items":rows,"total":rows.count])]]
         }
         guard Self.usesServerHomeSections(version: try await serverVersion()) else { return try await legacyHome() }
         #if os(tvOS)
@@ -751,7 +764,7 @@ struct EmbyAdapter {
     ) async throws -> [[String: Any]] {
         var planned = requests
         if combine, !planned.contains(where: { $0.section["sectionType"] as? String == "next_up" }) {
-            planned.append(HomeSectionRequest(section: section("next_up", "Next Up", [:])) {
+            planned.append(HomeSectionRequest(section: section("next_up", String(localized: "Next Up"), [:])) {
                 // Preserve the existing optional Next Up failure policy.
                 let rows = try await supplyingCombinedNextUp([], enabled: true)
                 return ["items":rows.first?["items"] ?? [], "total":rows.first?["totalCount"] ?? 0]
@@ -844,7 +857,7 @@ struct EmbyAdapter {
         guard enabled, !sections.contains(where: { $0["sectionType"] as? String == "next_up" }) else { return sections }
         do {
             let result = try await items("/Shows/NextUp", query: ["Limit":"20", "Fields":Self.homeFields, "LegacyNextUp":"true"])
-            return sections + [section("next_up", "Next Up", result)]
+            return sections + [section("next_up", String(localized: "Next Up"), result)]
         } catch {
             try Task.checkCancellation()
             if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
@@ -1010,7 +1023,7 @@ struct EmbyAdapter {
                 guard let id = raw["Id"] as? String else { return nil }
                 let type = raw["CollectionType"] as? String ?? "mixed"
                 guard ["movies", "tvshows", "mixed", ""].contains(type) else { return nil }
-                return ["id": Self.numberID(id), "name": raw["Name"] as? String ?? "Library", "type": type == "tvshows" ? "series" : type == "movies" ? "movie" : "mixed"]
+                return ["id": Self.numberID(id), "name": raw["Name"] as? String ?? String(localized: "Library", comment: "Fallback name for a library the server sent without one"), "type": type == "tvshows" ? "series" : type == "movies" ? "movie" : "mixed"]
             }
         }
         if path == "/api/v1/catalog" { return try await catalog(query) }
@@ -1068,7 +1081,7 @@ struct EmbyAdapter {
         }
         if path == "/api/v1/recommendations/discover" {
             let result = try await items(query:["SortBy":"Random","IncludeItemTypes":"Movie,Series","Limit":"30"])
-            return ["rows":[["type":"discover","label":"Discover","items":result["items"] ?? []]]]
+            return ["rows":[["type":"discover","label":String(localized: "Discover"),"items":result["items"] ?? []]]]
         }
         if p.count == 5, p[2] == "recommendations", p[3] == "similar" {
             let result = try await items("/Items/\(EmbyConnection.id(p[4]))/Similar", query: ["Limit":"12"])

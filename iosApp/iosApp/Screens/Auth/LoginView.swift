@@ -77,9 +77,9 @@ struct LoginView: View {
         )
 
         AuroraTextField(
-            label: "Password",
+            label: Text("Password"),
             text: $viewModel.password,
-            placeholder: "••••••",
+            placeholder: Text(verbatim: "••••••"),
             focus: $focusedField,
             equals: .password,
             isSecure: true,
@@ -137,7 +137,7 @@ struct LoginView: View {
                 .foregroundStyle(Color.auroraInk)
                 .frame(maxWidth: .infinity)
                 .textSelection(.enabled)
-                .accessibilityLabel("\(codeSignIn.service.title) \(codeSignIn.service.codeName) \(code.map(String.init).joined(separator: " "))")
+                .accessibilityLabel(codeSignIn.service.codeAccessibilityLabel(code))
         }
 
         if let status = codeSignIn.status {
@@ -152,7 +152,7 @@ struct LoginView: View {
 
         if let failure = codeSignIn.failure {
             AuroraErrorLabel(failure)
-            Button("Get a new \(codeSignIn.service.codeName)") { startCodeSignIn(codeSignIn.service) }
+            Button(codeSignIn.service.getNewLabel) { startCodeSignIn(codeSignIn.service) }
                 .buttonStyle(AuroraPrimaryButtonStyle())
         }
 

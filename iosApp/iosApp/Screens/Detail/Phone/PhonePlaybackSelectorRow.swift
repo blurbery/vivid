@@ -11,10 +11,10 @@ enum PhonePlaybackSelectorKind: String, Identifiable {
 
     var title: String {
         switch self {
-        case .edition: return "Edition"
-        case .version: return "Version"
-        case .audio: return "Audio"
-        case .subtitles: return "Subtitles"
+        case .edition: return String(localized: "Edition")
+        case .version: return String(localized: "Version")
+        case .audio: return String(localized: "Audio")
+        case .subtitles: return String(localized: "Subtitles")
         }
     }
 
@@ -218,20 +218,20 @@ struct PhonePlaybackSelectorRow: View {
             return DetailPlaybackFormatting.currentEdition(
                 versions: versions,
                 currentVersion: currentVersion
-            )?.label ?? currentVersion?.editionDisplayLabel ?? "Standard"
+            )?.label ?? currentVersion.map(PlaybackEditions.displayLabel(for:)) ?? String(localized: "Standard")
         case .version:
             return DetailPlaybackFormatting.mobileVersionSummary(currentVersion)
         case .audio:
-            return DetailPlaybackFormatting.audioTechnicalSummary(version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex) ?? "Auto"
+            return DetailPlaybackFormatting.audioTechnicalSummary(version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex) ?? String(localized: "Auto")
         case .subtitles:
             var context = detailContext
             context?.fileID = currentVersion?.fileId
             // Until something is picked here, the row shows what playback
             // will pick from Settings > Subtitles, the same on every server.
-            let fallback = selectedSubtitleTrackIndex == -1 ? "Off" : selectedSubtitleTrackIndex == nil
+            let fallback = selectedSubtitleTrackIndex == -1 ? String(localized: "Off") : selectedSubtitleTrackIndex == nil
                 ? DetailPlaybackFormatting.automaticSubtitleLabel(
                     version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex)
-                : "On"
+                : String(localized: "On")
             return LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
         }
     }
@@ -292,12 +292,12 @@ private struct PhonePlaybackSelectorOptions: View {
     private var editionOptions: some View {
         Section {
             if editions.isEmpty {
-                optionButton(title: "Standard", detail: nil, isSelected: true, isEnabled: false) {}
+                optionButton(title: String(localized: "Standard"), detail: nil, isSelected: true, isEnabled: false) {}
             } else {
                 ForEach(editions) { edition in
                     optionButton(
                         title: edition.label,
-                        detail: "\(edition.versions.count) version\(edition.versions.count == 1 ? "" : "s")",
+                        detail: String(localized: "\(edition.versions.count) versions"),
                         isSelected: currentEdition?.id == edition.id
                     ) {
                         let best = DetailVersionSelection.displayVersion(
@@ -319,8 +319,8 @@ private struct PhonePlaybackSelectorOptions: View {
     private var versionOptions: some View {
         Section {
             optionButton(
-                title: "Auto",
-                detail: "Best match for this device",
+                title: String(localized: "Auto"),
+                detail: String(localized: "Best match for this device"),
                 isSelected: selectedVersionFileId == nil
             ) {
                 onSelectVersion(nil)
@@ -350,8 +350,8 @@ private struct PhonePlaybackSelectorOptions: View {
     private var audioOptions: some View {
         Section {
             optionButton(
-                title: "Auto",
-                detail: "Use your Playback audio preference",
+                title: String(localized: "Auto"),
+                detail: String(localized: "Use your Playback audio preference"),
                 isSelected: selectedAudioTrackIndex == nil
             ) {
                 onSelectAudioTrack(nil)
@@ -361,7 +361,7 @@ private struct PhonePlaybackSelectorOptions: View {
                 selectedAudioTrackIndex: selectedAudioTrackIndex
             )
             if options.isEmpty {
-                optionButton(title: "Unknown", detail: "No audio metadata", isSelected: false, isEnabled: false) {}
+                optionButton(title: String(localized: "Unknown"), detail: String(localized: "No audio metadata"), isSelected: false, isEnabled: false) {}
             } else {
                 ForEach(options) { option in
                     optionButton(

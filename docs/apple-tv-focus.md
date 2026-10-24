@@ -152,6 +152,8 @@ The Apple TV “Who's watching?” picker initially focuses the first profile in
 
 The playback timeline and Info/subtitle shortcuts share one directional boundary. Up from an idle timeline enters the shortcut row; Down returns to the timeline. Closing a panel restores its shortcut. An active scrub keeps ownership until committed or cancelled. Remote Play/Pause remains available without a separate on-screen transport cluster.
 
+Settings' Reopen Vivid and Reset Custom Appearance? alerts use `tvSystemAlert`, which presents a `UIAlertController` directly. In Settings on tvOS 27, SwiftUI's `.alert` left the focused button's label white on its white platter, and changing the alert's UIKit tint or forcing a dark appearance didn't fix it. UIKit's own alert looks the same and turns the focused label dark itself. Vivid's other SwiftUI alerts and confirmation dialogs on Apple TV haven't been checked for this yet.
+
 ## References
 
 - Human Interface Guidelines, Focus and selection (system focus effects, do

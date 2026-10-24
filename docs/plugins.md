@@ -105,6 +105,7 @@ To choose your own, open **Settings → General** and choose **Studios & Network
 
 - Trailers, ratings and collection rows need your server to have identified the title. Silo needs a TMDb ID. Emby and Jellyfin can also use an IMDb ID, which Vivid looks up on TMDb. Studios & Networks, and the other films in a collection row, are matched with your library by TMDb ID where your server lists one, and otherwise by exact title and year.
 - More Like This comes from your server and works without TMDb.
+- Collection names and the Calendar's Trending titles and overviews come back in Vivid's language when TMDb has a translation, and in English when it doesn't. Studios & Networks stays in English. MDBList and OpenSubtitles messages follow Vivid's language too. See [Localisation](localisation.md).
 - This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 ### If something goes wrong

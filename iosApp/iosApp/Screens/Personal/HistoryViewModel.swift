@@ -26,9 +26,7 @@ class HistoryViewModel {
     var countLabel: String {
         let count = totalItems ?? items.count
         let isLowerBound = totalItems == nil && hasMore
-        let suffix = isLowerBound ? "+" : ""
-        let unit = (count == 1 && !isLowerBound) ? "item" : "items"
-        return "\(count)\(suffix) \(unit)"
+        return isLowerBound ? String(localized: "\(count)+ items") : String(localized: "\(count) items")
     }
 
     func load(reset: Bool) async {

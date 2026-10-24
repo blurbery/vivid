@@ -11,9 +11,9 @@ struct UpcomingEpisode: Identifiable, Hashable, Sendable {
 
         var label: String {
             switch self {
-            case .continueWatching: "Continue Watching"
-            case .watchlist: "Watchlist"
-            case .history: "History"
+            case .continueWatching: String(localized: "Continue Watching")
+            case .watchlist: String(localized: "Watchlist")
+            case .history: String(localized: "History")
             }
         }
 
@@ -467,7 +467,7 @@ final class CalendarStore {
         guard let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0 else { return series([], complete: tvmazeAnswered) }
         let tmdb: TMDbSeries
         do {
-            tmdb = try await get(TVTMDbStore.relayBase + "tv/\(tmdbID)")
+            tmdb = try await get(TVTMDbStore.urlRequest("tv/\(tmdbID)", language: VividAppLanguage.tmdbLanguage).url?.absoluteString ?? "")
         } catch RelayError.notFound {
             return series([], complete: tvmazeAnswered)
         } catch {
@@ -616,7 +616,7 @@ final class CalendarStore {
         var titles: [TrendingTitle] = []
         var seen = Set<Int>()
         for page in 1...2 {
-            guard let result = try? await TVTMDbStore.shared.discover(media: media, query: query, page: page) else {
+            guard let result = try? await TVTMDbStore.shared.discover(media: media, query: query, page: page, localized: true) else {
                 if page == 1 { return nil }
                 break
             }
@@ -642,6 +642,9 @@ final class CalendarStore {
     private struct Saved: Codable {
         /// Saved days are local, so another time zone starts again.
         var timeZone = TimeZone.current.identifier
+        /// TMDb's episode names and Trending come in Vivid's language, so
+        /// another language starts again too. `nil` is English.
+        var language = VividAppLanguage.tmdbLanguage
         var candidates: [Candidate] = []
         var series: [String: SavedSeries] = [:]
         var trendingSeries: [TrendingTitle] = []
@@ -671,7 +674,8 @@ final class CalendarStore {
         guard let url else { return Saved() }
         let data = files.sync { try? Data(contentsOf: url) }
         guard let data, let saved = try? JSONDecoder().decode(Saved.self, from: data),
-              saved.timeZone == TimeZone.current.identifier else { return Saved() }
+              saved.timeZone == TimeZone.current.identifier,
+              saved.language == VividAppLanguage.tmdbLanguage else { return Saved() }
         return saved
     }
 

@@ -2,7 +2,7 @@ import Foundation
 
 enum DetailPlaybackFormatting {
     static func mobileVersionSummary(_ version: FileVersion?) -> String {
-        guard let version else { return "Auto" }
+        guard let version else { return String(localized: "Auto") }
         let resolution = (version.resolution ?? "").lowercased()
         let height = Int(resolution.filter(\.isNumber)) ?? 0
         let quality = resolution.contains("4k") || resolution.contains("uhd") || height >= 2160 ? "4K" : height >= 1080 || resolution.contains("fhd") ? "FHD" : resolution.isEmpty ? nil : "HD"
@@ -28,26 +28,26 @@ enum DetailPlaybackFormatting {
     }
 
     static func versionShortLabel(_ version: FileVersion?) -> String {
-        guard let version else { return "Auto" }
+        guard let version else { return String(localized: "Auto") }
         let tokens = [
             nonEmpty(version.resolution),
             nonEmpty(normalizedVideoCodec(version.codecVideo)),
             dynamicRangeLabel(version),
             nonEmpty(normalizedAudioCodec(version.codecAudio)),
         ].compactMap { $0 }
-        return tokens.isEmpty ? "Auto" : tokens.joined(separator: " · ")
+        return tokens.isEmpty ? String(localized: "Auto") : tokens.joined(separator: " · ")
     }
 
     /// Resting-state video summary for the compact tvOS selector segment.
     /// Keep the two facts viewers need at a glance (resolution + HDR family),
     /// while the focused segment expands to ``versionShortLabel(_:)``.
     static func versionCompactLabel(_ version: FileVersion?) -> String {
-        guard let version else { return "Auto" }
+        guard let version else { return String(localized: "Auto") }
         let tokens = [
             nonEmpty(version.resolution),
             dynamicRangeLabel(version),
         ].compactMap { $0 }
-        return tokens.isEmpty ? "Auto" : tokens.joined(separator: " · ")
+        return tokens.isEmpty ? String(localized: "Auto") : tokens.joined(separator: " · ")
     }
 
     static func versionDetailLabel(_ version: FileVersion) -> String {
@@ -72,7 +72,7 @@ enum DetailPlaybackFormatting {
         if let fileName = normalizedFileName(version.fileName) {
             return fileName
         }
-        return "Version \(version.fileId)"
+        return String(localized: "Version \(String(version.fileId))")
     }
 
     static func versionSecondaryText(_ version: FileVersion) -> String? {
@@ -187,14 +187,14 @@ enum DetailPlaybackFormatting {
                   preferredLanguage: preferredLanguage
               ),
               let track = version.audioTracks?[safe: ordinal] else {
-            return "Unknown"
+            return String(localized: "Unknown")
         }
         let summary = audioSummary(track, ordinal: ordinal)
         // With no explicit pick, the shown track is whatever Auto resolved to
         // (preferred/default). Prefix "Auto:" so the row makes clear the
         // choice was automatic rather than user-selected.
         if annotateAuto, selectedAudioTrackIndex == nil {
-            return "Auto: \(summary)"
+            return String(localized: "Auto: \(summary)")
         }
         return summary
     }
@@ -227,12 +227,15 @@ enum DetailPlaybackFormatting {
     static func audioTitle(_ track: AudioTrack, ordinal: Int) -> String {
         if let language = languageDisplayName(track.language) { return language }
         if let title = usefulAudioTitle(track) { return title }
-        return "Track \(ordinal + 1)"
+        return String(localized: "Track \(ordinal + 1)")
     }
 
     static func audioDetail(_ track: AudioTrack, ordinal: Int) -> String {
         var tokens: [String] = []
-        if let title = usefulAudioTitle(track), title != audioTitle(track, ordinal: ordinal) {
+        // A server title that only names the language, usually in English,
+        // repeats the row title.
+        if let title = usefulAudioTitle(track), title != audioTitle(track, ordinal: ordinal),
+           title != englishLanguageName(track.language) {
             tokens.append(title)
         }
         if let codec = normalizedAudioCodec(track.codec) {
@@ -242,7 +245,7 @@ enum DetailPlaybackFormatting {
             tokens.append(layout)
         }
         if track.isDefault == true {
-            tokens.append("Default")
+            tokens.append(String(localized: "Default", comment: "The file's default track"))
         }
         return tokens.joined(separator: " · ")
     }
@@ -269,14 +272,14 @@ enum DetailPlaybackFormatting {
         selectedAudioTrackIndex: Int?,
         settings: PlayerSettings = .shared
     ) -> String {
-        guard let version else { return "Auto" }
+        guard let version else { return String(localized: "Auto") }
         let outcome = automaticSubtitleOutcome(
             version: version,
             selectedAudioTrackIndex: selectedAudioTrackIndex,
             settings: settings
         )
         return PlayerViewModel.settingsSubtitlePrefs(settings).mode == .auto
-            ? "Auto: \(outcome)"
+            ? String(localized: "Auto: \(outcome)")
             : outcome
     }
 
@@ -298,7 +301,7 @@ enum DetailPlaybackFormatting {
         )
         return automaticSubtitle(version: version, context: context,
                                  stored: SiloStoredSubtitles.shared.subtitles(fileID: version?.fileId))
-            .map { subtitleShortLabel($0.track, ordinal: $0.ordinal) } ?? "Off"
+            .map { subtitleShortLabel($0.track, ordinal: $0.ordinal) } ?? String(localized: "Off")
     }
 
     /// The language of the audio playback will start with, the same track the
@@ -426,7 +429,7 @@ enum DetailPlaybackFormatting {
     static func subtitleTitle(_ track: SubtitleTrack, ordinal: Int) -> String {
         if let language = languageDisplayName(track.language) { return language }
         if let title = meaningfulSubtitleTitle(track) { return title }
-        return "Track \(ordinal + 1)"
+        return String(localized: "Track \(ordinal + 1)")
     }
 
     static func subtitleDetail(_ track: SubtitleTrack, isSelectable: Bool) -> String {
@@ -438,19 +441,19 @@ enum DetailPlaybackFormatting {
             tokens.append(codec)
         }
         if isForced(track) {
-            tokens.append("Forced")
+            tokens.append(String(localized: "Forced", comment: "Forced subtitle track"))
         }
         if isHearingImpaired(track) {
             tokens.append("SDH")
         }
         if track.isDefault == true {
-            tokens.append("Default")
+            tokens.append(String(localized: "Default", comment: "The file's default track"))
         }
         if track.external == true {
-            tokens.append("External")
+            tokens.append(String(localized: "External", comment: "Subtitle track in a separate file"))
         }
         if !isSelectable {
-            tokens.append("Available in player")
+            tokens.append(String(localized: "Available in player"))
         }
         return tokens.joined(separator: " · ")
     }
@@ -458,14 +461,17 @@ enum DetailPlaybackFormatting {
     /// "English", "English (Forced)" or "English (SDH)": a track as the
     /// subtitle row names it.
     static func subtitleShortLabel(_ track: SubtitleTrack, ordinal: Int) -> String {
-        var name = subtitleTitle(track, ordinal: ordinal)
-        if isHearingImpaired(track), !containsAccessibilityMarker(name) {
-            name += " (SDH)"
+        let name = subtitleTitle(track, ordinal: ordinal)
+        // Matched in English, as a server title such as "English Forced"
+        // or "English SDH" already names the marker.
+        let addsSDH = isHearingImpaired(track) && !containsAccessibilityMarker(name)
+        let addsForced = isForced(track) && !name.localizedCaseInsensitiveContains("forced")
+        switch (addsSDH, addsForced) {
+        case (true, true): return String(localized: "\(name) (SDH) (Forced)")
+        case (true, false): return String(localized: "\(name) (SDH)")
+        case (false, true): return String(localized: "\(name) (Forced)")
+        case (false, false): return name
         }
-        if isForced(track), !name.localizedCaseInsensitiveContains("forced") {
-            name += " (Forced)"
-        }
-        return name
     }
 
     static func normalizedVideoCodec(_ codec: String?) -> String? {
@@ -523,15 +529,15 @@ enum DetailPlaybackFormatting {
             if lowered.contains("atmos") { return "Atmos" }
             if lowered.contains("7.1") { return "7.1" }
             if lowered.contains("5.1") { return "5.1" }
-            if lowered.contains("stereo") { return "Stereo" }
+            if lowered.contains("stereo") { return String(localized: "Stereo") }
             return layout
         }
         switch track.channels {
-        case 1: return "Mono"
-        case 2: return "Stereo"
+        case 1: return String(localized: "Mono")
+        case 2: return String(localized: "Stereo")
         case 6: return "5.1"
         case 8: return "7.1"
-        case let channels?: return "\(channels)ch"
+        case let channels?: return String(localized: "\(channels)ch", comment: "Audio channel count, e.g. 3ch")
         case nil: return nil
         }
     }
@@ -616,7 +622,8 @@ enum DetailPlaybackFormatting {
 
     private static func isRedundantSubtitleTitle(_ title: String, track: SubtitleTrack) -> Bool {
         let lowered = title.lowercased()
-        let language = languageDisplayName(track.language)?.lowercased()
+        // Server titles name the language in English, whatever the app's language.
+        let language = englishLanguageName(track.language)?.lowercased()
         let languageCode = nonEmpty(track.language)?.lowercased()
         if lowered == "subtitle" || lowered == "subtitles" {
             return true
@@ -645,7 +652,17 @@ enum DetailPlaybackFormatting {
         }
     }
 
+    /// The track's language as shown, in the app's language.
     private static func languageDisplayName(_ value: String?) -> String? {
+        languageName(value, inAppLanguage: true)
+    }
+
+    /// The track's language in English, for matching server titles.
+    private static func englishLanguageName(_ value: String?) -> String? {
+        languageName(value, inAppLanguage: false)
+    }
+
+    private static func languageName(_ value: String?, inAppLanguage: Bool) -> String? {
         guard let value = nonEmpty(value) else { return nil }
         let primary = value
             .lowercased()
@@ -656,11 +673,13 @@ enum DetailPlaybackFormatting {
         if primary.count > 3 {
             return value.capitalized
         }
-        // Share the canonical ISO 639 folding + English display-name table
-        // with the track-ordering core so the detail page's grouping and
-        // its row labels never disagree on a language.
+        // Share the canonical ISO 639 folding with the track-ordering core
+        // so the detail page's grouping and its row labels never disagree
+        // on a language. Grouping and matching stay on the English name.
         if let key = SubtitleDisplayOrder.canonicalLanguageKey(value) {
-            return SubtitleDisplayOrder.languageDisplayName(key)
+            return inAppLanguage
+                ? SubtitleDisplayOrder.displayLanguageName(key)
+                : SubtitleDisplayOrder.languageDisplayName(key)
         }
         return value.uppercased()
     }

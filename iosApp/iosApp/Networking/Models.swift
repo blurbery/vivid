@@ -595,9 +595,9 @@ struct Season: Codable, Identifiable, Hashable {
     /// Consistent label for season pickers and episode-section headings.
     var downloadDisplayName: String {
         if isSpecials == true || seasonNumber == 0 {
-            return title ?? "Specials"
+            return title ?? String(localized: "Specials")
         }
-        return "Season \(seasonNumber)"
+        return String(localized: "Season \(String(seasonNumber))")
     }
 
     init(from decoder: Decoder) throws {

@@ -52,7 +52,7 @@ struct DownloadsView: View {
             if !manager.downloadsEnabled { await manager.onAppActive() }
             else { await manager.refreshDownloadedProgress() }
         }
-        .navigationTitle(isSelecting ? "\(selection.count) Selected" : "Downloads")
+        .navigationTitle(isSelecting ? Text("\(selection.count) Selected") : Text("Downloads"))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
         #endif
@@ -68,10 +68,7 @@ struct DownloadsView: View {
             titleVisibility: .visible,
             presenting: pendingDeletion
         ) { pending in
-            Button(
-                pending.ids.count == 1 ? "Delete Download" : "Delete \(pending.ids.count) Downloads",
-                role: .destructive
-            ) {
+            Button("Delete \(pending.ids.count) Downloads", role: .destructive) {
                 manager.deleteDownloads(ids: pending.ids)
                 if pending.endsSelection { exitSelectMode() }
             }
@@ -360,9 +357,9 @@ struct DownloadsView: View {
         .padding(.bottom, 2)
     }
 
-    private func sectionLabel(_ text: String, count: Int) -> some View {
+    private func sectionLabel(_ text: LocalizedStringResource, count: Int) -> some View {
         HStack {
-            Text(text.uppercased())
+            Text(String(localized: text).uppercased())
                 .font(.system(size: 12.5, weight: .semibold))
                 .tracking(0.3)
                 .foregroundColor(.vividSecondaryText)

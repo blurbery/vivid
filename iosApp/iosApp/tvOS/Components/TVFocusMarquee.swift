@@ -145,7 +145,7 @@ extension TVMarqueeContent {
         )
         if let runtimeText { meta.append(runtimeText) }
         if !isEpisode, let rating = item.ratingImdb {
-            meta.append(String(format: "%.1f", rating))
+            meta.append(rating.formatted(.number.precision(.fractionLength(1))))
         }
         // A runtime is useful everywhere; remaining time is resume-state
         // information and belongs exclusively to a genuinely started item in
@@ -191,10 +191,10 @@ extension TVMarqueeContent {
     init(collection: LibraryCollection, rowTitle: String) {
         var meta: [String] = []
         if let count = collection.itemCount, count > 0 {
-            meta.append("\(count) \(count == 1 ? "item" : "items")")
+            meta.append(String(localized: "\(count) items"))
         }
         if collection.kind == .userCollections {
-            meta.append("User collection")
+            meta.append(String(localized: "User collection"))
         }
 
         self.init(
@@ -254,9 +254,11 @@ extension TVMarqueeContent {
 
     private static func episodeToken(season: Int?, episode: Int?) -> String? {
         switch (season, episode) {
-        case let (season?, episode?): return "S\(season) E\(episode)"
-        case let (season?, nil): return "Season \(season)"
-        case let (nil, episode?): return "Episode \(episode)"
+        case let (season?, episode?):
+            return String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1") + " "
+                + String(localized: "E\(String(episode))", comment: "Episode number in an episode code, e.g. E2")
+        case let (season?, nil): return String(localized: "Season \(String(season))")
+        case let (nil, episode?): return String(localized: "Episode \(String(episode))")
         default: return nil
         }
     }
@@ -270,7 +272,7 @@ extension TVMarqueeContent {
             return nil
         }
         let remaining = max(Int(((duration - position) / 60).rounded(.up)), 1)
-        return "\(remaining) min left"
+        return String(localized: "\(remaining) min left")
     }
 
     /// Episode/movie length: the metadata runtime when present, else
@@ -286,9 +288,9 @@ extension TVMarqueeContent {
         if minutes >= 60 {
             let hours = minutes / 60
             let rest = minutes % 60
-            return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
+            return rest == 0 ? String(localized: "\(hours)h") : String(localized: "\(hours)h \(rest)m")
         }
-        return "\(minutes) min"
+        return String(localized: "\(minutes) min")
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -553,7 +555,7 @@ struct TVMarqueeEnrichment: Equatable {
         runtimeText = Self.runtimeText(minutes: detail.runtime)
         var parts: [String] = []
         if let airDate = Self.airDateText(detail.airDate) {
-            parts.append("Aired \(airDate)")
+            parts.append(String(localized: "Aired \(airDate)"))
         }
         let cast = (detail.cast ?? [])
             .sorted { ($0.order ?? Int.max) < ($1.order ?? Int.max) }
@@ -581,9 +583,9 @@ struct TVMarqueeEnrichment: Equatable {
         if minutes >= 60 {
             let hours = minutes / 60
             let remainder = minutes % 60
-            return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
+            return remainder == 0 ? String(localized: "\(hours)h") : String(localized: "\(hours)h \(remainder)m")
         }
-        return "\(minutes) min"
+        return String(localized: "\(minutes) min")
     }
 }
 

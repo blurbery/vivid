@@ -168,7 +168,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
 
                 if !all.isEmpty {
                     VStack(alignment: .leading, spacing: 24) {
-                        sectionTitle("All in Your Library")
+                        sectionTitle(String(localized: "All in Your Library"))
                         // The first row is built up front so Down from the
                         // last rail always has somewhere to land. The rest is
                         // the For You and library grid, which builds rows as
@@ -283,19 +283,19 @@ struct TVStudiosNetworksSettingsView: View {
 
     private var subtitle: String {
         switch store.status {
-        case .needsAccount: "Sign in to a server and choose a profile to use Studios & Networks."
-        case .loading, .idle: "Matching your library with TMDb…"
-        case .failed: "Couldn’t load from TMDb or your server. Check your connection and try again."
+        case .needsAccount: String(localized: "Sign in to a server and choose a profile to use Studios & Networks.")
+        case .loading, .idle: String(localized: "Matching your library with TMDb…")
+        case .failed: String(localized: "Couldn’t load from TMDb or your server. Check your connection and try again.")
         case .ready where store.needsMorePicks:
-            "Choose \(store.missingPicks) more to finish, or turn off Show on Home."
-        case .ready: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen."
+            String(localized: "Choose \(store.missingPicks) more to finish, or turn off Show on Home.")
+        case .ready: String(localized: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen.")
         }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
-                TVSettingsPageHeader(title: "Studios & Networks", subtitle: subtitle) {
+                TVSettingsPageHeader(title: Text("Studios & Networks"), subtitle: Text(subtitle)) {
                     Button("Done") { dismiss() }
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($focus, equals: .done)
@@ -432,7 +432,7 @@ struct TVStudiosNetworksSettingsView: View {
             store.toggle(id)
             movingID = nil
         }
-        .accessibilityLabel(isMoving ? "Move \(name). Move left or right, then press centre to drop." : name)
+        .accessibilityLabel(isMoving ? Text("Move \(name). Move left or right, then press centre to drop.") : Text(name))
         .accessibilityAction(named: "Rearrange") { movingID = id }
     }
 
@@ -446,7 +446,7 @@ struct TVStudiosNetworksSettingsView: View {
 
     // MARK: Pick grid
 
-    private func pickSection(title: String, kind: StudioNetworkBrand.Kind) -> some View {
+    private func pickSection(title: LocalizedStringKey, kind: StudioNetworkBrand.Kind) -> some View {
         let brands = StudiosNetworksStore.catalogue.filter { $0.kind == kind }
         let width = (TVSettingsLayout.contentWidth - TVSettingsLayout.scaled(24) * 3) / 4
         let rows = stride(from: 0, to: brands.count, by: 4).map { Array(brands[$0..<min($0 + 4, brands.count)]) }
@@ -474,6 +474,9 @@ struct TVStudiosNetworksSettingsView: View {
         let count = store.count(brand.id)
         let eligible = store.isEligible(brand.id)
         let unavailable = !eligible || (store.picks.count >= StudiosNetworksStore.maxPicks && !picked)
+        var label = String(localized: "\(brand.name), \(count) titles")
+        if picked { label = String(localized: "\(label), chosen") }
+        if unavailable { label = String(localized: "\(label), unavailable") }
         return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
             // Unavailable tiles stay focusable but do nothing, so a section
             // with none available can still be reached and scrolled to.
@@ -486,7 +489,7 @@ struct TVStudiosNetworksSettingsView: View {
             .buttonStyle(.card)
             .focused($focus, equals: .pick(brand.id))
             .opacity(unavailable ? 0.4 : 1)
-            .accessibilityLabel("\(brand.name), \(count) titles\(picked ? ", chosen" : "")\(unavailable ? ", unavailable" : "")")
+            .accessibilityLabel(label)
 
             Text(brand.name).font(.tvSettings(22, weight: .semibold))
             Text(Self.countLabel(count, eligible: eligible))
@@ -496,8 +499,8 @@ struct TVStudiosNetworksSettingsView: View {
     }
 
     static func countLabel(_ count: Int, eligible: Bool) -> String {
-        if eligible { return "\(count) titles" }
-        return count == 0 ? "None in your library" : "Only \(count) titles"
+        if eligible { return String(localized: "\(count) titles") }
+        return count == 0 ? String(localized: "None in your library") : String(localized: "Only \(count) titles")
     }
 }
 #endif

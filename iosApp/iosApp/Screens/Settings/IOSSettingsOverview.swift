@@ -86,7 +86,7 @@ struct IOSSettingsOverview: View {
             .ignoresSafeArea()
     }
 
-    private var diagnosticsSubtitle: String {
+    private var diagnosticsSubtitle: LocalizedStringKey {
         unsentDiagnostics == 0 ? "Crash and hang reports" : "\(unsentDiagnostics) new"
     }
 
@@ -96,7 +96,7 @@ struct IOSSettingsOverview: View {
         }.value
     }
 
-    private func destination<Content: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
+    private func destination<Content: View>(_ title: LocalizedStringKey, _ subtitle: LocalizedStringKey, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
         NavigationLink(destination: content()) {
             HStack(spacing: 14) {
                 Group {
@@ -190,7 +190,7 @@ struct PhoneServerSettingsView: View {
 
     private func rename(to name: String?) {
         guard let account = store.activeAccount, store.renameServer(for: account.id, to: name) else {
-            renameError = "Couldn’t rename the server. Try again."
+            renameError = String(localized: "Couldn’t rename the server. Try again.")
             return
         }
     }
@@ -207,9 +207,9 @@ struct PhoneVividPrivacyView: View {
                 policySection("Optional Emby Connect sign-in", "If you choose Use Emby Connect when signing in to an Emby server, Vivid asks Emby’s Emby Connect service (connect.emby.media) for a PIN, sending a generated device identifier and the app name and version. You enter the PIN on emby.media with your Emby Connect email and password, which Vivid never receives. Vivid then receives an Emby Connect sign-in token and the list of servers linked to your Emby Connect account, uses them once to sign in to the server you chose, and doesn’t keep them. Emby Connect also receives normal connection information, including your IP address, and handles it under Emby’s own privacy policy. Signing in with a password doesn’t contact Emby Connect.")
                 policySection("Information on this device", "Vivid saves preferences, downloads and their subtitle files, Home metadata, artwork and playback buffers on the device. Saved account session tokens and optional Vivid PIN records use Keychain. The saved-account feature does not retain the media-server password you enter.")
                 policySection("Private iCloud account sync", "When iCloud is available, Vivid stores saved server addresses, account and viewing-profile details (including any server name you give a profile), login sessions, optional Vivid PIN records and profile order in encrypted fields in your private iCloud database. Shared browsing, navigation, metadata and download preferences, plus configured MDBList, OpenSubtitles and Seerr connection details, also sync between your iPhone, iPad and Apple TV for the matching server account and viewing profile. Playback and subtitle preferences, downloaded media, artwork and metadata caches stay on the device. Playback history and resume positions stay with your media server. Optional MDBList completed-watch exports and watchlist sync are described below.")
-                policySection("Playback and connected features", "Vivid sends playback position, pause state and watched-progress updates to the selected server, and tells Emby and Jellyfin which audio and subtitle tracks are playing. Subtitles and chapters are read from the opened media on this device, along with subtitle files a Silo, Emby or Jellyfin server keeps beside it and subtitles a Silo server stores for it. If you connect OpenSubtitles in Plugins, searches send the title, language, media type, season number and episode number to OpenSubtitles. The subtitle file you choose is downloaded to this device and kept with that title, along with any subtitle delay you set for it, for your 40 most recent titles, so it comes back when you resume. Choosing another subtitle, Off or Auto, or disconnecting, removes it. A small, limited memory cache reuses recent downloads during the app session and clears when the connection changes. Your API key stays in Keychain, separate for each server account and profile, and syncs through the encrypted private iCloud account vault. Searches send the key only to the OpenSubtitles API. Subtitles are not uploaded to your media server. Subtitle translation is not provided. Vivid uses TMDb for trailers, ratings, movie collections and missing Emby and Jellyfin metadata IDs, and Studios & Networks asks it for studio and network logos and their most popular titles. These lookups go through Vivid’s TMDb relay (tmdb.vividapp.co, on Cloudflare), which sends them to TMDb with Vivid’s own key. The relay receives media identifiers and the lists requested, and uses your network address only to limit requests, without storing it or passing it to TMDb. Vivid doesn’t use a TMDb key of yours, and deletes one saved by an earlier version from your devices and the iCloud vault. Your library and watch history are matched on this device and are not sent to TMDb or the relay. When a page has trailers, Vivid loads their preview images from YouTube, and opening a trailer hands it to the YouTube app or website. Seerr request artwork loads from TMDb’s image service. These services receive normal connection information and apply their own privacy policies.")
+                policySection("Playback and connected features", "Vivid sends playback position, pause state and watched-progress updates to the selected server, and tells Emby and Jellyfin which audio and subtitle tracks are playing. Subtitles and chapters are read from the opened media on this device, along with subtitle files a Silo, Emby or Jellyfin server keeps beside it and subtitles a Silo server stores for it. If you connect OpenSubtitles in Plugins, searches send the title, language, media type, season number and episode number to OpenSubtitles. The subtitle file you choose is downloaded to this device and kept with that title, along with any subtitle delay you set for it, for your 40 most recent titles, so it comes back when you resume. Choosing another subtitle, Off or Auto, or disconnecting, removes it. A small, limited memory cache reuses recent downloads during the app session and clears when the connection changes. Your API key stays in Keychain, separate for each server account and profile, and syncs through the encrypted private iCloud account vault. Searches send the key only to the OpenSubtitles API. Subtitles are not uploaded to your media server. Subtitle translation is not provided. Vivid uses TMDb for trailers, ratings, movie collections and missing Emby and Jellyfin metadata IDs, and Studios & Networks asks it for studio and network logos and their most popular titles. These lookups go through Vivid’s TMDb relay (tmdb.vividapp.co, on Cloudflare), which sends them to TMDb with Vivid’s own key. The relay receives media identifiers, the lists requested and Vivid’s language when it isn’t English, and uses your network address only to limit requests, without storing it or passing it to TMDb. Vivid doesn’t use a TMDb key of yours, and deletes one saved by an earlier version from your devices and the iCloud vault. Your library and watch history are matched on this device and are not sent to TMDb or the relay. When a page has trailers, Vivid loads their preview images from YouTube, and opening a trailer hands it to the YouTube app or website. Seerr request artwork loads from TMDb’s image service. These services receive normal connection information and apply their own privacy policies.")
                 policySection("Skip timestamp lookups", "With Intro & Credit Skipper enabled in Playback settings, Vivid can look up missing intro, recap and credits timestamps. IntroDB (api.introdb.app) receives the series IMDb ID and season and episode numbers. TheIntroDB (api.theintrodb.org) receives the series TMDb ID when available, otherwise its IMDb ID, plus season and episode numbers. These services also receive normal connection information such as your IP address. Vivid does not send your media-server credentials. The skipper is enabled by default, can be turned off in Playback settings, and does not require an API key.")
-                policySection("Calendar", "The Calendar finds new episodes of series in your Continue Watching, Watchlist and history. Vivid looks up their air times from TVmaze and their next air date from TMDb through Vivid’s relay (tmdb.vividapp.co, on Cloudflare), which receives only the TVDB, IMDb or TMDb IDs of those series and uses your network address only to limit requests, without storing it or passing it on. TVmaze never sees your address. Trending asks TMDb through the same relay for popular titles coming soon. Upcoming posters load from your server, and Trending posters load from TMDb’s image service, which receives normal connection information. Your library, watch history and account aren’t sent to TVmaze, TMDb or the relay. Vivid keeps the Calendar’s list of your series with their air dates, and Trending, on this device for each profile, so it doesn’t look them all up on every visit. Deleting the saved account removes them.")
+                policySection("Calendar", "The Calendar finds new episodes of series in your Continue Watching, Watchlist and history. Vivid looks up their air times from TVmaze and their next air date from TMDb through Vivid’s relay (tmdb.vividapp.co, on Cloudflare), which receives only the TVDB, IMDb or TMDb IDs of those series and uses your network address only to limit requests, without storing it or passing it on. TVmaze never sees your address. Trending asks TMDb through the same relay for popular titles coming soon, in Vivid’s language. Upcoming posters load from your server, and Trending posters load from TMDb’s image service, which receives normal connection information. Your library, watch history and account aren’t sent to TVmaze, TMDb or the relay. Vivid keeps the Calendar’s list of your series with their air dates, and Trending, on this device for each profile, so it doesn’t look them all up on every visit. Deleting the saved account removes them.")
                 policySection("Optional MDBList connection", "If you connect MDBList in Settings → Plugins, Vivid keeps your personal API key in this device’s Keychain. It sends movie and episode identifiers and watched dates for new completions or titles you explicitly mark watched in Vivid, only after your media server confirms the watched update. Neither service’s existing watched history is scanned or imported, and MDBList does not replace server watched indicators or resume positions. Movie and series watchlist additions and removals sync in both directions for matching titles on the active media server. Media-server credentials are never sent to MDBList. The connection syncs through the encrypted private iCloud account vault for the same server account and viewing profile. Pending exports and confirmed sync checkpoints remain on each device across connection failures. Reconnecting the same MDBList account reuses those checkpoints; watchlist sync reads fresh remote lists. Old local watched-import records are discarded without changing either service’s history. Disconnecting stops syncing without deleting watched history or watchlists.")
                 policySection("Optional Seerr connection", "If you configure Seerr, Vivid stores its URL, username and password in Keychain to restore your connection, and they sync through the encrypted private iCloud account vault for the matching server account and viewing profile. Seerr receives your login, search queries and media requests. Disconnect in Settings → Seerr to remove the saved connection. Your Seerr operator controls records kept on that server.")
                 policySection("Diagnostics", "Vivid keeps reports of crashes, freezes, unexpected exits, playback failures, download failures and app errors on this device to help fix problems, including Apple’s MetricKit diagnostics. A report contains the app version, device model, system version, technical details such as call stacks, whether the app was launching, browsing or playing, and a short log of recent app events such as screens opened, playback steps and errors, with addresses, file names and identifiers removed. The reports Vivid writes contain no titles, account details or server addresses and are kept for up to 14 days. A download failure report also notes which step failed, the server type, the error code, the chosen quality and whether it was part of a season or series download. It also keeps a record of the latest playback only, replaced each time something new plays: the server type and play method, the audio output and display setup, the video and audio formats, and counts of dropped frames, buffering, audio faults and sync drift, time spent paused or waiting to load, Vivid’s memory use each minute, and on iPhone and iPad how often the player controls appeared and what made them go away soon after, with no titles, item IDs, account details or server addresses. Vivid never uploads them automatically. They leave the device only if you choose to send them from Settings → Diagnostics, where you can view exactly what is sent and delete them. Sending them delivers them to Vivid’s diagnostics service at diagnostics.vividapp.co, which runs on Cloudflare, emails them to diagnostics@vividapp.co through the Resend email service and keeps a copy on Cloudflare for 30 days. To have a report you’ve sent deleted, email admin@vividapp.co with the reference shown after sending it. If you add a note saying what happened, it’s sent with them as you wrote it, apart from removing spaces at the ends and control or text-direction characters, and keeping it to 500 characters. Vivid doesn’t check a note for personal details, so leave out passwords and server addresses. The device’s network address is used only to limit how often reports can be sent and isn’t stored. Other Options sends them with Mail or the share sheet instead. Detailed development logs are only written by development builds and stay on the device. Apple’s TestFlight service separately collects beta usage, crash information and submitted feedback under its own privacy terms.")
@@ -396,7 +396,7 @@ struct PhoneSavedAccountCards: View {
                         if store.unlock(account.id, pin: pin) {
                             selectedForPIN = nil; pin = ""
                             Task { await store.select(account, router: router) }
-                        } else { pinError = store.error ?? "Incorrect PIN"; pin = "" }
+                        } else { pinError = store.error ?? String(localized: "Incorrect PIN"); pin = "" }
                     }
                 }
                 .vividScrollContentBackgroundHidden()
@@ -424,7 +424,7 @@ struct PhoneSavedAccountCards: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isCurrentAccount(account) ? "\(account.displayName), current account" : account.displayName)
+                .accessibilityLabel(isCurrentAccount(account) ? String(localized: "\(account.displayName), current account") : account.displayName)
             }
             if store.canAddAccount {
                 Button { editorRoute = .add } label: {
@@ -601,7 +601,7 @@ struct PhoneSavedAccountCards: View {
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
-                .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : account.displayName)
+                .accessibilityLabel(isSettings && isCurrentAccount(account) ? String(localized: "Current account") : account.displayName)
             VStack(spacing: 4) {
                 Text(account.displayName).font(.subheadline.weight(.medium)).lineLimit(1)
                 Text(serverLabel(for: account))
@@ -652,13 +652,13 @@ struct PhoneSavedAccountEditor: View {
     private var active: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
     var body: some View {
         List {
-            SettingsPageHeader(title: account?.displayName ?? "Add Profile", subtitle: "Account details and access on this device.", systemImage: "person.crop.circle").settingsPageHeaderRow()
+            SettingsPageHeader(title: Text(account?.displayName ?? String(localized: "Add Profile")), subtitle: Text("Account details and access on this device."), systemImage: "person.crop.circle").settingsPageHeaderRow()
             if account == nil {
                 Section {
                     Picker("Server Provider", selection: $provider) {
-                        Text("Silo").tag("Silo")
-                        Text("Emby").tag("Emby")
-                        Text("Jellyfin").tag("Jellyfin")
+                        Text(verbatim: "Silo").tag("Silo")
+                        Text(verbatim: "Emby").tag("Emby")
+                        Text(verbatim: "Jellyfin").tag("Jellyfin")
                     }
                     // Only servers of the chosen type, as on Apple TV.
                     let saved = registry.sortedEntries.filter { MediaServerProvider.forServerID($0.id) == selectedProvider }
@@ -707,12 +707,12 @@ struct PhoneSavedAccountEditor: View {
                     SecureField("New PIN", text: $pin).keyboardType(.numberPad)
                     SecureField("Confirm PIN", text: $confirmPIN).keyboardType(.numberPad)
                     Button(store.hasPIN(accountID) ? "Change PIN" : "Set PIN") {
-                        guard pin == confirmPIN else { message = "The PINs don’t match."; return }
-                        if store.setPIN(pin, accountID: accountID) { message = "PIN saved"; pin = ""; confirmPIN = "" }
+                        guard pin == confirmPIN else { message = String(localized: "The PINs don’t match."); return }
+                        if store.setPIN(pin, accountID: accountID) { message = String(localized: "PIN saved"); pin = ""; confirmPIN = "" }
                         else { message = store.error }
                     }.disabled(store.busy)
                     if store.hasPIN(accountID) {
-                        Button("Remove PIN") { message = store.removePIN(accountID) ? "PIN removed" : "Couldn’t remove the PIN." }
+                        Button("Remove PIN") { message = store.removePIN(accountID) ? String(localized: "PIN removed") : String(localized: "Couldn’t remove the PIN.") }
                     }
                 } header: { PhoneSettingsSectionHeader("PIN Protection") }
             }
@@ -806,7 +806,7 @@ struct PhoneSavedAccountEditor: View {
             }
             if let failure = codeSignIn.failure {
                 Text(failure).foregroundStyle(.secondary)
-                Button("Get a New \(codeSignIn.service.codeTitle)") { startCodeSignIn(codeSignIn.service) }
+                Button(codeSignIn.service.getNewTitle) { startCodeSignIn(codeSignIn.service) }
             }
             Button("Cancel", role: .cancel) { codeSignIn.cancel() }
                 .disabled(!codeSignIn.canCancel)
@@ -819,7 +819,7 @@ struct PhoneSavedAccountEditor: View {
         message = nil
         let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
         let accountID = accountID
-        let fallback = "Couldn’t finish signing in with \(service.title). Please try again."
+        let fallback = String(localized: "Couldn’t finish signing in with \(service.title). Please try again.")
         switch service {
         case .jellyfinQuickConnect:
             codeSignIn.startQuickConnect(serverURL: address) { login in

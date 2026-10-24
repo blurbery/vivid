@@ -25,9 +25,11 @@ enum PlayerTimeFormatter {
         let total = Int(seconds)
         let h = total / 3600, m = (total % 3600) / 60
         if h > 0 {
-            return m > 0 ? "\(h)h \(m)m" : "\(h)h"
+            return m > 0
+                ? String(localized: "\(h)h \(m)m", comment: "Runtime in hours and minutes, abbreviated")
+                : String(localized: "\(h)h", comment: "Runtime in hours, abbreviated")
         }
-        return "\(m)m"
+        return String(localized: "\(m)m", comment: "Runtime in minutes, abbreviated")
     }
 
     /// `m:ss` for the sleep-timer countdown in the status column.

@@ -61,7 +61,7 @@ struct PhoneDetailTopChrome: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(leadingAccessibilityLabel ?? "Back")
+                    .accessibilityLabel(leadingAccessibilityLabel ?? String(localized: "Back"))
                 }
 
                 Spacer(minLength: 20)
@@ -81,7 +81,7 @@ struct PhoneDetailTopChrome: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(leadingAccessibilityLabel ?? "Back")
+                .accessibilityLabel(leadingAccessibilityLabel ?? String(localized: "Back"))
                 .frame(width: 2 * PhoneDuo.ControlCorner.centreFromEdge)
                 .padding(.top, corner.top)
                 .frame(
@@ -492,7 +492,7 @@ private struct ItemDetailPhoneContent: View {
             isScrollGlassEnabled: supportsScrollGlassChrome,
             scrollState: detailScrollState,
             leadingSystemName: showsClose ? "xmark" : (showsBack ? "chevron.left" : nil),
-            leadingAccessibilityLabel: showsClose ? "Close details" : (showsBack ? "Back" : nil),
+            leadingAccessibilityLabel: showsClose ? String(localized: "Close details") : (showsBack ? String(localized: "Back") : nil),
             onLeadingTap: {
                 if let onClose {
                     onClose()
@@ -1224,8 +1224,8 @@ private struct ItemDetailPhoneContent: View {
             parts.append(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
         }
         return parts.isEmpty
-            ? "Play Downloaded"
-            : "Play Downloaded (\(parts.joined(separator: " · ")))"
+            ? String(localized: "Play Downloaded")
+            : String(localized: "Play Downloaded (\(parts.joined(separator: " · ")))")
     }
 }
 #endif

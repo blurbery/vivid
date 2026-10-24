@@ -52,7 +52,7 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
         if let lang = normalizedLanguageCode {
             return languageDisplayName(lang)
         }
-        return "Track \(trackId)"
+        return String(localized: "Track \(Int(trackId))", comment: "Fallback name for an untitled audio or subtitle track")
     }
 
     var attributesLabel: String? {
@@ -98,6 +98,8 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
         if formatNames.contains(lowered) { return nil }
         if let codec, lowered == codec.lowercased() { return nil }
         if title.caseInsensitiveCompare(languageDisplayName(lang)) == .orderedSame { return nil }
+        // Embedded titles are usually English language names, whatever the app's language.
+        if title.caseInsensitiveCompare(Self.englishLanguageName(lang)) == .orderedSame { return nil }
         if title.caseInsensitiveCompare(lang) == .orderedSame { return nil }
         return title
     }
@@ -120,16 +122,16 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
             parts.append(codec.uppercased())
         }
         if isDefault {
-            parts.append("Default")
+            parts.append(String(localized: "Default", comment: "Track attribute pill: the file's default track"))
         }
         if isForced {
-            parts.append("Forced")
+            parts.append(String(localized: "Forced", comment: "Track attribute pill: forced subtitles"))
         }
         if isHearingImpaired {
             parts.append("SDH")
         }
         if isExternal {
-            parts.append("External")
+            parts.append(String(localized: "External", comment: "Track attribute pill: a subtitle file outside the video"))
         }
 
         return parts
@@ -154,20 +156,20 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
             parts.append(codec.uppercased())
         }
         if isDefault {
-            parts.append("default")
+            parts.append(String(localized: "default", comment: "Lowercase track attribute in a dot-separated label"))
         }
         if isForced {
-            parts.append("forced")
+            parts.append(String(localized: "forced", comment: "Lowercase track attribute in a dot-separated label"))
         }
         if isHearingImpaired {
             parts.append("SDH")
         }
         if isExternal {
-            parts.append("external")
+            parts.append(String(localized: "external", comment: "Lowercase track attribute in a dot-separated label"))
         }
 
         if parts.isEmpty {
-            parts.append("Track \(trackId)")
+            parts.append(String(localized: "Track \(Int(trackId))", comment: "Fallback name for an untitled audio or subtitle track"))
         }
         return parts.joined(separator: " · ")
     }
@@ -181,17 +183,25 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
 
     private static func formatChannelCount(_ count: Int) -> String {
         switch count {
-        case 1: return "mono"
-        case 2: return "stereo"
+        case 1: return String(localized: "mono", comment: "Audio channel layout")
+        case 2: return String(localized: "stereo", comment: "Audio channel layout")
         case 6: return "5.1"
         case 8: return "7.1"
-        default: return "\(count)ch"
+        default: return String(localized: "\(count)ch", comment: "Audio channel count, abbreviated")
         }
     }
 
+    /// The language's name in the app's language.
     private func languageDisplayName(_ code: String) -> String {
-        let locale = Locale(identifier: "en")
-        return locale.localizedString(forLanguageCode: code)?.capitalized ?? code.uppercased()
+        guard let name = Locale.current.localizedString(forLanguageCode: code), let first = name.first else {
+            return code.uppercased()
+        }
+        // Only the first letter: "Portugais brésilien", not "Portugais Brésilien".
+        return String(first).uppercased(with: Locale.current) + name.dropFirst()
+    }
+
+    private static func englishLanguageName(_ code: String) -> String {
+        Locale(identifier: "en").localizedString(forLanguageCode: code)?.capitalized ?? code.uppercased()
     }
 
     private static func normalizedText(_ value: String?) -> String? {

@@ -14,11 +14,11 @@ enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .small: return "Small"
-        case .medium: return "Medium"
-        case .large: return "Large"
-        case .xlarge: return "X-Large"
-        case .xxlarge: return "XX-Large"
+        case .small: return String(localized: "Small", comment: "Subtitle size")
+        case .medium: return String(localized: "Medium", comment: "Subtitle size")
+        case .large: return String(localized: "Large", comment: "Subtitle size")
+        case .xlarge: return String(localized: "X-Large", comment: "Subtitle size")
+        case .xxlarge: return String(localized: "XX-Large", comment: "Subtitle size")
         }
     }
 
@@ -109,9 +109,9 @@ struct SubtitleFontFamilyPreset: RawRepresentable, Codable, CaseIterable, Hashab
 
     var label: String {
         switch rawValue {
-        case Self.sansSerif.rawValue: return "Sans-serif"
-        case Self.serif.rawValue: return "Serif"
-        case Self.monospace.rawValue: return "Monospace"
+        case Self.sansSerif.rawValue: return String(localized: "Sans-serif", comment: "Subtitle font")
+        case Self.serif.rawValue: return String(localized: "Serif", comment: "Subtitle font")
+        case Self.monospace.rawValue: return String(localized: "Monospace", comment: "Subtitle font")
         default: return rawValue
         }
     }
@@ -146,10 +146,10 @@ enum SubtitleBackgroundStylePreset: String, Codable, CaseIterable, Identifiable 
 
     var label: String {
         switch self {
-        case .box: return "Box"
-        case .shadow: return "Drop Shadow"
-        case .outline: return "Outline"
-        case .none: return "None"
+        case .box: return String(localized: "Box", comment: "Subtitle background style")
+        case .shadow: return String(localized: "Drop Shadow", comment: "Subtitle background style")
+        case .outline: return String(localized: "Outline", comment: "Subtitle background style")
+        case .none: return String(localized: "None", comment: "Subtitle background style")
         }
     }
 }
@@ -163,9 +163,9 @@ enum SubtitlePositionPreset: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .bottom: return "Bottom"
-        case .lowerThird: return "Lower Third"
-        case .top: return "Top"
+        case .bottom: return String(localized: "Bottom", comment: "Subtitle position")
+        case .lowerThird: return String(localized: "Lower Third", comment: "Subtitle position")
+        case .top: return String(localized: "Top", comment: "Subtitle position")
         }
     }
 
@@ -287,22 +287,22 @@ struct SubtitleAppearance: Codable, Equatable {
     )
 
     static let fontColors: [(hex: String, label: String)] = [
-        ("#ffffff", "White"),
-        ("#facc15", "Yellow"),
-        ("#22c55e", "Green"),
-        ("#06b6d4", "Cyan"),
-        ("#d946ef", "Magenta"),
-        ("#ef4444", "Red"),
-        ("#3b82f6", "Blue"),
-        ("#000000", "Black"),
+        ("#ffffff", String(localized: "White", comment: "Subtitle colour")),
+        ("#facc15", String(localized: "Yellow", comment: "Subtitle colour")),
+        ("#22c55e", String(localized: "Green", comment: "Subtitle colour")),
+        ("#06b6d4", String(localized: "Cyan", comment: "Subtitle colour")),
+        ("#d946ef", String(localized: "Magenta", comment: "Subtitle colour")),
+        ("#ef4444", String(localized: "Red", comment: "Subtitle colour")),
+        ("#3b82f6", String(localized: "Blue", comment: "Subtitle colour")),
+        ("#000000", String(localized: "Black", comment: "Subtitle colour")),
     ]
 
     static let backgroundColors: [(hex: String, label: String)] = [
-        ("#000000", "Black"),
-        ("#374151", "Dark Gray"),
-        ("#1e3a5f", "Navy"),
-        ("#7f1d1d", "Dark Red"),
-        ("#14532d", "Dark Green"),
+        ("#000000", String(localized: "Black", comment: "Subtitle colour")),
+        ("#374151", String(localized: "Dark Gray", comment: "Subtitle colour")),
+        ("#1e3a5f", String(localized: "Navy", comment: "Subtitle colour")),
+        ("#7f1d1d", String(localized: "Dark Red", comment: "Subtitle colour")),
+        ("#14532d", String(localized: "Dark Green", comment: "Subtitle colour")),
     ]
 
     static let outlineColors: [(hex: String, label: String)] = backgroundColors
@@ -385,10 +385,10 @@ struct SubtitleAppearance: Codable, Equatable {
 
     /// One-word style descriptor for summary rows ("Large · Box · Bottom").
     var styleDescription: String {
-        if backgroundStyle == .box { return "Box" }
-        if textOutline || backgroundStyle == .outline { return "Outline" }
-        if backgroundStyle == .shadow { return "Drop Shadow" }
-        return "Plain"
+        if backgroundStyle == .box { return String(localized: "Box", comment: "Subtitle background style") }
+        if textOutline || backgroundStyle == .outline { return String(localized: "Outline", comment: "Subtitle background style") }
+        if backgroundStyle == .shadow { return String(localized: "Drop Shadow", comment: "Subtitle background style") }
+        return String(localized: "Plain", comment: "Subtitle style with no box, outline or shadow")
     }
 
     /// True when the configuration risks unreadable text: a dark font

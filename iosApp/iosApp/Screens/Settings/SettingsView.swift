@@ -131,7 +131,7 @@ struct SettingsView: View {
         if let username = viewModel.userInfo?.username, !username.isEmpty {
             return username
         }
-        return "Switch Profile"
+        return String(localized: "Switch Profile")
     }
 
     private var subtitleLine: String {
@@ -145,7 +145,7 @@ struct SettingsView: View {
         case let (user?, _) where !user.isEmpty && user != displayName:
             return user
         default:
-            return "Tap to switch profile"
+            return String(localized: "Tap to switch profile")
         }
     }
 
@@ -178,7 +178,7 @@ struct SettingsView: View {
                     title: "Interface",
                     systemImage: "rectangle.3.group.fill",
                     color: .indigo,
-                    value: uiCustomization.cardPresentation.preset?.title ?? "Custom"
+                    value: uiCustomization.cardPresentation.preset?.title ?? String(localized: "Custom")
                 )
             }
 
@@ -219,7 +219,7 @@ struct SettingsView: View {
     }
 
     private func subtitleLanguageName(_ tag: String) -> String {
-        if tag == PlaybackPrefSentinel.none || tag.isEmpty { return "None" }
+        if tag == PlaybackPrefSentinel.none || tag.isEmpty { return String(localized: "None") }
         return PlaybackLanguageOption.label(forCode: tag)
     }
 
@@ -301,10 +301,27 @@ struct SettingsView: View {
 /// Settings-app style row label: a colored rounded-square icon badge,
 /// the row title, and an optional trailing value in secondary color.
 struct SettingsRowLabel: View {
-    let title: String
+    private let title: Text
     let systemImage: String
     let color: Color
     var value: String? = nil
+
+    /// `value` is the current setting, shown verbatim like a `LabeledContent` value.
+    init(title: LocalizedStringKey, systemImage: String, color: Color, value: String? = nil) {
+        self.title = Text(title)
+        self.systemImage = systemImage
+        self.color = color
+        self.value = value
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, systemImage: String, color: Color, value: String? = nil) {
+        self.title = Text(title)
+        self.systemImage = systemImage
+        self.color = color
+        self.value = value
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -317,7 +334,7 @@ struct SettingsRowLabel: View {
                         .foregroundStyle(.white)
                 }
 
-            Text(title)
+            title
                 .foregroundStyle(Color.vividOnSurface)
 
             Spacer(minLength: 8)

@@ -7,7 +7,7 @@ import UIKit
 /// A relative vertical drag avoids jumping to a new level on first contact.
 /// The whole capsule is a touch target; the centre of the player stays free.
 struct MobilePlayerLevelControl: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     @Binding var value: Double
     let height: CGFloat
@@ -17,7 +17,9 @@ struct MobilePlayerLevelControl: View {
     @GestureState private var isDragging = false
     @State private var dragStartValue: Double?
 
-    private var percentage: String { "\(Int((value * 100).rounded()))%" }
+    private var percentage: String {
+        String(localized: "\(Int((value * 100).rounded()))%", comment: "Brightness or volume level as a percentage")
+    }
 
     var body: some View {
         VStack(spacing: 8) {

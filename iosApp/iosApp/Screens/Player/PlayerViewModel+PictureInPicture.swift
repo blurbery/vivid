@@ -116,15 +116,15 @@ extension PlayerViewModel {
         switch failure {
         case .notReady:
             showNotice(
-                title: "Picture in Picture not ready",
-                message: "This video isn't ready for Picture in Picture yet. Try again in a moment.",
+                title: String(localized: "Picture in Picture not ready"),
+                message: String(localized: "This video isn't ready for Picture in Picture yet. Try again in a moment."),
                 tone: .warning,
                 duration: 4
             )
         case .failed:
             showNotice(
-                title: "Picture in Picture failed",
-                message: "iOS couldn't start Picture in Picture for this video.",
+                title: String(localized: "Picture in Picture failed"),
+                message: String(localized: "iOS couldn't start Picture in Picture for this video."),
                 tone: .warning,
                 duration: 5
             )

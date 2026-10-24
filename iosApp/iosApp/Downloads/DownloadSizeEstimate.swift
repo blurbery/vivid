@@ -65,13 +65,13 @@ struct DownloadSizeEstimate {
         if exceedsAvailableSpace(availableBytes) {
             let free = DownloadFormatting.bytes(availableBytes)
             return isRange
-                ? "This download may be up to \(size), but only \(free) is free on this device."
-                : "This download is \(size), but only \(free) is free on this device."
+                ? String(localized: "This download may be up to \(size), but only \(free) is free on this device.")
+                : String(localized: "This download is \(size), but only \(free) is free on this device.")
         }
         if exceedsLargeThreshold {
             return isRange
-                ? "This download may be up to \(size)."
-                : "This download is \(size)."
+                ? String(localized: "This download may be up to \(size).")
+                : String(localized: "This download is \(size).")
         }
         return nil
     }

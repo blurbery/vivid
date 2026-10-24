@@ -43,7 +43,7 @@ enum PhoneHeroMetadata {
     static func seasonSourceTokens(from detail: ItemDetail, episodeCount: Int) -> [String] {
         var tokens: [String] = []
         let count = detail.episodeCount ?? episodeCount
-        if count > 0 { tokens.append("\(count) Episode\(count == 1 ? "" : "s")") }
+        if count > 0 { tokens.append(String(localized: "\(count) Episodes")) }
         if let genres = detail.genres, !genres.isEmpty {
             tokens.append(contentsOf: genres.prefix(2))
         }
@@ -71,7 +71,7 @@ enum PhoneHeroMetadata {
             tokens.append(.text(formatRuntime(runtime)))
         }
         if let imdb = detail.ratingImdb {
-            tokens.append(.text(String(format: "★ %.1f", imdb)))
+            tokens.append(.text(imdbRating(imdb)))
         }
         tokens.append(contentsOf: qualityTokens(from: detail, version: selectedVersion))
         return tokens
@@ -81,10 +81,10 @@ enum PhoneHeroMetadata {
         var tokens: [PhoneHeroFactToken] = []
         if let year = detail.year, year > 0 { tokens.append(.text(String(year))) }
         if let count = detail.seasonCount, count > 0 {
-            tokens.append(.text("\(count) Season\(count == 1 ? "" : "s")"))
+            tokens.append(.text(String(localized: "\(count) Seasons")))
         }
         if let imdb = detail.ratingImdb {
-            tokens.append(.text(String(format: "★ %.1f", imdb)))
+            tokens.append(.text(imdbRating(imdb)))
         }
         tokens.append(contentsOf: qualityTokens(from: detail))
         return tokens
@@ -104,11 +104,11 @@ enum PhoneHeroMetadata {
            detail.type == "series" {
             switch status.lowercased() {
             case "continuing", "returning series", "returning":
-                return "Continuing Series"
+                return String(localized: "Continuing Series")
             case "ended":
-                return "Complete Series"
+                return String(localized: "Complete Series")
             case "in production":
-                return "New Season Coming"
+                return String(localized: "New Season Coming")
             default: break
             }
         }
@@ -123,11 +123,13 @@ enum PhoneHeroMetadata {
                 .filter { $0.job?.caseInsensitiveCompare("Director") == .orderedSame }
                 .map(\.name) ?? []
             guard !directors.isEmpty else { return nil }
-            return "Directed by " + directors.prefix(2).joined(separator: ", ")
+            let names = directors.prefix(2).joined(separator: ", ")
+            return String(localized: "Directed by \(names)")
         }
         if detail.type == "episode" { return nil }
         guard let cast = detail.cast, !cast.isEmpty else { return nil }
-        return "Starring " + cast.prefix(3).map(\.name).joined(separator: ", ")
+        let names = cast.prefix(3).map(\.name).joined(separator: ", ")
+        return String(localized: "Starring \(names)")
     }
 
     // MARK: - Title parts
@@ -154,11 +156,11 @@ enum PhoneHeroMetadata {
     private static func episodeNumberLabel(from detail: ItemDetail) -> String? {
         let seasonPart: String?
         if let season = detail.seasonNumber {
-            seasonPart = season == 0 ? "Specials" : "Season \(season)"
+            seasonPart = season == 0 ? String(localized: "Specials") : String(localized: "Season \(String(season))")
         } else {
             seasonPart = nil
         }
-        let episodePart = detail.episodeNumber.flatMap { n in n > 0 ? "Episode \(n)" : nil }
+        let episodePart = detail.episodeNumber.flatMap { n in n > 0 ? String(localized: "Episode \(String(n))") : nil }
 
         switch (seasonPart, episodePart) {
         case let (.some(s), .some(e)): return "\(s) \u{00B7} \(e)"
@@ -233,9 +235,15 @@ enum PhoneHeroMetadata {
 
     static func formatRuntime(_ minutes: Int) -> String {
         if minutes >= 60 {
-            return "\(minutes / 60)h \(minutes % 60)m"
+            return String(localized: "\(minutes / 60)h \(minutes % 60)m")
         }
-        return "\(minutes) min"
+        return String(localized: "\(minutes) min")
+    }
+
+    /// "★ 7.4", with the decimal separator of the app's language.
+    private static func imdbRating(_ rating: Double) -> String {
+        let value = rating.formatted(.number.precision(.fractionLength(1)))
+        return String(localized: "★ \(value)")
     }
 }
 #endif

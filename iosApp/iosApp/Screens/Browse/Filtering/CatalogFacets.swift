@@ -55,9 +55,9 @@ struct CatalogFacets {
     func optionPairs(for facet: CatalogFacet, hasProfile: Bool) -> [(value: String, label: String)] {
         switch facet {
         case .itemType:
-            return [("movie", "Movies"), ("series", "Series")]
+            return [("movie", String(localized: "Movies")), ("series", String(localized: "Series"))]
         case .decade:
-            return Self.decadeLadder.map { (String($0), "\($0)s") }
+            return Self.decadeLadder.map { (String($0), String(localized: "\(String($0))s", comment: "Decade filter option, for example 1990s")) }
         case .dynamicRange:
             return [("hdr", "HDR"), ("dolby_vision", "Dolby Vision")]
         case .watchStatus:

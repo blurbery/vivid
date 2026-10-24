@@ -293,7 +293,7 @@ final class HomeSectionPreferences {
         let items = (resume + next).flatMap(\.items).filter { seen.insert($0.contentId).inserted }
         let combined = ResolvedSection(
             id: resume.first?.id ?? "continue_watching", sectionType: "continue_watching",
-            title: "Continue Watching", featured: false, itemLimit: nil,
+            title: String(localized: "Continue Watching"), featured: false, itemLimit: nil,
             totalCount: items.count, isCustom: anchor.isCustom, customized: anchor.customized, items: items
         )
         return sections.compactMap { section in

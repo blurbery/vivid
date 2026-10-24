@@ -290,8 +290,8 @@ struct TVLibraryGridView: View {
     private var totalLabel: String? {
         guard !viewModel.items.isEmpty else { return nil }
         return viewModel.hasMore
-            ? "\(viewModel.items.count)+ titles"
-            : "\(viewModel.items.count) titles"
+            ? String(localized: "\(viewModel.items.count)+ titles")
+            : String(localized: "\(viewModel.items.count) titles")
     }
 }
 #endif

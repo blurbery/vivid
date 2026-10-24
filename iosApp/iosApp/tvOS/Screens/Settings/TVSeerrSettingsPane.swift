@@ -14,7 +14,7 @@ struct TVSeerrSettingsPane: View {
             TVSettingsSectionHeader("CONNECTION")
             TVSettingsGroup {
                 TVSettingsFieldRow(title: "Seerr URL", detail: "Your Seerr address, including https:// or http://.") {
-                    TextField("https://seerr.example.com", text: $url)
+                    TextField("https://seerr.example.com" as String, text: $url)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
                 TVSettingsFieldRow(title: "Username", detail: "Use your email for a local Seerr account, or your imported Jellyfin/Emby username.") {
@@ -31,7 +31,7 @@ struct TVSeerrSettingsPane: View {
                         do {
                             try await store.connect(url: url, username: username, password: password)
                             password = ""
-                            message = "Connected. Available to request is now enabled in Search."
+                            message = String(localized: "Connected. Available to request is now enabled in Search.")
                         } catch { message = error.localizedDescription }
                         busy = false
                     }
@@ -41,7 +41,7 @@ struct TVSeerrSettingsPane: View {
                 .buttonStyle(TVSettingsPaneRowStyle())
                 if store.isConfigured {
                     Button {
-                        do { try store.disconnect(); password = ""; message = "Disconnected. Request results are hidden." }
+                        do { try store.disconnect(); password = ""; message = String(localized: "Disconnected. Request results are hidden.") }
                         catch { message = error.localizedDescription }
                     } label: { TVSettingsRowLabel(title: "Disconnect", detail: "Remove this Seerr connection from matching accounts and profiles across iCloud devices.") }
                     .buttonStyle(TVSettingsPaneRowStyle())

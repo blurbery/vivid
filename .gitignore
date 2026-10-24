@@ -61,6 +61,7 @@ output/
 .DS_Store
 Thumbs.db
 .swiftpm/
+__pycache__/
 docs/*
 !docs/apple-tv-focus.md
 !docs/README.md
@@ -70,6 +71,7 @@ docs/*
 !docs/diagnostics-relay.md
 !docs/tmdb-relay.md
 !docs/plugins.md
+!docs/localisation.md
 !docs/images/
 !docs/cores/
 !docs/cores/*.md

@@ -31,11 +31,22 @@ enum TVSettingsPalette {
 }
 
 struct TVSettingsPageHeader<Actions: View>: View {
-    let title: String
-    let subtitle: String?
+    private let title: Text
+    private let subtitle: Text?
     @ViewBuilder let actions: () -> Actions
 
-    init(title: String, subtitle: String? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        self.init(title: Text(title), subtitle: subtitle.map { Text($0) }, actions: actions)
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, subtitle: String? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        self.init(title: Text(title), subtitle: subtitle.map { Text($0) }, actions: actions)
+    }
+
+    /// Mixes a localised and a verbatim string, e.g. `Text("Title")` and `Text(value)`.
+    init(title: Text, subtitle: Text? = nil, @ViewBuilder actions: @escaping () -> Actions) {
         self.title = title
         self.subtitle = subtitle
         self.actions = actions
@@ -44,11 +55,11 @@ struct TVSettingsPageHeader<Actions: View>: View {
     var body: some View {
         HStack(spacing: TVSettingsLayout.scaled(24)) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
-                Text(title)
+                title
                     .font(.tvSettings(40, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 if let subtitle {
-                    Text(subtitle)
+                    subtitle
                         .font(.tvSettings(20))
                         .foregroundStyle(.white.opacity(0.68))
                 }
@@ -62,7 +73,16 @@ struct TVSettingsPageHeader<Actions: View>: View {
 }
 
 extension TVSettingsPageHeader where Actions == EmptyView {
-    init(title: String, subtitle: String? = nil) {
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
+    }
+
+    init(title: Text, subtitle: Text? = nil) {
         self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }
@@ -118,12 +138,24 @@ struct TVSettingsGroup<Content: View>: View {
 }
 
 struct TVSettingsFieldRow<Content: View>: View {
-    let title: String
-    let detail: String
-    @ViewBuilder let content: Content
+    private let label: TVSettingsRowLabel
+    private let content: Content
+
+    init(title: LocalizedStringResource, detail: LocalizedStringResource, @ViewBuilder content: () -> Content) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.content = content()
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, detail: String, @ViewBuilder content: () -> Content) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.content = content()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
-            TVSettingsRowLabel(title: title, detail: detail)
+            label
             content
         }
         .padding(TVSettingsLayout.scaled(24))
@@ -132,19 +164,41 @@ struct TVSettingsFieldRow<Content: View>: View {
 }
 
 struct TVSettingsRowLabel: View {
-    let title: String
-    var detail: String? = nil
+    private let title: Text
+    private let detail: Text?
+
+    /// Takes a `LocalizedStringResource` rather than a `LocalizedStringKey` so
+    /// the English key can still find the row's built-in description.
+    init(title: LocalizedStringResource, detail: LocalizedStringResource? = nil) {
+        self.title = Text(title)
+        self.detail = (detail ?? Self.descriptions[title.key]).map { Text($0) }
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, detail: String? = nil) {
+        self.title = Text(title)
+        self.detail = detail.map { Text($0) } ?? Self.descriptions[String(title)].map { Text($0) }
+    }
+
+    /// Mixes a localised and a verbatim string, e.g. `Text("Title")` and
+    /// `Text(value)`. Built-in descriptions don't apply.
+    init(title: Text, detail: Text?) {
+        self.title = title
+        self.detail = detail
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(6)) {
-            Text(title).font(.tvSettings(26, weight: .medium))
-            if let text = detail ?? Self.descriptions[title] {
-                Text(text).font(.tvSettings(19)).opacity(0.7)
+            title.font(.tvSettings(26, weight: .medium))
+            if let detail {
+                detail.font(.tvSettings(19)).opacity(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    private static let descriptions: [String: String] = [
+    private static let descriptions: [String: LocalizedStringResource] = [
         "Spotlight": "Choose up to three rows for your discovery spotlight.",
         "Home Sections": "Choose which rows appear on Home and arrange their order.",
         "Poster Size": "Adjust card sizes on Home only.",
@@ -218,7 +272,7 @@ enum TVSettingsOptions {
         languageOptions(
             languages,
             unsetID: "",
-            unsetLabel: "No preference"
+            unsetLabel: String(localized: "No preference")
         )
     }
 
@@ -226,21 +280,21 @@ enum TVSettingsOptions {
         BufferAheadMode.allCases.map { .init(id: $0.rawValue, label: $0.label) }
 
     static let volumeBoostLevel: [TVSettingsOption] =
-        VividAudioEnhancement.boostLevels.map { .init(id: String($0), label: "\($0)%") }
+        VividAudioEnhancement.boostLevels.map { .init(id: String($0), label: String(localized: "\($0)%")) }
 
     static let nextUpPrompt: [TVSettingsOption] = [
-        .init(id: "0", label: "At end"),
-        .init(id: "10", label: "10 seconds before end"),
-        .init(id: "30", label: "30 seconds before end"),
-        .init(id: "60", label: "1 minute before end"),
-        .init(id: "120", label: "2 minutes before end"),
+        .init(id: "0", label: String(localized: "At end")),
+        .init(id: "10", label: String(localized: "10 seconds before end")),
+        .init(id: "30", label: String(localized: "30 seconds before end")),
+        .init(id: "60", label: String(localized: "1 minute before end")),
+        .init(id: "120", label: String(localized: "2 minutes before end")),
     ]
 
     static func subtitleLanguage(_ languages: [PlaybackLanguageOption]) -> [TVSettingsOption] {
         languageOptions(
             languages,
             unsetID: PlaybackPrefSentinel.none,
-            unsetLabel: "No preference"
+            unsetLabel: String(localized: "No preference")
         )
     }
 
@@ -248,7 +302,7 @@ enum TVSettingsOptions {
         languageOptions(
             languages,
             unsetID: PlaybackPrefSentinel.none,
-            unsetLabel: "None"
+            unsetLabel: String(localized: "None")
         )
     }
 
@@ -265,11 +319,11 @@ enum TVSettingsOptions {
         SubtitleMode.allCases.map { .init(id: $0.rawValue, label: $0.displayLabel) }
 
     static let subtitleSize: [TVSettingsOption] = [
-        .init(id: "small",   label: "Small"),
-        .init(id: "medium",  label: "Medium"),
-        .init(id: "large",   label: "Large"),
-        .init(id: "xlarge",  label: "X-Large"),
-        .init(id: "xxlarge", label: "XX-Large"),
+        .init(id: "small",   label: String(localized: "Small")),
+        .init(id: "medium",  label: String(localized: "Medium")),
+        .init(id: "large",   label: String(localized: "Large")),
+        .init(id: "xlarge",  label: String(localized: "X-Large")),
+        .init(id: "xxlarge", label: String(localized: "XX-Large")),
     ]
 
     static let fontColor: [TVSettingsOption] =
@@ -279,7 +333,7 @@ enum TVSettingsOptions {
         SubtitleBackgroundStylePreset.selectableCases.map { .init(id: $0.rawValue, label: $0.label) }
 
     static let backgroundOpacity: [TVSettingsOption] =
-        stride(from: 0, through: 100, by: 5).map { .init(id: String($0), label: "\($0)%") }
+        stride(from: 0, through: 100, by: 5).map { .init(id: String($0), label: String(localized: "\($0)%")) }
 
     static let backgroundColor: [TVSettingsOption] =
         SubtitleAppearance.backgroundColors.map { .init(id: $0.hex, label: $0.label) }
@@ -447,17 +501,31 @@ private struct TVSettingsPaneRowBody: View {
 /// Picker row: title, current value, chevron. Activating it presents the
 /// option sheet.
 struct TVSettingsPickerRow: View {
-    let title: String
-    let value: String
-    var detail: String? = nil
+    private let label: TVSettingsRowLabel
+    private let value: Text
     let action: () -> Void
+
+    init(title: LocalizedStringResource, value: LocalizedStringResource, detail: LocalizedStringResource? = nil,
+         action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = Text(value)
+        self.action = action
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, V: StringProtocol>(title: T, value: V, detail: String? = nil, action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = Text(value)
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: TVSettingsLayout.scaled(16)) {
-                TVSettingsRowLabel(title: title, detail: detail)
+                label
                 Spacer(minLength: TVSettingsLayout.scaled(16))
-                Text(value)
+                value
                     .font(.tvSettings(24))
                     .opacity(0.68)
                     .lineLimit(1)
@@ -473,11 +541,30 @@ struct TVSettingsPickerRow: View {
 
 /// The system owns option presentation, selection and focus return.
 struct TVSettingsOptionMenu: View {
-    let title: String
+    private let label: TVSettingsRowLabel
     let value: String
-    var detail: String? = nil
     let options: [TVSettingsOption]
     let selection: Binding<String>
+
+    /// `value` is the current option's label, shown verbatim like a
+    /// `LabeledContent` value.
+    init<V: StringProtocol>(title: LocalizedStringResource, value: V, detail: LocalizedStringResource? = nil,
+                            options: [TVSettingsOption], selection: Binding<String>) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = String(value)
+        self.options = options
+        self.selection = selection
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, V: StringProtocol>(title: T, value: V, detail: String? = nil,
+                                               options: [TVSettingsOption], selection: Binding<String>) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.value = String(value)
+        self.options = options
+        self.selection = selection
+    }
 
     var body: some View {
         Menu {
@@ -493,7 +580,7 @@ struct TVSettingsOptionMenu: View {
             }
         } label: {
             HStack(spacing: TVSettingsLayout.scaled(16)) {
-                TVSettingsRowLabel(title: title, detail: detail)
+                label
                 Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(value)
                     .font(.tvSettings(24))
@@ -514,15 +601,28 @@ struct TVSettingsOptionMenu: View {
 /// value, the trailing text reads On / Off. (Same pattern as the player
 /// info HUD — no `Toggle`, whose system chrome fights the custom layout.)
 struct TVSettingsToggleRow: View {
-    let title: String
+    private let label: TVSettingsRowLabel
     let isOn: Bool
-    var detail: String? = nil
     let action: () -> Void
+
+    init(title: LocalizedStringResource, isOn: Bool, detail: LocalizedStringResource? = nil, action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.isOn = isOn
+        self.action = action
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<S: StringProtocol>(title: S, isOn: Bool, detail: String? = nil, action: @escaping () -> Void) {
+        label = TVSettingsRowLabel(title: title, detail: detail)
+        self.isOn = isOn
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: TVSettingsLayout.scaled(16)) {
-                TVSettingsRowLabel(title: title, detail: detail)
+                label
                 Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(isOn ? "On" : "Off")
                     .font(.tvSettings(24, weight: isOn ? .semibold : .regular))
@@ -557,14 +657,29 @@ struct TVSettingsNestedGroup<Content: View>: View {
 /// Read-only fact row (server name, version). It is deliberately not a
 /// focus target; focus should land only on actionable settings rows.
 struct TVSettingsInfoRow: View {
-    let title: String
+    private let title: Text
     let value: String
     var showsConnectedDot = false
+
+    /// `value` is shown verbatim like a `LabeledContent` value.
+    init<V: StringProtocol>(title: LocalizedStringKey, value: V, showsConnectedDot: Bool = false) {
+        self.title = Text(title)
+        self.value = String(value)
+        self.showsConnectedDot = showsConnectedDot
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init<T: StringProtocol, V: StringProtocol>(title: T, value: V, showsConnectedDot: Bool = false) {
+        self.title = Text(title)
+        self.value = String(value)
+        self.showsConnectedDot = showsConnectedDot
+    }
 
     @Environment(\.tvSettingsJoinedRows) private var joined
     var body: some View {
         HStack(spacing: TVSettingsLayout.scaled(16)) {
-            Text(title)
+            title
                 .font(.tvSettings(26))
                 .lineLimit(1)
             Spacer(minLength: TVSettingsLayout.scaled(16))
@@ -601,13 +716,15 @@ struct TVSettingsInfoRow: View {
 /// Mono uppercase section eyebrow, matching the Skyline dropdown and
 /// filter-panel header grammar.
 struct TVSettingsSectionHeader: View {
-    let title: String
+    private let title: Text
     var topInset: CGFloat = 26
 
-    init(_ title: String, topInset: CGFloat = 26) { self.title = title; self.topInset = topInset }
+    init(_ title: LocalizedStringKey, topInset: CGFloat = 26) { self.title = Text(title); self.topInset = topInset }
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ title: S, topInset: CGFloat = 26) { self.title = Text(title); self.topInset = topInset }
 
     var body: some View {
-        Text(title)
+        title
             .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)
             .foregroundStyle(TVSettingsPalette.sectionText)
@@ -619,12 +736,13 @@ struct TVSettingsSectionHeader: View {
 
 /// Explanatory caption under a section's rows.
 struct TVSettingsFooter: View {
-    let text: String
+    private let text: Text
 
-    init(_ text: String) { self.text = text }
+    init(_ text: LocalizedStringKey) { self.text = Text(text) }
+    @_disfavoredOverload init<S: StringProtocol>(_ text: S) { self.text = Text(text) }
 
     var body: some View {
-        Text(text)
+        text
             .font(.tvSettings(19))
             .foregroundColor(.vividSecondaryText)
             .padding(.horizontal, TVSettingsLayout.scaled(24))
@@ -638,15 +756,42 @@ struct TVSettingsFooter: View {
 /// Settings-styled destructive confirmation used instead of the native tvOS
 /// alert, whose app-wide tint can leave focused Cancel text without contrast.
 struct TVSettingsConfirmationOverlay: View {
-    let title: String
-    let message: String
-    let confirmTitle: String
-    var additionalDestructiveTitle: String? = nil
+    private let title: Text
+    private let message: Text
+    private let confirmTitle: Text
+    private let additionalDestructiveTitle: Text?
     let cancel: () -> Void
     let confirm: () -> Void
-    var additionalDestructiveAction: (() -> Void)? = nil
+    private let additionalDestructiveAction: (() -> Void)?
 
     @FocusState private var focusedAction: Action?
+
+    init(title: LocalizedStringResource, message: LocalizedStringResource, confirmTitle: LocalizedStringResource,
+         additionalDestructiveTitle: LocalizedStringResource? = nil,
+         cancel: @escaping () -> Void, confirm: @escaping () -> Void,
+         additionalDestructiveAction: (() -> Void)? = nil) {
+        self.title = Text(title)
+        self.message = Text(message)
+        self.confirmTitle = Text(confirmTitle)
+        self.additionalDestructiveTitle = additionalDestructiveTitle.map { Text($0) }
+        self.cancel = cancel
+        self.confirm = confirm
+        self.additionalDestructiveAction = additionalDestructiveAction
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init(title: String, message: String, confirmTitle: String, additionalDestructiveTitle: String? = nil,
+         cancel: @escaping () -> Void, confirm: @escaping () -> Void,
+         additionalDestructiveAction: (() -> Void)? = nil) {
+        self.title = Text(title)
+        self.message = Text(message)
+        self.confirmTitle = Text(confirmTitle)
+        self.additionalDestructiveTitle = additionalDestructiveTitle.map { Text($0) }
+        self.cancel = cancel
+        self.confirm = confirm
+        self.additionalDestructiveAction = additionalDestructiveAction
+    }
 
     var body: some View {
         ZStack {
@@ -656,11 +801,11 @@ struct TVSettingsConfirmationOverlay: View {
 
             VStack(spacing: TVSettingsLayout.scaled(28)) {
                 VStack(spacing: TVSettingsLayout.scaled(12)) {
-                    Text(title)
+                    title
                         .font(.tvSettings(38, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
 
-                    Text(message)
+                    message
                         .font(.tvSettings(22))
                         .foregroundColor(.vividSecondaryText)
                         .multilineTextAlignment(.center)
@@ -677,7 +822,7 @@ struct TVSettingsConfirmationOverlay: View {
                         .focused($focusedAction, equals: .cancel)
 
                     Button(action: confirm) {
-                        Text(confirmTitle)
+                        confirmTitle
                             .font(.tvSettings(24, weight: .semibold))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .lineLimit(1)
@@ -690,7 +835,7 @@ struct TVSettingsConfirmationOverlay: View {
                     if let additionalDestructiveTitle,
                        let additionalDestructiveAction {
                         Button(action: additionalDestructiveAction) {
-                            Text(additionalDestructiveTitle)
+                            additionalDestructiveTitle
                                 .font(.tvSettings(24, weight: .semibold))
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .lineLimit(1)
@@ -744,9 +889,9 @@ struct TVPrivacyPolicyPage: View {
                 policySection("Optional Emby Connect sign-in", "If you choose Use Emby Connect when signing in to an Emby server, Vivid asks Emby’s Emby Connect service (connect.emby.media) for a PIN, sending a generated device identifier and the app name and version. You enter the PIN on emby.media with your Emby Connect email and password, which Vivid never receives. Vivid then receives an Emby Connect sign-in token and the list of servers linked to your Emby Connect account, uses them once to sign in to the server you chose, and doesn’t keep them. Emby Connect also receives normal connection information, including your IP address, and handles it under Emby’s own privacy policy. Signing in with a password doesn’t contact Emby Connect.")
                 policySection("Information on this Apple TV", "Vivid saves preferences, Home metadata, artwork and playback buffers on this Apple TV. Saved account session tokens and optional Vivid PIN records use Keychain. The saved-account feature does not retain the media-server password you enter.")
                 policySection("Private iCloud account sync", "When iCloud is available, Vivid stores saved server addresses, account and viewing-profile details (including any server name you give a profile), login sessions, optional Vivid PIN records and profile order in encrypted fields in your private iCloud database. Shared browsing, navigation, metadata and download preferences, plus configured MDBList, OpenSubtitles and Seerr connection details, also sync between your iPhone, iPad and Apple TV for the matching server account and viewing profile. Playback and subtitle preferences, downloaded media, artwork and metadata caches stay on the device. Playback history and resume positions stay with your media server. Optional MDBList completed-watch exports and watchlist sync are described below.")
-                policySection("Playback and connected features", "Vivid sends playback position, pause state and watched-progress updates to the selected server, and tells Emby and Jellyfin which audio and subtitle tracks are playing. Subtitles and chapters are read from the opened media on this device, along with subtitle files a Silo, Emby or Jellyfin server keeps beside it and subtitles a Silo server stores for it. If you connect OpenSubtitles in Plugins, searches send the title, language, media type, season number and episode number to OpenSubtitles. The subtitle file you choose is downloaded to this device and kept with that title, along with any subtitle delay you set for it, for your 40 most recent titles, so it usually comes back when you resume; Apple TV may clear it to free space. Choosing another subtitle, Off or Auto, or disconnecting, removes it. A small, limited memory cache reuses recent downloads during the app session and clears when the connection changes. Your API key stays in Keychain, separate for each server account and profile, and syncs through the encrypted private iCloud account vault. Searches send the key only to the OpenSubtitles API. Subtitles are not uploaded to your media server. Subtitle translation is not provided. Vivid uses TMDb for trailers, ratings, movie collections and missing Emby and Jellyfin metadata IDs, and Studios & Networks asks it for studio and network logos and their most popular titles. These lookups go through Vivid’s TMDb relay (tmdb.vividapp.co, on Cloudflare), which sends them to TMDb with Vivid’s own key. The relay receives media identifiers and the lists requested, and uses your network address only to limit requests, without storing it or passing it to TMDb. Vivid doesn’t use a TMDb key of yours, and deletes one saved by an earlier version from your devices and the iCloud vault. Your library and watch history are matched on this device and are not sent to TMDb or the relay. When a page has trailers, Vivid loads their preview images from YouTube, and opening a trailer hands it to the YouTube app or website. Seerr request artwork loads from TMDb’s image service. These services receive normal connection information and apply their own privacy policies.")
+                policySection("Playback and connected features", "Vivid sends playback position, pause state and watched-progress updates to the selected server, and tells Emby and Jellyfin which audio and subtitle tracks are playing. Subtitles and chapters are read from the opened media on this device, along with subtitle files a Silo, Emby or Jellyfin server keeps beside it and subtitles a Silo server stores for it. If you connect OpenSubtitles in Plugins, searches send the title, language, media type, season number and episode number to OpenSubtitles. The subtitle file you choose is downloaded to this device and kept with that title, along with any subtitle delay you set for it, for your 40 most recent titles, so it usually comes back when you resume; Apple TV may clear it to free space. Choosing another subtitle, Off or Auto, or disconnecting, removes it. A small, limited memory cache reuses recent downloads during the app session and clears when the connection changes. Your API key stays in Keychain, separate for each server account and profile, and syncs through the encrypted private iCloud account vault. Searches send the key only to the OpenSubtitles API. Subtitles are not uploaded to your media server. Subtitle translation is not provided. Vivid uses TMDb for trailers, ratings, movie collections and missing Emby and Jellyfin metadata IDs, and Studios & Networks asks it for studio and network logos and their most popular titles. These lookups go through Vivid’s TMDb relay (tmdb.vividapp.co, on Cloudflare), which sends them to TMDb with Vivid’s own key. The relay receives media identifiers, the lists requested and Vivid’s language when it isn’t English, and uses your network address only to limit requests, without storing it or passing it to TMDb. Vivid doesn’t use a TMDb key of yours, and deletes one saved by an earlier version from your devices and the iCloud vault. Your library and watch history are matched on this device and are not sent to TMDb or the relay. When a page has trailers, Vivid loads their preview images from YouTube, and opening a trailer hands it to the YouTube app or website. Seerr request artwork loads from TMDb’s image service. These services receive normal connection information and apply their own privacy policies.")
                 policySection("Skip timestamp lookups", "With Intro & Credit Skipper enabled in Playback settings, Vivid can look up missing intro, recap and credits timestamps. IntroDB (api.introdb.app) receives the series IMDb ID and season and episode numbers. TheIntroDB (api.theintrodb.org) receives the series TMDb ID when available, otherwise its IMDb ID, plus season and episode numbers. These services also receive normal connection information such as your IP address. Vivid does not send your media-server credentials. The skipper is enabled by default, can be turned off in Playback settings, and does not require an API key.")
-                policySection("Calendar", "The Calendar finds new episodes of series in your Continue Watching, Watchlist and history. Vivid looks up their air times from TVmaze and their next air date from TMDb through Vivid’s relay (tmdb.vividapp.co, on Cloudflare), which receives only the TVDB, IMDb or TMDb IDs of those series and uses your network address only to limit requests, without storing it or passing it on. TVmaze never sees your address. Trending asks TMDb through the same relay for popular titles coming soon. Upcoming posters load from your server, and Trending posters load from TMDb’s image service, which receives normal connection information. Your library, watch history and account aren’t sent to TVmaze, TMDb or the relay. Vivid keeps the Calendar’s list of your series with their air dates, and Trending, on this device for each profile, so it doesn’t look them all up on every visit. Deleting the saved account removes them.")
+                policySection("Calendar", "The Calendar finds new episodes of series in your Continue Watching, Watchlist and history. Vivid looks up their air times from TVmaze and their next air date from TMDb through Vivid’s relay (tmdb.vividapp.co, on Cloudflare), which receives only the TVDB, IMDb or TMDb IDs of those series and uses your network address only to limit requests, without storing it or passing it on. TVmaze never sees your address. Trending asks TMDb through the same relay for popular titles coming soon, in Vivid’s language. Upcoming posters load from your server, and Trending posters load from TMDb’s image service, which receives normal connection information. Your library, watch history and account aren’t sent to TVmaze, TMDb or the relay. Vivid keeps the Calendar’s list of your series with their air dates, and Trending, on this device for each profile, so it doesn’t look them all up on every visit. Deleting the saved account removes them.")
                 policySection("Optional MDBList connection", "If you connect MDBList in Settings → Plugins, Vivid keeps your personal API key in this device’s Keychain. It sends movie and episode identifiers and watched dates for new completions or titles you explicitly mark watched in Vivid, only after your media server confirms the watched update. Neither service’s existing watched history is scanned or imported, and MDBList does not replace server watched indicators or resume positions. Movie and series watchlist additions and removals sync in both directions for matching titles on the active media server. Media-server credentials are never sent to MDBList. The connection syncs through the encrypted private iCloud account vault for the same server account and viewing profile. Pending exports and confirmed sync checkpoints remain on each device across connection failures. Reconnecting the same MDBList account reuses those checkpoints; watchlist sync reads fresh remote lists. Old local watched-import records are discarded without changing either service’s history. Disconnecting stops syncing without deleting watched history or watchlists.")
                 policySection("Optional Seerr connection", "If you configure Seerr, Vivid stores its URL, username and password in Keychain to restore your connection, and they sync through the encrypted private iCloud account vault for the matching server account and viewing profile. Seerr receives your login, search queries and media requests. Disconnect in Settings → Seerr to remove the saved connection. Your Seerr operator controls records kept on that server.")
                 policySection("Diagnostics", "Vivid keeps reports of crashes, freezes, unexpected exits, playback failures and app errors on this Apple TV to help fix problems. A report contains the app version, device model, system version, technical details, whether the app was launching, browsing or playing, and a short log of recent app events such as screens opened, playback steps and errors, with addresses, file names and identifiers removed. The reports Vivid writes contain no titles, account details or server addresses and are kept for up to 14 days, or less if the system needs the space. It also keeps a record of the latest playback only, replaced each time something new plays: the server type and play method, the audio output and display setup, the video and audio formats, and counts of dropped frames, buffering, audio faults and sync drift, time spent paused or waiting to load, and Vivid’s memory use each minute, with no titles, item IDs, account details or server addresses. Vivid never uploads them automatically. In Settings → Diagnostics you can view and delete them, or choose to send them. Sending them delivers them to Vivid’s diagnostics service at diagnostics.vividapp.co, which runs on Cloudflare, emails them to diagnostics@vividapp.co through the Resend email service and keeps a copy on Cloudflare for 30 days. To have a report you’ve sent deleted, email admin@vividapp.co with the reference shown after sending it. If you add a note saying what happened, it’s sent with them as you wrote it, apart from removing spaces at the ends and control or text-direction characters, and keeping it to 500 characters. Vivid doesn’t check a note for personal details, so leave out passwords and server addresses. The device’s network address is used only to limit how often reports can be sent and isn’t stored. Show QR Code instead opens an email to diagnostics@vividapp.co on your phone with a short summary of each problem report, which you review before sending; it doesn't include the latest playback record. Detailed development logs are only written by development builds and stay on the device. Apple’s TestFlight service separately collects beta usage, crash information and submitted feedback under its own privacy terms.")

@@ -11,11 +11,11 @@ enum WatchStatusFilter: String, Codable, CaseIterable, Hashable {
 
     var label: String {
         switch self {
-        case .unwatched: return "Unwatched"
-        case .inProgress: return "In Progress"
-        case .watched: return "Watched"
-        case .favorited: return "Favorited"
-        case .watchlist: return "Watchlist"
+        case .unwatched: return String(localized: "Unwatched")
+        case .inProgress: return String(localized: "In Progress")
+        case .watched: return String(localized: "Watched")
+        case .favorited: return String(localized: "Favorited")
+        case .watchlist: return String(localized: "Watchlist")
         }
     }
 }
@@ -43,19 +43,19 @@ enum CatalogFacet: String, CaseIterable, Codable, Hashable {
 
     var title: String {
         switch self {
-        case .itemType: return "Type"
-        case .genre: return "Genre"
-        case .decade: return "Decade"
-        case .watchStatus: return "Watch Status"
-        case .contentRating: return "Content Rating"
-        case .resolution: return "Resolution"
-        case .dynamicRange: return "Dynamic Range"
-        case .studio: return "Studio"
-        case .network: return "Network"
-        case .country: return "Country"
-        case .audioLanguage: return "Audio Language"
-        case .subtitleLanguage: return "Subtitle Language"
-        case .originalLanguage: return "Original Language"
+        case .itemType: return String(localized: "Type")
+        case .genre: return String(localized: "Genre")
+        case .decade: return String(localized: "Decade")
+        case .watchStatus: return String(localized: "Watch Status")
+        case .contentRating: return String(localized: "Content Rating")
+        case .resolution: return String(localized: "Resolution")
+        case .dynamicRange: return String(localized: "Dynamic Range")
+        case .studio: return String(localized: "Studio")
+        case .network: return String(localized: "Network")
+        case .country: return String(localized: "Country")
+        case .audioLanguage: return String(localized: "Audio Language")
+        case .subtitleLanguage: return String(localized: "Subtitle Language")
+        case .originalLanguage: return String(localized: "Original Language")
         }
     }
 
@@ -304,9 +304,9 @@ struct CatalogFilterState: Equatable, Codable, Hashable {
     static func chipLabel(facet: CatalogFacet, value: String) -> String {
         switch facet {
         case .itemType:
-            return value == "series" ? "Series" : "Movies"
+            return value == "series" ? String(localized: "Series") : String(localized: "Movies")
         case .decade:
-            return Int(value).map { "\($0)s" } ?? value
+            return Int(value).map { String(localized: "\(String($0))s", comment: "Decade filter option, for example 1990s") } ?? value
         case .dynamicRange:
             return value == "dolby_vision" ? "Dolby Vision" : "HDR"
         case .watchStatus:

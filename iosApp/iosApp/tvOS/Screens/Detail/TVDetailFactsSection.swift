@@ -16,7 +16,7 @@ struct TVDetailFactsSection: View {
         let facts = assembleFacts()
         if !facts.isEmpty {
             HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(facts.enumerated()), id: \.element.label) { index, fact in
+                ForEach(Array(facts.enumerated()), id: \.element.id) { index, fact in
                     if index > 0 {
                         Rectangle()
                             .fill(Color.white.opacity(0.16))
@@ -53,6 +53,8 @@ struct TVDetailFactsSection: View {
     }
 
     private struct Fact {
+        /// Stays English, so two labels that translate alike never share an identity.
+        let id: String
         let label: String
         let value: String
     }
@@ -61,39 +63,39 @@ struct TVDetailFactsSection: View {
         var facts: [Fact] = []
 
         if let directors = creditNames(forJobs: ["Director"]), !directors.isEmpty {
-            facts.append(Fact(label: "Director", value: directors))
+            facts.append(Fact(id: "director", label: String(localized: "Director"), value: directors))
         }
         if let writers = creditNames(forJobs: ["Writer", "Screenplay", "Story"]), !writers.isEmpty {
-            facts.append(Fact(label: writerLabel, value: writers))
+            facts.append(Fact(id: "writer", label: writerLabel, value: writers))
         }
 
         if let studios = detail.studios, !studios.isEmpty {
-            facts.append(Fact(label: "Studio", value: studios.prefix(3).joined(separator: ", ")))
+            facts.append(Fact(id: "studio", label: String(localized: "Studio"), value: studios.prefix(3).joined(separator: ", ")))
         }
         if let networks = detail.networks, !networks.isEmpty {
-            facts.append(Fact(label: "Network", value: networks.prefix(3).joined(separator: ", ")))
+            facts.append(Fact(id: "network", label: String(localized: "Network"), value: networks.prefix(3).joined(separator: ", ")))
         }
         if let countries = detail.countries, !countries.isEmpty {
-            facts.append(Fact(label: "Country", value: countries.prefix(3).joined(separator: ", ")))
+            facts.append(Fact(id: "country", label: String(localized: "Country"), value: countries.prefix(3).joined(separator: ", ")))
         }
         if let airDate = DetailDateFormatting.longDate(detail.airDate) {
-            facts.append(Fact(label: "Aired", value: airDate))
+            facts.append(Fact(id: "aired", label: String(localized: "Aired"), value: airDate))
         }
         if let releaseDate = DetailDateFormatting.longDate(detail.releaseDate) {
-            facts.append(Fact(label: "Released", value: releaseDate))
+            facts.append(Fact(id: "released", label: String(localized: "Released"), value: releaseDate))
         }
         if let firstAired = DetailDateFormatting.longDate(detail.firstAirDate) {
-            facts.append(Fact(label: "First Aired", value: firstAired))
+            facts.append(Fact(id: "firstAired", label: String(localized: "First Aired"), value: firstAired))
         }
         if let lastAired = DetailDateFormatting.longDate(detail.lastAirDate) {
-            facts.append(Fact(label: "Last Aired", value: lastAired))
+            facts.append(Fact(id: "lastAired", label: String(localized: "Last Aired"), value: lastAired))
         }
         return facts
     }
 
     private var writerLabel: String {
         let hasScreenplay = detail.crew?.contains { $0.job?.lowercased() == "screenplay" } ?? false
-        return hasScreenplay ? "Writer" : "Written by"
+        return hasScreenplay ? String(localized: "Writer") : String(localized: "Written by")
     }
 
     private func creditNames(forJobs jobs: [String]) -> String? {

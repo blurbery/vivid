@@ -124,7 +124,7 @@ class CollectionsViewModel {
         }
         let ungrouped = (byGroup[nil] ?? []).sorted { ($0.sortOrder ?? 0) < ($1.sortOrder ?? 0) }
         if !ungrouped.isEmpty || groups.isEmpty {
-            result.append(UserCollectionSection(groupId: nil, name: "Ungrouped", collections: ungrouped))
+            result.append(UserCollectionSection(groupId: nil, name: String(localized: "Ungrouped"), collections: ungrouped))
         }
         sections = result
     }
@@ -166,7 +166,7 @@ class CollectionsViewModel {
     func createGroup(name: String) async {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            groupError = "Name is required"
+            groupError = String(localized: "Name is required")
             return
         }
         do {
@@ -176,14 +176,14 @@ class CollectionsViewModel {
             writeBackCache()
             pendingGroupAction = nil
         } catch let err {
-            groupError = groupErrorMessage(err, fallback: "Failed to add group")
+            groupError = groupErrorMessage(err, fallback: String(localized: "Failed to add group"))
         }
     }
 
     func renameGroup(id: String, name: String) async {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            groupError = "Name is required"
+            groupError = String(localized: "Name is required")
             return
         }
         do {
@@ -195,7 +195,7 @@ class CollectionsViewModel {
             writeBackCache()
             pendingGroupAction = nil
         } catch let err {
-            groupError = groupErrorMessage(err, fallback: "Failed to rename group")
+            groupError = groupErrorMessage(err, fallback: String(localized: "Failed to rename group"))
         }
     }
 
@@ -224,7 +224,7 @@ class CollectionsViewModel {
             writeBackCache()
             pendingGroupAction = nil
         } catch let err {
-            groupError = groupErrorMessage(err, fallback: "Failed to delete group")
+            groupError = groupErrorMessage(err, fallback: String(localized: "Failed to delete group"))
         }
     }
 
@@ -238,7 +238,7 @@ class CollectionsViewModel {
             writeBackCache()
             pendingGroupAction = nil
         } catch let err {
-            groupError = groupErrorMessage(err, fallback: "Failed to move collection")
+            groupError = groupErrorMessage(err, fallback: String(localized: "Failed to move collection"))
         }
     }
 

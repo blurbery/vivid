@@ -9,8 +9,8 @@ actor EmbyDownloads {
         case alreadyDownloaded, noEpisodes
         var errorDescription: String? {
             switch self {
-            case .alreadyDownloaded: "All available episodes are already downloaded."
-            case .noEpisodes: "No downloadable episodes were found."
+            case .alreadyDownloaded: String(localized: "All available episodes are already downloaded.")
+            case .noEpisodes: String(localized: "No downloadable episodes were found.")
             }
         }
     }

@@ -45,7 +45,7 @@ struct TVBrowseControlRow: View {
             .focused($focusedControl, equals: .sort)
 
             if facetsLoadFailed {
-                Button(facetsFailureReason.map { "Retry filters · " + $0 } ?? "Retry filters", action: onLoadFacets)
+                Button(facetsFailureReason.map { String(localized: "Retry filters · \($0)") } ?? String(localized: "Retry filters"), action: onLoadFacets)
                     .buttonStyle(TVBrowseControlPillStyle())
                     .focused($focusedControl, equals: .filter)
             } else {

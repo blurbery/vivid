@@ -30,7 +30,7 @@ struct TVSavedAccount: Codable, Identifiable, Hashable {
     var defaultServerLabel: String {
         let provider = MediaServerProvider.forServerID(serverID)
         if provider.usesNativeUser { return provider.name }
-        return ServerRegistry.shared.entry(with: serverID)?.displayName ?? "Media server"
+        return ServerRegistry.shared.entry(with: serverID)?.displayName ?? String(localized: "Media server")
     }
 
     /// A typed server name with surrounding spaces removed, or nil when it's
@@ -321,13 +321,13 @@ final class TVSavedAccountStore {
     func setPIN(_ pin: String, accountID: String) -> Bool {
         guard activeID == accountID, !showsSelector, AuthService.shared.isLoggedIn else { return false }
         guard pin.count == 4, pin.allSatisfy({ $0.isASCII && $0.isNumber }) else {
-            error = "Enter exactly four digits."; return false
+            error = String(localized: "Enter exactly four digits."); return false
         }
         let salt = UUID().uuidString
         let digest = SHA256.hash(data: Data((salt + pin).utf8)).map { String(format: "%02x", $0) }.joined()
         guard let data = try? JSONEncoder().encode(PINRecord(salt: salt, digest: digest)),
               let value = String(data: data, encoding: .utf8), keychain.set(value, for: pinKey(accountID)) else {
-            error = "Couldn’t save the PIN."; return false
+            error = String(localized: "Couldn’t save the PIN."); return false
         }
         if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index].pinEnabled = true }
         markAccountChanged(accountID)
@@ -348,7 +348,7 @@ final class TVSavedAccountStore {
         guard let raw = keychain.get(pinKey(id)), let data = raw.data(using: .utf8),
               var record = try? JSONDecoder().decode(PINRecord.self, from: data) else { return false }
         if let until = record.blockedUntil, until > Date() {
-            error = "Too many attempts. Wait 30 seconds and try again."; return false
+            error = String(localized: "Too many attempts. Wait 30 seconds and try again."); return false
         }
         let digest = SHA256.hash(data: Data((record.salt + pin).utf8)).map { String(format: "%02x", $0) }.joined()
         let valid = pin.count == 4 && digest == record.digest
@@ -361,7 +361,7 @@ final class TVSavedAccountStore {
         guard let updated = try? JSONEncoder().encode(record),
               let string = String(data: updated, encoding: .utf8), keychain.set(string, for: pinKey(id)) else { return false }
         if valid { unlockedID = id; error = nil }
-        else { error = "Incorrect PIN. Try again." }
+        else { error = String(localized: "Incorrect PIN. Try again.") }
         return valid
     }
     /// Restore only this native user's explicitly selected local account.
@@ -467,7 +467,7 @@ final class TVSavedAccountStore {
             if pending == nil { Task { await VividCloudAccountSync.shared.synchronize() } }
             return true
         } catch {
-            self.error = "Couldn’t save this profile on this device."
+            self.error = String(localized: "Couldn’t save this profile on this device.")
             return false
         }
     }
@@ -617,7 +617,7 @@ final class TVSavedAccountStore {
             persist()
             await finishLogin(router: router)
         } catch {
-            self.error = "Couldn’t switch profiles. Please try again."
+            self.error = String(localized: "Couldn’t switch profiles. Please try again.")
             showsSelector = true
         }
     }
@@ -631,7 +631,7 @@ final class TVSavedAccountStore {
                       provider requestedProvider: MediaServerProvider? = nil, quickConnect: JellyfinLogin? = nil,
                       embyConnect: EmbyLogin? = nil) async -> Bool {
         guard !busy else { return false }
-        guard id != nil || canAddAccount else { error = "You can save up to eight profiles. Delete a saved profile to add another."; return false }
+        guard id != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles. Delete a saved profile to add another."); return false }
         await captureCurrent(refreshMetadata: false)
         guard !busy else { return false }
         busy = true; error = nil
@@ -639,7 +639,7 @@ final class TVSavedAccountStore {
         do {
             let normalized = ServerRegistry.shared.normalizedUserAddress(serverURL)
             guard let url = URL(string: normalized), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
-                error = "Enter a valid server address."; return false
+                error = String(localized: "Enter a valid server address."); return false
             }
             let selected = id.flatMap { selectedID in accounts.first { $0.id == selectedID } }
             let provider = requestedProvider ?? MediaServerProvider.forServerID(selected?.serverID ?? ServerRegistry.shared.activeServerId)
@@ -678,7 +678,7 @@ final class TVSavedAccountStore {
             // that is already saved, so its saved profile is chosen once the
             // viewing profile is known.
             if id == nil, provider == .silo {
-                guard sameLogin != nil || canAddAccount else { error = "You can save up to eight profiles."; return false }
+                guard sameLogin != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles."); return false }
                 let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
                                                  profile: nil, profileToken: nil, nativeUserID: nativeUserID)
                 let entry = ServerEntry(id: serverID, url: normalized,
@@ -698,9 +698,9 @@ final class TVSavedAccountStore {
             }
             let existing = id.flatMap { id in accounts.first { $0.id == id } } ?? sameLogin
             if let existing, existing.userID != userID || existing.serverID != serverID {
-                error = "These credentials belong to a different account. Use Add Profile instead."; return false
+                error = String(localized: "These credentials belong to a different account. Use Add Profile instead."); return false
             }
-            guard existing != nil || canAddAccount else { error = "You can save up to eight profiles."; return false }
+            guard existing != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles."); return false }
             let accountID = existing?.id ?? UUID().uuidString
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,
@@ -724,9 +724,9 @@ final class TVSavedAccountStore {
             await finishLogin(router: router, prepareHome: true)
             return true
         } catch {
-            self.error = quickConnect != nil ? "Couldn’t finish signing in with Quick Connect. Please try again."
-                : embyConnect != nil ? "Couldn’t finish signing in with Emby Connect. Please try again."
-                : "Couldn’t sign in. Check the server address, username and password, then try again."
+            self.error = quickConnect != nil ? String(localized: "Couldn’t finish signing in with Quick Connect. Please try again.")
+                : embyConnect != nil ? String(localized: "Couldn’t finish signing in with Emby Connect. Please try again.")
+                : String(localized: "Couldn’t sign in. Check the server address, username and password, then try again.")
             return false
         }
     }
@@ -803,12 +803,12 @@ final class TVSavedAccountStore {
         showsSelector = true
         #endif
         // Delete the saved session first: a failed remote logout must never restore it later.
-        guard keychain.delete(sessionKey(id)) else { error = "Couldn’t clear the saved login. Try again."; return }
+        guard keychain.delete(sessionKey(id)) else { error = String(localized: "Couldn’t clear the saved login. Try again."); return }
         if let index = accounts.firstIndex(where: { $0.id == id }) { accounts[index].requiresLogin = true }
         markAccountChanged(id)
         persist()
         guard await AuthService.shared.signOut() else {
-            error = "Couldn’t finish signing out. Please try again."; return
+            error = String(localized: "Couldn’t finish signing out. Please try again."); return
         }
         activeID = nil
         contentRevision = UUID()
@@ -861,7 +861,7 @@ final class TVSavedAccountStore {
         let ids = Set(selected.map(\.id))
         for account in selected {
             guard keychain.delete(sessionKey(account.id)), keychain.delete(pinKey(account.id)) else {
-                error = "Couldn’t delete the saved profile. Try again."
+                error = String(localized: "Couldn’t delete the saved profile. Try again.")
                 return false
             }
             if let index = accounts.firstIndex(where: { $0.id == account.id }) {
@@ -873,7 +873,7 @@ final class TVSavedAccountStore {
         }
         if let activeID, ids.contains(activeID) {
             guard await AuthService.shared.signOut() else {
-                error = "Couldn’t finish signing out. Try deleting again."
+                error = String(localized: "Couldn’t finish signing out. Try deleting again.")
                 return false
             }
             self.activeID = nil
@@ -883,7 +883,7 @@ final class TVSavedAccountStore {
         do {
             for account in selected { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
         } catch {
-            self.error = "Couldn’t clear the account cache. Try deleting again."
+            self.error = String(localized: "Couldn’t clear the account cache. Try deleting again.")
             return false
         }
         let remainingAccounts = accounts.filter { !ids.contains($0.id) }
@@ -892,7 +892,7 @@ final class TVSavedAccountStore {
         for serverID in serverIDs where VividCloudDeletionPolicy.canRemoveServer(serverID, remainingAccounts: remainingAccounts)
             && ServerRegistry.shared.entry(with: serverID) != nil {
             guard await ServerRegistry.shared.remove(serverId: serverID) else {
-                error = "Couldn’t remove the saved server. Try again."
+                error = String(localized: "Couldn’t remove the saved server. Try again.")
                 return false
             }
         }
@@ -940,7 +940,7 @@ final class TVSavedAccountStore {
             Task { await VividCloudAccountSync.shared.synchronize() }
             return true
         } catch {
-            self.error = "Couldn’t save the profile order. Try again."
+            self.error = String(localized: "Couldn’t save the profile order. Try again.")
             return false
         }
     }
@@ -984,7 +984,7 @@ final class TVSavedAccountStore {
             for account in matching {
                 CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID)
                 do { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
-                catch { cacheCleanupFailed = true; self.error = "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync." }
+                catch { cacheCleanupFailed = true; self.error = String(localized: "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync.") }
             }
             for account in matching {
                 _ = keychain.delete(sessionKey(account.id))

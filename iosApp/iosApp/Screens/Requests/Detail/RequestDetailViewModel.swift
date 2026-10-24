@@ -110,7 +110,7 @@ final class RequestDetailViewModel {
             )
             #if os(tvOS) || os(iOS)
             guard seerrIdentity == TVSeerrConnectionStore.shared.identity else {
-                throw TVSeerrError(message: "This account's connection changed. Open the title again from Search.")
+                throw TVSeerrError(message: String(localized: "This account's connection changed. Open the title again from Search."))
             }
             let record = try await TVSeerrConnectionStore.shared.create(input)
             #else

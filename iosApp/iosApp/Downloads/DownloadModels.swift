@@ -136,14 +136,10 @@ enum DownloadFormat: String, Codable, CaseIterable, Sendable {
     }
 
     var displayName: String {
-        switch self {
-        case .original: return "Original"
-        case .twentyMbps: return "20 Mbps"
-        case .tenMbps: return "10 Mbps"
-        case .fiveMbps: return "5 Mbps"
-        case .twoMbps: return "2 Mbps"
-        case .oneMbps: return "1 Mbps"
+        guard let kbps = targetBitrateKbps else {
+            return String(localized: "Original", comment: "Download quality: the original file, not converted")
         }
+        return String(localized: "\(kbps / 1000) Mbps", comment: "Download quality bitrate, e.g. 20 Mbps")
     }
 
     /// Tallest output each preset makes, on the same ladder as Silo's
@@ -273,21 +269,23 @@ extension DownloadPreparationStatus {
     var statusText: String {
         switch state {
         case "queued":
-            guard let queuePosition, queuePosition > 0 else { return "Waiting on server…" }
-            return "Waiting on server · \(Self.ordinal(queuePosition)) in line"
+            guard let queuePosition, queuePosition > 0 else { return String(localized: "Waiting on server…") }
+            return String(localized: "Waiting on server · \(Self.ordinal(queuePosition)) in line", comment: "Place in the server's download queue, e.g. Waiting on server · 2nd in line")
         case "retrying":
-            return "Retrying on server…"
+            return String(localized: "Retrying on server…")
         case "paused":
-            return "Paused on server"
+            return String(localized: "Paused on server")
         default:
             var parts: [String] = []
             if let progress {
-                parts.append("\(Int((min(max(progress, 0), 1) * 100).rounded(.down)))%")
+                parts.append(Int((min(max(progress, 0), 1) * 100).rounded(.down)).formatted(.percent))
             }
             if let remainingSeconds, remainingSeconds >= 0 {
                 parts.append(Self.remainingText(seconds: remainingSeconds))
             }
-            return parts.isEmpty ? "Preparing on server…" : (["Preparing on server"] + parts).joined(separator: " · ")
+            return parts.isEmpty
+                ? String(localized: "Preparing on server…")
+                : ([String(localized: "Preparing on server")] + parts).joined(separator: " · ")
         }
     }
 
@@ -299,9 +297,9 @@ extension DownloadPreparationStatus {
 
     private static func remainingText(seconds: Int) -> String {
         let minutes = Int((Double(seconds) / 60).rounded())
-        if minutes < 1 { return "under 1 min left" }
-        if minutes < 60 { return "\(minutes) min left" }
-        return "\(minutes / 60) hr \(minutes % 60) min left"
+        if minutes < 1 { return String(localized: "under 1 min left") }
+        if minutes < 60 { return String(localized: "\(minutes) min left") }
+        return String(localized: "\(minutes / 60) hr \(minutes % 60) min left")
     }
 }
 
@@ -673,10 +671,10 @@ enum SubscriptionMode: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .all: return "All Seasons"
-        case .future: return "New Episodes Only"
-        case .latestSeason: return "Latest Season & Newer"
-        case .specificSeasons: return "Specific Seasons"
+        case .all: return String(localized: "All Seasons")
+        case .future: return String(localized: "New Episodes Only")
+        case .latestSeason: return String(localized: "Latest Season & Newer")
+        case .specificSeasons: return String(localized: "Specific Seasons")
         }
     }
 }
