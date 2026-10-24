@@ -90,7 +90,8 @@ private struct TVSystemAlertPresenter: UIViewControllerRepresentable {
     /// cleanly rather than leave `isPresented` stuck on.
     private static func present(_ alert: UIAlertController, from anchor: UIViewController,
                                 coordinator: Coordinator, isPresented: Binding<Bool>, attempts: Int) {
-        guard coordinator.alert === alert else { return }
+        // Already on screen, or on its way after UIKit queued it.
+        guard coordinator.alert === alert, alert.presentingViewController == nil, !alert.isBeingPresented else { return }
         if anchor.viewIfLoaded?.window != nil {
             var presenter = anchor
             while let next = presenter.presentedViewController { presenter = next }

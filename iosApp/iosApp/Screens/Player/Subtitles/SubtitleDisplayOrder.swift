@@ -137,10 +137,11 @@ enum SubtitleDisplayOrder {
     /// ordering stays on the English `languageDisplayName(_:)`. Falls back
     /// to the uppercased code.
     static func displayLanguageName(_ key: String) -> String {
-        if let name = Locale.current.localizedString(forLanguageCode: key) {
-            return name.capitalized(with: Locale.current)
+        guard let name = Locale.current.localizedString(forLanguageCode: key), let first = name.first else {
+            return key.uppercased()
         }
-        return key.uppercased()
+        // Only the first letter: "Portugais brésilien", not "Portugais Brésilien".
+        return String(first).uppercased(with: Locale.current) + name.dropFirst()
     }
 
     // MARK: - Private

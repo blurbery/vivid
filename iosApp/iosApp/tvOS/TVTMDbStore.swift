@@ -262,7 +262,8 @@ final class TVTMDbStore {
         if let cached = collectionCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
         async let localizedName = localizedCollectionName(id: collectionID)
         let response: CollectionDetail = try await request("collection/\(collectionID)")
-        let shownName = await localizedName ?? response.name
+        let localized = await localizedName
+        let shownName = localized.name ?? response.name
         try checkContext(context)
         let date: (CollectionPart) -> String? = { part in
             part.release_date.flatMap { $0.isEmpty ? nil : $0 }
@@ -283,18 +284,23 @@ final class TVTMDbStore {
                 year: part.release_date.flatMap { Int($0.prefix(4)) })
         }
         let films = CollectionFilms(id: response.id, name: shownName, parts: parts)
+        // A failed name lookup isn't kept, so the translated name is tried again.
+        guard !localized.failed else { return films }
         if collectionCache.count >= 200 { collectionCache.removeAll() }
         collectionCache[cacheKey] = (Date(), films)
         return films
     }
 
-    /// The collection's name in the app's language, or nil in English, when
-    /// TMDb has no translation, or when the lookup fails.
-    private func localizedCollectionName(id collectionID: Int) async -> String? {
-        guard let language = VividAppLanguage.tmdbLanguage,
-              let response: CollectionName = try? await request("collection/\(collectionID)", language: language),
-              let name = response.name, !name.isEmpty else { return nil }
-        return name
+    /// The collection's name in the app's language: nil in English or when
+    /// TMDb has no translation. `failed` is true when the lookup itself
+    /// failed, which is retried rather than cached.
+    private func localizedCollectionName(id collectionID: Int) async -> (name: String?, failed: Bool) {
+        guard let language = VividAppLanguage.tmdbLanguage else { return (nil, false) }
+        guard let response: CollectionName = try? await request("collection/\(collectionID)", language: language) else {
+            return (nil, true)
+        }
+        guard let name = response.name, !name.isEmpty else { return (nil, false) }
+        return (name, false)
     }
 
     // MARK: Ratings

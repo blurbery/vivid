@@ -127,6 +127,12 @@ struct PersonalListFilter: Hashable {
         return languages.first { $0.code == code }?.name ?? code.uppercased()
     }
 
+    /// The menu's languages, named and sorted in the app language.
+    static var languagesByName: [(code: String, name: String)] {
+        languages.map { ($0.code, languageName($0.code)) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     /// Adds Show, Original Language and A–Z to a personal-source catalogue
     /// query. Sort is only sent with A–Z so the list keeps its saved order.
     func apply(to query: inout [String: String]) {
@@ -271,9 +277,9 @@ struct PersonalListFilterMenuContent: View {
             if choices.contains(.originalLanguage), PersonalListFilter.supportsOriginalLanguage {
                 Menu {
                     Button { filter.originalLanguage = nil } label: { item(String(localized: "Any"), selected: filter.originalLanguage == nil) }
-                    ForEach(PersonalListFilter.languages, id: \.code) { language in
+                    ForEach(PersonalListFilter.languagesByName, id: \.code) { language in
                         Button { filter.originalLanguage = language.code } label: {
-                            item(PersonalListFilter.languageName(language.code), selected: filter.originalLanguage == language.code)
+                            item(language.name, selected: filter.originalLanguage == language.code)
                         }
                     }
                 } label: {

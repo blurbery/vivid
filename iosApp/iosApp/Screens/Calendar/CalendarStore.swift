@@ -123,11 +123,9 @@ final class CalendarStore {
         upcoming = Self.upcoming(for: saved.candidates, saved: saved.series, window: Self.upcomingWindow())
         upcomingFailed = false
         let today = Calendar.current.startOfDay(for: Date())
-        // Trending saved in another language is fetched again.
-        let sameLanguage = saved.trendingLanguage == VividAppLanguage.tmdbLanguage
-        trendingSeries = sameLanguage ? saved.trendingSeries.filter { $0.day >= today } : []
-        trendingMovies = sameLanguage ? saved.trendingMovies.filter { $0.day >= today } : []
-        trendingLoadedAt = sameLanguage ? saved.trendingSavedAt : nil
+        trendingSeries = saved.trendingSeries.filter { $0.day >= today }
+        trendingMovies = saved.trendingMovies.filter { $0.day >= today }
+        trendingLoadedAt = saved.trendingSavedAt
         trendingSeriesFailed = false
         trendingMoviesFailed = false
     }
@@ -608,7 +606,6 @@ final class CalendarStore {
         if !trendingFailed {
             trendingLoadedAt = Date()
             saved.trendingSavedAt = trendingLoadedAt
-            saved.trendingLanguage = VividAppLanguage.tmdbLanguage
         }
         save()
     }
@@ -645,13 +642,14 @@ final class CalendarStore {
     private struct Saved: Codable {
         /// Saved days are local, so another time zone starts again.
         var timeZone = TimeZone.current.identifier
+        /// TMDb's episode names and Trending come in Vivid's language, so
+        /// another language starts again too. `nil` is English.
+        var language = VividAppLanguage.tmdbLanguage
         var candidates: [Candidate] = []
         var series: [String: SavedSeries] = [:]
         var trendingSeries: [TrendingTitle] = []
         var trendingMovies: [TrendingTitle] = []
         var trendingSavedAt: Date?
-        /// The TMDb language Trending was fetched in, `nil` for English.
-        var trendingLanguage: String?
     }
 
     /// Reads and writes in order, off the main thread.
@@ -676,7 +674,8 @@ final class CalendarStore {
         guard let url else { return Saved() }
         let data = files.sync { try? Data(contentsOf: url) }
         guard let data, let saved = try? JSONDecoder().decode(Saved.self, from: data),
-              saved.timeZone == TimeZone.current.identifier else { return Saved() }
+              saved.timeZone == TimeZone.current.identifier,
+              saved.language == VividAppLanguage.tmdbLanguage else { return Saved() }
         return saved
     }
 

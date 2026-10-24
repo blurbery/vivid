@@ -18,6 +18,9 @@ final class TVHomeMetadataCache {
 
     struct Snapshot: Codable {
         var version = 1
+        /// The language Vivid showed when this was saved, nil for English:
+        /// the row titles Vivid names itself are in it.
+        var language = VividAppLanguage.tmdbLanguage
         var rows: [Row] = []
         var spotlight: [TVHomeSpotlightSlide] = []
         var spotlightUpdatedAt: Date?
@@ -111,7 +114,7 @@ final class TVHomeMetadataCache {
               size <= maximumSnapshotBytes,
               let data = try? Data(contentsOf: url),
               let value = try? JSONDecoder().decode(Snapshot.self, from: data),
-              value.version == 1 else { return nil }
+              value.version == 1, value.language == VividAppLanguage.tmdbLanguage else { return nil }
         return value
     }
 

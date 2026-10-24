@@ -193,7 +193,11 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
 
     /// The language's name in the app's language.
     private func languageDisplayName(_ code: String) -> String {
-        Locale.current.localizedString(forLanguageCode: code)?.capitalized(with: Locale.current) ?? code.uppercased()
+        guard let name = Locale.current.localizedString(forLanguageCode: code), let first = name.first else {
+            return code.uppercased()
+        }
+        // Only the first letter: "Portugais brésilien", not "Portugais Brésilien".
+        return String(first).uppercased(with: Locale.current) + name.dropFirst()
     }
 
     private static func englishLanguageName(_ code: String) -> String {

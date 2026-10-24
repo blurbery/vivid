@@ -60,7 +60,7 @@ TVmaze answers a lookup with a redirect to the show. The relay never follows it:
 
 The client's address is used only as the rate-limit key. It isn't stored, logged or sent to TMDb. Workers observability is off, so request details aren't retained. TMDb answers are cached by Cloudflare for up to a day and TVmaze answers for the times in the [TVmaze](#tvmaze) table, keyed only by the path and query. TMDb's terms allow caching for up to six months.
 
-The relay sees which TMDb, TVDB or IMDb IDs are looked up, which Studios & Networks lists are read and which TVmaze shows the Calendar asks for. TVmaze never receives the client's address. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
+The relay sees which TMDb, TVDB or IMDb IDs are looked up, which Studios & Networks lists are read, which TVmaze shows the Calendar asks for, and Vivid's language when it isn't English (for example `fr-FR`). TVmaze never receives the client's address. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
 
 > [!IMPORTANT]
 > The relay must be deployed, with the token set, and the privacy policy must be live, before an app build that uses the relay ships. Without the relay, TMDb features in that build show nothing.
