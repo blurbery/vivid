@@ -75,7 +75,7 @@ struct TVEpisodeRail: View {
     /// this view and are unchanged.
     private var homeStyleRail: some View {
         MediaRow(
-            title: "Episodes",
+            title: String(localized: "Episodes"),
             items: homeStyleItems,
             onItemTap: onSelect,
             showsHeader: false,
@@ -215,7 +215,7 @@ private extension SectionItem {
     ) {
         contentId = episode.contentId
         type = "episode"
-        title = episode.title ?? "Episode \(episode.episodeNumber)"
+        title = episode.title ?? String(localized: "Episode \(episode.episodeNumber)")
         self.seriesId = seriesId
         self.seriesTitle = seriesTitle
         seasonNumber = episode.seasonNumber
@@ -353,7 +353,7 @@ struct TVEpisodeCard: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text("EPISODE \(episode.episodeNumber)").font(.system(size: 18)).foregroundStyle(.secondary)
-                    Text(episode.title ?? "Episode \(episode.episodeNumber)").font(.system(size: 24, weight: .semibold)).lineLimit(1)
+                    (episode.title.map { Text($0) } ?? Text("Episode \(episode.episodeNumber)")).font(.system(size: 24, weight: .semibold)).lineLimit(1)
                     Text(episode.overview ?? "").font(.system(size: 20)).foregroundStyle(.secondary).lineLimit(2)
                         .frame(height: 52, alignment: .topLeading)
                     Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
@@ -416,9 +416,9 @@ struct TVEpisodeCard: View {
         }
         if let runtime = episode.runtime, runtime > 0 {
             if runtime >= 60 {
-                parts.append("\(runtime / 60)h \(runtime % 60)m")
+                parts.append(String(localized: "\(runtime / 60)h \(runtime % 60)m"))
             } else {
-                parts.append("\(runtime)m")
+                parts.append(String(localized: "\(runtime)m"))
             }
         }
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
@@ -511,7 +511,7 @@ private struct EpisodeCardLabel: View {
 
                     if !hidesEpisodeTitle {
                         HStack(alignment: .firstTextBaseline, spacing: 16) {
-                            Text(episode.title ?? "Episode \(episode.episodeNumber)")
+                            (episode.title.map { Text($0) } ?? Text("Episode \(episode.episodeNumber)"))
                                 .font(.system(size: 24, weight: .semibold))
                                 .foregroundStyle(titleColor)
                                 .lineLimit(1)
@@ -634,9 +634,9 @@ private struct EpisodeCardLabel: View {
 
     private func formatRuntime(_ minutes: Int) -> String {
         if minutes >= 60 {
-            return "\(minutes / 60)h \(minutes % 60)m"
+            return String(localized: "\(minutes / 60)h \(minutes % 60)m")
         }
-        return "\(minutes)m"
+        return String(localized: "\(minutes)m")
     }
 }
 

@@ -10,7 +10,7 @@ import UIKit
 struct DuoStripButton: View {
     let corner: PhoneDuo.ControlCorner
     let systemName: String
-    let accessibilityLabel: String
+    let accessibilityLabel: LocalizedStringKey
     let action: () -> Void
 
     var body: some View {

@@ -37,7 +37,7 @@ struct TVHomeScreenSettingsView: View {
                             row(id: section.id, title: section.title)
                         }
                         ForEach(missingRowIDs, id: \.self) { id in
-                            row(id: id, title: "Unavailable Home row — remove from spotlight")
+                            row(id: id, title: String(localized: "Unavailable Home row — remove from spotlight"))
                         }
 
                     }

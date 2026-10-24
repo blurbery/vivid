@@ -84,7 +84,7 @@ struct RecommendationsView: View {
             HStack(spacing: 4) {
                 ForEach(["Watchlist", "Favourites", "Collections"], id: \.self) { title in
                     Button { mobileSelection = title; chromeScrollState.reset() } label: {
-                        Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                        Text(mobileTabTitle(title)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                             .frame(maxWidth: .infinity).padding(.vertical, 12)
                             .foregroundStyle(mobileSelection == title ? Color.black : .white)
                             .background(mobileSelection == title ? Color.white : .clear, in: Capsule())
@@ -102,6 +102,16 @@ struct RecommendationsView: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.top, 12)
+    }
+
+    /// The tab names double as the selection and filter keys, so only the
+    /// shown text is localised.
+    private func mobileTabTitle(_ list: String) -> String {
+        switch list {
+        case "Favourites": String(localized: "Favourites")
+        case "Collections": String(localized: "Collections")
+        default: String(localized: "Watchlist")
+        }
     }
 
     private func mobileFilterChoices(for list: String) -> PersonalListFilter.Choices {
@@ -393,7 +403,7 @@ private struct SavedShortcutsRow: View {
                     onSelect(shortcut)
                 } label: {
                     Label {
-                        Text(shortcut.rawValue)
+                        Text(shortcut.title)
                             .font(labelFont)
                             .lineLimit(1)
                     } icon: {
@@ -403,7 +413,7 @@ private struct SavedShortcutsRow: View {
                     .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(SavedShortcutButtonStyle(isSelected: selection == shortcut))
-                .accessibilityLabel(shortcut.rawValue)
+                .accessibilityLabel(shortcut.title)
                 .focused($focusedShortcut, equals: shortcut)
                 #if os(tvOS)
                 .prefersDefaultFocus(shortcut == .watchlist, in: focusScope)
@@ -470,6 +480,15 @@ private enum SavedShortcut: String, CaseIterable, Identifiable {
     case favorites = "Favorites"
 
     var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .watchlist:
+            return String(localized: "Watchlist")
+        case .favorites:
+            return String(localized: "Favorites")
+        }
+    }
 
     var systemImage: String {
         switch self {

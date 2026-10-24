@@ -272,7 +272,7 @@ enum TVSettingsOptions {
         languageOptions(
             languages,
             unsetID: "",
-            unsetLabel: "No preference"
+            unsetLabel: String(localized: "No preference")
         )
     }
 
@@ -280,21 +280,21 @@ enum TVSettingsOptions {
         BufferAheadMode.allCases.map { .init(id: $0.rawValue, label: $0.label) }
 
     static let volumeBoostLevel: [TVSettingsOption] =
-        VividAudioEnhancement.boostLevels.map { .init(id: String($0), label: "\($0)%") }
+        VividAudioEnhancement.boostLevels.map { .init(id: String($0), label: String(localized: "\($0)%")) }
 
     static let nextUpPrompt: [TVSettingsOption] = [
-        .init(id: "0", label: "At end"),
-        .init(id: "10", label: "10 seconds before end"),
-        .init(id: "30", label: "30 seconds before end"),
-        .init(id: "60", label: "1 minute before end"),
-        .init(id: "120", label: "2 minutes before end"),
+        .init(id: "0", label: String(localized: "At end")),
+        .init(id: "10", label: String(localized: "10 seconds before end")),
+        .init(id: "30", label: String(localized: "30 seconds before end")),
+        .init(id: "60", label: String(localized: "1 minute before end")),
+        .init(id: "120", label: String(localized: "2 minutes before end")),
     ]
 
     static func subtitleLanguage(_ languages: [PlaybackLanguageOption]) -> [TVSettingsOption] {
         languageOptions(
             languages,
             unsetID: PlaybackPrefSentinel.none,
-            unsetLabel: "No preference"
+            unsetLabel: String(localized: "No preference")
         )
     }
 
@@ -302,7 +302,7 @@ enum TVSettingsOptions {
         languageOptions(
             languages,
             unsetID: PlaybackPrefSentinel.none,
-            unsetLabel: "None"
+            unsetLabel: String(localized: "None")
         )
     }
 
@@ -319,11 +319,11 @@ enum TVSettingsOptions {
         SubtitleMode.allCases.map { .init(id: $0.rawValue, label: $0.displayLabel) }
 
     static let subtitleSize: [TVSettingsOption] = [
-        .init(id: "small",   label: "Small"),
-        .init(id: "medium",  label: "Medium"),
-        .init(id: "large",   label: "Large"),
-        .init(id: "xlarge",  label: "X-Large"),
-        .init(id: "xxlarge", label: "XX-Large"),
+        .init(id: "small",   label: String(localized: "Small")),
+        .init(id: "medium",  label: String(localized: "Medium")),
+        .init(id: "large",   label: String(localized: "Large")),
+        .init(id: "xlarge",  label: String(localized: "X-Large")),
+        .init(id: "xxlarge", label: String(localized: "XX-Large")),
     ]
 
     static let fontColor: [TVSettingsOption] =
@@ -333,7 +333,7 @@ enum TVSettingsOptions {
         SubtitleBackgroundStylePreset.selectableCases.map { .init(id: $0.rawValue, label: $0.label) }
 
     static let backgroundOpacity: [TVSettingsOption] =
-        stride(from: 0, through: 100, by: 5).map { .init(id: String($0), label: "\($0)%") }
+        stride(from: 0, through: 100, by: 5).map { .init(id: String($0), label: String(localized: "\($0)%")) }
 
     static let backgroundColor: [TVSettingsOption] =
         SubtitleAppearance.backgroundColors.map { .init(id: $0.hex, label: $0.label) }
@@ -756,15 +756,42 @@ struct TVSettingsFooter: View {
 /// Settings-styled destructive confirmation used instead of the native tvOS
 /// alert, whose app-wide tint can leave focused Cancel text without contrast.
 struct TVSettingsConfirmationOverlay: View {
-    let title: String
-    let message: String
-    let confirmTitle: String
-    var additionalDestructiveTitle: String? = nil
+    private let title: Text
+    private let message: Text
+    private let confirmTitle: Text
+    private let additionalDestructiveTitle: Text?
     let cancel: () -> Void
     let confirm: () -> Void
-    var additionalDestructiveAction: (() -> Void)? = nil
+    private let additionalDestructiveAction: (() -> Void)?
 
     @FocusState private var focusedAction: Action?
+
+    init(title: LocalizedStringResource, message: LocalizedStringResource, confirmTitle: LocalizedStringResource,
+         additionalDestructiveTitle: LocalizedStringResource? = nil,
+         cancel: @escaping () -> Void, confirm: @escaping () -> Void,
+         additionalDestructiveAction: (() -> Void)? = nil) {
+        self.title = Text(title)
+        self.message = Text(message)
+        self.confirmTitle = Text(confirmTitle)
+        self.additionalDestructiveTitle = additionalDestructiveTitle.map { Text($0) }
+        self.cancel = cancel
+        self.confirm = confirm
+        self.additionalDestructiveAction = additionalDestructiveAction
+    }
+
+    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
+    @_disfavoredOverload
+    init(title: String, message: String, confirmTitle: String, additionalDestructiveTitle: String? = nil,
+         cancel: @escaping () -> Void, confirm: @escaping () -> Void,
+         additionalDestructiveAction: (() -> Void)? = nil) {
+        self.title = Text(title)
+        self.message = Text(message)
+        self.confirmTitle = Text(confirmTitle)
+        self.additionalDestructiveTitle = additionalDestructiveTitle.map { Text($0) }
+        self.cancel = cancel
+        self.confirm = confirm
+        self.additionalDestructiveAction = additionalDestructiveAction
+    }
 
     var body: some View {
         ZStack {
@@ -774,11 +801,11 @@ struct TVSettingsConfirmationOverlay: View {
 
             VStack(spacing: TVSettingsLayout.scaled(28)) {
                 VStack(spacing: TVSettingsLayout.scaled(12)) {
-                    Text(title)
+                    title
                         .font(.tvSettings(38, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
 
-                    Text(message)
+                    message
                         .font(.tvSettings(22))
                         .foregroundColor(.vividSecondaryText)
                         .multilineTextAlignment(.center)
@@ -795,7 +822,7 @@ struct TVSettingsConfirmationOverlay: View {
                         .focused($focusedAction, equals: .cancel)
 
                     Button(action: confirm) {
-                        Text(confirmTitle)
+                        confirmTitle
                             .font(.tvSettings(24, weight: .semibold))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .lineLimit(1)
@@ -808,7 +835,7 @@ struct TVSettingsConfirmationOverlay: View {
                     if let additionalDestructiveTitle,
                        let additionalDestructiveAction {
                         Button(action: additionalDestructiveAction) {
-                            Text(additionalDestructiveTitle)
+                            additionalDestructiveTitle
                                 .font(.tvSettings(24, weight: .semibold))
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .lineLimit(1)

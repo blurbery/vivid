@@ -215,7 +215,7 @@ struct TVMediaCard: View {
             components.append(secondLine)
         }
         if userState?.played == true {
-            components.append("Watched")
+            components.append(String(localized: "Watched", comment: "Spoken status of a watched title"))
         }
         return components.joined(separator: ", ")
     }

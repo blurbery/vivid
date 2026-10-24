@@ -25,33 +25,33 @@ enum ProfileLaunchBehavior: String, Codable, CaseIterable, Identifiable, Sendabl
     var title: String {
         switch self {
         case .automatic:
-            return "Automatic"
+            return String(localized: "Automatic")
         case .askEveryLaunch:
-            return "Every Time"
+            return String(localized: "Every Time")
         case .afterOneHour:
-            return "After 1 Hour"
+            return String(localized: "After 1 Hour")
         case .afterTwelveHours:
-            return "After 12 Hours"
+            return String(localized: "After 12 Hours")
         }
     }
 
     var standardDescription: String {
         switch self {
         case .automatic:
-            return "Use the last profile selected on this device. A protected profile can reopen without asking for its PIN."
+            return String(localized: "Use the last profile selected on this device. A protected profile can reopen without asking for its PIN.")
         case .askEveryLaunch:
-            return "Show Who's Watching whenever you return to Vivid."
+            return String(localized: "Show Who's Watching whenever you return to Vivid.")
         case .afterOneHour:
-            return "Show Who's Watching when you've been away from Vivid for 1 hour."
+            return String(localized: "Show Who's Watching when you've been away from Vivid for 1 hour.")
         case .afterTwelveHours:
-            return "Show Who's Watching when you've been away from Vivid for 12 hours."
+            return String(localized: "Show Who's Watching when you've been away from Vivid for 12 hours.")
         }
     }
 
     var tvDescription: String {
         switch self {
         case .automatic:
-            return "Use the profile selected for the current Apple TV user. A protected profile can reopen without asking for its PIN."
+            return String(localized: "Use the profile selected for the current Apple TV user. A protected profile can reopen without asking for its PIN.")
         case .askEveryLaunch, .afterOneHour, .afterTwelveHours:
             return standardDescription
         }

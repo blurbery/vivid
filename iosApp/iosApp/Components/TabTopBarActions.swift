@@ -69,7 +69,7 @@ struct TabTopBarActions: View {
 /// stays small and chrome-free, matching Plex's top-right icons.
 private struct TopBarIconButton: View {
     let systemImage: String
-    let accessibilityLabel: String
+    let accessibilityLabel: LocalizedStringKey
     let usesGlass: Bool
     let action: () -> Void
 

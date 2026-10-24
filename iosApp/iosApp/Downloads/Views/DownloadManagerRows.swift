@@ -50,7 +50,11 @@ struct DownloadActiveRow: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
                         .lineLimit(1)
-                    DownloadKindChip(text: record.type == "episode" ? "Series" : "Movie")
+                    DownloadKindChip(
+                        text: record.type == "episode"
+                            ? LocalizedStringResource("series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
+                            : "Movie"
+                    )
                 }
                 if let secondaryTitle {
                     Text(secondaryTitle)
@@ -111,9 +115,9 @@ struct DownloadActiveRow: View {
     /// nothing has transferred yet.
     private var cancelPrompt: String {
         if record.bytesDownloaded > 0 {
-            return "Discard \(DownloadFormatting.bytes(record.bytesDownloaded)) of downloaded data?"
+            return String(localized: "Discard \(DownloadFormatting.bytes(record.bytesDownloaded)) of downloaded data?")
         }
-        return "Cancel this download?"
+        return String(localized: "Cancel this download?")
     }
 
     private var primaryTitle: String {
@@ -140,17 +144,17 @@ struct DownloadActiveRow: View {
         switch record.localStatus {
         case .downloading:
             // Queued in the background session behind other transfers.
-            if record.bytesDownloaded == 0, rateParts.isEmpty { return "Waiting to download…" }
+            if record.bytesDownloaded == 0, rateParts.isEmpty { return String(localized: "Waiting to download…") }
             return ([percentText, sizeText] + rateParts).joined(separator: " · ")
         case .paused:
-            return "Paused · \(percentText) · \(sizeText)"
-        case .registering, .queued: return "Queued"
-        case .preparing: return record.preparation?.statusText ?? "Preparing on server…"
-        case .fetchingAssets: return "Starting…"
+            return String(localized: "Paused · \(percentText) · \(sizeText)")
+        case .registering, .queued: return String(localized: "Queued")
+        case .preparing: return record.preparation?.statusText ?? String(localized: "Preparing on server…")
+        case .fetchingAssets: return String(localized: "Starting…")
         case .completed: return DownloadFormatting.bytes(record.fileSize)
-        case .failed: return "Failed"
-        case .revoked: return "No longer available"
-        case .waiting: return "Waiting for your server"
+        case .failed: return String(localized: "Failed")
+        case .revoked: return String(localized: "No longer available")
+        case .waiting: return String(localized: "Waiting for your server")
         }
     }
 
@@ -164,18 +168,18 @@ struct DownloadActiveRow: View {
     }
 
     private var percentText: String {
-        "\(Int((record.progressFraction * 100).rounded()))%"
+        Int((record.progressFraction * 100).rounded()).formatted(.percent)
     }
 
     private var sizeText: String {
-        "\(DownloadFormatting.bytes(record.bytesDownloaded)) of \(DownloadFormatting.bytes(record.fileSize))"
+        String(localized: "\(DownloadFormatting.bytes(record.bytesDownloaded)) of \(DownloadFormatting.bytes(record.fileSize))", comment: "Downloaded size of total size, e.g. 1.2 GB of 4 GB")
     }
 
     /// "12 MB/s · 3 min left" once the manager has a smoothed rate; omitted
     /// while the rate is still settling so the line never shows garbage.
     private var rateParts: [String] {
         guard let bytesPerSecond, bytesPerSecond >= 1 else { return [] }
-        var parts = ["\(DownloadFormatting.bytes(Int64(bytesPerSecond)))/s"]
+        var parts = [String(localized: "\(DownloadFormatting.bytes(Int64(bytesPerSecond)))/s", comment: "Download speed, e.g. 12 MB/s")]
         let remaining = record.fileSize - record.bytesDownloaded
         if remaining > 0 {
             parts.append(Self.remainingText(seconds: Double(remaining) / bytesPerSecond))
@@ -185,9 +189,9 @@ struct DownloadActiveRow: View {
 
     private static func remainingText(seconds: Double) -> String {
         let minutes = Int((seconds / 60).rounded())
-        if minutes < 1 { return "under 1 min left" }
-        if minutes < 60 { return "\(minutes) min left" }
-        return "\(minutes / 60) hr \(minutes % 60) min left"
+        if minutes < 1 { return String(localized: "under 1 min left") }
+        if minutes < 60 { return String(localized: "\(minutes) min left") }
+        return String(localized: "\(minutes / 60) hr \(minutes % 60) min left")
     }
 
     @ViewBuilder private var progressRing: some View {
@@ -227,7 +231,7 @@ struct DownloadActiveRow: View {
 /// (`.swipeActions` only functions inside a `List`). The drag activates
 /// only when clearly horizontal so it doesn't fight the scroll view.
 struct DownloadSwipeRevealContainer<Content: View>: View {
-    let actionLabel: String
+    let actionLabel: LocalizedStringKey
     let action: () -> Void
     @ViewBuilder let content: () -> Content
 
@@ -395,7 +399,7 @@ struct DownloadMovieRow: View {
     private var meta: String {
         var parts: [String] = []
         if let sub = record.subtitle, !sub.isEmpty { parts.append(sub) }
-        if watched { parts.append("watched") }
+        if watched { parts.append(String(localized: "watched", comment: "Lowercase status after a movie's details in the downloads list, e.g. 2024 · watched")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -544,16 +548,16 @@ struct DownloadSeriesRow: View {
     private var subtitleLine: String {
         let seasons = group.seasonCount
         let seasonPart = seasons > 1
-            ? "\(seasons) seasons"
-            : (group.seasons.first.map { $0.isSpecials ? "Specials" : "Season \($0.seasonNumber)" } ?? "")
-        var line = "\(group.episodeCount) episode\(group.episodeCount == 1 ? "" : "s")"
-        if !seasonPart.isEmpty { line += " · \(seasonPart)" }
+            ? String(localized: "\(seasons) seasons")
+            : (group.seasons.first.map { $0.isSpecials ? String(localized: "Specials") : String(localized: "Season \($0.seasonNumber)") } ?? "")
+        var parts = [String(localized: "\(group.episodeCount) episodes")]
+        if !seasonPart.isEmpty { parts.append(seasonPart) }
         if group.allWatched {
-            line += " · all watched"
+            parts.append(String(localized: "all watched", comment: "Lowercase note after a downloaded series' episode count"))
         } else if group.watchedCount > 0 {
-            line += " · \(group.watchedCount) watched"
+            parts.append(String(localized: "\(group.watchedCount) watched", comment: "Lowercase count of watched downloaded episodes, e.g. 3 watched"))
         }
-        return line
+        return parts.joined(separator: " · ")
     }
 
     private func seasonHeader(_ season: DownloadSeasonGroup) -> some View {
@@ -562,7 +566,7 @@ struct DownloadSeriesRow: View {
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundColor(.vividOnSurface)
             Spacer()
-            Text("\(season.episodeCount) ep\(season.episodeCount == 1 ? "" : "s") · \(DownloadFormatting.bytes(season.totalBytes))")
+            Text("\(season.episodeCount) eps · \(DownloadFormatting.bytes(season.totalBytes))", comment: "Downloaded episode count (abbreviated) and size for a season")
                 .font(.system(size: 11.5))
                 .foregroundColor(.vividSecondaryText)
         }
@@ -619,14 +623,14 @@ struct DownloadEpisodeRow: View {
 
     private var title: String {
         if let episode = record.episodeNumber {
-            return "E\(episode) · \(record.title ?? record.contentId)"
+            return String(localized: "E\(episode) · \(record.title ?? record.contentId)", comment: "Episode number abbreviation and episode title, e.g. E4 · Pilot")
         }
         return record.title ?? record.contentId
     }
 
     private var meta: String {
         let size = DownloadFormatting.bytes(record.fileSize)
-        return watched ? "Watched · \(size)" : size
+        return watched ? String(localized: "Watched · \(size)") : size
     }
 }
 #endif

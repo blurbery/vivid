@@ -50,8 +50,8 @@ final class LucidSubtitleInventory {
         guard let context, let key = key(context.contentID, context.fileID) else { return fallback }
         if let staged = OpenSubtitlesStore.shared.stagedLabel(context: context) { return staged }
         guard let choice = choices[key] else { return fallback }
-        guard let id = choice.trackID else { return "Off" }
-        return entries[key]?.tracks.first(where: { $0.trackId == id })?.languageFirstPrimaryLabel ?? choice.label ?? "On"
+        guard let id = choice.trackID else { return String(localized: "Off") }
+        return entries[key]?.tracks.first(where: { $0.trackId == id })?.languageFirstPrimaryLabel ?? choice.label ?? String(localized: "On")
     }
 
     static func ordered(_ tracks: [PlayerTrack]) -> [PlayerTrack] {

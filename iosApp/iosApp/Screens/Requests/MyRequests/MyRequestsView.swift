@@ -191,7 +191,8 @@ struct MyRequestsView: View {
         if let summary = targetSummary(record) {
             parts.append(summary)
         } else {
-            parts.append("requested \(record.createdAt.formatted(.dateTime.month(.abbreviated).day()))")
+            let date = record.createdAt.formatted(.dateTime.month(.abbreviated).day())
+            parts.append(String(localized: "requested \(date)", comment: "Request date in a My Requests row, e.g. requested 12 Oct"))
         }
         if case .needsAttention(let reason) = rowState(record),
            let copy = RequestErrorCopy.message(forToken: reason) {
@@ -205,16 +206,14 @@ struct MyRequestsView: View {
         guard let targets = record.targets, targets.count > 1 else { return nil }
         let summaries = targets.compactMap { target -> String? in
             guard let quality = target.quality, !quality.isEmpty else { return nil }
-            let word: String
             switch target.status {
-            case .completed: word = "done"
-            case .downloading: word = "downloading"
-            case .queued, .approved: word = "queued"
-            case .pending: word = "pending"
-            case .failed: word = "failed"
+            case .completed: return String(localized: "\(quality) done", comment: "Request target status, e.g. 1080p done")
+            case .downloading: return String(localized: "\(quality) downloading", comment: "Request target status, e.g. 4K downloading")
+            case .queued, .approved: return String(localized: "\(quality) queued", comment: "Request target status, e.g. 4K queued")
+            case .pending: return String(localized: "\(quality) pending", comment: "Request target status, e.g. 4K pending")
+            case .failed: return String(localized: "\(quality) failed", comment: "Request target status, e.g. 4K failed")
             case .unknown: return nil
             }
-            return "\(quality) \(word)"
         }
         guard !summaries.isEmpty else { return nil }
         return summaries.joined(separator: " · ")

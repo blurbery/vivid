@@ -171,14 +171,17 @@ extension PlaybackSessionReport {
         if let output = setup.audioOutput { parts.append(output.uppercased() == "HDMI" ? "HDMI" : output.capitalized) }
         if let height = media.height { parts.append(height >= 2000 ? "4K" : "\(height)p") }
         if let range = media.sourceDynamicRange, range != "sdr" { parts.append(Self.dynamicRangeLabel(range)) }
-        if let dropped = totals.droppedFrames, dropped > 0 { parts.append("\(dropped) dropped frames") }
-        if totals.rebuffers > 0 { parts.append("\(totals.rebuffers) rebuffers") }
-        if totals.stalls > 0 { parts.append("\(totals.stalls) stalls") }
-        if let wait = totals.longestWaitSeconds, wait >= Self.longWaitSeconds { parts.append("waited \(Int(wait)) s to load") }
+        if let dropped = totals.droppedFrames, dropped > 0 { parts.append(String(localized: "\(dropped) dropped frames")) }
+        if totals.rebuffers > 0 { parts.append(String(localized: "\(totals.rebuffers) rebuffers")) }
+        if totals.stalls > 0 { parts.append(String(localized: "\(totals.stalls) stalls")) }
+        if let wait = totals.longestWaitSeconds, wait >= Self.longWaitSeconds {
+            let seconds = Int(wait)
+            parts.append(String(localized: "waited \(seconds) s to load"))
+        }
         let faults = totals.audioFaults.values.reduce(0, +)
-        if faults > 0 { parts.append("\(faults) audio faults") }
+        if faults > 0 { parts.append(String(localized: "\(faults) audio faults")) }
         let earlyHides = totals.controlsHiddenEarly?.values.reduce(0, +) ?? 0
-        if earlyHides > 0 { parts.append("controls hid early \(earlyHides)×") }
+        if earlyHides > 0 { parts.append(String(localized: "controls hid early \(earlyHides)×")) }
         return parts.joined(separator: " · ")
     }
 
@@ -194,59 +197,87 @@ extension PlaybackSessionReport {
     /// Plain-language rows for the preview. Values that weren't measured
     /// say so rather than showing zero.
     var summaryRows: [(label: String, value: String)] {
-        let missing = "Not measured"
+        let missing = String(localized: "Not measured")
+        let none = String(localized: "None", comment: "Playback report value: nothing of this kind happened")
         func count(_ value: Int?) -> String { value.map { "\($0)" } ?? missing }
+        /// Seconds as the record holds them, e.g. "1.25".
+        func seconds(_ value: Double) -> String { "\(value)" }
         var rows: [(String, String)] = []
         var output = setup.audioOutput.map { $0 == "hdmi" ? "HDMI" : $0 == "airplay" ? "AirPlay" : $0.capitalized } ?? missing
-        if let channels = setup.routeOutputChannels ?? setup.outputChannelsAvailable { output += " · \(channels) channels" }
-        if let latency = setup.outputLatencyMs { output += " · \(String(format: "%.2g", Double(latency) / 1000)) s latency" }
-        rows.append(("Audio output", output))
-        if let mode = setup.renderingMode { rows.append(("Apple rendering", Self.renderingModeLabel(mode))) }
-        if setup.externalScreen == true { rows.append(("External screen", "Yes")) }
-        let hdr = setup.displayHDR.map { $0.isEmpty ? "SDR only" : $0.map(Self.dynamicRangeLabel).joined(separator: ", ") } ?? missing
-        rows.append(("Display HDR", hdr))
-        if let refresh = setup.displayRefreshHz { rows.append(("Display refresh", String(format: "%.5g Hz", refresh))) }
-        if let matched = frameRateMatched, let fps = media.contentFps, let refresh = setup.displayRefreshHz {
-            rows.append(("Frame rate matched", (matched ? "Yes" : "No") + String(format: " (%.5g fps on %.5g Hz)", fps, refresh)))
+        if let channels = setup.routeOutputChannels ?? setup.outputChannelsAvailable {
+            output += " · " + String(localized: "\(channels) channels")
         }
-        if let matching = setup.systemMatchingEnabled { rows.append(("Match content (Apple TV)", matching ? "On" : "Off")) }
+        if let latency = setup.outputLatencyMs {
+            let latencySeconds = String(format: "%.2g", Double(latency) / 1000)
+            output += " · " + String(localized: "\(latencySeconds) s latency")
+        }
+        rows.append((String(localized: "Audio output"), output))
+        if let mode = setup.renderingMode { rows.append((String(localized: "Apple rendering"), Self.renderingModeLabel(mode))) }
+        if setup.externalScreen == true { rows.append((String(localized: "External screen"), String(localized: "Yes"))) }
+        let hdr = setup.displayHDR.map { $0.isEmpty ? String(localized: "SDR only") : $0.map(Self.dynamicRangeLabel).joined(separator: ", ") } ?? missing
+        rows.append((String(localized: "Display HDR"), hdr))
+        if let refresh = setup.displayRefreshHz { rows.append((String(localized: "Display refresh"), String(format: "%.5g Hz", refresh))) }
+        if let matched = frameRateMatched, let fps = media.contentFps, let refresh = setup.displayRefreshHz {
+            let fpsText = String(format: "%.5g", fps)
+            let refreshText = String(format: "%.5g", refresh)
+            let value = matched
+                ? String(localized: "Yes (\(fpsText) fps on \(refreshText) Hz)")
+                : String(localized: "No (\(fpsText) fps on \(refreshText) Hz)")
+            rows.append((String(localized: "Frame rate matched"), value))
+        }
+        if let matching = setup.systemMatchingEnabled {
+            rows.append((String(localized: "Match content (Apple TV)"), matching ? String(localized: "On") : String(localized: "Off")))
+        }
         var video = [media.videoCodec?.uppercased(), media.height.map { "\($0)p" },
                      media.sourceDynamicRange.map(Self.dynamicRangeLabel),
                      media.contentFps.map { String(format: "%.5g fps", $0) }].compactMap { $0 }.joined(separator: " · ")
-        if let out = media.outputDynamicRange, out != media.sourceDynamicRange { video += " → shown as \(Self.dynamicRangeLabel(out))" }
-        rows.append(("Video", video.isEmpty ? missing : video))
-        var audio = [media.audioCodec?.uppercased(), media.audioSourceChannels.map { "\($0) ch" }].compactMap { $0 }.joined(separator: " · ")
-        if let passthrough = media.audioPassthrough { audio += passthrough ? " · passthrough" : " · decoded" }
-        rows.append(("Audio", audio.isEmpty ? missing : audio))
-        if let method = setup.playMethod { rows.append(("Play method", method)) }
-        rows.append(("Played", Duration.seconds(totals.playedSeconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))
-        rows.append(("Ended", Self.endReasonLabel(totals.endReason)))
-        if let memory = memorySummary { rows.append(("Memory", memory)) }
-        rows.append(("Dropped frames", count(totals.droppedFrames)))
-        rows.append(("Decoder dropped frames", count(totals.decoderDroppedFrames)))
-        rows.append(("Late frames", count(totals.delayedFrames)))
-        rows.append(("Worst A/V sync", totals.maxAvSyncMs.map { "\(Int($0)) ms" } ?? missing))
-        rows.append(("Rebuffering", totals.rebuffers == 0 ? "None" : "\(totals.rebuffers) times, \(Int(totals.rebufferSeconds)) s"))
-        rows.append(("Stalls", totals.stalls == 0 ? "None" : "\(totals.stalls) times, \(Int(totals.stallSeconds)) s"))
+        if let out = media.outputDynamicRange, out != media.sourceDynamicRange {
+            let shown = Self.dynamicRangeLabel(out)
+            video += " " + String(localized: "→ shown as \(shown)")
+        }
+        rows.append((String(localized: "Video"), video.isEmpty ? missing : video))
+        var audio = [media.audioCodec?.uppercased(), media.audioSourceChannels.map { String(localized: "\($0) ch") }]
+            .compactMap { $0 }.joined(separator: " · ")
+        if let passthrough = media.audioPassthrough {
+            audio += " · " + (passthrough ? String(localized: "passthrough") : String(localized: "decoded"))
+        }
+        rows.append((String(localized: "Audio"), audio.isEmpty ? missing : audio))
+        if let method = setup.playMethod { rows.append((String(localized: "Play method"), method)) }
+        rows.append((String(localized: "Played"), Duration.seconds(totals.playedSeconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))
+        rows.append((String(localized: "Ended"), Self.endReasonLabel(totals.endReason)))
+        if let memory = memorySummary { rows.append((String(localized: "Memory"), memory)) }
+        rows.append((String(localized: "Dropped frames"), count(totals.droppedFrames)))
+        rows.append((String(localized: "Decoder dropped frames"), count(totals.decoderDroppedFrames)))
+        rows.append((String(localized: "Late frames"), count(totals.delayedFrames)))
+        rows.append((String(localized: "Worst A/V sync"), totals.maxAvSyncMs.map { "\(Int($0)) ms" } ?? missing))
+        let rebufferSeconds = Int(totals.rebufferSeconds)
+        rows.append((String(localized: "Rebuffering"),
+                     totals.rebuffers == 0 ? none : String(localized: "\(totals.rebuffers) times, \(rebufferSeconds) s")))
+        let stallSeconds = Int(totals.stallSeconds)
+        rows.append((String(localized: "Stalls"),
+                     totals.stalls == 0 ? none : String(localized: "\(totals.stalls) times, \(stallSeconds) s")))
         if let wait = totals.waitSeconds {
-            let longest = totals.longestWaitSeconds.map { ", longest \(Int($0)) s" } ?? ""
-            rows.append(("Waiting to load", wait < 1 ? "None" : "\(Int(wait)) s\(longest)"))
+            let waited = Int(wait)
+            let value = totals.longestWaitSeconds.map { String(localized: "\(waited) s, longest \(Int($0)) s") } ?? "\(waited) s"
+            rows.append((String(localized: "Waiting to load"), wait < 1 ? none : value))
         }
         if let paused = totals.pausedSeconds {
-            rows.append(("Paused", paused < 1 ? "None" : Duration.seconds(paused).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))
+            rows.append((String(localized: "Paused"), paused < 1 ? none : Duration.seconds(paused).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))
         }
-        let startup = [totals.firstFrameSeconds.map { "first frame \($0) s" }, totals.playbackStartSeconds.map { "playing \($0) s" }]
+        let startup = [totals.firstFrameSeconds.map { String(localized: "first frame \(seconds($0)) s") },
+                       totals.playbackStartSeconds.map { String(localized: "playing \(seconds($0)) s") }]
             .compactMap { $0 }.joined(separator: ", ")
-        rows.append(("Startup", startup.isEmpty ? missing : startup))
+        rows.append((String(localized: "Startup"), startup.isEmpty ? missing : startup))
         let faults = totals.audioFaults.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }
-        rows.append(("Audio faults", faults.isEmpty ? "None" : faults.joined(separator: ", ")))
+        rows.append((String(localized: "Audio faults"), faults.isEmpty ? none : faults.joined(separator: ", ")))
         if let shown = totals.controlsShown {
-            let shortest = totals.shortestControlsVisibleMs.map { ", shortest \($0) ms" } ?? ""
-            rows.append(("Player controls", "Shown \(shown) times\(shortest)"))
+            let value = totals.shortestControlsVisibleMs.map { String(localized: "Shown \(shown) times, shortest \($0) ms") }
+                ?? String(localized: "Shown \(shown) times")
+            rows.append((String(localized: "Player controls"), value))
             let early = totals.recentEarlyControlsHides ?? []
-            rows.append(("Controls hid early", early.isEmpty ? "None" : early.joined(separator: ", ")))
+            rows.append((String(localized: "Controls hid early"), early.isEmpty ? none : early.joined(separator: ", ")))
         }
-        if !notMeasured.isEmpty { rows.append(("Not measured", notMeasured.joined(separator: ", "))) }
+        if !notMeasured.isEmpty { rows.append((String(localized: "Not measured"), notMeasured.joined(separator: ", "))) }
         return rows
     }
 
@@ -255,37 +286,36 @@ extension PlaybackSessionReport {
     var memorySummary: String? {
         let readings = timeline.compactMap { minute in minute.memoryMB.map { (minute: minute.minute, mb: $0) } }
         guard let first = readings.first, let highest = readings.max(by: { $0.mb < $1.mb }) else { return nil }
-        let start = "\(first.mb) MB in minute \(first.minute)"
-        guard highest.mb > first.mb else { return start }
-        return start + ", highest \(highest.mb) MB in minute \(highest.minute)"
+        guard highest.mb > first.mb else { return String(localized: "\(first.mb) MB in minute \(first.minute)") }
+        return String(localized: "\(first.mb) MB in minute \(first.minute), highest \(highest.mb) MB in minute \(highest.minute)")
     }
 
     /// "failed_<kind>" comes from the player's error kind, for example
     /// failed_sourceRefused becomes "Failed (source refused)".
     static func endReasonLabel(_ reason: String?) -> String {
         switch reason {
-        case nil: return "Still playing or closed unexpectedly"
-        case "ended": return "Finished"
-        case "stopped": return "Stopped"
-        case "replaced": return "Another video started"
+        case nil: return String(localized: "Still playing or closed unexpectedly")
+        case "ended": return String(localized: "Finished")
+        case "stopped": return String(localized: "Stopped")
+        case "replaced": return String(localized: "Another video started")
         case let reason?:
             guard reason.hasPrefix("failed_") else { return reason }
             let words = reason.dropFirst("failed_".count).reduce(into: "") { text, character in
                 if character.isUppercase { text += " " }
                 text += character == "_" ? " " : String(character).lowercased()
             }
-            return "Failed (\(words))"
+            return String(localized: "Failed (\(words))")
         }
     }
 
     static func renderingModeLabel(_ token: String) -> String {
         switch token {
-        case "mono_stereo": return "Stereo"
-        case "surround": return "Surround"
-        case "spatial_audio": return "Spatial Audio"
+        case "mono_stereo": return String(localized: "Stereo")
+        case "surround": return String(localized: "Surround")
+        case "spatial_audio": return String(localized: "Spatial Audio")
         case "dolby_audio": return "Dolby Audio"
         case "dolby_atmos": return "Dolby Atmos"
-        default: return "Not reported"
+        default: return String(localized: "Not reported")
         }
     }
 

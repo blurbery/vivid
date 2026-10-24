@@ -47,17 +47,17 @@ struct ErrorState: Equatable {
     private static func humanize(httpError: HTTPError) -> String {
         switch httpError {
         case .serverUrlNotConfigured:
-            return "No server is configured."
+            return String(localized: "No server is configured.")
         case .requestIdentityChanged:
-            return "The active server or profile changed. Try again."
+            return String(localized: "The active server or profile changed. Try again.")
         case .invalidURL:
-            return "The request URL was invalid."
+            return String(localized: "The request URL was invalid.")
         case .invalidResponse:
-            return "The server returned an unexpected response."
+            return String(localized: "The server returned an unexpected response.")
         case .network:
-            return "Can't reach the server. Check your connection and try again."
+            return String(localized: "Can't reach the server. Check your connection and try again.")
         case .encodingFailed, .decodingFailed:
-            return "The server response was in an unexpected format."
+            return String(localized: "The server response was in an unexpected format.")
         case .http(let code, _):
             return humanize(statusCode: code)
         }
@@ -66,17 +66,17 @@ struct ErrorState: Equatable {
     private static func humanize(statusCode code: Int) -> String {
         switch code {
         case 401, 403:
-            return "Your session has expired. Sign in again to continue."
+            return String(localized: "Your session has expired. Sign in again to continue.")
         case 404:
-            return "We couldn't find what you were looking for. It may have been removed or moved."
+            return String(localized: "We couldn't find what you were looking for. It may have been removed or moved.")
         case 408, 504:
-            return "The server took too long to respond. Try again in a moment."
+            return String(localized: "The server took too long to respond. Try again in a moment.")
         case 429:
-            return "Too many requests. Please wait a moment and try again."
+            return String(localized: "Too many requests. Please wait a moment and try again.")
         case 500...599:
-            return "The server ran into a problem. Try again in a moment."
+            return String(localized: "The server ran into a problem. Try again in a moment.")
         default:
-            return "Something went wrong while talking to the server."
+            return String(localized: "Something went wrong while talking to the server.")
         }
     }
 }

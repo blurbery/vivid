@@ -2,12 +2,12 @@ import SwiftUI
 
 func libraryCollectionAccessibilityLabel(_ collection: LibraryCollection) -> String {
     let type = collection.kind == .userCollections
-        ? "User collection"
-        : collection.collectionType?.capitalized ?? "Collection"
+        ? String(localized: "User collection")
+        : collection.collectionType?.capitalized ?? String(localized: "Collection")
     let count = if let itemCount = collection.itemCount {
-        "\(itemCount) item\(itemCount == 1 ? "" : "s")"
+        String(localized: "\(itemCount) items")
     } else {
-        "Smart"
+        String(localized: "Smart")
     }
     return [collection.name, type, count].joined(separator: ", ")
 }
@@ -187,9 +187,11 @@ struct CollectionsView: View {
     }
 
     private func rowSubtitle(for collection: UserCollection) -> String {
-        let kind = (collection.collectionType ?? "custom").capitalized
+        // The server's collection type is shown as sent; only Vivid's
+        // fallback is translated.
+        let kind = collection.collectionType?.capitalized ?? String(localized: "Custom")
         if let count = collection.itemCount, count > 0 {
-            return "\(kind) · \(count) item\(count == 1 ? "" : "s")"
+            return String(localized: "\(kind) · \(count) items")
         }
         return kind
     }
@@ -299,7 +301,7 @@ private struct GroupActionSheet: View {
                         Button {
                             pendingMoveTarget = nil
                         } label: {
-                            moveOptionRow(label: "Ungrouped", selected: pendingMoveTarget == nil)
+                            moveOptionRow(label: String(localized: "Ungrouped"), selected: pendingMoveTarget == nil)
                         }
                         .listRowBackground(Color.vividSurface)
                         ForEach(viewModel.groups) { group in
@@ -326,7 +328,7 @@ private struct GroupActionSheet: View {
         }
     }
 
-    private func nameForm(title: String, prompt: String) -> some View {
+    private func nameForm(title: LocalizedStringKey, prompt: LocalizedStringKey) -> some View {
         VStack(spacing: VividTheme.largePadding) {
             TextField(prompt, text: $name)
                 .textFieldStyle(VividTextFieldStyle())
@@ -362,10 +364,10 @@ private struct GroupActionSheet: View {
 
     private var confirmLabel: String {
         switch action {
-        case .create: return "Create"
-        case .rename: return "Save"
-        case .delete: return "Delete"
-        case .move: return "Move"
+        case .create: return String(localized: "Create")
+        case .rename: return String(localized: "Save")
+        case .delete: return String(localized: "Delete")
+        case .move: return String(localized: "Move")
         }
     }
 
@@ -645,14 +647,14 @@ private struct LibraryCollectionCard: View {
         if let itemCount = collection.itemCount {
             return "\(itemCount)"
         }
-        return "Smart"
+        return String(localized: "Smart")
     }
 
     private var typeLabel: String {
         if collection.kind == .userCollections {
-            return "User collection"
+            return String(localized: "User collection")
         }
-        return collection.collectionType?.capitalized ?? "Collection"
+        return collection.collectionType?.capitalized ?? String(localized: "Collection")
     }
 }
 
@@ -691,7 +693,7 @@ struct LibraryCollectionDetailView: View {
             }
         }
         .vividBackground()
-        .navigationTitle(title ?? "Collection")
+        .navigationTitle(title ?? String(localized: "Collection"))
         .vividNavigationTitleDisplayMode(.large)
         .task(id: "\(libraryId)-\(collectionId)") {
             await loadItems(reset: true)
@@ -746,10 +748,13 @@ struct LibraryCollectionDetailView: View {
 
     private var countLabel: String {
         if let totalItems, !hasMore {
-            return "\(totalItems) item\(totalItems == 1 ? "" : "s")"
+            return String(localized: "\(totalItems) items")
         }
-        let suffix = hasMore ? "+" : ""
-        return "\(items.count)\(suffix) item\(items.count == 1 && !hasMore ? "" : "s")"
+        // A lower bound while more pages remain: "1+ items" stays plural.
+        if hasMore {
+            return String(localized: "\(items.count)+ items")
+        }
+        return String(localized: "\(items.count) items")
     }
 
     private func loadMoreIfNeeded() async {

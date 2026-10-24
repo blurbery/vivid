@@ -19,7 +19,7 @@ struct AirPlayRoutePicker: UIViewRepresentable {
         picker.tintColor = .white
         picker.prioritizesVideoDevices = true
         picker.accessibilityLabel = "AirPlay"
-        picker.accessibilityHint = "Choose a device for video playback"
+        picker.accessibilityHint = String(localized: "Choose a device for video playback")
         picker.delegate = context.coordinator
         return picker
     }

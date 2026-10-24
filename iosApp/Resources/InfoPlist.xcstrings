@@ -1,0 +1,47 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSLocalNetworkUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid verwendet dein lokales Netzwerk, um sich mit deinen Medienservern zu verbinden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid uses your local network to connect to your media servers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid usa tu red local para conectarse a tus servidores multimedia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid utilise votre réseau local pour se connecter à vos serveurs multimédias."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vividはメディアサーバに接続するためにローカルネットワークを使用します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 使用你的本地网络连接到你的媒体服务器。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

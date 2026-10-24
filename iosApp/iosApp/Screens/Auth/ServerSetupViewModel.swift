@@ -8,6 +8,14 @@ enum ServerSetupScheme: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// The segment's label. Only Auto is a word to translate.
+    var title: String {
+        switch self {
+        case .auto: String(localized: "Auto", comment: "Server protocol choice that tries HTTPS, then HTTP")
+        case .https, .http: rawValue
+        }
+    }
+
     var urlScheme: String? {
         switch self {
         case .auto: nil
@@ -36,7 +44,7 @@ class ServerSetupViewModel {
     /// Validate the server URL and determine whether setup or login is needed.
     func connect(router: AppRouter) async {
         guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            error = "Please enter a server host."
+            error = String(localized: "Please enter a server host.")
             return
         }
 
@@ -74,7 +82,7 @@ class ServerSetupViewModel {
         Self.logger.error(
             "Server autodiscovery failed candidates=\(attempted.joined(separator: ", "), privacy: .public) lastError=\(String(describing: lastError), privacy: .public)"
         )
-        self.error = "Could not reach a \(provider.name) server at that address."
+        self.error = String(localized: "Could not reach a \(provider.name) server at that address.")
     }
 
     func buildCandidateURLs() throws -> [String] {
@@ -185,11 +193,11 @@ private enum ServerSetupValidationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingHost:
-            return "Please enter a server host."
+            return String(localized: "Please enter a server host.")
         case .invalidHost:
-            return "Please enter a valid server host."
+            return String(localized: "Please enter a valid server host.")
         case .invalidPort:
-            return "Port must be a number between 1 and 65535."
+            return String(localized: "Port must be a number between 1 and 65535.")
         }
     }
 }

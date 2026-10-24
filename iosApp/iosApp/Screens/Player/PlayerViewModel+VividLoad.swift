@@ -170,7 +170,7 @@ extension PlayerViewModel {
             for sidecar in prepared.session.subtitleUrls ?? [] {
                 guard let url = URL(string: sidecar.url) else { continue }
                 vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
-                    name: sidecar.label ?? "External", language: sidecar.language,
+                    name: sidecar.label ?? String(localized: "External"), language: sidecar.language,
                     isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
                     isDefault: sidecar.default ?? false, httpHeaders: streamRequest.headers,
                     formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
@@ -184,7 +184,7 @@ extension PlayerViewModel {
                 guard let url = URL(string: sidecar.url), url.isFileURL,
                       url.standardizedFileURL.path.hasPrefix(downloads) else { continue }
                 vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
-                    name: sidecar.label ?? "External", language: sidecar.language,
+                    name: sidecar.label ?? String(localized: "External"), language: sidecar.language,
                     isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
                     isDefault: sidecar.default ?? false, formatHint: sidecar.codec),
                     appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
@@ -210,7 +210,7 @@ extension PlayerViewModel {
         if let context = openSubtitleContext,
            let pending = OpenSubtitlesStore.shared.takeStaged(contentID: context.contentID, fileID: currentSelectedVersion?.fileId) {
             do { try useOpenSubtitle(pending.result, data: pending.data, expected: context) }
-            catch { showNotice(title: "Subtitles", message: "Unable to load the downloaded subtitle", tone: .warning, duration: 5) }
+            catch { showNotice(title: String(localized: "Subtitles"), message: String(localized: "Unable to load the downloaded subtitle"), tone: .warning, duration: 5) }
         }
         restoreRememberedOpenSubtitle()
         if let id = openSubtitleFiles.selectedID, let track = subtitleTracks.first(where: { $0.trackId == id }) {
@@ -274,7 +274,7 @@ extension PlayerViewModel {
                   nativeApiMajor: nativeApiMajor)?.url else { return false }
         let apiOrigin = URL(string: request.serverUrl)
         lazySubtitleSidecars[trackID] = ExternalSubtitleTrack(
-            url: url, name: item.label ?? "External", language: item.language,
+            url: url, name: item.label ?? String(localized: "External"), language: item.language,
             isForced: item.forced, isHearingImpaired: item.hearingImpaired, isDefault: item.default,
             httpHeaders: VividLoadSpec.subtitleRequestHeaders(request.headers, resourceURL: url,
                 trustedOriginURLs: [apiOrigin].compactMap { $0 }),

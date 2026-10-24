@@ -62,7 +62,7 @@ struct ErrorView: View {
 
     private func recoveryButton(_ action: Action) -> some View {
         Button(action: action.run) {
-            Label(action.title, systemImage: action.title == "Try Again" ? "arrow.clockwise" : (action.title == "Go Back" ? "chevron.left" : "person.crop.circle"))
+            Label(action.title, systemImage: action.systemImage)
                 .font(.system(size: isTV ? 22 : 16, weight: .semibold))
                 .frame(maxWidth: .infinity, minHeight: isTV ? 48 : 36)
         }
@@ -71,7 +71,7 @@ struct ErrorView: View {
         .tint(.white)
     }
 
-    private var headline: String {
+    private var headline: LocalizedStringKey {
         if state.isAuthFailure { return "Session expired" }
         if state.isNotFound { return "Not found" }
         return "Something went wrong"
@@ -80,7 +80,8 @@ struct ErrorView: View {
     // MARK: - Action selection
 
     private struct Action {
-        let title: String
+        let title: LocalizedStringKey
+        let systemImage: String
         let run: () -> Void
     }
 
@@ -95,26 +96,26 @@ struct ErrorView: View {
 
     private var primaryAction: Action? {
         if state.isAuthFailure {
-            return Action(title: "Sign In Again", run: resolvedOnSignOut)
+            return Action(title: "Sign In Again", systemImage: "person.crop.circle", run: resolvedOnSignOut)
         }
         if state.isNotFound, let goBack = resolvedOnGoBack {
-            return Action(title: "Go Back", run: goBack)
+            return Action(title: "Go Back", systemImage: "chevron.left", run: goBack)
         }
         if let onRetry {
-            return Action(title: "Try Again", run: onRetry)
+            return Action(title: "Try Again", systemImage: "arrow.clockwise", run: onRetry)
         }
         if let goBack = resolvedOnGoBack {
-            return Action(title: "Go Back", run: goBack)
+            return Action(title: "Go Back", systemImage: "chevron.left", run: goBack)
         }
         return nil
     }
 
     private var secondaryAction: Action? {
         if state.isAuthFailure {
-            return onRetry.map { Action(title: "Try Again", run: $0) }
+            return onRetry.map { Action(title: "Try Again", systemImage: "arrow.clockwise", run: $0) }
         }
         if state.isNotFound, resolvedOnGoBack != nil {
-            if let onRetry { return Action(title: "Try Again", run: onRetry) }
+            if let onRetry { return Action(title: "Try Again", systemImage: "arrow.clockwise", run: onRetry) }
             return nil
         }
         return nil

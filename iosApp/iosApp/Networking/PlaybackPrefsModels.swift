@@ -129,7 +129,7 @@ struct PlaybackLanguageOption: Identifiable, Hashable {
     }
 
     static func label(forCode code: String) -> String {
-        if code == PlaybackPrefSentinel.originalLanguage { return "Original Language" }
+        if code == PlaybackPrefSentinel.originalLanguage { return String(localized: "Original Language") }
         return Locale.current.localizedString(forIdentifier: code)?.capitalized
             ?? Locale.current.localizedString(forLanguageCode: code)?.capitalized
             ?? code.uppercased()
@@ -158,17 +158,17 @@ enum SubtitleMode: String, CaseIterable, Codable, Hashable {
 
     var displayLabel: String {
         switch self {
-        case .auto:   return "Auto"
-        case .always: return "Always"
-        case .off:    return "Off"
+        case .auto:   return String(localized: "Auto")
+        case .always: return String(localized: "Always")
+        case .off:    return String(localized: "Off")
         }
     }
 
     var displayDescription: String {
         switch self {
-        case .auto:   return "Show subtitles only when audio language doesn't match your spoken language."
-        case .always: return "Always show subtitles when available."
-        case .off:    return "Never show subtitles."
+        case .auto:   return String(localized: "Show subtitles only when audio language doesn't match your spoken language.")
+        case .always: return String(localized: "Always show subtitles when available.")
+        case .off:    return String(localized: "Never show subtitles.")
         }
     }
 }

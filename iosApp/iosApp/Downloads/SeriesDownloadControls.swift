@@ -313,7 +313,9 @@ struct DownloadQualityPicker: View {
 
     /// Under the version when the server makes smaller copies but this
     /// version has none on offer (a server that caps 20 Mbps below 4K).
-    static let noSmallerNote = "This version can't be made smaller on this server. Choose another version for a smaller download."
+    static var noSmallerNote: String {
+        String(localized: "This version can't be made smaller on this server. Choose another version for a smaller download.")
+    }
 
     var body: some View {
         Picker(selection: $quality) {
@@ -332,15 +334,21 @@ struct DownloadQualityPicker: View {
     /// The chosen quality's size, for the line under the menu (menus show
     /// one line per choice).
     static func sizeNote(_ quality: String) -> String? {
-        DownloadFormat(rawValue: quality).flatMap(DownloadManager.sizePerHour).map { "\($0) of video." }
+        // One sentence, so a translation can reorder it.
+        DownloadFormat(rawValue: quality)
+            .flatMap { StreamedTranscodeDownload.estimatedBytes(format: $0, durationSeconds: 3600) }
+            .map { bytes in
+                let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+                return String(localized: "About \(size) per hour of video.")
+            }
     }
 
     /// The line under Choose Version and Quality.
     static func footer(quality: String, versionHeight: Int?, scope: String? = nil) -> String {
         [scope,
          sizeNote(quality),
-         "Lower bitrates make a smaller copy of the chosen version. The server prepares it first, which can take longer. Sizes are estimates.",
-         versionHeight.map { $0 >= 2160 } == true ? "A 4K version only makes 4K copies. Choose a smaller version for a smaller resolution." : nil]
+         String(localized: "Lower bitrates make a smaller copy of the chosen version. The server prepares it first, which can take longer. Sizes are estimates."),
+         versionHeight.map { $0 >= 2160 } == true ? String(localized: "A 4K version only makes 4K copies. Choose a smaller version for a smaller resolution.") : nil]
             .compactMap { $0 }
             .joined(separator: " ")
     }
@@ -442,8 +450,8 @@ private struct SeriesDownloadOptionsSheet: View {
 
     /// "1080p · 10 Mbps · 1080p · H.264 · 8 episodes" under a Download row.
     private func rowDetail(episodes count: Int?) -> String {
-        let versionLabel = effectiveVersion.flatMap { chosen in versions.first { $0.version == chosen }?.title } ?? "Auto version"
-        let episodes = count.map { "\($0) episode\($0 == 1 ? "" : "s")" }
+        let versionLabel = effectiveVersion.flatMap { chosen in versions.first { $0.version == chosen }?.title } ?? String(localized: "Auto version")
+        let episodes = count.map { String(localized: "\($0) episodes") }
         return [manager.qualityLabel(rawValue: chosenQuality), versionLabel, episodes].compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -482,7 +490,7 @@ private struct SeriesDownloadOptionsSheet: View {
                             Text(DownloadQualityPicker.footer(
                                 quality: chosenQuality,
                                 versionHeight: effectiveVersion?.height,
-                                scope: "Applies to Download Season and Download All Episodes."
+                                scope: String(localized: "Applies to Download Season and Download All Episodes.")
                             ))
                         } else if serverOffersSmaller {
                             Text(DownloadQualityPicker.noSmallerNote)
@@ -494,7 +502,7 @@ private struct SeriesDownloadOptionsSheet: View {
                     if let episodeTitle {
                         optionButton(
                             title: "Download This Episode",
-                            detail: "\(episodeTitle) · Choose version and quality",
+                            detail: String(localized: "\(episodeTitle) · Choose version and quality"),
                             icon: "arrow.down.to.line"
                         ) {
                             dismiss()
@@ -515,7 +523,7 @@ private struct SeriesDownloadOptionsSheet: View {
                         } label: {
                             optionLabel(
                                 title: "Choose Episodes",
-                                detail: "Open a season and select episodes",
+                                detail: String(localized: "Open a season and select episodes"),
                                 icon: "checklist"
                             )
                         }
@@ -551,10 +559,7 @@ private struct SeriesDownloadOptionsSheet: View {
                         Button(role: .destructive) {
                             confirmingCancel = true
                         } label: {
-                            Label(
-                                activeDownloadCount == 1 ? "Cancel Download" : "Cancel \(activeDownloadCount) Downloads",
-                                systemImage: "xmark.circle"
-                            )
+                            Label("Cancel \(activeDownloadCount) Downloads", systemImage: "xmark.circle")
                         }
                     } footer: {
                         Text("Stops this series' unfinished downloads. Finished episodes are kept.")
@@ -565,7 +570,9 @@ private struct SeriesDownloadOptionsSheet: View {
                     Section("Monitoring") {
                         optionButton(
                             title: isMonitored ? "Edit Monitoring" : "Monitor Series",
-                            detail: isMonitored ? "Change auto-download rules" : "Auto-download future episodes",
+                            detail: isMonitored
+                                ? String(localized: "Change auto-download rules")
+                                : String(localized: "Auto-download future episodes"),
                             icon: "antenna.radiowaves.left.and.right"
                         ) {
                             dismiss()
@@ -610,7 +617,7 @@ private struct SeriesDownloadOptionsSheet: View {
                 await loadSourceFiles()
             }
             .confirmationDialog(
-                activeDownloadCount == 1 ? "Cancel this download?" : "Cancel \(activeDownloadCount) downloads?",
+                "Cancel \(activeDownloadCount) downloads?",
                 isPresented: $confirmingCancel,
                 titleVisibility: .visible
             ) {
@@ -767,7 +774,7 @@ private struct SeriesDownloadOptionsSheet: View {
     }
 
     private func optionButton(
-        title: String,
+        title: LocalizedStringKey,
         detail: String,
         icon: String,
         action: @escaping () -> Void
@@ -778,7 +785,7 @@ private struct SeriesDownloadOptionsSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func optionLabel(title: String, detail: String, icon: String) -> some View {
+    private func optionLabel(title: LocalizedStringKey, detail: String, icon: String) -> some View {
         DownloadOptionRow(title: title, detail: detail, icon: icon)
     }
 }
@@ -858,7 +865,7 @@ private struct SeriesSeasonDownloadPicker: View {
                             Text(season.downloadDisplayName)
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.vividOnSurface)
-                            Text("\(season.episodeCount) episode\(season.episodeCount == 1 ? "" : "s")")
+                            Text("\(season.episodeCount) episodes")
                                 .font(.vividCaption)
                                 .foregroundColor(.vividSecondaryText)
                         }
@@ -1088,8 +1095,8 @@ private struct SeriesEpisodeDownloadPicker: View {
 
     private var downloadButtonTitle: String {
         let count = selectedEpisodes.count
-        if count == 0 { return "Select Episodes" }
-        return "Download \(count) Episode\(count == 1 ? "" : "s")"
+        if count == 0 { return String(localized: "Select Episodes") }
+        return String(localized: "Download \(count) Episodes")
     }
 
     private func episodeRow(_ episode: EpisodeListItem) -> some View {
@@ -1102,7 +1109,7 @@ private struct SeriesEpisodeDownloadPicker: View {
                 selectionIndicator(for: episode)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(episode.title ?? "Episode \(episode.episodeNumber)")
+                    Text(episode.title ?? String(localized: "Episode \(episode.episodeNumber)"))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
                         .lineLimit(1)
@@ -1158,9 +1165,9 @@ private struct SeriesEpisodeDownloadPicker: View {
     }
 
     private func episodeDetailText(_ episode: EpisodeListItem) -> String {
-        var parts = ["Episode \(episode.episodeNumber)"]
+        var parts = [String(localized: "Episode \(episode.episodeNumber)")]
         if let runtime = episode.runtime, runtime > 0 {
-            parts.append("\(runtime) min")
+            parts.append(String(localized: "\(runtime) min"))
         }
         return parts.joined(separator: " · ")
     }
@@ -1176,19 +1183,21 @@ private struct SeriesEpisodeDownloadPicker: View {
 
     private func episodeAccessibilityValue(_ episode: EpisodeListItem) -> String {
         if let status = statusText(for: episode) { return status }
-        return selectedEpisodeIds.contains(episode.contentId) ? "Selected" : "Not selected"
+        return selectedEpisodeIds.contains(episode.contentId)
+            ? String(localized: "Selected")
+            : String(localized: "Not selected")
     }
 
     private func statusText(for episode: EpisodeListItem) -> String? {
-        if manager.isRegistering(contentId: episode.contentId) { return "Preparing" }
-        if manager.isWaiting(contentId: episode.contentId) { return "Waiting" }
+        if manager.isRegistering(contentId: episode.contentId) { return String(localized: "Preparing") }
+        if manager.isWaiting(contentId: episode.contentId) { return String(localized: "Waiting") }
         guard let record = manager.record(forContentId: episode.contentId) else { return nil }
         switch record.localStatus {
-        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return "Preparing"
-        case .downloading: return "\(Int((record.progressFraction * 100).rounded()))%"
-        case .paused: return "Paused"
-        case .completed, .revoked: return "Downloaded"
-        case .failed: return "Failed"
+        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return String(localized: "Preparing")
+        case .downloading: return Int((record.progressFraction * 100).rounded()).formatted(.percent)
+        case .paused: return String(localized: "Paused")
+        case .completed, .revoked: return String(localized: "Downloaded")
+        case .failed: return String(localized: "Failed")
         }
     }
 

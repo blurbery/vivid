@@ -8,7 +8,9 @@ import Foundation
 enum EpisodeCardCaption {
     /// "S01E02" — zero-padded so codes line up across a row.
     static func code(season: Int, episode: Int) -> String {
-        String(format: "S%02dE%02d", season, episode)
+        let paddedSeason = String(format: "%02d", season)
+        let paddedEpisode = String(format: "%02d", episode)
+        return String(localized: "S\(paddedSeason)E\(paddedEpisode)", comment: "Episode code with zero-padded season and episode numbers, e.g. S01E02")
     }
 
     static func isEpisode(_ item: SectionItem) -> Bool {
@@ -47,8 +49,9 @@ enum EpisodeCardCaption {
         guard isEpisode(item) else { return nil }
         var parts: [String] = []
         if let season = item.seasonNumber, let episode = item.episodeNumber {
-            let seasonLabel = season == 0 ? "Specials" : "Season \(season)"
-            parts.append("\(seasonLabel), Episode \(episode)")
+            parts.append(season == 0
+                ? String(localized: "Specials, Episode \(episode)", comment: "Spoken episode position in the specials season")
+                : String(localized: "Season \(season), Episode \(episode)", comment: "Spoken episode position"))
         }
         if let title = episodeTitle(for: item) {
             parts.append(title)

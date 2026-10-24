@@ -19,6 +19,7 @@ final class CodeSignIn {
             }
         }
 
+        /// Product names, kept in English.
         var title: String {
             switch self {
             case .jellyfinQuickConnect: "Quick Connect"
@@ -29,31 +30,40 @@ final class CodeSignIn {
         /// What the screen calls the code: Emby Connect calls it a PIN.
         var codeName: String {
             switch self {
-            case .jellyfinQuickConnect: "code"
-            case .embyConnect: "PIN"
+            case .jellyfinQuickConnect: String(localized: "code", comment: "A sign-in code, lowercase in the middle of a sentence")
+            case .embyConnect: String(localized: "PIN", comment: "An Emby Connect sign-in PIN")
             }
         }
 
         /// `codeName` at the start of a title: "Code" or "PIN".
         var codeTitle: String {
             switch self {
-            case .jellyfinQuickConnect: "Code"
-            case .embyConnect: "PIN"
+            case .jellyfinQuickConnect: String(localized: "Code", comment: "A sign-in code, as a title or label")
+            case .embyConnect: String(localized: "PIN", comment: "An Emby Connect sign-in PIN")
+            }
+        }
+
+        /// VoiceOver reads the code digit by digit after the service's name.
+        func codeAccessibilityLabel(_ code: String) -> String {
+            let digits = code.map(String.init).joined(separator: " ")
+            switch self {
+            case .jellyfinQuickConnect: return String(localized: "Quick Connect code \(digits)")
+            case .embyConnect: return String(localized: "Emby Connect PIN \(digits)")
             }
         }
 
         /// How the choice works, for the Apple TV profile editor's row.
         var summary: String {
             switch self {
-            case .jellyfinQuickConnect: "Approve this Apple TV from Jellyfin on a signed-in device, without a password."
-            case .embyConnect: "Sign in with a PIN entered at emby.media/pin, without a password."
+            case .jellyfinQuickConnect: String(localized: "Approve this Apple TV from Jellyfin on a signed-in device, without a password.")
+            case .embyConnect: String(localized: "Sign in with a PIN entered at emby.media/pin, without a password.")
             }
         }
 
         var instructions: String {
             switch self {
-            case .jellyfinQuickConnect: "On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code."
-            case .embyConnect: "On your phone or computer, go to emby.media/pin and enter this PIN with your Emby Connect email and password."
+            case .jellyfinQuickConnect: String(localized: "On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
+            case .embyConnect: String(localized: "On your phone or computer, go to emby.media/pin and enter this PIN with your Emby Connect email and password.")
             }
         }
     }
@@ -88,9 +98,9 @@ final class CodeSignIn {
 
     var status: String? {
         switch phase {
-        case .starting: "Getting a \(service.codeName)…"
-        case .waiting: "Waiting for approval…"
-        case .signingIn: "Signing in…"
+        case .starting: service == .embyConnect ? String(localized: "Getting a PIN…") : String(localized: "Getting a code…")
+        case .waiting: String(localized: "Waiting for approval…")
+        case .signingIn: String(localized: "Signing in…")
         case .idle, .failed: nil
         }
     }

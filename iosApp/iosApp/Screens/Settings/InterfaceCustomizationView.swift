@@ -89,7 +89,7 @@ struct InterfaceCustomizationView: View {
                         "This device has older device-specific interface settings that override family sync.",
                         systemImage: "iphone.and.arrow.forward"
                     )
-                    Button("Use Synced \(familySettingsName) Settings") {
+                    Button(useSyncedSettingsTitle) {
                         preferences.useFamilySettings()
                     }
                     .disabled(preferences.isSaving || !preferences.allowsEditing)
@@ -191,9 +191,7 @@ struct InterfaceCustomizationView: View {
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(
-                                    "\(removalVerb(for: item)) \(displayTitle(for: item))"
-                                )
+                                .accessibilityLabel("Hide \(displayTitle(for: item))")
                             }
                             // The controls never compress; the flexible title
                             // column absorbs narrow widths by truncating.
@@ -346,9 +344,9 @@ struct InterfaceCustomizationView: View {
 
     private func menuTypeTitle(_ item: PrimaryMenuItem) -> String {
         switch item {
-        case .builtin(.movies), .builtin(.series): return "Media Type"
-        case .builtin(.home): return "Your Stuff"
-        case .builtin(.forYou): return "Discover"
+        case .builtin(.movies), .builtin(.series): return String(localized: "Media Type")
+        case .builtin(.home): return String(localized: "Your Stuff")
+        case .builtin(.forYou): return String(localized: "Discover")
         case .library, .section, .collection: return ""
         }
     }
@@ -405,10 +403,6 @@ struct InterfaceCustomizationView: View {
         preferences.setPrimaryMenuItems(visibleDestinations.filter { $0.id != item.id })
     }
 
-    private func removalVerb(for item: PrimaryMenuItem) -> String {
-        return "Hide"
-    }
-
     private func persistVisibleDestinations(_ destinations: [PrimaryMenuItem]) {
         preferences.setPrimaryMenuItems(destinations)
     }
@@ -417,21 +411,23 @@ struct InterfaceCustomizationView: View {
         (lhs.sortOrder ?? Int.max, lhs.id) < (rhs.sortOrder ?? Int.max, rhs.id)
     }
 
+    /// Inserted into "These choices sync with other %@ devices on this profile."
     private var familyLabel: String {
         switch AppleDeviceIdentity.current.clientFamily {
-        case "mobile": return "iPhone-like"
-        case "tablet": return "tablet-like"
-        case "desktop": return "desktop-like"
-        default: return "similar"
+        case "mobile": return String(localized: "iPhone-like", comment: "Inserted into “sync with other %@ devices”")
+        case "tablet": return String(localized: "tablet-like", comment: "Inserted into “sync with other %@ devices”")
+        case "desktop": return String(localized: "desktop-like", comment: "Inserted into “sync with other %@ devices”")
+        default: return String(localized: "similar", comment: "Inserted into “sync with other %@ devices”")
         }
     }
 
-    private var familySettingsName: String {
+    /// One whole title per device family, so each can be translated as a phrase.
+    private var useSyncedSettingsTitle: String {
         switch AppleDeviceIdentity.current.clientFamily {
-        case "mobile": return "Mobile"
-        case "tablet": return "Tablet"
-        case "desktop": return "Desktop"
-        default: return "Family"
+        case "mobile": return String(localized: "Use Synced Mobile Settings")
+        case "tablet": return String(localized: "Use Synced Tablet Settings")
+        case "desktop": return String(localized: "Use Synced Desktop Settings")
+        default: return String(localized: "Use Synced Family Settings")
         }
     }
 }
@@ -525,7 +521,7 @@ struct HomeSectionsCustomizationView: View {
                     .lineLimit(1)
 
                 if !section.items.isEmpty || section.totalCount != nil {
-                    Text("\(section.items.count) item\(section.items.count == 1 ? "" : "s")")
+                    Text("\(section.items.count) items")
                         .font(.caption)
                         .foregroundStyle(Color.vividSecondaryText)
                 }

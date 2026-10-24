@@ -193,9 +193,9 @@ enum DownloadSortOption: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
-        case .largestFirst: return "Largest first"
-        case .recentlyAdded: return "Recently added"
-        case .alphabetical: return "Name (A–Z)"
+        case .largestFirst: return String(localized: "Largest first")
+        case .recentlyAdded: return String(localized: "Recently added")
+        case .alphabetical: return String(localized: "Name (A–Z)")
         }
     }
 

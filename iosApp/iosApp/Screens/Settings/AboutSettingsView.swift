@@ -35,9 +35,13 @@ enum VividAbout {
     }
     /// Short commit for display, such as "Source 1a2b3c4" or "Source 1a2b3c4 (modified)".
     static var sourceLabel: String? {
-        sourceCommit.map { "Source \($0.prefix(7))" + (sourceModified ? " (modified)" : "") }
+        sourceCommit.map { commit in
+            let short = String(commit.prefix(7))
+            return sourceModified ? String(localized: "Source \(short) (modified)") : String(localized: "Source \(short)")
+        }
     }
     /// The first Open Source Licences section: where this build's corresponding source is.
+    /// Kept in English, like the licence texts it introduces.
     static var sourceNotice: String {
         guard let commit = sourceCommit, let url = sourceURL else {
             return "This build doesn't record its source commit. Vivid's source code, build instructions and third-party notices are at \(sourceRepository.absoluteString)."
@@ -105,7 +109,7 @@ struct AboutSettingsView: View {
                     }
                 }
             }
-            Text("© 2026 Vivid™").font(.footnote).foregroundStyle(.secondary)
+            Text(verbatim: "© 2026 Vivid™").font(.footnote).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
         .settingsListChrome().navigationTitle("")
@@ -124,7 +128,7 @@ struct AboutSettingsView: View {
     private var brand: some View {
         VStack(spacing: brandMetric(12)) {
             VividMarkView(width: brandMetric(112))
-            Text("Vivid").font(.system(size: brandMetric(36), weight: .semibold, design: .rounded))
+            Text(verbatim: "Vivid").font(.system(size: brandMetric(36), weight: .semibold, design: .rounded))
             Text(VividAbout.version).foregroundStyle(.secondary)
             if let label = VividAbout.sourceLabel {
                 #if os(tvOS)

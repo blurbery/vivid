@@ -113,7 +113,7 @@ struct VividCollectionMediaRow: View, Equatable {
         let play: (() -> Void)? = playable ? { onPlay(item) } : nil
         let remove: (() -> Void)? = onRemove.map { action in { action(item) } }
         let playTitle: String? = section.isContinueWatchingSection && playable
-            ? ((item.positionSeconds ?? 0) > 0 ? "Resume" : "Play") : nil
+            ? ((item.positionSeconds ?? 0) > 0 ? String(localized: "Resume") : String(localized: "Play")) : nil
         if section.tvHomeUsesLandscapeArtwork {
             EpisodeThumbCard(
                 item: item,

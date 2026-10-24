@@ -3,7 +3,7 @@ import SwiftUI
 /// Browse/catalog screen with grid display and filters.
 struct BrowseView: View {
     let libraryId: Int?
-    var title: String? = "Browse"
+    var title: String? = String(localized: "Browse")
     var showsSearchShortcut = true
     var libraryType: String? = nil
 
@@ -230,19 +230,21 @@ struct BrowseView: View {
                     next.order = .asc
                     Task { await viewModel.apply(next) }
                 } label: {
+                    // "All" stays the menu's ID for no prefix; only its label is translated.
+                    let letterTitle = letter == "All" ? String(localized: "All") : letter
                     if (viewModel.filterState.namePrefix ?? "All") == letter {
-                        Label(letter, systemImage: "checkmark")
-                    } else { Text(letter) }
+                        Label(letterTitle, systemImage: "checkmark")
+                    } else { Text(letterTitle) }
                 }
             }
         } label: {
-            Text(viewModel.filterState.namePrefix ?? "A–Z")
+            Text(viewModel.filterState.namePrefix ?? String(localized: "A–Z"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 13).padding(.vertical, 8)
                 .vividGlass(in: Capsule())
         }
-        .accessibilityLabel("A–Z, \(viewModel.filterState.namePrefix ?? "All")")
+        .accessibilityLabel("A–Z, \(viewModel.filterState.namePrefix ?? String(localized: "All"))")
     }
     #endif
 
@@ -271,7 +273,7 @@ struct BrowseView: View {
         }
     }
 
-    private func controlChip(icon: String, text: String, trailing: String? = nil, badge: Int? = nil) -> some View {
+    private func controlChip(icon: String, text: LocalizedStringKey, trailing: String? = nil, badge: Int? = nil) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))

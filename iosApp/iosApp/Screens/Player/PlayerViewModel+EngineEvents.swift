@@ -285,8 +285,8 @@ extension PlayerViewModel {
             // post-load engine failure is recovered rather than stranding the
             // user on a spinner.
             showNotice(
-                title: "Couldn't change audio",
-                message: "The audio track couldn't be switched. The previous track was kept.",
+                title: String(localized: "Couldn't change audio"),
+                message: String(localized: "The audio track couldn't be switched. The previous track was kept."),
                 tone: .warning,
                 duration: 5
             )
@@ -363,8 +363,8 @@ extension PlayerViewModel {
         }
         if failure.kind == .sourceRateLimited {
             showNotice(
-                title: "Playback delayed",
-                message: "The media source is rate limiting requests. Try again in a moment.",
+                title: String(localized: "Playback delayed"),
+                message: String(localized: "The media source is rate limiting requests. Try again in a moment."),
                 tone: .info,
                 duration: 5
             )

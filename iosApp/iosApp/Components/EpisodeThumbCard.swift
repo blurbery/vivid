@@ -330,7 +330,9 @@ struct EpisodeThumbCard: View {
         if usesEpisodeCaption, EpisodeCardCaption.isEpisode(item) {
             let code: String?
             if let season = item.seasonNumber, let episode = item.episodeNumber {
-                code = String(format: "S%02d E%02d", season, episode)
+                let paddedSeason = String(format: "%02d", season)
+                let paddedEpisode = String(format: "%02d", episode)
+                code = String(localized: "S\(paddedSeason) E\(paddedEpisode)", comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02")
             } else {
                 code = nil
             }
@@ -346,8 +348,8 @@ struct EpisodeThumbCard: View {
         #if os(tvOS)
         if isTVResumeCard || showsEpisodeDetails, EpisodeCardCaption.isEpisode(item) {
             let code = [
-                item.seasonNumber.map { "S\($0)" },
-                item.episodeNumber.map { "E\($0)" }
+                item.seasonNumber.map { String(localized: "S\($0)", comment: "Season number in an episode code, e.g. S1") },
+                item.episodeNumber.map { String(localized: "E\($0)", comment: "Episode number in an episode code, e.g. E2") }
             ].compactMap { $0 }.joined(separator: " ")
             let parts = [code.isEmpty ? nil : code, EpisodeCardCaption.episodeTitle(for: item)]
                 .compactMap { $0 }
@@ -374,11 +376,11 @@ struct EpisodeThumbCard: View {
             components.append(subtitleLine)
         }
         if isPlayed {
-            components.append("Watched")
+            components.append(String(localized: "Watched", comment: "Spoken status of a watched title"))
         }
         if usesRuntimeStatus,
            let runtime = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
-            components.append("\(runtime) minute\(runtime == 1 ? "" : "s")")
+            components.append(String(localized: "\(runtime) minutes", comment: "Spoken runtime"))
         }
         return components.joined(separator: ", ")
     }

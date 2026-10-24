@@ -174,10 +174,10 @@ struct SeriesDetailContent<BelowOverview: View>: View {
             PhoneDetailPrimaryActions {
                 PhonePrimaryPillButton(
                     icon: "play.fill",
-                    title: nextUpEpisode.map(playButtonLabel) ?? "Play",
+                    title: nextUpEpisode.map(playButtonLabel) ?? String(localized: "Play"),
                     action: handlePrimaryPlayTap,
                     fullWidth: true,
-                    resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
+                    resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { String(localized: "S\(String($0.seasonNumber)) E\(String($0.episodeNumber))", comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02") })
                 )
             } actions: {
                 PhoneLabeledActionRow {
@@ -185,28 +185,30 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                         icon: "heart",
                         iconActive: "heart.fill",
                         isActive: isFavorite,
-                        label: "Favorite",
+                        label: String(localized: "Favorite"),
                         accessibilityLabelOverride: isFavorite
-                            ? "Remove from Favorites" : "Add to Favorites",
+                            ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                         action: onToggleFavorite
                     )
                     PhoneLabeledAction(
                         icon: "bookmark",
                         iconActive: "bookmark.fill",
                         isActive: inWatchlist,
-                        label: "Watchlist",
+                        label: String(localized: "Watchlist"),
                         accessibilityLabelOverride: inWatchlist
-                            ? "Remove from Watchlist" : "Add to Watchlist",
+                            ? String(localized: "Remove from Watchlist") : String(localized: "Add to Watchlist"),
                         action: onToggleWatchlist
                     )
-                    PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+                    PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
                         if let episode = nextUpEpisode {
                             Button(episode.userData?.played == true ? "Mark Episode as Unwatched" : "Mark Episode as Watched") {
                                 Task { _ = await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
                             }
                         }
                         if let selectedSeason {
-                            Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
+                            Button(selectedSeason.userData?.played == true
+                                ? String(localized: "Mark \(selectedSeason.downloadDisplayName) as Unwatched")
+                                : String(localized: "Mark \(selectedSeason.downloadDisplayName) as Watched"), action: onToggleSeasonWatched)
                         }
                         Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
                     }
@@ -331,7 +333,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     /// Show "Play S2·E5" — the user can decide resume vs. restart in
     /// the confirmation dialog the button presents.
     private func playButtonLabel(for episode: EpisodeListItem) -> String {
-        "Play S\(episode.seasonNumber)·E\(episode.episodeNumber)"
+        String(localized: "Play S\(episode.seasonNumber)·E\(episode.episodeNumber)")
     }
 
     private var resumeTimestamp: String {
@@ -463,13 +465,21 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     }
 
     private var episodeSectionTitle: String {
-        guard let selectedSeason else { return "Episodes" }
-        return "\(selectedSeason.downloadDisplayName) Episodes"
+        guard let selectedSeason else { return String(localized: "Episodes") }
+        return String(localized: "\(selectedSeason.downloadDisplayName) Episodes")
     }
 
     private var episodeCountSubtitle: String? {
         guard let count = selectedSeason?.episodeCount, count > 0 else { return nil }
-        return "\(count) episode\(count == 1 ? "" : "s")"
+        return String(localized: "\(count) episodes")
+    }
+
+    /// "S1 · E2 — Title", or "S1 · E2" when the episode has no title.
+    private func nextUpEpisodeCaption(_ episode: EpisodeListItem) -> String {
+        if let title = episode.title {
+            return String(localized: "S\(episode.seasonNumber) · E\(episode.episodeNumber) — \(title)")
+        }
+        return String(localized: "S\(episode.seasonNumber) · E\(episode.episodeNumber)")
     }
 
     // MARK: - Cast
@@ -489,7 +499,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             PhoneSectionHeader(title: "Media Information")
             if let episode = nextUpEpisode {
-                Text("S\(episode.seasonNumber) · E\(episode.episodeNumber)" + (episode.title.map { " — \($0)" } ?? ""))
+                Text(nextUpEpisodeCaption(episode))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }

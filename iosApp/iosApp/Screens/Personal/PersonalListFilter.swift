@@ -29,6 +29,15 @@ struct PersonalListFilter: Hashable {
         case mine = "Mine"
 
         var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .all: String(localized: "All")
+            case .server: String(localized: "Server")
+            case .shared: String(localized: "Shared")
+            case .mine: String(localized: "Mine")
+            }
+        }
     }
 
     enum Show: String, CaseIterable, Identifiable {
@@ -37,6 +46,14 @@ struct PersonalListFilter: Hashable {
         case series = "Series"
 
         var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .all: String(localized: "All")
+            case .movies: String(localized: "Movies")
+            case .series: String(localized: "Series")
+            }
+        }
 
         var typeParam: String? {
             switch self {
@@ -53,6 +70,14 @@ struct PersonalListFilter: Hashable {
         case hide = "Hide anime"
 
         var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .any: String(localized: "Show everything")
+            case .only: String(localized: "Only anime")
+            case .hide: String(localized: "Hide anime")
+            }
+        }
     }
 
     var show: Show = .all
@@ -91,8 +116,15 @@ struct PersonalListFilter: Hashable {
         ("th", "Thai"), ("tr", "Turkish"), ("uk", "Ukrainian"), ("vi", "Vietnamese"),
     ]
 
+    /// The language's name in the app language. The codes stay the filter
+    /// values; the English names are the fallback when the device has none.
     static func languageName(_ code: String) -> String {
-        languages.first { $0.code == code }?.name ?? code.uppercased()
+        // TMDb's "cn" (Cantonese) isn't an ISO 639 code.
+        let displayCode = code == "cn" ? "yue" : code
+        if let name = Locale.current.localizedString(forLanguageCode: displayCode), !name.isEmpty {
+            return name.prefix(1).uppercased(with: Locale.current) + name.dropFirst()
+        }
+        return languages.first { $0.code == code }?.name ?? code.uppercased()
     }
 
     /// Adds Show, Original Language and A–Z to a personal-source catalogue
@@ -224,24 +256,24 @@ struct PersonalListFilterMenuContent: View {
         if choices.contains(.source) {
             Section("Source") {
                 ForEach(PersonalListFilter.Source.allCases) { source in
-                    Button { filter.source = source } label: { item(source.rawValue, selected: filter.source == source) }
+                    Button { filter.source = source } label: { item(source.title, selected: filter.source == source) }
                 }
             }
         }
         if choices.contains(.show) {
             Section("Show") {
                 ForEach(PersonalListFilter.Show.allCases) { show in
-                    Button { filter.show = show } label: { item(show.rawValue, selected: filter.show == show) }
+                    Button { filter.show = show } label: { item(show.title, selected: filter.show == show) }
                 }
             }
         }
         Section {
             if choices.contains(.originalLanguage), PersonalListFilter.supportsOriginalLanguage {
                 Menu {
-                    Button { filter.originalLanguage = nil } label: { item("Any", selected: filter.originalLanguage == nil) }
+                    Button { filter.originalLanguage = nil } label: { item(String(localized: "Any"), selected: filter.originalLanguage == nil) }
                     ForEach(PersonalListFilter.languages, id: \.code) { language in
                         Button { filter.originalLanguage = language.code } label: {
-                            item(language.name, selected: filter.originalLanguage == language.code)
+                            item(PersonalListFilter.languageName(language.code), selected: filter.originalLanguage == language.code)
                         }
                     }
                 } label: {
@@ -252,16 +284,16 @@ struct PersonalListFilterMenuContent: View {
             if choices.contains(.anime) {
                 Menu {
                     ForEach(PersonalListFilter.Anime.allCases) { anime in
-                        Button { filter.anime = anime } label: { item(anime.rawValue, selected: filter.anime == anime) }
+                        Button { filter.anime = anime } label: { item(anime.title, selected: filter.anime == anime) }
                     }
                 } label: {
                     Text("Anime")
-                    if filter.anime != .any { Text(filter.anime.rawValue) }
+                    if filter.anime != .any { Text(filter.anime.title) }
                 }
             }
             if showsAlphabet {
                 Menu {
-                    Button { filter.namePrefix = nil } label: { item("All", selected: filter.namePrefix == nil) }
+                    Button { filter.namePrefix = nil } label: { item(String(localized: "All"), selected: filter.namePrefix == nil) }
                     ForEach(letters, id: \.self) { letter in
                         Button { filter.namePrefix = letter } label: { item(letter, selected: filter.namePrefix == letter) }
                     }

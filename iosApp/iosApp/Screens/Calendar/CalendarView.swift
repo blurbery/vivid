@@ -5,8 +5,27 @@ import SwiftUI
 /// popular movies and series coming soon from TMDb. Days and times are the
 /// device's own, in its locale.
 struct CalendarView: View {
-    private enum Page: String, CaseIterable { case upcoming = "Upcoming", trending = "Trending" }
-    private enum TrendingFilter: String, CaseIterable { case all = "All", movies = "Movies", series = "Series" }
+    private enum Page: String, CaseIterable {
+        case upcoming = "Upcoming", trending = "Trending"
+
+        var title: String {
+            switch self {
+            case .upcoming: String(localized: "Upcoming")
+            case .trending: String(localized: "Trending")
+            }
+        }
+    }
+    private enum TrendingFilter: String, CaseIterable {
+        case all = "All", movies = "Movies", series = "Series"
+
+        var title: String {
+            switch self {
+            case .all: String(localized: "All")
+            case .movies: String(localized: "Movies")
+            case .series: String(localized: "Series")
+            }
+        }
+    }
 
     @State private var store = CalendarStore.shared
     @State private var tmdb = TVTMDbStore.shared
@@ -99,7 +118,7 @@ struct CalendarView: View {
             HStack(spacing: 4) {
                 ForEach(Page.allCases, id: \.self) { item in
                     Button { page = item; chromeScrollState.reset() } label: {
-                        Text(item.rawValue).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                        Text(item.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                             .frame(maxWidth: .infinity).padding(.vertical, 12)
                             .foregroundStyle(page == item ? Color.black : .white)
                             .background(page == item ? Color.white : .clear, in: Capsule())
@@ -241,8 +260,8 @@ struct CalendarView: View {
     private func dayTitle(_ day: Date) -> String {
         let date = day.formatted(.dateTime.weekday(.wide).day().month(.wide))
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Today · \(date)".uppercased() }
-        if calendar.isDateInTomorrow(day) { return "Tomorrow · \(date)".uppercased() }
+        if calendar.isDateInToday(day) { return String(localized: "Today · \(date)").uppercased() }
+        if calendar.isDateInTomorrow(day) { return String(localized: "Tomorrow · \(date)").uppercased() }
         return date.uppercased()
     }
 
@@ -253,7 +272,7 @@ struct CalendarView: View {
         HStack(spacing: 6) {
             ForEach(TrendingFilter.allCases, id: \.self) { filter in
                 Button { trendingFilter = filter } label: {
-                    Text(filter.rawValue)
+                    Text(filter.title)
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 14).padding(.vertical, 7)
                         .foregroundStyle(trendingFilter == filter ? Color.black : .white)
@@ -341,7 +360,7 @@ struct CalendarView: View {
     }
 
     @ViewBuilder
-    private func trendingRail(_ heading: String, titles: [TrendingTitle]) -> some View {
+    private func trendingRail(_ heading: LocalizedStringKey, titles: [TrendingTitle]) -> some View {
         if !titles.isEmpty {
             Text(heading).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -374,10 +393,10 @@ private struct CalendarMonthSheet: View {
     let markedDays: Set<Date>
     /// How many days ahead the page looks, which sets the last month.
     let windowDays: Int
-    let caption: String
+    let caption: LocalizedStringKey
     /// What VoiceOver says for a day with and without a dot.
-    let markedValue: String
-    let unmarkedValue: String
+    let markedValue: LocalizedStringKey
+    let unmarkedValue: LocalizedStringKey
     let onPick: (Date) -> Void
 
     @State private var month = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
@@ -445,7 +464,7 @@ private struct CalendarMonthSheet: View {
         .vividGlassSheet()
     }
 
-    private func monthButton(_ symbol: String, label: String, enabled: Bool, by offset: Int) -> some View {
+    private func monthButton(_ symbol: String, label: LocalizedStringKey, enabled: Bool, by offset: Int) -> some View {
         Button {
             if let next = calendar.date(byAdding: .month, value: offset, to: month) { month = next }
         } label: {
@@ -490,8 +509,8 @@ private struct UpcomingEpisodeRow: View {
 
     private var episodeLine: String {
         var parts: [String] = []
-        if let season = episode.season { parts.append("S\(season)") }
-        if let number = episode.number { parts.append("E\(number)") }
+        if let season = episode.season { parts.append(String(localized: "S\(season)", comment: "Season number in an episode code, e.g. S1")) }
+        if let number = episode.number { parts.append(String(localized: "E\(number)", comment: "Episode number in an episode code, e.g. E2")) }
         if let name = episode.name, !name.isEmpty { parts.append(name) }
         return parts.joined(separator: " · ")
     }
@@ -515,7 +534,7 @@ private struct UpcomingEpisodeRow: View {
                         CalendarChip(text: airsAt.formatted(date: .omitted, time: .shortened))
                     }
                     if episode.isPremiere {
-                        CalendarChip(text: "Premiere", tint: .vividBrandOrange)
+                        CalendarChip(text: String(localized: "Premiere"), tint: .vividBrandOrange)
                     }
                     CalendarChip(text: episode.source.label)
                 }
@@ -547,7 +566,7 @@ private struct UpcomingEpisodeRow: View {
     private var accessibilityText: String {
         var parts = [episode.seriesTitle, episodeLine]
         if let airsAt = episode.airsAt { parts.append(airsAt.formatted(date: .omitted, time: .shortened)) }
-        if episode.isPremiere { parts.append("Premiere") }
+        if episode.isPremiere { parts.append(String(localized: "Premiere")) }
         parts.append(episode.source.label)
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
@@ -593,13 +612,31 @@ private struct TrendingPoster: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-            Text(title.kind == .movie ? "Movie" : "Series")
+            Text(title.kind.label)
                 .font(.system(size: 11))
                 .foregroundStyle(Color.vividSecondaryText)
         }
         .frame(width: width, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title.title), \(title.kind == .movie ? "movie" : "series"), \(title.day.formatted(.dateTime.day().month(.wide)))")
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        let day = title.day.formatted(.dateTime.day().month(.wide))
+        switch title.kind {
+        case .movie: return String(localized: "\(title.title), movie, \(day)")
+        case .series: return String(localized: "\(title.title), series, \(day)")
+        }
+    }
+}
+
+private extension TrendingTitle.Kind {
+    /// "Movie" or "Series" under a Trending title.
+    var label: String {
+        switch self {
+        case .movie: String(localized: "Movie")
+        case .series: String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
+        }
     }
 }
 
@@ -624,7 +661,7 @@ private struct TrendingTitleSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         VStack(alignment: .leading, spacing: 6) {
                             Text(title.title).font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
-                            Text(title.kind == .movie ? "Movie" : "Series").foregroundStyle(Color.vividSecondaryText)
+                            Text(title.kind.label).foregroundStyle(Color.vividSecondaryText)
                             Text(title.kind == .movie ? "Out \(title.day.formatted(date: .long, time: .omitted))" : "Premieres \(title.day.formatted(date: .long, time: .omitted))")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(.white)

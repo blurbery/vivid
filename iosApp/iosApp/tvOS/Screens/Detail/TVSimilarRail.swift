@@ -14,7 +14,7 @@ import SwiftUI
 /// title must vanish along with the cards.
 struct TVSimilarRail: View {
     let contentId: String
-    let title: String
+    let title: LocalizedStringKey
     var sourceDetail: ItemDetail? = nil
     let onSelect: (String) -> Void
     var focusRequest = 0

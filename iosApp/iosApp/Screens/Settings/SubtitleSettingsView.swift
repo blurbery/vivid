@@ -35,8 +35,8 @@ struct SubtitleSettingsView: View {
         Section {
             Picker("Language", selection: $viewModel.editorSubtitleLanguage) {
                 Text(
-                    SettingPresentationMetadata.definitions[.playbackSubtitleLanguage]?.unsetLabel
-                        ?? "None"
+                    SettingPresentationMetadata.definitions[.playbackSubtitleLanguage]?.displayUnsetLabel
+                        ?? String(localized: "None")
                 ).tag(PlaybackPrefSentinel.none)
                 ForEach(viewModel.subtitleLanguageOptions) { option in
                     Text(option.label).tag(option.code)
@@ -282,7 +282,7 @@ struct SubtitleSettingsView: View {
                 Task { await viewModel.setSubtitleAppearance(next) }
             }
             .tint(.white)
-            Text("\(Int(draftOpacity ?? committed))%")
+            Text(Int(draftOpacity ?? committed), format: .percent)
                 .monospacedDigit()
                 .foregroundStyle(Color.vividSecondaryText)
                 .frame(minWidth: 44, alignment: .trailing)

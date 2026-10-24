@@ -35,7 +35,7 @@ struct TVExpandableSynopsis: View {
 
 struct TVFullSynopsis: View {
     let overview: String
-    var title = "Description"
+    var title = String(localized: "Description")
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedBlock: Int?
     @State private var contentHeight: CGFloat = 40

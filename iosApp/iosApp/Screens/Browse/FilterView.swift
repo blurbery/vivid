@@ -142,7 +142,7 @@ struct FilterView: View {
         guard !selected.isEmpty else { return nil }
         let labels = selected.sorted().map { CatalogFilterState.chipLabel(facet: facet, value: $0) }
         guard let first = labels.first else { return nil }
-        return labels.count == 1 ? first : "\(first) +\(labels.count - 1)"
+        return labels.count == 1 ? first : String(localized: "\(first) +\(labels.count - 1)", comment: "Filter row summary: the first selected value and how many more are selected")
     }
 
     // MARK: - Match all/any
@@ -172,7 +172,7 @@ struct FilterView: View {
         }
     }
 
-    private func matchOption(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+    private func matchOption(_ label: LocalizedStringKey, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.vividCaption)

@@ -133,6 +133,16 @@ enum SubtitleDisplayOrder {
         return key.uppercased()
     }
 
+    /// The language's name in the app's language, for display only. Group
+    /// ordering stays on the English `languageDisplayName(_:)`. Falls back
+    /// to the uppercased code.
+    static func displayLanguageName(_ key: String) -> String {
+        if let name = Locale.current.localizedString(forLanguageCode: key) {
+            return name.capitalized(with: Locale.current)
+        }
+        return key.uppercased()
+    }
+
     // MARK: - Private
 
     /// 3-letter ISO 639-2 (B and T) → 2-letter ISO 639-1, for the

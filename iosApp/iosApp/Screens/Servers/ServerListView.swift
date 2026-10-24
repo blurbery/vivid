@@ -282,7 +282,7 @@ struct ServerListView: View {
         Task {
             let store = TVSavedAccountStore.shared
             let removed = await store.deleteServer(entry.id, router: router)
-            if !removed { removalError = store.error ?? "Couldn’t remove the saved server. Try again." }
+            if !removed { removalError = store.error ?? String(localized: "Couldn’t remove the saved server. Try again.") }
             removeTarget = nil
         }
     }

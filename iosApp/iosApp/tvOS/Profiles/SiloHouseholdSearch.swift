@@ -33,11 +33,11 @@ final class SiloHouseholdSearch {
             profiles = (all.filter(\.isPrimary) + all.filter { !$0.isPrimary }).filter {
                 !store.hasSavedProfile($0, serverID: account.serverID, userID: account.userID, profileCount: all.count)
             }
-            if profiles.isEmpty { message = "Every profile on this account is already on this device." }
+            if profiles.isEmpty { message = String(localized: "Every profile on this account is already on this device.") }
             phase = .results
         } catch {
             _ = await minimumDisplay
-            message = "Couldn’t search for accounts. Try again."
+            message = String(localized: "Couldn’t search for accounts. Try again.")
             phase = .failed
         }
     }
@@ -45,7 +45,7 @@ final class SiloHouseholdSearch {
     func choose(_ profile: UserProfile, for account: TVSavedAccount) async {
         guard addingID == nil else { return }
         guard TVSavedAccountStore.shared.canAddAccount else {
-            message = "You can save up to eight profiles. Delete one to add another."
+            message = String(localized: "You can save up to eight profiles. Delete one to add another.")
             return
         }
         if profile.hasPin {
@@ -76,7 +76,7 @@ final class SiloHouseholdSearch {
                     serverURL: server.url, accessToken: session.accessToken, profileID: profile.id, pin: pin
                 )
                 guard profileToken != nil else {
-                    message = "That PIN didn’t match. Try again."
+                    message = String(localized: "That PIN didn’t match. Try again.")
                     pinProfile = profile
                     return
                 }
@@ -85,19 +85,19 @@ final class SiloHouseholdSearch {
                                               profile: profile, profileToken: profileToken)
             guard TVSavedAccountStore.shared.addHouseholdProfile(profile, profileCount: profileCount,
                                                                  session: saved, alongside: account) else {
-                message = "Couldn’t add \(profile.name). Try again."
+                message = String(localized: "Couldn’t add \(profile.name). Try again.")
                 discardApproved(account)
                 return
             }
             approved = nil
             // On this device now, so it leaves the list.
             profiles.removeAll { $0.id == profile.id }
-            message = profiles.isEmpty ? "Every profile on this account is now on this device." : nil
+            message = profiles.isEmpty ? String(localized: "Every profile on this account is now on this device.") : nil
         } catch {
             if case HTTPError.http(let status, _) = error, status == 429 {
-                message = "Too many attempts. Wait a minute, then try again."
+                message = String(localized: "Too many attempts. Wait a minute, then try again.")
             } else {
-                message = "Couldn’t add \(profile.name). Try again."
+                message = String(localized: "Couldn’t add \(profile.name). Try again.")
             }
             discardApproved(account)
         }
@@ -170,7 +170,7 @@ struct SiloHouseholdTile: View {
         }
         .frame(width: avatarSize + metric(40))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Add " + profile.name + (profile.hasPin ? ", PIN required" : ""))
+        .accessibilityLabel(profile.hasPin ? "Add \(profile.name), PIN required" : "Add \(profile.name)")
     }
 }
 #endif

@@ -9,9 +9,9 @@ enum SearchMediaType: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: "All"
-        case .movie: "Movies"
-        case .series: "Series"
+        case .all: String(localized: "All")
+        case .movie: String(localized: "Movies")
+        case .series: String(localized: "Series")
         }
     }
 

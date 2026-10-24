@@ -50,10 +50,12 @@ enum DiagnosticsUploader {
 
         var message: String {
             switch self {
-            case .offline: return "Vivid couldn't reach the diagnostics service. Check the connection and try again."
-            case .rateLimited(let seconds): return "Too many reports were sent just now. Try again in \(max(1, (seconds + 59) / 60)) min."
-            case .unavailable: return "The diagnostics service is busy. Try again later."
-            case .rejected: return "The diagnostics service couldn't accept this report."
+            case .offline: return String(localized: "Vivid couldn't reach the diagnostics service. Check the connection and try again.")
+            case .rateLimited(let seconds):
+                let minutes = max(1, (seconds + 59) / 60)
+                return String(localized: "Too many reports were sent just now. Try again in \(minutes) min.")
+            case .unavailable: return String(localized: "The diagnostics service is busy. Try again later.")
+            case .rejected: return String(localized: "The diagnostics service couldn't accept this report.")
             }
         }
 
@@ -125,8 +127,8 @@ enum DiagnosticsSendStatus: Equatable {
     var detail: String? {
         switch self {
         case .idle: return nil
-        case .sending: return "Sending…"
-        case .sent(let reference): return "Sent. Reference \(reference)."
+        case .sending: return String(localized: "Sending…")
+        case .sent(let reference): return String(localized: "Sent. Reference \(reference).")
         case .failed(let failure): return failure.message
         }
     }

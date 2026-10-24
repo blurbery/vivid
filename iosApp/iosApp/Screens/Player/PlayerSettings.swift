@@ -33,9 +33,9 @@ enum VideoGravity: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .fit:     return "Fit"
-        case .fill:    return "Fill"
-        case .stretch: return "Stretch"
+        case .fit:     return String(localized: "Fit", comment: "Video aspect option")
+        case .fill:    return String(localized: "Fill", comment: "Video aspect option")
+        case .stretch: return String(localized: "Stretch", comment: "Video aspect option")
         }
     }
 }
@@ -64,21 +64,25 @@ enum BufferAheadMode: String, CaseIterable {
     }
 
     var label: String {
-        guard let segments = forwardBufferSegments else { return "Automatic" }
+        guard let segments = forwardBufferSegments else {
+            return String(localized: "Automatic", comment: "Buffer ahead option")
+        }
         #if os(tvOS)
         switch self {
-        case .seconds20: return "1 minute"
-        case .fiveMinutes: return "5 minutes"
-        case .maximum: return "10 minutes"
-        case .unlimited: return "Whole file"
-        default: return "\(segments * 4) seconds"
+        case .seconds20: return String(localized: "1 minute", comment: "Buffer ahead option")
+        case .fiveMinutes: return String(localized: "5 minutes", comment: "Buffer ahead option")
+        case .maximum: return String(localized: "10 minutes", comment: "Buffer ahead option")
+        case .unlimited: return String(localized: "Whole file", comment: "Buffer ahead option")
+        default: return String(localized: "\(segments * 4) seconds", comment: "Buffer ahead option")
         }
         #else
-        return "\(segments * 2) seconds"
+        return String(localized: "\(segments * 2) seconds", comment: "Buffer ahead option")
         #endif
     }
 
-    static let explanation = "Lucid buffers ahead automatically, with up to 256 MB ahead and 16 MB behind for seeking. Playback starts before the buffer fills."
+    static var explanation: String {
+        String(localized: "Lucid buffers ahead automatically, with up to 256 MB ahead and 16 MB behind for seeking. Playback starts before the buffer fills.")
+    }
 
 }
 

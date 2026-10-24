@@ -24,11 +24,11 @@ enum RequestDisplayState: Equatable {
 
     var label: String {
         switch self {
-        case .pending: "Pending"
-        case .onTheWay: "On the way"
-        case .inLibrary: "In library"
-        case .needsAttention: "Needs attention"
-        case .unavailable: "Unavailable"
+        case .pending: String(localized: "Pending")
+        case .onTheWay: String(localized: "On the way")
+        case .inLibrary: String(localized: "In library")
+        case .needsAttention: String(localized: "Needs attention")
+        case .unavailable: String(localized: "Unavailable")
         }
     }
 

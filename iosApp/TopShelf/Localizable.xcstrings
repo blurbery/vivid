@@ -1,0 +1,53 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ · S%lldE%lld" : {
+      "comment" : "Top Shelf episode tile: series name, then season and episode numbers",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · S%2$lldE%3$lld"
+          }
+        }
+      }
+    },
+    "After 1 Hour" : {
+      "extractionState" : "manual"
+    },
+    "After 12 Hours" : {
+      "extractionState" : "manual"
+    },
+    "Automatic" : {
+      "extractionState" : "manual"
+    },
+    "Continue Watching" : {
+      "comment" : "Top Shelf row title",
+      "extractionState" : "manual"
+    },
+    "Every Time" : {
+      "extractionState" : "manual"
+    },
+    "Next Up" : {
+      "comment" : "Top Shelf row title",
+      "extractionState" : "manual"
+    },
+    "Show Who's Watching when you've been away from Vivid for 1 hour." : {
+      "extractionState" : "manual"
+    },
+    "Show Who's Watching when you've been away from Vivid for 12 hours." : {
+      "extractionState" : "manual"
+    },
+    "Show Who's Watching whenever you return to Vivid." : {
+      "extractionState" : "manual"
+    },
+    "Use the last profile selected on this device. A protected profile can reopen without asking for its PIN." : {
+      "extractionState" : "manual"
+    },
+    "Use the profile selected for the current Apple TV user. A protected profile can reopen without asking for its PIN." : {
+      "extractionState" : "manual"
+    }
+  },
+  "version" : "1.0"
+}

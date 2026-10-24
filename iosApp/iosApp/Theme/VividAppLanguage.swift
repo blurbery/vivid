@@ -43,8 +43,10 @@ enum VividAppLanguage: String, CaseIterable, Identifiable {
     static func save(_ language: VividAppLanguage) {
         if language == .system {
             UserDefaults.standard.removeObject(forKey: overrideKey)
+            SharedStorage.suite.removeObject(forKey: SharedStorage.appLanguageKey)
         } else {
             UserDefaults.standard.set([language.rawValue], forKey: overrideKey)
+            SharedStorage.suite.set(language.rawValue, forKey: SharedStorage.appLanguageKey)
         }
     }
 

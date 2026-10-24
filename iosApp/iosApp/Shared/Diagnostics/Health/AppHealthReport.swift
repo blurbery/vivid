@@ -21,15 +21,15 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
 
         var title: String {
             switch self {
-            case .crash: return "Crash"
-            case .hang: return "Hang"
-            case .cpuException: return "High CPU use"
-            case .diskWriteException: return "Heavy disk writes"
-            case .slowLaunch: return "Slow launch"
-            case .unexpectedExit: return "Unexpected exit"
-            case .playbackFailure: return "Playback failure"
-            case .appError: return "App error"
-            case .downloadFailure: return "Download failure"
+            case .crash: return String(localized: "Crash")
+            case .hang: return String(localized: "Hang")
+            case .cpuException: return String(localized: "High CPU use")
+            case .diskWriteException: return String(localized: "Heavy disk writes")
+            case .slowLaunch: return String(localized: "Slow launch")
+            case .unexpectedExit: return String(localized: "Unexpected exit")
+            case .playbackFailure: return String(localized: "Playback failure")
+            case .appError: return String(localized: "App error")
+            case .downloadFailure: return String(localized: "Download failure")
             }
         }
 
@@ -82,7 +82,8 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
     /// "Happened 3 times, last 4 Oct 2026 at 9:12 am", for a report that
     /// repeated.
     var repeatSummary: String {
-        "Happened \(occurrenceCount) times, last \(lastOccurredAt.formatted(date: .abbreviated, time: .shortened))"
+        let last = lastOccurredAt.formatted(date: .abbreviated, time: .shortened)
+        return String(localized: "Happened \(occurrenceCount) times, last \(last)")
     }
 
     init(

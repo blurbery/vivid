@@ -36,7 +36,7 @@ actor TVSeerrClient {
               let scheme = url.scheme?.lowercased(), ["https", "http"].contains(scheme),
               let host = url.host, !host.isEmpty,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
-            throw TVSeerrError(message: "Enter a complete Seerr URL, including https:// or http://.")
+            throw TVSeerrError(message: String(localized: "Enter a complete Seerr URL, including https:// or http://."))
         }
         return url
     }
@@ -64,7 +64,7 @@ actor TVSeerrClient {
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else {
-            throw TVSeerrError(message: "Seerr returned an invalid response.")
+            throw TVSeerrError(message: String(localized: "Seerr returned an invalid response."))
         }
         return (data, response.statusCode)
     }
@@ -74,12 +74,12 @@ actor TVSeerrClient {
             // Never render raw server bodies, which may echo submitted credentials.
             let message: String
             switch status {
-            case 301...399: message = "Use the final Seerr URL; this address redirects elsewhere."
-            case 401: message = "Seerr could not sign in. Check your username and password."
-            case 403: message = "Seerr rejected the login or this account does not have permission."
-            case 409: message = "This title has already been requested."
-            case 429: message = "Seerr's request limit was reached. Try again later."
-            default: message = "Seerr could not complete this request (\(status)). Check its connection and request settings."
+            case 301...399: message = String(localized: "Use the final Seerr URL; this address redirects elsewhere.")
+            case 401: message = String(localized: "Seerr could not sign in. Check your username and password.")
+            case 403: message = String(localized: "Seerr rejected the login or this account does not have permission.")
+            case 409: message = String(localized: "This title has already been requested.")
+            case 429: message = String(localized: "Seerr's request limit was reached. Try again later.")
+            default: message = String(localized: "Seerr could not complete this request (\(status)). Check its connection and request settings.")
             }
             throw TVSeerrError(message: message)
         }
@@ -173,7 +173,7 @@ private struct SeerrItem: Decodable {
     let genres: [SeerrName]?; let networks: [SeerrName]?; let createdBy: [SeerrName]?
     let externalIds: SeerrExternalIDs?; let mediaInfo: SeerrMediaInfo?
     var type: RequestMediaType? { mediaType == "movie" ? .movie : mediaType == "tv" ? .series : nil }
-    var displayTitle: String { title ?? name ?? "Untitled" }
+    var displayTitle: String { title ?? name ?? String(localized: "Untitled") }
     var date: String? { releaseDate ?? firstAirDate }
     var year: Int? { date.flatMap { Int($0.prefix(4)) } }
 }
@@ -221,14 +221,14 @@ final class TVSeerrConnectionStore {
         let existing = configuration
         let sameLogin = existing?.url == cleanedURL && existing?.username == username
         let password = password.isEmpty && sameLogin ? existing?.password ?? "" : password
-        guard !username.isEmpty, !password.isEmpty else { throw TVSeerrError(message: "Enter your Seerr username and password.") }
+        guard !username.isEmpty, !password.isEmpty else { throw TVSeerrError(message: String(localized: "Enter your Seerr username and password.")) }
         let config = TVSeerrConfiguration(url: cleanedURL, username: username, password: password)
         let client = try TVSeerrClient(configuration: config)
         try await client.authenticate()
         guard start == identity else { throw CancellationError() }
         let encoded = try JSONEncoder().encode(config)
         guard let value = String(data: encoded, encoding: .utf8), keychain.set(value, for: key) else {
-            throw TVSeerrError(message: "Couldn't securely save this connection.")
+            throw TVSeerrError(message: String(localized: "Couldn't securely save this connection."))
         }
         clients = [config.id: client]
         revision += 1
@@ -236,13 +236,13 @@ final class TVSeerrConnectionStore {
     }
     func disconnect() throws {
         guard VividCloudPreferences.matchingActiveAccount != nil else { throw CancellationError() }
-        guard keychain.delete(key) else { throw TVSeerrError(message: "Couldn't remove the saved connection.") }
+        guard keychain.delete(key) else { throw TVSeerrError(message: String(localized: "Couldn't remove the saved connection.")) }
         clients.removeAll()
         revision += 1
         VividCloudPreferences.shared.schedule()
     }
     private func client() throws -> TVSeerrClient {
-        guard let config = configuration else { throw TVSeerrError(message: "Configure Seerr in Settings to request titles.") }
+        guard let config = configuration else { throw TVSeerrError(message: String(localized: "Configure Seerr in Settings to request titles.")) }
         if let cached = clients[config.id] { return cached }
         let client = try TVSeerrClient(configuration: config)
         clients = [config.id: client]

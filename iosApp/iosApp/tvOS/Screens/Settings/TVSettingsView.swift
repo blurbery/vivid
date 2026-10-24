@@ -183,7 +183,7 @@ struct TVSettingsView: View {
 
     private func initialDetailFocus(for category: TVSettingsCategory) -> TVSettingsDetailFocus {
         if category == .general {
-            return .generalTheme
+            return .generalLanguage
         }
         if category == .subtitles,
            viewModel.subtitleMatchesSystemAppearance {
@@ -308,7 +308,7 @@ struct TVSettingsView: View {
                     TVSettingsInfoRow(
                         title: "Server",
                         value: viewModel.serverDisplayName.isEmpty
-                            ? "Not configured"
+                            ? String(localized: "Not configured")
                             : viewModel.serverDisplayName
                     )
                 }
@@ -353,6 +353,7 @@ struct TVSettingsView: View {
 
 enum TVSettingsDetailFocus: Hashable {
     case top
+    case generalLanguage
     case generalTheme
     case generalHomeSections
     case generalHomeScreen
@@ -390,15 +391,15 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .playback: return "Playback"
-        case .subtitles: return "Subtitles"
-        case .plugins: return "Plugins"
-        case .server: return "Servers"
+        case .general: return String(localized: "General")
+        case .playback: return String(localized: "Playback")
+        case .subtitles: return String(localized: "Subtitles")
+        case .plugins: return String(localized: "Plugins")
+        case .server: return String(localized: "Servers")
         case .seerr: return "Seerr"
-        case .metadata: return "Metadata"
-        case .diagnostics: return "Diagnostics"
-        case .about: return "About"
+        case .metadata: return String(localized: "Metadata")
+        case .diagnostics: return String(localized: "Diagnostics")
+        case .about: return String(localized: "About")
         }
     }
 
@@ -419,37 +420,37 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .general:
-            return "App-level options for this Apple TV."
+            return String(localized: "App-level options for this Apple TV.")
         case .playback:
-            return "Streaming quality, audio and episode behavior for this Apple TV."
+            return String(localized: "Streaming quality, audio and episode behavior for this Apple TV.")
         case .subtitles:
-            return "Language, behavior, and on-screen appearance."
+            return String(localized: "Language, behavior, and on-screen appearance.")
         case .plugins:
-            return "Trailers and watched-history connections."
+            return String(localized: "Trailers and watched-history connections.")
         case .server:
-            return "The media server this Apple TV is connected to."
+            return String(localized: "The media server this Apple TV is connected to.")
         case .seerr:
-            return "Connect Seerr to find and request movies and series."
+            return String(localized: "Connect Seerr to find and request movies and series.")
         case .metadata:
-            return "Manage Home content saved on this Apple TV."
+            return String(localized: "Manage Home content saved on this Apple TV.")
         case .diagnostics:
-            return "Crash and problem reports kept on this Apple TV."
+            return String(localized: "Crash and problem reports kept on this Apple TV.")
         case .about:
-            return "Vivid for your Apple devices."
+            return String(localized: "Vivid for your Apple devices.")
         }
     }
 
     var railDescription: String {
         switch self {
-        case .general: return "App and navigation"
-        case .playback: return "Quality, audio and episodes"
-        case .subtitles: return "Language and appearance"
-        case .plugins: return "Trailers and watched history"
-        case .server: return "Connection and version"
-        case .seerr: return "Media requests"
-        case .metadata: return "Home cache and storage"
-        case .diagnostics: return "Crash and hang reports"
-        case .about: return "App details and contact"
+        case .general: return String(localized: "App and navigation")
+        case .playback: return String(localized: "Quality, audio and episodes")
+        case .subtitles: return String(localized: "Language and appearance")
+        case .plugins: return String(localized: "Trailers and watched history")
+        case .server: return String(localized: "Connection and version")
+        case .seerr: return String(localized: "Media requests")
+        case .metadata: return String(localized: "Home cache and storage")
+        case .diagnostics: return String(localized: "Crash and hang reports")
+        case .about: return String(localized: "App details and contact")
         }
     }
 
@@ -511,7 +512,7 @@ private struct TVProfileServerNameView: View {
         if TVSavedAccountStore.shared.renameServer(for: account.id, to: name) {
             dismiss()
         } else {
-            error = "Couldn’t rename the server. Try again."
+            error = String(localized: "Couldn’t rename the server. Try again.")
         }
     }
 }

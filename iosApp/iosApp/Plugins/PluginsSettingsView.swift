@@ -104,7 +104,9 @@ struct MDBListSettingsView: View {
         }
     }
 
-    private var connectionStatus: String { connecting ? "Connecting…" : store.isConnected ? "Connected" : "Not connected" }
+    private var connectionStatus: String {
+        connecting ? String(localized: "Connecting…") : store.isConnected ? String(localized: "Connected") : String(localized: "Not connected")
+    }
 
     private var credentialField: some View {
         SecureField("MDBList API key", text: $key)
@@ -168,7 +170,7 @@ struct MDBListSettingsView: View {
         .accessibilityLabel("Apps available through MDBList: Jellyfin and Emby")
     }
 
-    private var privacy: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Sync shares media identifiers, watched dates and watchlist changes, never server login details. Disconnecting keeps existing history and watchlists." }
+    private var privacy: String { String(localized: "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Sync shares media identifiers, watched dates and watchlist changes, never server login details. Disconnecting keeps existing history and watchlists.") }
 
     private func connect() {
         let candidate = key

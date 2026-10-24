@@ -8,14 +8,14 @@ enum JellyfinError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .filterRequestFailed(let step, let status): "\(step): HTTP \(status)"
-        case .invalidResponse: "Jellyfin returned an unexpected response."
-        case .invalidURL: "The Jellyfin server returned an invalid address."
-        case .unsupportedFeature: "This feature is not available with Jellyfin yet."
-        case .signInRequired: "Please sign in to Jellyfin again."
-        case .playbackUnavailable: "Jellyfin could not provide a playable media source."
-        case .quickConnectDisabled: "Quick Connect isn’t turned on for this Jellyfin server."
-        case .quickConnectExpired: "This Quick Connect code has expired."
-        case .quickConnectUnavailable: "This server doesn’t offer Quick Connect. Check that the address is your Jellyfin server."
+        case .invalidResponse: String(localized: "Jellyfin returned an unexpected response.")
+        case .invalidURL: String(localized: "The Jellyfin server returned an invalid address.")
+        case .unsupportedFeature: String(localized: "This feature is not available with Jellyfin yet.")
+        case .signInRequired: String(localized: "Please sign in to Jellyfin again.")
+        case .playbackUnavailable: String(localized: "Jellyfin could not provide a playable media source.")
+        case .quickConnectDisabled: String(localized: "Quick Connect isn’t turned on for this Jellyfin server.")
+        case .quickConnectExpired: String(localized: "This Quick Connect code has expired.")
+        case .quickConnectUnavailable: String(localized: "This server doesn’t offer Quick Connect. Check that the address is your Jellyfin server.")
         }
     }
 }
@@ -552,7 +552,7 @@ struct JellyfinAdapter {
             value["userData"] = state
             value["isSpecials"] = seasonNumber == 0
             if let seasonNumber, seasonNumber >= 0 {
-                value["title"] = seasonNumber == 0 ? "Specials" : "Season \(seasonNumber)"
+                value["title"] = seasonNumber == 0 ? String(localized: "Specials") : String(localized: "Season \(seasonNumber)")
             }
         }
         if kind == "episode" { value["seasonNumber"] = raw["ParentIndexNumber"] as? Int ?? 0; value["episodeNumber"] = raw["IndexNumber"] as? Int ?? 0; value["files"] = value["versions"] }
@@ -568,7 +568,7 @@ struct JellyfinAdapter {
             "audioTracks": audios.enumerated().map { ordinal, stream in track(stream, index: ordinal) },
             "subtitleTracks": streams.filter { $0["Type"] as? String == "Subtitle" }.map { track($0, index: $0["Index"] as? Int ?? -1) },
             "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0).merging(Self.dynamicRange($0)) { current, _ in current } },
-            "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? "Chapter \(index + 1)"] }]
+            "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? String(localized: "Chapter \(index + 1)")] }]
         value["fileName"] = raw["Name"]
         value["container"] = raw["Container"]; value["fileSize"] = raw["Size"]; value["bitrate"] = raw["Bitrate"]
         value["codecVideo"] = video["Codec"]; value["codecAudio"] = audios.first?["Codec"]
@@ -768,15 +768,15 @@ struct JellyfinAdapter {
         }
         let (resume, next) = try await (resumeRequest, nextRequest)
         try await connection.validate()
-        return ["sections": [section("continue_watching", "Continue Watching", resume),
-                             section("next_up", "Next Up", next)] + latestSections]
+        return ["sections": [section("continue_watching", String(localized: "Continue Watching"), resume),
+                             section("next_up", String(localized: "Next Up"), next)] + latestSections]
     }
 
     private func latestHomeSection(id: String, name: String) async throws -> [String: Any] {
         let latest = try await connection.request("GET", "/Items/Latest",
             query: ["ParentId":id,"Limit":"20","Fields":Self.homeFields,"EnableUserData":"true"])
         let rows = try convert(latest as? [[String:Any]] ?? [])
-        return section("latestmedia_" + id, "Latest " + name, ["items":rows,"total":rows.count])
+        return section("latestmedia_" + id, String(localized: "Latest \(name)", comment: "Home row of a library's newest items; the library name comes from the server"), ["items":rows,"total":rows.count])
     }
 
     func collection(_ raw: [String:Any]) -> [String:Any]? {
@@ -929,7 +929,7 @@ struct JellyfinAdapter {
                 guard let id = raw["Id"] as? String else { return nil }
                 let type = raw["CollectionType"] as? String ?? "mixed"
                 guard ["movies", "tvshows", "mixed", ""].contains(type) else { return nil }
-                return ["id": Self.numberID(id), "name": raw["Name"] as? String ?? "Library", "type": type == "tvshows" ? "series" : type == "movies" ? "movie" : "mixed"]
+                return ["id": Self.numberID(id), "name": raw["Name"] as? String ?? String(localized: "Library", comment: "Fallback name for a library the server sent without one"), "type": type == "tvshows" ? "series" : type == "movies" ? "movie" : "mixed"]
             }
         }
         if path == "/api/v1/catalog" { return try await catalog(query) }
@@ -992,7 +992,7 @@ struct JellyfinAdapter {
         }
         if path == "/api/v1/recommendations/discover" {
             let result = try await items(query:["SortBy":"Random","IncludeItemTypes":"Movie,Series","Limit":"30","Fields":Self.homeFields])
-            return ["rows":[["type":"discover","label":"Discover","items":result["items"] ?? []]]]
+            return ["rows":[["type":"discover","label":String(localized: "Discover"),"items":result["items"] ?? []]]]
         }
         if p.count == 5, p[2] == "recommendations", p[3] == "similar" {
             let result = try await items("/Items/\(JellyfinConnection.id(p[4]))/Similar", query: ["Limit":"12","Fields":Self.browseFields])

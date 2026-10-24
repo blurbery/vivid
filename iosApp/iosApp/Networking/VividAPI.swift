@@ -972,15 +972,15 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .httpError(let code):
-            return "Server returned status \(code)"
+            return String(localized: "Server returned status \(code)")
         case .invalidPathParameter(let name, let value):
-            return "Invalid \(name): \(value)"
+            return String(localized: "Invalid \(name): \(value)", comment: "Error for a malformed request parameter; both values are technical")
         case .unsupportedPath(let path):
-            return "Unsupported API path: \(path)"
+            return String(localized: "Unsupported API path: \(path)")
         case .unsupportedBody(let expected):
-            return "Unsupported request body. Expected \(expected)."
+            return String(localized: "Unsupported request body. Expected \(expected).")
         case .typeMismatch(let expected, let actual):
-            return "API returned \(actual), expected \(expected)."
+            return String(localized: "API returned \(actual), expected \(expected).")
         case .unsupportedMedia(let message):
             return message
         }

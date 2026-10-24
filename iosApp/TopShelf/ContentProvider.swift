@@ -18,6 +18,13 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     override func loadTopShelfContent() async -> (any TVTopShelfContent)? {
         let defaults = SharedStorage.suite
+        // Follow the language chosen in Vivid's settings. The extension reads
+        // AppleLanguages at launch, so a change shows from its next launch.
+        if let language = defaults.string(forKey: SharedStorage.appLanguageKey) {
+            UserDefaults.standard.set([language], forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        }
         defaults.set(
             Self.timestampFormatter.string(from: Date()),
             forKey: SharedStorage.topShelfLastRunAtKey
@@ -55,12 +62,12 @@ final class ContentProvider: TVTopShelfContentProvider {
         guard http.isPersonalizedContentAllowed, http.contentIdentity == identity else { return nil }
 
         let continueWatching = collection(
-            title: "Continue Watching",
+            title: String(localized: "Continue Watching", comment: "Top Shelf row title"),
             items: cwItems,
             seriesPosters: seriesPosters
         )
         let nextUp = collection(
-            title: "Next Up",
+            title: String(localized: "Next Up", comment: "Top Shelf row title"),
             items: nuItems,
             seriesPosters: seriesPosters
         )
@@ -274,6 +281,6 @@ final class ContentProvider: TVTopShelfContentProvider {
               let episode = item.episodeNumber else {
             return item.title
         }
-        return "\(seriesTitle) · S\(season)E\(episode)"
+        return String(localized: "\(seriesTitle) · S\(season)E\(episode)", comment: "Top Shelf episode tile: series name, then season and episode numbers")
     }
 }

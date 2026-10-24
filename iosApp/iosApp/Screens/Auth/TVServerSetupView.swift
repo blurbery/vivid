@@ -89,7 +89,7 @@ struct TVServerSetupView: View {
                 .foregroundStyle(Color.auroraInk)
 
             VStack(alignment: .leading, spacing: 10) {
-                fieldLabel("Server address")
+                fieldLabel(String(localized: "Server address"))
                 AuroraInputField(
                     text: $viewModel.host,
                     placeholder: provider.serverPlaceholder,
@@ -121,14 +121,14 @@ struct TVServerSetupView: View {
             if viewModel.showsAdvancedOptions {
                 HStack(alignment: .top, spacing: 20) {
                     VStack(alignment: .leading, spacing: 10) {
-                        fieldLabel("Protocol")
+                        fieldLabel(String(localized: "Protocol"))
                         protocolSegments
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        fieldLabel("Port")
+                        fieldLabel(String(localized: "Port"))
                         AuroraInputField(
                             text: $viewModel.port,
-                            placeholder: "8096",
+                            placeholder: "8096" as String,
                             focus: $focusedField,
                             equals: .port,
                             keyboard: .numberPad
@@ -176,7 +176,7 @@ struct TVServerSetupView: View {
                     viewModel.selectedScheme = scheme
                 } label: {
                     AuroraSegment(
-                        title: scheme.rawValue,
+                        title: scheme.title,
                         isSelected: viewModel.selectedScheme == scheme,
                         isFocused: focusedField == .scheme(scheme)
                     )

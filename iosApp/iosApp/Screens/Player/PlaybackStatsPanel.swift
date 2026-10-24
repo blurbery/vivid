@@ -62,7 +62,7 @@ struct PlaybackStatsPanel: View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
             ForEach(stats.compactRows, id: \.0) { row in
                 GridRow {
-                    Text("\(row.0):")
+                    Text("\(PlaybackStats.displayLabel(row.0)):")
                         .foregroundStyle(.white.opacity(0.58))
                         .gridColumnAlignment(.leading)
                     Text(row.1)
@@ -76,16 +76,16 @@ struct PlaybackStatsPanel: View {
 
     private var leftSections: [StatsSection] {
         [
-            .init(id: Self.sourceSectionID, title: "Source", rows: stats.sourceRows),
-            .init(id: Self.mediaSectionID, title: "Media", rows: stats.mediaRows)
+            .init(id: Self.sourceSectionID, title: String(localized: "Source", comment: "Playback stats section"), rows: stats.sourceRows),
+            .init(id: Self.mediaSectionID, title: String(localized: "Media", comment: "Playback stats section"), rows: stats.mediaRows)
         ]
     }
 
     private var rightSections: [StatsSection] {
         [
-            .init(id: Self.bufferSectionID, title: "Buffer", rows: stats.bufferRows),
-            .init(id: Self.networkSectionID, title: "Network", rows: stats.networkRows),
-            .init(id: Self.engineSectionID, title: "Engine", rows: stats.engineRows)
+            .init(id: Self.bufferSectionID, title: String(localized: "Buffer", comment: "Playback stats section"), rows: stats.bufferRows),
+            .init(id: Self.networkSectionID, title: String(localized: "Network", comment: "Playback stats section"), rows: stats.networkRows),
+            .init(id: Self.engineSectionID, title: String(localized: "Engine", comment: "Playback stats section"), rows: stats.engineRows)
         ]
     }
 
@@ -123,7 +123,7 @@ struct PlaybackStatsPanel: View {
             }
             ForEach(section.rows, id: \.0) { row in
                 GridRow {
-                    Text(row.0)
+                    Text(PlaybackStats.displayLabel(row.0))
                         .font(labelFont)
                         .foregroundStyle(.white.opacity(0.74))
                     Text(row.1)

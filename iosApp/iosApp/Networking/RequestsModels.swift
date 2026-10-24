@@ -21,10 +21,10 @@ enum RequestMediaType: String, Codable, Hashable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .movie: "Movie"
-        case .series: "Series"
-        case .all: "All"
-        case .unknown: "Title"
+        case .movie: String(localized: "Movie")
+        case .series: String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
+        case .all: String(localized: "All")
+        case .unknown: String(localized: "Title")
         }
     }
 }

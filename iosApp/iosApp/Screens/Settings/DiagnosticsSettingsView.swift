@@ -56,7 +56,7 @@ struct DiagnosticsSettingsView: View {
                     ForEach(groups) { group in
                         NavigationLink { DiagnosticsReportGroupView(group: group) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(group.summary)
+                                Text(group.displaySummary)
                                 Text(groupDetail(group)).font(.footnote).foregroundStyle(.secondary)
                             }
                         }
@@ -114,18 +114,20 @@ struct DiagnosticsSettingsView: View {
 
     private var sendTitle: String {
         switch unsent.count {
-        case 0: return "Send All Again"
-        case 1: return "Send 1 New Report"
-        default: return "Send \(unsent.count) New Reports"
+        case 0: return String(localized: "Send All Again")
+        default: return String(localized: "Send \(unsent.count) New Reports")
         }
     }
 
     private func groupDetail(_ group: AppHealthReportGroup) -> String {
         let latest = group.latest.lastOccurredAt.formatted(.relative(presentation: .named))
-        let count = group.reports.count == 1 ? "1 report" : "\(group.reports.count) reports"
-        let times = group.occurrenceCount > group.reports.count ? " · happened \(group.occurrenceCount) times" : ""
-        let allSent = group.reports.allSatisfy { sentIDs.contains($0.id) }
-        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)" + (allSent ? " · Sent" : "")
+        var parts = [group.kind.title, String(localized: "\(group.reports.count) reports")]
+        if group.occurrenceCount > group.reports.count {
+            parts.append(String(localized: "happened \(group.occurrenceCount) times"))
+        }
+        parts += [String(localized: "latest \(latest)"), group.latest.issueID]
+        if group.reports.allSatisfy({ sentIDs.contains($0.id) }) { parts.append(String(localized: "Sent")) }
+        return parts.joined(separator: " · ")
     }
 
     private func reload() async {
@@ -166,7 +168,7 @@ private struct DiagnosticsReportGroupView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: group.summary,
+            SettingsPageHeader(title: group.displaySummary,
                                subtitle: [group.kind.title, group.latest.technicalCode, group.latest.issueID]
                                    .compactMap { $0 }.joined(separator: " · "),
                                systemImage: "doc.text")
@@ -178,7 +180,7 @@ private struct DiagnosticsReportGroupView: View {
                             Text(report.recordedAt.formatted(date: .abbreviated, time: .shortened))
                             Text("\(report.app.version) (\(report.app.build)) · \(report.app.device)"
                                  + (report.occurrenceCount > 1 ? " · " + report.repeatSummary : "")
-                                 + (sentIDs.contains(report.id) ? " · Sent" : ""))
+                                 + (sentIDs.contains(report.id) ? " · " + String(localized: "Sent") : ""))
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                     }
@@ -205,9 +207,9 @@ private struct DiagnosticsReportDetailView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: report.groupSummary,
+            SettingsPageHeader(title: report.displaySummary,
                                subtitle: [report.recordedAt.formatted(date: .abbreviated, time: .shortened),
-                                          report.technicalCode, report.issueID, sent ? "Sent" : nil]
+                                          report.technicalCode, report.issueID, sent ? String(localized: "Sent") : nil]
                                    .compactMap { $0 }.joined(separator: " · "),
                                systemImage: "doc.text")
                 .settingsPageHeaderRow()

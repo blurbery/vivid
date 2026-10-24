@@ -11,9 +11,9 @@ struct UpcomingEpisode: Identifiable, Hashable, Sendable {
 
         var label: String {
             switch self {
-            case .continueWatching: "Continue Watching"
-            case .watchlist: "Watchlist"
-            case .history: "History"
+            case .continueWatching: String(localized: "Continue Watching")
+            case .watchlist: String(localized: "Watchlist")
+            case .history: String(localized: "History")
             }
         }
 
@@ -123,9 +123,11 @@ final class CalendarStore {
         upcoming = Self.upcoming(for: saved.candidates, saved: saved.series, window: Self.upcomingWindow())
         upcomingFailed = false
         let today = Calendar.current.startOfDay(for: Date())
-        trendingSeries = saved.trendingSeries.filter { $0.day >= today }
-        trendingMovies = saved.trendingMovies.filter { $0.day >= today }
-        trendingLoadedAt = saved.trendingSavedAt
+        // Trending saved in another language is fetched again.
+        let sameLanguage = saved.trendingLanguage == VividAppLanguage.tmdbLanguage
+        trendingSeries = sameLanguage ? saved.trendingSeries.filter { $0.day >= today } : []
+        trendingMovies = sameLanguage ? saved.trendingMovies.filter { $0.day >= today } : []
+        trendingLoadedAt = sameLanguage ? saved.trendingSavedAt : nil
         trendingSeriesFailed = false
         trendingMoviesFailed = false
     }
@@ -467,7 +469,7 @@ final class CalendarStore {
         guard let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0 else { return series([], complete: tvmazeAnswered) }
         let tmdb: TMDbSeries
         do {
-            tmdb = try await get(TVTMDbStore.relayBase + "tv/\(tmdbID)")
+            tmdb = try await get(TVTMDbStore.urlRequest("tv/\(tmdbID)", language: VividAppLanguage.tmdbLanguage).url?.absoluteString ?? "")
         } catch RelayError.notFound {
             return series([], complete: tvmazeAnswered)
         } catch {
@@ -606,6 +608,7 @@ final class CalendarStore {
         if !trendingFailed {
             trendingLoadedAt = Date()
             saved.trendingSavedAt = trendingLoadedAt
+            saved.trendingLanguage = VividAppLanguage.tmdbLanguage
         }
         save()
     }
@@ -616,7 +619,7 @@ final class CalendarStore {
         var titles: [TrendingTitle] = []
         var seen = Set<Int>()
         for page in 1...2 {
-            guard let result = try? await TVTMDbStore.shared.discover(media: media, query: query, page: page) else {
+            guard let result = try? await TVTMDbStore.shared.discover(media: media, query: query, page: page, localized: true) else {
                 if page == 1 { return nil }
                 break
             }
@@ -647,6 +650,8 @@ final class CalendarStore {
         var trendingSeries: [TrendingTitle] = []
         var trendingMovies: [TrendingTitle] = []
         var trendingSavedAt: Date?
+        /// The TMDb language Trending was fetched in, `nil` for English.
+        var trendingLanguage: String?
     }
 
     /// Reads and writes in order, off the main thread.

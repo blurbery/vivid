@@ -44,7 +44,7 @@ enum OpenSourceAcknowledgements {
     static var entries: [Entry] { manifest?.entries ?? [] }
     static var texts: [SharedText] { manifest?.texts ?? [] }
     static let onlineURL = VividAbout.website.appendingPathComponent("licences")
-    static let sourceTitle = "Source for this build"
+    static var sourceTitle: String { String(localized: "Source for this build") }
 
     enum Page: Hashable, Sendable {
         case source
@@ -132,7 +132,7 @@ enum OpenSourceAcknowledgements {
         let base = (name as NSString).deletingPathExtension
         guard let url = resourceURL(named: base, withExtension: "txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return "The bundled licence resource \(name) is unavailable."
+            return String(localized: "The bundled licence resource \(name) is unavailable.")
         }
         // Some upstream files use CRLF; show them with plain line breaks.
         return text.replacingOccurrences(of: "\r\n", with: "\n")

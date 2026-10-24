@@ -67,41 +67,41 @@ enum LoginPreparationFailure: Equatable {
 
     var title: String {
         switch self {
-        case .offline: "You’re offline"
-        case .unreachable: "Can’t reach your server"
-        case .wrongPIN: "That PIN didn’t match"
-        case .tooManyAttempts: "Too many attempts"
-        case .signInExpired: "Your sign-in has expired"
-        case .serverError: "Your server ran into a problem"
-        case .unexpectedResponse: "Unexpected server response"
-        case .noPrimaryProfile: "No primary profile"
-        case .profileUnavailable: "This profile isn’t available"
-        case .unknown: "Couldn’t open your profile"
+        case .offline: String(localized: "You’re offline")
+        case .unreachable: String(localized: "Can’t reach your server")
+        case .wrongPIN: String(localized: "That PIN didn’t match")
+        case .tooManyAttempts: String(localized: "Too many attempts")
+        case .signInExpired: String(localized: "Your sign-in has expired")
+        case .serverError: String(localized: "Your server ran into a problem")
+        case .unexpectedResponse: String(localized: "Unexpected server response")
+        case .noPrimaryProfile: String(localized: "No primary profile")
+        case .profileUnavailable: String(localized: "This profile isn’t available")
+        case .unknown: String(localized: "Couldn’t open your profile")
         }
     }
 
     var message: String {
         switch self {
         case .offline:
-            "Check your Wi-Fi or network connection, then try again."
+            String(localized: "Check your Wi-Fi or network connection, then try again.")
         case .unreachable:
-            "The server isn’t responding. If it has moved or shut down, go back and sign in to a different server."
+            String(localized: "The server isn’t responding. If it has moved or shut down, go back and sign in to a different server.")
         case .wrongPIN:
-            "Enter the profile PIN again."
+            String(localized: "Enter the profile PIN again.")
         case .tooManyAttempts:
-            "Wait a minute, then try again."
+            String(localized: "Wait a minute, then try again.")
         case .signInExpired:
-            "This server signed you out, or your sign-in timed out. Sign in again to continue."
+            String(localized: "This server signed you out, or your sign-in timed out. Sign in again to continue.")
         case .serverError:
-            "It returned an error while loading your profile. Try again in a moment."
+            String(localized: "It returned an error while loading your profile. Try again in a moment.")
         case .unexpectedResponse:
-            "Check the server address and any reverse proxy in front of it, then try again."
+            String(localized: "Check the server address and any reverse proxy in front of it, then try again.")
         case .noPrimaryProfile:
-            "Set a primary profile for this account on your server, then try again."
+            String(localized: "Set a primary profile for this account on your server, then try again.")
         case .profileUnavailable:
-            "It may have been removed from your server. Try again, or go back and remove this profile from Vivid."
+            String(localized: "It may have been removed from your server. Try again, or go back and remove this profile from Vivid.")
         case .unknown:
-            "Something went wrong while preparing your profile. Try again, or go back and sign in to a different server."
+            String(localized: "Something went wrong while preparing your profile. Try again, or go back and sign in to a different server.")
         }
     }
 
@@ -124,9 +124,9 @@ enum LoginPreparationFailure: Equatable {
 
     var primaryTitle: String {
         switch self {
-        case .wrongPIN: "Enter PIN"
-        case .signInExpired: "Sign in again"
-        default: "Try again"
+        case .wrongPIN: String(localized: "Enter PIN")
+        case .signInExpired: String(localized: "Sign in again")
+        default: String(localized: "Try again")
         }
     }
 
@@ -143,7 +143,7 @@ enum LoginPreparationFailure: Equatable {
 final class TVLoginPreparation {
     static let shared = TVLoginPreparation()
     var isPresented = false
-    var status = "Getting ready"
+    var status = String(localized: "Getting ready")
     var ready = false
     private(set) var failure: LoginPreparationFailure?
     /// Name of the server the failure belongs to, so the page says which
@@ -176,7 +176,7 @@ final class TVLoginPreparation {
         guard !isSigningOut else { return }
         ready = false
         failure = nil
-        status = "Getting ready"
+        status = String(localized: "Getting ready")
         pinProfile = nil
         profileChoices = nil
         // Only the PIN check itself can mean a wrong PIN. A 401 from the
@@ -418,7 +418,7 @@ struct TVLoginPreparationView: View {
             )
         } else {
             VividStartupView(isContentReady: preparation.ready,
-                             statusText: preparation.showsWelcome ? preparation.status : "Loading your Home") {
+                             statusText: preparation.showsWelcome ? preparation.status : String(localized: "Loading your Home")) {
                 preparation.finish()
             }
             .overlay(alignment: .bottom) {

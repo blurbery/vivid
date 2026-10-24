@@ -76,6 +76,9 @@ enum SharedStorage {
     /// happened the last time tvOS invoked us.
     static let topShelfLastStatusKey = "topShelf.lastStatus"
     static let topShelfLastRunAtKey = "topShelf.lastRunAt"
+    /// The language chosen in Settings > General, or nothing for the device
+    /// language. Top Shelf copies it into its own `AppleLanguages`.
+    static let appLanguageKey = "vivid.appLanguage.v1"
 
     /// UserDefaults instance backed by the App Group suite. Callers that
     /// need per-process fallback behaviour should use `SharedDefaults`

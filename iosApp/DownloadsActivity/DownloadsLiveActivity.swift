@@ -161,7 +161,7 @@ private struct QueueStatusText: View {
 
     var body: some View {
         if let end = state.estimate?.upperBound, !isStale, end > Date() {
-            (Text("About ") + Text(timerInterval: Date()...end, countsDown: true) + Text(" left"))
+            Text("About \(Text(timerInterval: Date()...end, countsDown: true)) left", comment: "Downloads time left; the middle is a live countdown")
                 .monospacedDigit()
         } else {
             Text(state.statusText(isStale: isStale))
@@ -192,7 +192,7 @@ private extension DownloadActivityAttributes.ContentState {
         var parts: [String] = []
         if let subtitle { parts.append(subtitle) }
         if totalCount > 1, phase != .completed {
-            parts.append("\(min(completedCount + 1, totalCount)) of \(totalCount)")
+            parts.append(String(localized: "\(min(completedCount + 1, totalCount)) of \(totalCount)", comment: "Position of the current download in the queue, e.g. 2 of 5"))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -200,24 +200,24 @@ private extension DownloadActivityAttributes.ContentState {
     func statusText(isStale: Bool) -> String {
         switch phase {
         case .completed:
-            return "Complete"
+            return String(localized: "Complete", comment: "Downloads Live Activity status")
         case .paused:
-            return "Paused"
+            return String(localized: "Paused", comment: "Downloads Live Activity status")
         case .preparing:
-            return "Preparing…"
+            return String(localized: "Preparing…", comment: "Downloads Live Activity status")
         case .downloading:
             // Past the stale date the app was suspended mid-transfer and
             // these numbers stopped ticking; say so instead of freezing a
             // live-looking counter.
-            if isStale { return "Continuing in background…" }
-            guard bytesExpected > 0 else { return "Downloading…" }
-            var text = bytesDownloaded.formatted(.byteCount(style: .file))
-                + " of "
-                + bytesExpected.formatted(.byteCount(style: .file))
+            if isStale { return String(localized: "Continuing in background…", comment: "Downloads Live Activity status") }
+            guard bytesExpected > 0 else { return String(localized: "Downloading…", comment: "Downloads Live Activity status") }
+            let downloaded = bytesDownloaded.formatted(.byteCount(style: .file))
+            let expected = bytesExpected.formatted(.byteCount(style: .file))
             if let bytesPerSecond, bytesPerSecond > 0 {
-                text += " · " + Int64(bytesPerSecond).formatted(.byteCount(style: .file)) + "/s"
+                let rate = Int64(bytesPerSecond).formatted(.byteCount(style: .file))
+                return String(localized: "\(downloaded) of \(expected) · \(rate)/s", comment: "Downloaded size of total size, then the download speed per second")
             }
-            return text
+            return String(localized: "\(downloaded) of \(expected)", comment: "Downloaded size of total size")
         }
     }
 }

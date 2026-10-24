@@ -25,7 +25,7 @@ class SettingsViewModel {
     /// Friendly label for the active server, shown in the Settings
     /// `Server` row. User override → server-advertised name → URL.
     var serverDisplayName: String {
-        ServerRegistry.shared.activeServer?.displayName ?? "Not configured"
+        ServerRegistry.shared.activeServer?.displayName ?? String(localized: "Not configured")
     }
 
     // Playback preferences (server-backed for this device/profile).

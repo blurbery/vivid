@@ -84,7 +84,7 @@ struct TrackSelectionSheet: View {
             : viewModel.selectedSubtitleId == nil
 
         TrackSelectionRow(
-            name: "Off",
+            name: String(localized: "Off"),
             attributes: nil,
             isSelected: isOffSelected
         ) {

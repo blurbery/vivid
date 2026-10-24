@@ -12,11 +12,11 @@ class LoginViewModel {
     /// Authenticate with username and password.
     func login(router: AppRouter) async {
         guard !username.trimmingCharacters(in: .whitespaces).isEmpty else {
-            error = "Please enter your username."
+            error = String(localized: "Please enter your username.")
             return
         }
         guard !password.isEmpty || MediaServerProvider.active.usesNativeUser else {
-            error = "Please enter your password."
+            error = String(localized: "Please enter your password.")
             return
         }
 

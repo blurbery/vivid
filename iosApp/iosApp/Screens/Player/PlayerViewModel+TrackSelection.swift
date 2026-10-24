@@ -41,8 +41,8 @@ extension PlayerViewModel {
                 audioPickedForCurrentItem = priorAudioPicked
                 reapplyAutomaticSubtitlePolicy()
                 showNotice(
-                    title: "Couldn't change audio",
-                    message: "The audio track couldn't be switched. Try again.",
+                    title: String(localized: "Couldn't change audio"),
+                    message: String(localized: "The audio track couldn't be switched. Try again."),
                     tone: .warning,
                     duration: 5
                 )

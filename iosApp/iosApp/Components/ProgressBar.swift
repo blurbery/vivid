@@ -131,7 +131,7 @@ struct ResumePresentation {
     let fraction: Double
     let minutesRemaining: Int
     let episodeLabel: String?
-    var minutesLabel: String { "\(minutesRemaining)m" }
+    var minutesLabel: String { String(localized: "\(minutesRemaining)m", comment: "Minutes, abbreviated, e.g. 23m") }
 
     init?(position: Double?, duration: Double?, episodeLabel: String? = nil) {
         guard let position, let duration, position.isFinite, duration.isFinite,
@@ -183,6 +183,13 @@ struct ResumeButtonProgressLabel: View {
             Text(progress.minutesLabel).monospacedDigit().fixedSize()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Resume, \(progress.episodeLabel.map { $0 + ", " } ?? "")\(progress.minutesRemaining) minutes remaining")
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: Text {
+        if let episodeLabel = progress.episodeLabel {
+            return Text("Resume, \(episodeLabel), \(progress.minutesRemaining) minutes remaining")
+        }
+        return Text("Resume, \(progress.minutesRemaining) minutes remaining")
     }
 }

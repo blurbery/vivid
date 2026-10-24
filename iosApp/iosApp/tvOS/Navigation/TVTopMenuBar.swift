@@ -19,8 +19,8 @@ enum TVLibraryTabType: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .movies: return "Movies"
-        case .series: return "Series"
+        case .movies: return String(localized: "Movies")
+        case .series: return String(localized: "Series")
         }
     }
 
@@ -45,9 +45,9 @@ enum TVRootDestination: Hashable {
 
     var title: String {
         switch self {
-        case .home: return "Home"
-        case .recommendations: return "For You"
-        case .calendar: return "Calendar"
+        case .home: return String(localized: "Home")
+        case .recommendations: return String(localized: "For You")
+        case .calendar: return String(localized: "Calendar")
         case .libraryType(let type): return type.title
         }
     }

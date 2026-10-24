@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Updates iosApp/Resources/Localizable.xcstrings with every string the Swift
-# compiler finds in the Vivid (iOS) and VividTV (tvOS) app targets.
+# Updates Vivid's String Catalogs with every string the Swift compiler finds:
+# iosApp/Resources/Localizable.xcstrings from the Vivid (iOS) and VividTV
+# (tvOS) app targets, and the Top Shelf and downloads Live Activity
+# extensions' own catalogs from those targets.
 #
 # Xcode can only sync a String Catalog with the platform it just built, and
 # the two apps come from separate XcodeGen specs, so an ordinary build would
@@ -23,7 +25,6 @@ if [ "${1:-}" = "--no-build" ]; then
 fi
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 app="$repo/iosApp"
-catalog="$app/Resources/Localizable.xcstrings"
 derived="${1:-${TMPDIR:-/tmp}/vivid-string-catalog}"
 resolved="$app/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 
@@ -45,20 +46,25 @@ if [ "$build" = 1 ]; then
   echo "Vivid.xcodeproj is now the tvOS project. Regenerate it for iOS if needed."
 fi
 
-# Only the two app targets: the extensions and packages look strings up in
-# their own bundles.
+# Each catalog takes only its own targets' strings: the extensions and
+# packages look strings up in their own bundles.
 objects="$derived/Build/Intermediates.noindex/Vivid.build"
-args=()
-while IFS= read -r -d '' file; do
-  args+=(--stringsdata "$file")
-done < <(find "$objects/Debug-iphonesimulator/Vivid.build" \
-  "$objects/Debug-appletvsimulator/VividTV.build" -name '*.stringsdata' -print0)
-if [ "${#args[@]}" = 0 ]; then
-  echo "No .stringsdata found under $objects" >&2
-  exit 1
-fi
-
-python3 "$repo/scripts/l10n/string_catalog.py" unmark "$catalog"
-xcrun xcstringstool sync "$catalog" "${args[@]}"
-python3 "$repo/scripts/l10n/string_catalog.py" mark "$catalog"
-echo "Synced $catalog from $((${#args[@]} / 2)) files"
+sync_catalog() { # catalog target-build-dir...
+  local catalog=$1 args=() file
+  shift
+  while IFS= read -r -d '' file; do
+    args+=(--stringsdata "$file")
+  done < <(find "$@" -name '*.stringsdata' -print0)
+  if [ "${#args[@]}" = 0 ]; then
+    echo "No .stringsdata found in $*, so ${catalog#"$repo"/} was left as it is" >&2
+    return
+  fi
+  python3 "$repo/scripts/l10n/string_catalog.py" unmark "$catalog"
+  xcrun xcstringstool sync "$catalog" "${args[@]}"
+  python3 "$repo/scripts/l10n/string_catalog.py" mark "$catalog"
+  echo "Synced ${catalog#"$repo"/} from $((${#args[@]} / 2)) files"
+}
+sync_catalog "$app/Resources/Localizable.xcstrings" \
+  "$objects/Debug-iphonesimulator/Vivid.build" "$objects/Debug-appletvsimulator/VividTV.build"
+sync_catalog "$app/TopShelf/Localizable.xcstrings" "$objects/Debug-appletvsimulator/VividTVTopShelf.build"
+sync_catalog "$app/DownloadsActivity/Localizable.xcstrings" "$objects/Debug-iphonesimulator/VividDownloadsActivity.build"

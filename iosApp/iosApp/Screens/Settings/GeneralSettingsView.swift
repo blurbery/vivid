@@ -8,9 +8,21 @@ struct GeneralSettingsView: View {
     @State private var homeSections = HomeSectionPreferences.shared
     @State private var registry = ServerRegistry.shared
     @State private var homeCards = TVHomeCardPreferences.shared
+    @State private var language = VividAppLanguage.saved
     var body: some View {
         List {
             SettingsPageHeader(title: "General", subtitle: "App-level options for this device.", systemImage: "gearshape").settingsPageHeaderRow()
+            Section {
+                Picker("Language", selection: $language) {
+                    Text("System").tag(VividAppLanguage.system)
+                    ForEach(VividAppLanguage.allCases.filter { $0 != .system }) { option in
+                        Text(verbatim: option.nativeName ?? option.rawValue).tag(option)
+                    }
+                }
+                .onChange(of: language) { _, value in VividAppLanguage.save(value) }
+            } header: { PhoneSettingsSectionHeader("Language") } footer: {
+                Text("System follows this device’s language. A new choice takes effect after you close Vivid in the app switcher and open it again.")
+            }
             Section {
                 Picker("Theme", selection: $theme) {
                     ForEach(VividAppTheme.allCases) { Text($0.title).tag($0) }
@@ -28,8 +40,8 @@ struct GeneralSettingsView: View {
                 }
                 NavigationLink { PhoneStudiosNetworksSettingsView() } label: {
                     LabeledContent("Studios & Networks",
-                                   value: !TVTMDbStore.shared.isConfigured ? "Needs sign-in"
-                                       : StudiosNetworksStore.shared.isEnabled ? "On" : "Off")
+                                   value: !TVTMDbStore.shared.isConfigured ? String(localized: "Needs sign-in")
+                                       : StudiosNetworksStore.shared.isEnabled ? String(localized: "On") : String(localized: "Off"))
                 }
                 #endif
                 NavigationLink { HomeSectionsCustomizationView() } label: {
@@ -98,7 +110,7 @@ struct PhoneTMDbSettingsView: View {
             } header: { PhoneSettingsSectionHeader("TMDB Connection") }
             Section {
                 Image("TMDbAttributionLogo").resizable().scaledToFit().frame(width: 100)
-                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                Text(verbatim: "This product uses the TMDB API but is not endorsed or certified by TMDB.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Link("TMDB", destination: URL(string: "https://www.themoviedb.org")!)
             }
@@ -122,11 +134,11 @@ struct PhoneSeerrSettingsView: View {
                     Image("SeerrSettingsIcon").renderingMode(.template).resizable().scaledToFit()
                         .foregroundStyle(.white).frame(width: 44, height: 44)
                         .padding(10).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-                    Text("Seerr").font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text(verbatim: "Seerr").font(.system(size: 30, weight: .bold, design: .rounded))
                 }
             }.listRowBackground(Color.clear)
             Section {
-                LabeledContent("Status", value: busy ? "Connecting…" : store.isConfigured ? "Connected" : "Not configured")
+                LabeledContent("Status", value: busy ? String(localized: "Connecting…") : store.isConfigured ? String(localized: "Connected") : String(localized: "Not configured"))
                 TextField("Server URL", text: $url).keyboardType(.URL)
                 TextField("Username or email", text: $username)
                 SecureField("Password", text: $password)
@@ -136,7 +148,7 @@ struct PhoneSeerrSettingsView: View {
                         defer { busy = false }
                         do {
                             try await store.connect(url: url, username: username, password: password)
-                            password = ""; message = "Connected"
+                            password = ""; message = String(localized: "Connected")
                         } catch { message = error.localizedDescription }
                     }
                 }.disabled(busy)

@@ -271,7 +271,7 @@ final class TVHomeMetadataCache {
     }
 
     var statuses: [Status] {
-        var statuses = [Status(id: Self.spotlightID, title: "Spotlight",
+        var statuses = [Status(id: Self.spotlightID, title: String(localized: "Spotlight"),
                                count: snapshot.spotlight.count, updatedAt: snapshot.spotlightUpdatedAt)]
         let live: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
         let sourceRows = live?.sections ?? snapshot.rows.map(\.section)
@@ -556,7 +556,7 @@ final class TVHomeMetadataCache {
                     guard let self, self.loadedScope == scope,
                           self.generation == expectedGeneration,
                           self.persistenceRevision == revision else { return }
-                    self.storageError = "Couldn’t save the Home cache. It will retry on the next refresh."
+                    self.storageError = String(localized: "Couldn’t save the Home cache. It will retry on the next refresh.")
                 }
             }
         }

@@ -118,9 +118,7 @@ final class DownloadLiveActivityController {
             if completedCount > 0 {
                 let state = DownloadActivityAttributes.ContentState(
                     phase: .completed,
-                    title: completedCount == 1
-                        ? "Download complete"
-                        : "\(completedCount) downloads complete",
+                    title: String(localized: "\(completedCount) downloads complete", comment: "Live Activity when downloads finish. One: Download complete (no number)"),
                     subtitle: nil,
                     fraction: 1,
                     bytesDownloaded: 0,
@@ -191,7 +189,7 @@ final class DownloadLiveActivityController {
 
         let title = headline?.title
             ?? headline?.seriesTitle
-            ?? (activeRecords.count == 1 ? "Download" : "\(activeRecords.count) downloads")
+            ?? String(localized: "\(activeRecords.count) downloads", comment: "Live Activity headline when no title is known. One: Download (the noun, no number)")
         var subtitleParts: [String] = []
         if let headline {
             if let series = headline.seriesTitle, series != title {

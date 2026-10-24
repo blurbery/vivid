@@ -106,10 +106,10 @@ struct SeasonDetailContent<BelowOverview: View>: View {
             PhoneDetailPrimaryActions(stackedSpacing: 12) {
                 PhonePrimaryPillButton(
                     icon: "play.fill",
-                    title: nextUpEpisode.map(playButtonLabel) ?? "Play",
+                    title: nextUpEpisode.map(playButtonLabel) ?? String(localized: "Play"),
                     action: handlePrimaryPlayTap,
                     fullWidth: true,
-                    resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
+                    resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { String(localized: "S\(String($0.seasonNumber)) E\(String($0.episodeNumber))", comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02") })
                 )
             } actions: {
                 labeledActionRow
@@ -152,8 +152,8 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                 icon: "heart",
                 iconActive: "heart.fill",
                 isActive: isFavorite,
-                label: "Favorite",
-                accessibilityLabelOverride: isFavorite ? "Remove from favorites" : "Add to favorites",
+                label: String(localized: "Favorite"),
+                accessibilityLabelOverride: isFavorite ? String(localized: "Remove from favorites") : String(localized: "Add to favorites"),
                 action: onToggleFavorite
             )
 
@@ -161,12 +161,12 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                 icon: "bookmark",
                 iconActive: "bookmark.fill",
                 isActive: inWatchlist,
-                label: "Watchlist",
-                accessibilityLabelOverride: inWatchlist ? "Remove from watchlist" : "Add to watchlist",
+                label: String(localized: "Watchlist"),
+                accessibilityLabelOverride: inWatchlist ? String(localized: "Remove from watchlist") : String(localized: "Add to watchlist"),
                 action: onToggleWatchlist
             )
 
-            PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+            PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
                 Button(isWatched ? "Mark Season as Unwatched" : "Mark Season as Watched", action: onToggleWatched)
                 if detail.seriesId != nil {
                     Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
@@ -199,7 +199,7 @@ struct SeasonDetailContent<BelowOverview: View>: View {
     /// Show "Play E5" — the user picks resume vs. restart in the
     /// confirmation dialog the button presents.
     private func playButtonLabel(for episode: EpisodeListItem) -> String {
-        "Play E\(episode.episodeNumber)"
+        String(localized: "Play E\(episode.episodeNumber)")
     }
 
     private var resumeTimestamp: String {
@@ -272,8 +272,8 @@ struct SeasonDetailContent<BelowOverview: View>: View {
         let season = selectedSeason ?? seasons.first(where: {
             $0.seasonNumber == detail.seasonNumber
         })
-        guard let season else { return "Episodes" }
-        return "\(season.downloadDisplayName) Episodes"
+        guard let season else { return String(localized: "Episodes") }
+        return String(localized: "\(season.downloadDisplayName) Episodes")
     }
 
     @ViewBuilder

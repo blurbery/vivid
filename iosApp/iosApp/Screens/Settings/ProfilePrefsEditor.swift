@@ -73,19 +73,19 @@ final class ProfilePrefsEditor {
         })
         guard let scope = scopes.first else { return nil }
         guard scopes.count == 1 else {
-            return "More specific device, library, or series subtitle settings override this profile default. Changes here are saved for the profile, but those overrides still apply where configured."
+            return String(localized: "More specific device, library, or series subtitle settings override this profile default. Changes here are saved for the profile, but those overrides still apply where configured.")
         }
         switch scope {
         case .profileClient:
-            return "This device family has a more specific subtitle setting. Changes here update the profile default, but the family override still applies."
+            return String(localized: "This device family has a more specific subtitle setting. Changes here update the profile default, but the family override still applies.")
         case .profileDevice:
-            return "This device, for this profile, has a more specific subtitle setting. Changes here update the profile default, but the device override still applies."
+            return String(localized: "This device, for this profile, has a more specific subtitle setting. Changes here update the profile default, but the device override still applies.")
         case .profileLibrary:
-            return "A library-specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the library override still applies."
+            return String(localized: "A library-specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the library override still applies.")
         case .profileSeries:
-            return "A series-specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the series override still applies."
+            return String(localized: "A series-specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the series override still applies.")
         case .other:
-            return "A more specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the override still applies."
+            return String(localized: "A more specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the override still applies.")
         case .account, .profile:
             return nil
         }
@@ -144,11 +144,11 @@ final class ProfilePrefsEditor {
     /// server predates the canonical settings API. Playback is unaffected —
     /// it falls back to this device's local defaults — so the message says
     /// that rather than implying nothing works.
-    static let serverUpgradeMessage = """
+    static let serverUpgradeMessage = String(localized: """
         This server is too old to store playback preferences. \
         Playback still works using this device's defaults. \
         Ask your server administrator to update Silo.
-        """
+        """)
 
     private let writer: ProfileSettingsWriter
 
@@ -656,13 +656,13 @@ final class ProfilePrefsEditor {
         case .serverUpgradeRequired:
             return .serverUpgradeRequired
         case .profileRequired:
-            return .failed("Choose a profile first.")
+            return .failed(String(localized: "Choose a profile first."))
         case .invalidValue(let message):
-            return .failed(message.isEmpty ? "That value isn't allowed." : message)
+            return .failed(message.isEmpty ? String(localized: "That value isn't allowed.") : message)
         case .unknownSetting, .clientLocalSetting, .scopeNotAllowed:
-            return .failed("This server can't store that preference.")
+            return .failed(String(localized: "This server can't store that preference."))
         case .mutationIdConflict, .noValueAtScope, .server, .transport:
-            return .failed("Couldn't reach the server.")
+            return .failed(String(localized: "Couldn't reach the server."))
         }
     }
 }

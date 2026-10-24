@@ -25,7 +25,7 @@ struct VividPlaybackStatsSourceMetadata: Equatable {
 
     private static func sourceLabel(for url: URL?) -> String? {
         guard let url else { return nil }
-        if url.isFileURL { return "Offline file" }
+        if url.isFileURL { return String(localized: "Offline file", comment: "Playback stats source: a downloaded file") }
         if let host = url.host, !host.isEmpty { return host }
         return url.scheme?.uppercased()
     }
@@ -33,9 +33,9 @@ struct VividPlaybackStatsSourceMetadata: Equatable {
     private static func deliveryLabel(_ value: String?) -> String? {
         guard let value = normalized(value) else { return nil }
         switch value.lowercased() {
-        case "original_http": return "Original HTTP"
-        case "remux_hls": return "Remux HLS"
-        case "transcode_hls": return "Transcode HLS"
+        case "original_http": return String(localized: "Original HTTP", comment: "Playback stats delivery")
+        case "remux_hls": return String(localized: "Remux HLS", comment: "Playback stats delivery")
+        case "transcode_hls": return String(localized: "Transcode HLS", comment: "Playback stats delivery")
         default:
             return value.replacingOccurrences(of: "_", with: " ")
         }
@@ -223,7 +223,9 @@ enum VividPlaybackStatsProjection {
             pixelAspectRatio: snapshot.sourceVideoPixelAspectRatio
         )
         let frameRate = snapshot.sourceVideoFrameRate.flatMap { fps in
-            fps.isFinite && fps > 0 ? String(format: "%.3f fps", fps) : nil
+            fps.isFinite && fps > 0
+                ? String(localized: "\(String(format: "%.3f", locale: .current, fps)) fps", comment: "Frames per second")
+                : nil
         }
         let details = [dimensions, frameRate]
             .compactMap { $0 }
@@ -239,7 +241,8 @@ enum VividPlaybackStatsProjection {
 
     private static func audioStream(track: TrackInfo?, decoder: String?, outputFormat: String?) -> PlaybackStats.MediaStream {
         guard let track else {
-            return PlaybackStats.MediaStream(codec: decoder ?? outputFormat, detail: decoder == nil ? nil : outputFormat, bitrateBps: nil)
+            let output = outputFormat.map(outputFormatLabel)
+            return PlaybackStats.MediaStream(codec: decoder ?? output, detail: decoder == nil ? nil : output, bitrateBps: nil)
         }
         var details: [String] = []
         if !track.name.isEmpty { details.append(track.name) }
@@ -257,7 +260,8 @@ enum VividPlaybackStatsProjection {
             details.append(decoder)
         }
         if let outputFormat = normalized(outputFormat), outputFormat != "Not reported" {
-            details.append("Output: \(outputFormat)")
+            let output = outputFormatLabel(outputFormat)
+            details.append(String(localized: "Output: \(output)", comment: "Playback stats: the audio format sent to the output"))
         }
         return PlaybackStats.MediaStream(
             codec: track.codec,
@@ -274,7 +278,11 @@ enum VividPlaybackStatsProjection {
         secondaryLabel: String?
     ) -> String? {
         guard route != .none else { return nil }
-        guard active else { return secondaryActive ? "Secondary only" : "Off" }
+        guard active else {
+            return secondaryActive
+                ? String(localized: "Secondary only", comment: "Playback stats: only the secondary subtitle is showing")
+                : String(localized: "Off")
+        }
 
         var primaryParts: [String] = []
         if let track {
@@ -285,15 +293,17 @@ enum VividPlaybackStatsProjection {
             }
             if !track.codec.isEmpty { primaryParts.append(track.codec.uppercased()) }
             if track.isForced, !containsToken("forced", in: primaryParts) {
-                primaryParts.append("Forced")
+                primaryParts.append(String(localized: "Forced", comment: "Track attribute pill: forced subtitles"))
             }
             if track.isHearingImpaired, !containsToken("sdh", in: primaryParts) {
                 primaryParts.append("SDH")
             }
         }
-        var label = primaryParts.isEmpty ? "On" : primaryParts.joined(separator: " · ")
+        let label = primaryParts.isEmpty ? String(localized: "On") : primaryParts.joined(separator: " · ")
         if secondaryActive {
-            label += " + \(normalized(secondaryLabel) ?? "secondary")"
+            let secondary = normalized(secondaryLabel)
+                ?? String(localized: "secondary", comment: "Playback stats: an unnamed secondary subtitle")
+            return String(localized: "\(label) + \(secondary)", comment: "Playback stats: primary and secondary subtitles")
         }
         return label
     }
@@ -305,7 +315,7 @@ enum VividPlaybackStatsProjection {
               pixelAspectRatio > 0,
               abs(pixelAspectRatio - 1) > 0.001 else { return coded }
         let displayWidth = Int((Double(width) * pixelAspectRatio).rounded())
-        return "\(coded) (\(displayWidth)×\(height) display)"
+        return String(localized: "\(coded) (\(displayWidth)×\(Int(height)) display)", comment: "Playback stats: coded size and the anamorphic display size")
     }
 
     private static func dynamicRangeLabel(
@@ -324,7 +334,7 @@ enum VividPlaybackStatsProjection {
         case .hdr10: return "HDR10"
         case .hdr10Plus: return "HDR10+"
         case .dolbyVision:
-            return dvProfile.map { "Dolby Vision Profile \($0)" } ?? "Dolby Vision"
+            return dvProfile.map { String(localized: "Dolby Vision Profile \($0)") } ?? "Dolby Vision"
         case .hlg: return "HLG"
         }
     }
@@ -332,35 +342,49 @@ enum VividPlaybackStatsProjection {
     private static func routeLabel(_ route: VideoRoute) -> String? {
         switch route {
         case .none: return nil
-        case .remoteBypass: return "\(VividPlaybackEngineIdentity.name) remote HLS"
-        case .loopback: return "\(VividPlaybackEngineIdentity.name) loopback HLS"
-        case .sampleBuffer: return "\(VividPlaybackEngineIdentity.name) sample-buffer video"
-        case .audio: return "\(VividPlaybackEngineIdentity.name) audio"
+        case .remoteBypass: return String(localized: "\(VividPlaybackEngineIdentity.name) remote HLS", comment: "Playback stats route; the name is the playback engine")
+        case .loopback: return String(localized: "\(VividPlaybackEngineIdentity.name) loopback HLS", comment: "Playback stats route; the name is the playback engine")
+        case .sampleBuffer: return String(localized: "\(VividPlaybackEngineIdentity.name) sample-buffer video", comment: "Playback stats route; the name is the playback engine")
+        case .audio: return String(localized: "\(VividPlaybackEngineIdentity.name) audio", comment: "Playback stats route; the name is the playback engine")
         }
     }
 
     private static func phaseLabel(_ phase: PlaybackPhase) -> String? {
         switch phase {
         case .idle: return nil
-        case .loading: return "Loading"
-        case .playing: return "Playing"
-        case .paused: return "Paused"
-        case .seeking: return "Seeking"
-        case .rebuffering: return "Rebuffering"
-        case .stalled(let reconnecting): return reconnecting ? "Reconnecting" : "Stalled"
-        case .ended: return "Ended"
-        case .error: return "Error"
+        case .loading: return String(localized: "Loading", comment: "Playback status")
+        case .playing: return String(localized: "Playing", comment: "Playback status")
+        case .paused: return String(localized: "Paused", comment: "Playback status")
+        case .seeking: return String(localized: "Seeking", comment: "Playback status")
+        case .rebuffering: return String(localized: "Rebuffering", comment: "Playback status")
+        case .stalled(let reconnecting):
+            return reconnecting
+                ? String(localized: "Reconnecting", comment: "Playback status")
+                : String(localized: "Stalled", comment: "Playback status")
+        case .ended: return String(localized: "Ended", comment: "Playback status")
+        case .error: return String(localized: "Error", comment: "Playback status")
         }
     }
 
     private static func channelLabel(_ channels: Int) -> String? {
         switch channels {
-        case 1: return "Mono"
-        case 2: return "Stereo"
+        case 1: return String(localized: "Mono", comment: "Audio channel layout")
+        case 2: return String(localized: "Stereo", comment: "Audio channel layout")
         case 6: return "5.1"
         case 8: return "7.1"
-        case let count where count > 0: return "\(count) channels"
+        case let count where count > 0: return String(localized: "\(count) channels", comment: "Audio channel count")
         default: return nil
+        }
+    }
+
+    /// The engine's audio output format, with its two English placeholders
+    /// translated. The engine keeps them English: this projection matches
+    /// "Not reported" to leave it out of the audio detail.
+    private static func outputFormatLabel(_ format: String) -> String {
+        switch format {
+        case "Not reported": return String(localized: "Not reported")
+        case "Compressed audio": return String(localized: "Compressed audio", comment: "Audio output format: a compressed bitstream")
+        default: return format
         }
     }
 

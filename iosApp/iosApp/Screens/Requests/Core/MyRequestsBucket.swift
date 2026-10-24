@@ -11,9 +11,9 @@ enum MyRequestsBucket: CaseIterable {
 
     var title: String {
         switch self {
-        case .inMotion: "In motion"
-        case .landed: "Landed in your library"
-        case .needsAttention: "Needs attention"
+        case .inMotion: String(localized: "In motion")
+        case .landed: String(localized: "Landed in your library")
+        case .needsAttention: String(localized: "Needs attention")
         }
     }
 

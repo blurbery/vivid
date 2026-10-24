@@ -131,7 +131,7 @@ struct SettingsView: View {
         if let username = viewModel.userInfo?.username, !username.isEmpty {
             return username
         }
-        return "Switch Profile"
+        return String(localized: "Switch Profile")
     }
 
     private var subtitleLine: String {
@@ -145,7 +145,7 @@ struct SettingsView: View {
         case let (user?, _) where !user.isEmpty && user != displayName:
             return user
         default:
-            return "Tap to switch profile"
+            return String(localized: "Tap to switch profile")
         }
     }
 
@@ -178,7 +178,7 @@ struct SettingsView: View {
                     title: "Interface",
                     systemImage: "rectangle.3.group.fill",
                     color: .indigo,
-                    value: uiCustomization.cardPresentation.preset?.title ?? "Custom"
+                    value: uiCustomization.cardPresentation.preset?.title ?? String(localized: "Custom")
                 )
             }
 
@@ -219,7 +219,7 @@ struct SettingsView: View {
     }
 
     private func subtitleLanguageName(_ tag: String) -> String {
-        if tag == PlaybackPrefSentinel.none || tag.isEmpty { return "None" }
+        if tag == PlaybackPrefSentinel.none || tag.isEmpty { return String(localized: "None") }
         return PlaybackLanguageOption.label(forCode: tag)
     }
 

@@ -47,8 +47,10 @@ struct OpenSubtitlesSettingsView: View {
         }.settingsListChrome().navigationTitle("").task { store.reload() }
         #endif
     }
-    private var status: String { busy ? "Connecting…" : store.isConnected ? "Connected" : "Not connected" }
-    private var footer: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Downloads use OpenSubtitles’ quota. The subtitle you choose stays on this device for that title (your 40 most recent), so it comes back when you resume, until you choose another, Off or Auto, or disconnect. Apple TV may clear it to free space. Nothing is uploaded to your media server." }
+    private var status: String {
+        busy ? String(localized: "Connecting…") : store.isConnected ? String(localized: "Connected") : String(localized: "Not connected")
+    }
+    private var footer: String { String(localized: "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Downloads use OpenSubtitles’ quota. The subtitle you choose stays on this device for that title (your 40 most recent), so it comes back when you resume, until you choose another, Off or Auto, or disconnect. Apple TV may clear it to free space. Nothing is uploaded to your media server.") }
     private var keyField: some View {
         SecureField("OpenSubtitles API key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(busy)
     }
@@ -112,7 +114,9 @@ struct OpenSubtitlesSearchView: View {
                         Button { download(result) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(result.name).lineLimit(2)
-                                Text(result.language + (result.hearingImpaired ? " · Hearing impaired" : "") + " · Download & use")
+                                Text(result.hearingImpaired
+                                     ? String(localized: "\(result.language) · Hearing impaired · Download & use")
+                                     : String(localized: "\(result.language) · Download & use"))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }.disabled(busy)
@@ -151,7 +155,7 @@ struct OpenSubtitlesSearchView: View {
                 guard current == currentContext() else { throw OpenSubtitlesError.context }
                 results = found; context = current; connectionRevision = OpenSubtitlesStore.shared.revision
                 successfulParameters = parameters
-                if found.isEmpty { message = "No subtitles found. Try another title or language." }
+                if found.isEmpty { message = String(localized: "No subtitles found. Try another title or language.") }
             } catch is CancellationError { }
             catch { message = error.localizedDescription }
         }
@@ -277,7 +281,7 @@ private struct LucidDetailSubtitleMenu: View {
         }
         .task(id: "\(context?.contentID ?? ""):\(context?.fileID ?? -1):\(retry)") {
             loading = true; message = nil; tracks = []
-            guard let context else { loading = false; message = "Select an episode and file first."; return }
+            guard let context else { loading = false; message = String(localized: "Select an episode and file first."); return }
             do {
                 tracks = try await LucidSubtitleInventory.shared.read(context: context)
                 if let choice = LucidSubtitleInventory.shared.choice(context: context) {
@@ -291,7 +295,7 @@ private struct LucidDetailSubtitleMenu: View {
                 }
             } catch is CancellationError { return }
             catch {
-                message = "Unable to read this file’s embedded subtitles. Try again."
+                message = String(localized: "Unable to read this file’s embedded subtitles. Try again.")
                 if let choice = LucidSubtitleInventory.shared.choice(context: context) {
                     selectedID = choice.trackID
                     selectionIsAutomatic = false
@@ -304,7 +308,7 @@ private struct LucidDetailSubtitleMenu: View {
         #endif
     }
     @ViewBuilder private var automaticAndOffRows: some View {
-        TrackSelectionRow(name: "Auto", detail: automaticSubtitle, attributes: nil,
+        TrackSelectionRow(name: String(localized: "Auto"), detail: automaticSubtitle, attributes: nil,
                           isSelected: selectionIsAutomatic && !hasStagedSelection) {
             guard let context else { return }
             LucidSubtitleInventory.shared.clearChoice(context: context)
@@ -312,7 +316,7 @@ private struct LucidDetailSubtitleMenu: View {
             selectionIsAutomatic = true
             dismiss()
         }
-        TrackSelectionRow(name: "Off", attributes: nil,
+        TrackSelectionRow(name: String(localized: "Off"), attributes: nil,
                           isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
         // The OpenSubtitles file playback will use, downloaded here or
         // remembered from an earlier viewing. Choosing it keeps it.
@@ -394,7 +398,8 @@ struct OpenSubtitlesMenu: View {
             } else {
                 // The language list is long, so it gets its own submenu and
                 // the results sit straight under it.
-                Menu("Language · " + (languageOptions.first { $0.code == language }?.label ?? language)) {
+                let languageName = languageOptions.first { $0.code == language }?.label ?? language
+                Menu(String(localized: "Language · \(languageName)")) {
                     Picker("Language", selection: $language) {
                         ForEach(languageOptions) { option in
                             Text(option.label).tag(option.code)
@@ -409,7 +414,7 @@ struct OpenSubtitlesMenu: View {
                     Button {
                         download(result)
                     } label: {
-                        Text(result.name + (result.hearingImpaired ? " · SDH" : ""))
+                        Text(result.hearingImpaired ? String(localized: "\(result.name) · SDH", comment: "SDH: subtitles for the deaf and hard of hearing") : result.name)
                     }
                     .disabled(busy || loadedKey != searchKey)
                 }
@@ -435,7 +440,7 @@ struct OpenSubtitlesMenu: View {
                 guard currentContext() == context, key == searchKey, generation == token else { return }
                 results = found; loadedKey = key
             } catch is CancellationError { }
-            catch { if generation == token { message = "Search unavailable. Try again." } }
+            catch { if generation == token { message = String(localized: "Search unavailable. Try again.") } }
         }
         .sheet(isPresented: $showConnection) { NavigationStack { OpenSubtitlesSettingsView() } }
         .onDisappear { downloadTask?.cancel() }
@@ -454,7 +459,7 @@ struct OpenSubtitlesMenu: View {
                 try Task.checkCancellation()
                 guard context == currentContext(), key == searchKey, generation == token else { return }
                 try useSubtitle(result, data, context)
-                message = "Subtitle selected"
+                message = String(localized: "Subtitle selected")
             } catch is CancellationError { }
             catch { if generation == token { message = error.localizedDescription } }
         }

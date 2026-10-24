@@ -186,8 +186,8 @@ struct TVCircleActionButton: View {
     let icon: String
     let iconActive: String?
     let isActive: Bool
-    let title: String
-    let accessibilityLabel: String
+    private let title: Text
+    private let accessibilityLabel: Text
     let stabilizesFocusMotion: Bool
     let action: () -> Void
 
@@ -198,16 +198,16 @@ struct TVCircleActionButton: View {
         icon: String,
         iconActive: String? = nil,
         isActive: Bool = false,
-        title: String,
-        accessibilityLabel: String,
+        title: LocalizedStringKey,
+        accessibilityLabel: LocalizedStringKey,
         stabilizesFocusMotion: Bool = false,
         action: @escaping () -> Void
     ) {
         self.icon = icon
         self.iconActive = iconActive
         self.isActive = isActive
-        self.title = title
-        self.accessibilityLabel = accessibilityLabel
+        self.title = Text(title)
+        self.accessibilityLabel = Text(accessibilityLabel)
         self.stabilizesFocusMotion = stabilizesFocusMotion
         self.action = action
     }
@@ -220,7 +220,7 @@ struct TVCircleActionButton: View {
     var body: some View {
         TVCirclePillSurface(
             icon: resolvedIcon,
-            title: title.isEmpty ? nil : Text(title),
+            title: title,
             isFocused: isFocused,
             isPressed: isPressed,
             stabilizesFocusMotion: stabilizesFocusMotion
@@ -406,7 +406,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                 actionSlot {
                     TVPrimaryPillButton(
                         icon: "play.fill",
-                        title: playTitle ?? "Play",
+                        title: playTitle ?? String(localized: "Play"),
                         subtitle: playSubtitle,
                         resumeProgress: resumeProgress,
                         stabilizesFocusMotion: stabilizesFocusMotion,

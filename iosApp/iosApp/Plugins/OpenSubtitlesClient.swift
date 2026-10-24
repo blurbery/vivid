@@ -29,18 +29,18 @@ enum OpenSubtitlesError: LocalizedError {
     case network(URLError.Code)
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "Connect OpenSubtitles in Settings → Plugins before searching for subtitles."
-        case .httpStatus(let status): return "OpenSubtitles rejected the request (HTTP \(status)). Please try again."
+        case .notConfigured: return String(localized: "Connect OpenSubtitles in Settings → Plugins before searching for subtitles.")
+        case .httpStatus(let status): return String(localized: "OpenSubtitles rejected the request (HTTP \(status)). Please try again.")
         case .network(let code):
-            if code == .notConnectedToInternet { return "No internet connection. Reconnect and try searching again." }
-            if code == .timedOut { return "OpenSubtitles took too long to respond. Please try again." }
-            return "Could not connect to OpenSubtitles. Please try again."
-        case .credentials: return "Check your OpenSubtitles API key. An account may be required by OpenSubtitles for this download."
-        case .quota: return "OpenSubtitles’ download or request limit has been reached. Try again after your quota resets."
-        case .response: return "OpenSubtitles returned an unreadable response."
-        case .unavailable: return "OpenSubtitles is unavailable. Please try again later."
-        case .file: return "This subtitle file could not be loaded. Choose another result."
-        case .context: return "The connection or playing item changed. Please search again."
+            if code == .notConnectedToInternet { return String(localized: "No internet connection. Reconnect and try searching again.") }
+            if code == .timedOut { return String(localized: "OpenSubtitles took too long to respond. Please try again.") }
+            return String(localized: "Could not connect to OpenSubtitles. Please try again.")
+        case .credentials: return String(localized: "Check your OpenSubtitles API key. An account may be required by OpenSubtitles for this download.")
+        case .quota: return String(localized: "OpenSubtitles’ download or request limit has been reached. Try again after your quota resets.")
+        case .response: return String(localized: "OpenSubtitles returned an unreadable response.")
+        case .unavailable: return String(localized: "OpenSubtitles is unavailable. Please try again later.")
+        case .file: return String(localized: "This subtitle file could not be loaded. Choose another result.")
+        case .context: return String(localized: "The connection or playing item changed. Please search again.")
         }
     }
 }
@@ -92,7 +92,8 @@ final class OpenSubtitlesClient: @unchecked Sendable {
             return files.compactMap { file in
                 guard let id = file["file_id"] as? Int, id > 0, seen.insert(id).inserted else { return nil }
                 return OpenSubtitleResult(id: id,
-                    name: (file["file_name"] as? String) ?? (attributes["release"] as? String) ?? "Subtitle",
+                    name: (file["file_name"] as? String) ?? (attributes["release"] as? String)
+                        ?? String(localized: "Subtitle", comment: "Name for an OpenSubtitles file that has no file or release name"),
                     language: language, hearingImpaired: attributes["hearing_impaired"] as? Bool ?? false)
             }
         }

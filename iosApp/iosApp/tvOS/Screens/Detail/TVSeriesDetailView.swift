@@ -131,7 +131,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             allowsSynopsisFocus: didEstablishPlayFocus,
             qualityVersion: effectiveNextUpVersion,
             qualitySummary: selectedNextUpFileId == nil ? (matchingPlaybackDetail?.overlaySummary ?? detail.overlaySummary) : nil,
-            metadataHeading: ["Series"] + factsLine.compactMap { token in
+            metadataHeading: [String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")] + factsLine.compactMap { token in
                 guard case .text(let value) = token, value != detail.year.map(String.init) else { return nil }
                 return value
             },
@@ -182,9 +182,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             ?? (selectedSeason?.seasonNumber == seasonNumber && !isLoadingEpisodes ? episodes : nil)
         if let loaded {
             let count = TVHeroMetadata.releasedEpisodeCount(loaded)
-            facts.append(.text("\(count) Episode\(count == 1 ? "" : "s")"))
+            facts.append(.text(String(localized: "\(count) Episodes")))
         } else {
-            facts.append(.text("Episodes"))
+            facts.append(.text(String(localized: "Episodes")))
         }
         return facts
     }
@@ -193,7 +193,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         TVDetailActionRow(
             playTitle: playbackEpisode.map(showPlayTitle(for:)),
             playSubtitle: nil,
-            resumeProgress: ResumePresentation(position: playbackEpisode?.userData?.positionSeconds, duration: playbackEpisode?.userData?.durationSeconds, episodeLabel: playbackEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" }),
+            resumeProgress: ResumePresentation(position: playbackEpisode?.userData?.positionSeconds, duration: playbackEpisode?.userData?.durationSeconds, episodeLabel: playbackEpisode.map(Self.episodeCode)),
             onPlay: {
                 guard let episode = playbackEpisode else { return }
                 onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
@@ -233,8 +233,15 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private func showPlayTitle(for episode: EpisodeListItem) -> String {
-        let verb = episode.userData?.isInProgress == true ? "Resume" : "Play"
-        return "\(verb) S\(episode.seasonNumber):E\(episode.episodeNumber)"
+        episode.userData?.isInProgress == true
+            ? String(localized: "Resume S\(episode.seasonNumber):E\(episode.episodeNumber)")
+            : String(localized: "Play S\(episode.seasonNumber):E\(episode.episodeNumber)")
+    }
+
+    /// "S1 E2", built like the episode cards' code.
+    private static func episodeCode(_ episode: EpisodeListItem) -> String {
+        String(localized: "S\(episode.seasonNumber)", comment: "Season number in an episode code, e.g. S1") + " "
+            + String(localized: "E\(episode.episodeNumber)", comment: "Episode number in an episode code, e.g. E2")
     }
 
     private static func subtitleContext(for item: ItemDetail) -> OpenSubtitlePlaybackContext {

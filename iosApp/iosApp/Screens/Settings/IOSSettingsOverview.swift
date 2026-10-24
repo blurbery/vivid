@@ -86,7 +86,7 @@ struct IOSSettingsOverview: View {
             .ignoresSafeArea()
     }
 
-    private var diagnosticsSubtitle: String {
+    private var diagnosticsSubtitle: LocalizedStringKey {
         unsentDiagnostics == 0 ? "Crash and hang reports" : "\(unsentDiagnostics) new"
     }
 
@@ -96,7 +96,7 @@ struct IOSSettingsOverview: View {
         }.value
     }
 
-    private func destination<Content: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
+    private func destination<Content: View>(_ title: LocalizedStringKey, _ subtitle: LocalizedStringKey, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
         NavigationLink(destination: content()) {
             HStack(spacing: 14) {
                 Group {
@@ -190,7 +190,7 @@ struct PhoneServerSettingsView: View {
 
     private func rename(to name: String?) {
         guard let account = store.activeAccount, store.renameServer(for: account.id, to: name) else {
-            renameError = "Couldn’t rename the server. Try again."
+            renameError = String(localized: "Couldn’t rename the server. Try again.")
             return
         }
     }
@@ -396,7 +396,7 @@ struct PhoneSavedAccountCards: View {
                         if store.unlock(account.id, pin: pin) {
                             selectedForPIN = nil; pin = ""
                             Task { await store.select(account, router: router) }
-                        } else { pinError = store.error ?? "Incorrect PIN"; pin = "" }
+                        } else { pinError = store.error ?? String(localized: "Incorrect PIN"); pin = "" }
                     }
                 }
                 .vividScrollContentBackgroundHidden()
@@ -424,7 +424,7 @@ struct PhoneSavedAccountCards: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isCurrentAccount(account) ? "\(account.displayName), current account" : account.displayName)
+                .accessibilityLabel(isCurrentAccount(account) ? String(localized: "\(account.displayName), current account") : account.displayName)
             }
             if store.canAddAccount {
                 Button { editorRoute = .add } label: {
@@ -601,7 +601,7 @@ struct PhoneSavedAccountCards: View {
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
-                .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : account.displayName)
+                .accessibilityLabel(isSettings && isCurrentAccount(account) ? String(localized: "Current account") : account.displayName)
             VStack(spacing: 4) {
                 Text(account.displayName).font(.subheadline.weight(.medium)).lineLimit(1)
                 Text(serverLabel(for: account))
@@ -652,13 +652,13 @@ struct PhoneSavedAccountEditor: View {
     private var active: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
     var body: some View {
         List {
-            SettingsPageHeader(title: Text(account?.displayName ?? "Add Profile"), subtitle: Text("Account details and access on this device."), systemImage: "person.crop.circle").settingsPageHeaderRow()
+            SettingsPageHeader(title: Text(account?.displayName ?? String(localized: "Add Profile")), subtitle: Text("Account details and access on this device."), systemImage: "person.crop.circle").settingsPageHeaderRow()
             if account == nil {
                 Section {
                     Picker("Server Provider", selection: $provider) {
-                        Text("Silo").tag("Silo")
-                        Text("Emby").tag("Emby")
-                        Text("Jellyfin").tag("Jellyfin")
+                        Text(verbatim: "Silo").tag("Silo")
+                        Text(verbatim: "Emby").tag("Emby")
+                        Text(verbatim: "Jellyfin").tag("Jellyfin")
                     }
                     // Only servers of the chosen type, as on Apple TV.
                     let saved = registry.sortedEntries.filter { MediaServerProvider.forServerID($0.id) == selectedProvider }
@@ -707,12 +707,12 @@ struct PhoneSavedAccountEditor: View {
                     SecureField("New PIN", text: $pin).keyboardType(.numberPad)
                     SecureField("Confirm PIN", text: $confirmPIN).keyboardType(.numberPad)
                     Button(store.hasPIN(accountID) ? "Change PIN" : "Set PIN") {
-                        guard pin == confirmPIN else { message = "The PINs don’t match."; return }
-                        if store.setPIN(pin, accountID: accountID) { message = "PIN saved"; pin = ""; confirmPIN = "" }
+                        guard pin == confirmPIN else { message = String(localized: "The PINs don’t match."); return }
+                        if store.setPIN(pin, accountID: accountID) { message = String(localized: "PIN saved"); pin = ""; confirmPIN = "" }
                         else { message = store.error }
                     }.disabled(store.busy)
                     if store.hasPIN(accountID) {
-                        Button("Remove PIN") { message = store.removePIN(accountID) ? "PIN removed" : "Couldn’t remove the PIN." }
+                        Button("Remove PIN") { message = store.removePIN(accountID) ? String(localized: "PIN removed") : String(localized: "Couldn’t remove the PIN.") }
                     }
                 } header: { PhoneSettingsSectionHeader("PIN Protection") }
             }
@@ -819,7 +819,7 @@ struct PhoneSavedAccountEditor: View {
         message = nil
         let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
         let accountID = accountID
-        let fallback = "Couldn’t finish signing in with \(service.title). Please try again."
+        let fallback = String(localized: "Couldn’t finish signing in with \(service.title). Please try again.")
         switch service {
         case .jellyfinQuickConnect:
             codeSignIn.startQuickConnect(serverURL: address) { login in

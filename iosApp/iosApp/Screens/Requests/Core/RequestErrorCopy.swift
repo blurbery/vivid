@@ -9,14 +9,14 @@ enum RequestErrorCopy {
     static func message(forToken token: String?) -> String? {
         guard let token, !token.isEmpty else { return nil }
         switch token {
-        case "already_requested": return "Already requested"
-        case "already_available": return "Already in your library"
-        case "quota_exceeded", "limit_reached": return "Request limit reached"
-        case "requests_disabled": return "Requests are turned off"
-        case "requesting_blocked", "blocked": return "You can't request media right now"
-        case "validation_failed": return "That request couldn't be submitted"
-        case "invalid_state": return "This request can no longer be changed"
-        case "not_found": return "This title is no longer available"
+        case "already_requested": return String(localized: "Already requested")
+        case "already_available": return String(localized: "Already in your library")
+        case "quota_exceeded", "limit_reached": return String(localized: "Request limit reached")
+        case "requests_disabled": return String(localized: "Requests are turned off")
+        case "requesting_blocked", "blocked": return String(localized: "You can't request media right now")
+        case "validation_failed": return String(localized: "That request couldn't be submitted")
+        case "invalid_state": return String(localized: "This request can no longer be changed")
+        case "not_found": return String(localized: "This title is no longer available")
         default: return humanize(token)
         }
     }

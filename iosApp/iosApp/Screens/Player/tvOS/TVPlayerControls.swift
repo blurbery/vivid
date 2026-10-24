@@ -385,7 +385,7 @@ struct TVPlayerControls: View {
     }
 
     private var creditsSkipLayer: some View {
-        TVSkipButton(accessibilityTitle: "Skip Credits") {
+        TVSkipButton(accessibilityTitle: String(localized: "Skip Credits")) {
             viewModel.skipCredits()
         } label: {
             Label("Skip Credits", systemImage: "forward.end.fill")
@@ -412,7 +412,7 @@ struct TVPlayerControls: View {
 
             HStack(spacing: 18) {
                 if viewModel.introAutoSkipCountdownSeconds != nil {
-                    TVSkipButton(accessibilityTitle: "Cancel " + viewModel.introSkipLabel) {
+                    TVSkipButton(accessibilityTitle: viewModel.introSkipCancelLabel) {
                         viewModel.cancelIntroAutoSkip()
                     } label: {
                         Label("Cancel", systemImage: "xmark")
@@ -422,7 +422,7 @@ struct TVPlayerControls: View {
                             .frame(width: 136)
                     }
                     .focused($focusedIntroAction, equals: .cancel)
-                    .accessibilityLabel("Cancel " + viewModel.introSkipLabel)
+                    .accessibilityLabel(viewModel.introSkipCancelLabel)
                 }
 
                 skipIntroNowButton
@@ -435,7 +435,7 @@ struct TVPlayerControls: View {
             viewModel.skipIntro()
         } label: {
             Label(
-                viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : "Skip Now",
+                viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : String(localized: "Skip Now"),
                 systemImage: "forward.end.fill"
             )
                 .font(.system(size: 26, weight: .semibold))
@@ -445,7 +445,7 @@ struct TVPlayerControls: View {
         }
         .focused($focusedIntroAction, equals: .skip)
         .accessibilityLabel(
-            viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
+            viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipNowLabel
         )
     }
 
@@ -593,7 +593,9 @@ struct TVPlayerControls: View {
                     clockText(formatClockTime(context.date))
                     Spacer()
                     if viewModel.duration > 0 {
-                        clockText("\(formatClockTime(estimatedFinishDate(from: context.date))) · \(formatTime(remainingTime)) left")
+                        let finish = formatClockTime(estimatedFinishDate(from: context.date))
+                        let remaining = formatTime(remainingTime)
+                        clockText(String(localized: "\(finish) · \(remaining) left", comment: "Finish time and time remaining, for example 9:41 PM · 1:02:03 left"))
                     }
                 }
             }
@@ -603,7 +605,8 @@ struct TVPlayerControls: View {
                 clockText(formatTime(scrubberDisplayTime))
                 Spacer()
                 if viewModel.duration > 0 {
-                    clockText("\(formatTime(remainingTime)) left")
+                    let remaining = formatTime(remainingTime)
+                    clockText(String(localized: "\(remaining) left", comment: "Time remaining in the title, for example 1:02:03 left"))
                 }
             }
         }

@@ -6,7 +6,7 @@ import Foundation
 /// from drifting as metadata rules evolve.
 enum PhoneEpisodeFormatting {
     static func title(for episode: EpisodeListItem) -> String {
-        episode.title ?? "Episode \(episode.episodeNumber)"
+        episode.title ?? String(localized: "Episode \(episode.episodeNumber)")
     }
 
     static func metadataLine(for episode: EpisodeListItem) -> String? {
@@ -47,9 +47,9 @@ enum PhoneEpisodeFormatting {
 
     private static func formatRuntime(_ minutes: Int) -> String {
         if minutes >= 60 {
-            return "\(minutes / 60)h \(minutes % 60)m"
+            return String(localized: "\(minutes / 60)h \(minutes % 60)m")
         }
-        return "\(minutes)m"
+        return String(localized: "\(minutes)m")
     }
 }
 #endif

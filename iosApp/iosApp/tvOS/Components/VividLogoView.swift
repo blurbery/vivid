@@ -15,7 +15,7 @@ struct VividLogoView: View {
 
 struct VividCopyrightFooter: View {
     var body: some View {
-        Text("© 2026 Vivid™")
+        Text(verbatim: "© 2026 Vivid™")
             .font(.system(size: 20, weight: .regular))
             .foregroundStyle(Color(red: 0.47, green: 0.47, blue: 0.49))
     }

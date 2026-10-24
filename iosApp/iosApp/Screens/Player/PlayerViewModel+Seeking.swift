@@ -267,8 +267,8 @@ extension PlayerViewModel {
                     ) else {
                         self.isLoading = false
                         self.showNotice(
-                            title: "Couldn't seek",
-                            message: "Playback couldn't move to that position. Try again.",
+                            title: String(localized: "Couldn't seek"),
+                            message: String(localized: "Playback couldn't move to that position. Try again."),
                             tone: .warning,
                             duration: 5
                         )

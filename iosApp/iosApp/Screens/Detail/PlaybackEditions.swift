@@ -22,14 +22,14 @@ enum PlaybackEditions {
             if groups[key] == nil {
                 order.append(key)
                 groups[key] = []
-                labels[key] = version.editionDisplayLabel
+                labels[key] = displayLabel(for: version)
             }
             groups[key]?.append(version)
         }
         return order.map { key in
             Edition(
                 id: key,
-                label: labels[key] ?? "Standard",
+                label: labels[key] ?? String(localized: "Standard"),
                 versions: groups[key] ?? []
             )
         }
@@ -41,6 +41,16 @@ enum PlaybackEditions {
         return editions(from: versions).first { edition in
             edition.versions.contains { $0.fileId == fileId }
         }
+    }
+
+    /// The server's edition label, or "Standard" in the app's language when
+    /// the version has none. `editionDisplayLabel` keeps the English
+    /// "Standard" for the grouping key.
+    static func displayLabel(for version: FileVersion) -> String {
+        [version.editionRaw, version.edition]
+            .lazy
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? String(localized: "Standard")
     }
 
     private static func normalizedKey(for version: FileVersion) -> String {

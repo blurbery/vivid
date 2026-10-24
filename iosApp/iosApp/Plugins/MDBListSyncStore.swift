@@ -10,7 +10,7 @@ final class MDBListSyncStore {
     private(set) var isSyncing = false
     private(set) var syncProgress: MDBListSyncProgress?
     private var pendingWatchlistWork = false
-    private(set) var status = "Not connected"
+    private(set) var status = String(localized: "Not connected")
     private let keychain = SharedKeychain(audience: .currentUser)
     private let client = MDBListClient()
     private var loadedScope: String?
@@ -63,7 +63,7 @@ final class MDBListSyncStore {
         watchlistEntries = current.flatMap { UserDefaults.standard.data(forKey: "vivid.mdblist.watchlist.v1." + $0) }
             .flatMap { try? JSONDecoder().decode([String: WatchlistEntry].self, from: $0) } ?? [:]
         isConnected = !credential.isEmpty
-        status = isConnected ? "Connected" : "Not connected"
+        status = isConnected ? String(localized: "Connected") : String(localized: "Not connected")
         nextSync = .distantPast
         quotaRetryAfter = state.quotaRetryAfter ?? .distantPast
     }
@@ -89,7 +89,7 @@ final class MDBListSyncStore {
         credential = key
         revision = UUID()
         isConnected = true
-        status = "Connected"
+        status = String(localized: "Connected")
         nextSync = .distantPast
         try save()
         VividCloudPreferences.shared.schedule()
@@ -102,7 +102,7 @@ final class MDBListSyncStore {
         credential = ""
         revision = UUID()
         isConnected = false
-        status = "Not connected"
+        status = String(localized: "Not connected")
         syncProgress = nil
         VividCloudPreferences.shared.schedule()
     }
@@ -122,7 +122,7 @@ final class MDBListSyncStore {
             state.pendingCompletions?[contentID] = ISO8601DateFormatter().string(from: Date())
         }
         do { try save(); nextSync = .distantPast }
-        catch { status = "Your server progress is saved. MDBList will try again later." }
+        catch { status = String(localized: "Your server progress is saved. MDBList will try again later.") }
     }
 
     func run() async {
@@ -147,9 +147,9 @@ final class MDBListSyncStore {
         let identity = HTTPRequestIdentity(serverId: auth.account.serverId, serverURL: auth.account.serverURL,
                                            profileId: profile, clientFamily: "apple",
                                            credentialGenerationID: auth.account.credentialGenerationID)
-        status = "Syncing…"
+        status = String(localized: "Syncing…")
         pendingWatchlistWork = false
-        syncProgress = MDBListSyncProgress(step: 1, label: "Sending completed watches")
+        syncProgress = MDBListSyncProgress(step: 1, label: String(localized: "Sending completed watches"))
         // Ten-minute checks bound routine usage; failures back off as well.
         nextSync = Date().addingTimeInterval(600)
         do {
@@ -166,7 +166,7 @@ final class MDBListSyncStore {
             let pending = (state.pendingCompletions ?? [:]).sorted { $0.value < $1.value }
             for (contentID, watchedAt) in pending {
                 try await validate(scope: scope, revision: generation, auth: auth)
-                syncProgress = MDBListSyncProgress(step: 1, label: "Sending completed watches")
+                syncProgress = MDBListSyncProgress(step: 1, label: String(localized: "Sending completed watches"))
                 let detail: ItemDetail
                 do {
                     let raw = try await HTTPClient.shared.requestData(method: "GET",
@@ -211,15 +211,15 @@ final class MDBListSyncStore {
             state.lastSync = Date()
             try save()
             if unresolvedExports > 0 {
-                status = "Sync finished. \(unresolvedExports) watched items could not be matched or confirmed and will be retried."
+                status = String(localized: "Sync finished. \(unresolvedExports) watched items could not be matched or confirmed and will be retried.")
             } else {
-                status = pendingWatchlistWork ? "This batch is synced. More watchlist changes remain for the next check." : "Watched history and watchlists are synced."
+                status = pendingWatchlistWork ? String(localized: "This batch is synced. More watchlist changes remain for the next check.") : String(localized: "Watched history and watchlists are synced.")
             }
         } catch is CancellationError {
-            if revision == generation { try? save(); status = "Connected. Sync paused." }
+            if revision == generation { try? save(); status = String(localized: "Connected. Sync paused.") }
         } catch {
             if revision == generation { try? save() }
-            if revision == generation { status = (error as? MDBListFailure)?.localizedDescription ?? "Sync interrupted. It will try again later." }
+            if revision == generation { status = (error as? MDBListFailure)?.localizedDescription ?? String(localized: "Sync interrupted. It will try again later.") }
             if revision == generation, case MDBListFailure.quota = error {
                 quotaRetryAfter = Date().addingTimeInterval(3600)
                 state.quotaRetryAfter = quotaRetryAfter
@@ -283,7 +283,7 @@ final class MDBListSyncStore {
                 return resolved
             } catch HTTPError.http(statusCode: 404, body: _) { missingDetails.insert(contentID); return nil }
         }
-        syncProgress = MDBListSyncProgress(step: 2, label: "Reading watchlists")
+        syncProgress = MDBListSyncProgress(step: 2, label: String(localized: "Reading watchlists"))
         let remote = try await client.watchlist(key: key)
         try await validateContext()
         let local = try await catalog(path: "/api/v1/watchlist")
@@ -297,14 +297,14 @@ final class MDBListSyncStore {
         let lookupIDs = localIDs.union(activeMappings.keys).sorted()
         let lookupCount = lookupIDs.count + remote.count
         for (index, id) in lookupIDs.enumerated() {
-            syncProgress = MDBListSyncProgress(step: 2, label: "Checking watchlist matches", completed: index, total: lookupCount)
+            syncProgress = MDBListSyncProgress(step: 2, label: String(localized: "Checking watchlist matches"), completed: index, total: lookupCount)
             if let item = try await detail(id) {
                 if let old = watchlistEntries[id], !old.item.matches(item) { continue }
                 resolved[id] = item
             }
         }
         for (index, item) in remote.enumerated() {
-            syncProgress = MDBListSyncProgress(step: 2, label: "Checking watchlist matches", completed: lookupIDs.count + index, total: lookupCount)
+            syncProgress = MDBListSyncProgress(step: 2, label: String(localized: "Checking watchlist matches"), completed: lookupIDs.count + index, total: lookupCount)
             guard !resolved.values.contains(where: { $0.matches(item) }) else { continue }
             guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
             let candidates = try await catalog(path: "/api/v1/catalog",
@@ -313,7 +313,7 @@ final class MDBListSyncStore {
             guard candidates.count <= 100 else { continue }
             var matches: [String: MDBListWatchlistItem] = [:]
             for (candidateIndex, candidate) in candidates.enumerated() {
-                syncProgress = MDBListSyncProgress(step: 2, label: "Matching \(item.title)", completed: candidateIndex, total: candidates.count)
+                syncProgress = MDBListSyncProgress(step: 2, label: String(localized: "Matching \(item.title)"), completed: candidateIndex, total: candidates.count)
                 if let found = try await detail(candidate.contentId), found.matches(item) { matches[candidate.contentId] = found }
             }
             if matches.count == 1 { resolved.merge(matches) { current, _ in current } }
@@ -325,7 +325,7 @@ final class MDBListSyncStore {
         var mutations = 0
         for (index, entry) in resolved.sorted(by: { $0.key < $1.key }).enumerated() {
             let (id, item) = entry
-            syncProgress = MDBListSyncProgress(step: 2, label: "Syncing watchlist changes", completed: index, total: resolved.count)
+            syncProgress = MDBListSyncProgress(step: 2, label: String(localized: "Syncing watchlist changes"), completed: index, total: resolved.count)
             // Ambiguous server copies and conflicting remote IDs remain untouched.
             guard resolved.values.filter({ $0.matches(item) }).count == 1 else { continue }
             let overlaps = remote.filter { !$0.keys.isDisjoint(with: item.keys) }
@@ -357,7 +357,7 @@ final class MDBListSyncStore {
         }
         guard !plans.isEmpty else { try save(); return }
         // Read back writes. Failed or partial responses never advance the baseline.
-        syncProgress = MDBListSyncProgress(step: 2, label: "Verifying watchlist changes")
+        syncProgress = MDBListSyncProgress(step: 2, label: String(localized: "Verifying watchlist changes"))
         let confirmedRemote = remoteWrites ? try await client.watchlist(key: key) : remote
         try await validateContext()
         let confirmedLocal = Set(try await catalog(path: "/api/v1/watchlist").map(\.contentId))

@@ -84,7 +84,7 @@ struct TVItemDetailLoadingView: View {
                     TVDetailEditorialLayout {
                         loadingTitle
                     } metadata: {
-                        TVDetailHeading(tokens: [seed?.mediaType.lowercased() == "movie" ? "Movie" : "Series"], genres: [seed?.genre].compactMap { $0 }, rating: seed?.contentRating)
+                        TVDetailHeading(tokens: [seed?.mediaType.lowercased() == "movie" ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")], genres: [seed?.genre].compactMap { $0 }, rating: seed?.contentRating)
                     } synopsis: {
                         loadingSynopsis
                     }
@@ -260,19 +260,19 @@ struct TVItemDetailLoadingView: View {
 
     private var accessibilityLabel: String {
         if let title = nonEmpty(seed?.title) {
-            return "Loading details for \(title)"
+            return String(localized: "Loading details for \(title)")
         }
-        return "Loading details"
+        return String(localized: "Loading details")
     }
 
     private func runtimeLabel(_ minutes: Int) -> String {
         if minutes >= 60 {
             let remainder = minutes % 60
             return remainder == 0
-                ? "\(minutes / 60)h"
-                : "\(minutes / 60)h \(remainder)m"
+                ? String(localized: "\(minutes / 60)h")
+                : String(localized: "\(minutes / 60)h \(remainder)m")
         }
-        return "\(minutes) min"
+        return String(localized: "\(minutes) min")
     }
 
     private func nonEmpty(_ value: String?) -> String? {

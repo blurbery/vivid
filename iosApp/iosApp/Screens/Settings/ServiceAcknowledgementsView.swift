@@ -13,16 +13,18 @@ struct ServiceAcknowledgementsView: View {
 
     private let credits: [Credit] = [
         Credit(name: "TheIntroDB", image: "AcknowledgementTheIntroDB",
-               thanks: "Thank you for community intro, recap and credits timestamps.",
+               thanks: String(localized: "Thank you for community intro, recap and credits timestamps."),
                website: "theintrodb.org"),
         Credit(name: "IntroDB", image: "AcknowledgementIntroDB",
-               thanks: "Thank you for helping more episodes offer skip prompts.",
+               thanks: String(localized: "Thank you for helping more episodes offer skip prompts."),
                website: "introdb.app"),
         Credit(name: "TMDB", image: "TMDbAttributionLogo",
-               thanks: "Thank you for the movie and TV metadata and artwork. This product uses the TMDB API but is not endorsed or certified by TMDB.",
+               // The attribution sentence TMDB requires stays in English.
+               thanks: String(localized: "Thank you for the movie and TV metadata and artwork.")
+                   + " This product uses the TMDB API but is not endorsed or certified by TMDB.",
                website: "themoviedb.org"),
         Credit(name: "TVmaze", image: nil, systemImage: "calendar",
-               thanks: "Thank you for the episode air times in the Calendar, used under CC BY-SA 4.0.",
+               thanks: String(localized: "Thank you for the episode air times in the Calendar, used under CC BY-SA 4.0."),
                website: "tvmaze.com")
     ]
 

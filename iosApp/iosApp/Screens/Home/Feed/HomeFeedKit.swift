@@ -61,14 +61,14 @@ enum HomeFeedMeta {
         guard let minutes, minutes > 0 else { return nil }
         let hours = minutes / 60
         let remainder = minutes % 60
-        if hours > 0, remainder > 0 { return "\(hours)h \(remainder)m" }
-        if hours > 0 { return "\(hours)h" }
-        return "\(remainder)m"
+        if hours > 0, remainder > 0 { return String(localized: "\(hours)h \(remainder)m") }
+        if hours > 0 { return String(localized: "\(hours)h") }
+        return String(localized: "\(remainder)m")
     }
 
     static func remaining(position: Double?, duration: Double?) -> String? {
         guard let progress = ResumePresentation(position: position, duration: duration) else { return nil }
-        return runtime(minutes: progress.minutesRemaining).map { "\($0) left" }
+        return runtime(minutes: progress.minutesRemaining).map { String(localized: "\($0) left") }
     }
 
     static func progress(for item: SectionItem) -> Double? {
@@ -108,7 +108,7 @@ enum HomeFeedMeta {
         if let remainingText = remaining(position: item.positionSeconds, duration: item.durationSeconds) {
             progressText = remainingText
         } else if let fraction = progress(for: item) {
-            progressText = "\(Int((fraction * 100).rounded()))% watched"
+            progressText = String(localized: "\(Int((fraction * 100).rounded()))% watched")
         } else {
             progressText = nil
         }
@@ -437,7 +437,7 @@ struct HomePosterCard: View {
             components.append(String(year))
         }
         if isPlayed {
-            components.append("Watched")
+            components.append(String(localized: "Watched"))
         }
         return components.joined(separator: ", ")
     }
@@ -488,8 +488,8 @@ struct HomeStillCard: View {
             return HomeFeedMeta.cardSecondLine(for: item)
         }
         let code = [
-            item.seasonNumber.map { "S\($0)" },
-            item.episodeNumber.map { "E\($0)" }
+            item.seasonNumber.map { String(localized: "S\($0)", comment: "Season number in an episode code, e.g. S1") },
+            item.episodeNumber.map { String(localized: "E\($0)", comment: "Episode number in an episode code, e.g. E2") }
         ].compactMap { $0 }.joined(separator: " ")
         let parts = [code.isEmpty ? nil : code, EpisodeCardCaption.episodeTitle(for: item)]
             .compactMap { $0 }
@@ -633,7 +633,9 @@ struct HomeStillCard: View {
 
     private var isDirectlyPlayable: Bool { VividMediaType.isDirectlyPlayable(item.type) }
 
-    private var playActionName: String { (item.positionSeconds ?? 0) > 0 ? "Resume" : "Play" }
+    private var playActionName: String {
+        (item.positionSeconds ?? 0) > 0 ? String(localized: "Resume") : String(localized: "Play")
+    }
 
     private func playItem() {
         router.presentPlayer(
@@ -691,11 +693,11 @@ struct HomeStillCard: View {
             components.append(resumeCaption)
         }
         if isPlayed {
-            components.append("Watched")
+            components.append(String(localized: "Watched"))
         }
         if showsEpisodeRuntimeStatus,
            let runtime = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
-            components.append("\(runtime) minute\(runtime == 1 ? "" : "s")")
+            components.append(String(localized: "\(runtime) minutes", comment: "Spoken runtime"))
         }
         return components.joined(separator: ", ")
     }

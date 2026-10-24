@@ -11,17 +11,19 @@ struct TVAlphabetMenu: View {
         Menu {
             ForEach(letters, id: \.self) { letter in
                 Button { onSelect(letter == "All" ? nil : letter) } label: {
+                    // "All" stays the menu's own identity; only its label is translated.
+                    let title = letter == "All" ? String(localized: "All") : letter
                     if (selected ?? "All") == letter {
-                        Label(letter, systemImage: "checkmark")
-                    } else { Text(letter) }
+                        Label(title, systemImage: "checkmark")
+                    } else { Text(title) }
                 }
             }
         } label: {
-            Text(selected.map { "A–Z · \($0)" } ?? "A–Z")
+            selected.map { Text("A–Z · \($0)") } ?? Text("A–Z")
         }
         .menuStyle(.button)
         .buttonStyle(TVBrowseControlPillStyle(active: selected != nil))
-        .accessibilityLabel("Jump to title, \(selected ?? "All")")
+        .accessibilityLabel(selected.map { Text("Jump to title, \($0)") } ?? Text("Jump to title, All"))
     }
 }
 #endif

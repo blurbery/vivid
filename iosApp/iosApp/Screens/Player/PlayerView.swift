@@ -773,7 +773,7 @@ private struct PlaybackFailurePanel: View {
     }
 
     private var message: some View {
-        Text(error)
+        Text(PlaybackFailureText.localized(error))
             .font(.callout)
             .foregroundStyle(.white.opacity(0.68))
             .multilineTextAlignment(.center)
@@ -1194,7 +1194,7 @@ struct PlayerNextUpScreen: View {
         Button {
             viewModel.setNextUpAutoPlayEnabled(!viewModel.settings.autoPlayNextEpisode)
         } label: {
-            Text("Auto-play is \(viewModel.settings.autoPlayNextEpisode ? "On" : "Off")")
+            Text(viewModel.settings.autoPlayNextEpisode ? "Auto-play is On" : "Auto-play is Off")
                 .font(.system(size: captionSize, weight: .semibold))
         }
         .buttonStyle(AutoPlayToggleButtonStyle())
@@ -1212,7 +1212,7 @@ struct PlayerNextUpScreen: View {
 
     private var onDeckSection: some View {
         MediaRow(
-            title: "On Deck",
+            title: String(localized: "On Deck"),
             items: viewModel.nextUpCarouselItems.map(\.sectionItem),
             onItemTap: playOnDeckItem(contentId:),
             showProgress: true,
@@ -1234,34 +1234,38 @@ struct PlayerNextUpScreen: View {
 
     private var statusLabel: String {
         if viewModel.nextUpEpisode == nil && !viewModel.isLoadingNextUpEpisode {
-            return viewModel.nextUpScreenVideoEnded ? "Finished" : "More To Watch"
+            return viewModel.nextUpScreenVideoEnded
+                ? String(localized: "Finished", comment: "Next Up screen eyebrow: the title ended and nothing plays next")
+                : String(localized: "More To Watch", comment: "Next Up screen eyebrow")
         }
-        return viewModel.nextUpScreenVideoEnded ? "Playing Next" : "Up Next"
+        return viewModel.nextUpScreenVideoEnded
+            ? String(localized: "Playing Next", comment: "Next Up screen eyebrow")
+            : String(localized: "Up Next", comment: "Next Up screen eyebrow")
     }
 
     private var finishedMessage: String {
         #if os(iOS) || os(tvOS)
         if viewModel.nextUpStartError != nil {
-            return "Couldn't start the next episode. Try again or go back."
+            return String(localized: "Couldn't start the next episode. Try again or go back.")
         }
         if viewModel.nextUpLookupError != nil {
-            return "Couldn't load the next episode. Go back to choose something else."
+            return String(localized: "Couldn't load the next episode. Go back to choose something else.")
         }
-        return "No next episode is available."
+        return String(localized: "No next episode is available.")
         #else
         if let startError = viewModel.nextUpStartError {
-            let suffix = viewModel.nextUpCarouselItems.isEmpty
-                ? "Try again or go back."
-                : "Try again, pick something from On Deck, or go back."
-            return "Couldn't start the next episode: \(startError) \(suffix)"
+            let reason = PlaybackFailureText.localized(startError)
+            return viewModel.nextUpCarouselItems.isEmpty
+                ? String(localized: "Couldn't start the next episode: \(reason) Try again or go back.")
+                : String(localized: "Couldn't start the next episode: \(reason) Try again, pick something from On Deck, or go back.")
         }
         if viewModel.nextUpLookupError != nil {
-            return "Couldn't load the next episode. Pick something from On Deck, or go back."
+            return String(localized: "Couldn't load the next episode. Pick something from On Deck, or go back.")
         }
         if viewModel.nextUpCarouselItems.isEmpty {
-            return "No next episode is available."
+            return String(localized: "No next episode is available.")
         }
-        return "No next episode is available. Pick something from On Deck instead."
+        return String(localized: "No next episode is available. Pick something from On Deck instead.")
         #endif
     }
 

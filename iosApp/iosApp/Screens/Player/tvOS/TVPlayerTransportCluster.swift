@@ -59,7 +59,7 @@ struct TVPlayerTransportCluster: View {
         .accessibilityLabel("Subtitles")
         .accessibilityValue(viewModel.subtitleTracks.first(where: {
             $0.trackId == viewModel.selectedSubtitleId
-        })?.primaryLabel ?? "Off")
+        })?.primaryLabel ?? String(localized: "Off"))
     }
 
     private var secondaryRow: some View {

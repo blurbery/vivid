@@ -255,7 +255,7 @@ private extension OverlayRegistry {
             defaultEnabled: false,
             iconId: .languages,
             iconCapable: true,
-            getValue: { ($0.multiAudio == true) ? "Multi-Audio" : nil }
+            getValue: { ($0.multiAudio == true) ? String(localized: "Multi-Audio", comment: "Poster badge for a file with audio in more than one language") : nil }
         ),
         OverlayDef(
             id: .multiSub,
@@ -266,7 +266,7 @@ private extension OverlayRegistry {
             defaultEnabled: false,
             iconId: .subtitles,
             iconCapable: true,
-            getValue: { ($0.multiSub == true) ? "CC" : nil }
+            getValue: { ($0.multiSub == true) ? String(localized: "CC", comment: "Poster badge for a file with subtitles") : nil }
         ),
     ]
 }
@@ -278,16 +278,17 @@ private extension OverlayRegistry {
     static func formatRating(_ value: Double?, max: Int, suffix: String? = nil) -> String? {
         guard let value else { return nil }
         if max == 100 {
-            let intValue = Int(value)
-            return suffix.map { "\(intValue)% \($0)" } ?? "\(intValue)%"
+            let percent = (Double(Int(value)) / 100).formatted(.percent.precision(.fractionLength(0)))
+            return suffix.map { "\(percent) \($0)" } ?? percent
         }
-        let formatted = String(format: "%.1f", value)
+        let formatted = value.formatted(.number.precision(.fractionLength(1)))
         return suffix.map { "\(formatted) \($0)" } ?? formatted
     }
 
     static func formatPercent(_ value: Int?, suffix: String? = nil) -> String? {
         guard let value else { return nil }
-        return suffix.map { "\(value)% \($0)" } ?? "\(value)%"
+        let percent = (Double(value) / 100).formatted(.percent.precision(.fractionLength(0)))
+        return suffix.map { "\(percent) \($0)" } ?? percent
     }
 
     static let ratings: [OverlayDef] = [
@@ -361,22 +362,25 @@ private extension OverlayRegistry {
         guard let minutes, minutes > 0 else { return nil }
         let h = minutes / 60
         let m = minutes % 60
-        return h > 0 ? "\(h)h \(m)m" : "\(m)m"
+        return h > 0
+            ? String(localized: "\(h)h \(m)m", comment: "Runtime poster badge, e.g. 1h 30m")
+            : String(localized: "\(m)m", comment: "Runtime poster badge under an hour, e.g. 45m")
     }
 
-    /// English display name for a language tag, matching web's
-    /// `formatLanguage` (English CLDR names, so "en" → "English" not
-    /// "EN"). A tag CLDR can't name falls back to the uppercased code
+    /// Display name for a language tag in Vivid's language ("en" reads "English", not "EN").
+    /// A tag CLDR can't name falls back to the uppercased code
     /// rather than web's "Unknown language (…)" sentence, which doesn't
     /// fit a badge.
     static func formatLanguageName(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let english = Locale(identifier: "en")
-        let name = english.localizedString(forIdentifier: trimmed)
-            ?? english.localizedString(forLanguageCode: trimmed)
-        return name?.capitalized ?? trimmed.uppercased()
+        let locale = Locale.current
+        guard let name = locale.localizedString(forIdentifier: trimmed)
+                ?? locale.localizedString(forLanguageCode: trimmed),
+              let first = name.first else { return trimmed.uppercased() }
+        // Only the first letter: some languages write their names in lower case.
+        return String(first).uppercased(with: locale) + name.dropFirst()
     }
 
     static let metadata: [OverlayDef] = [
@@ -451,13 +455,13 @@ private extension OverlayRegistry {
         guard let value, !value.isEmpty else { return nil }
         switch value.lowercased() {
         case "returning", "returning series", "continuing", "in_production", "in production":
-            return "Returning"
+            return String(localized: "Returning", comment: "Series status poster badge")
         case "ended":
-            return "Ended"
+            return String(localized: "Ended", comment: "Series status poster badge")
         case "cancelled", "canceled":
-            return "Cancelled"
+            return String(localized: "Cancelled", comment: "Series status poster badge")
         case "upcoming", "planned":
-            return "Upcoming"
+            return String(localized: "Upcoming", comment: "Series status poster badge")
         default:
             return value
         }

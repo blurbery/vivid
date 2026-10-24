@@ -12,6 +12,10 @@ struct AppHealthReportGroup: Identifiable, Equatable {
 
     var latest: AppHealthReport { reports[0] }
 
+    /// `summary` in the app language, for display. `summary` stays English
+    /// because it goes into the reports sent to Vivid.
+    var displaySummary: String { latest.displaySummary }
+
     /// Every time the problem happened, counting repeats kept on one report.
     var occurrenceCount: Int { reports.reduce(0) { $0 + $1.occurrenceCount } }
 
@@ -40,39 +44,65 @@ extension AppHealthReport {
     }
 
     /// A plain-English title, such as "Crashed: invalid memory access" or
-    /// "Froze during playback". Contains no personal detail.
-    var groupSummary: String {
+    /// "Froze during playback". Contains no personal detail. Always English:
+    /// it feeds `groupKey`, `issueID` and the reports sent to Vivid, which
+    /// must match on every device whatever its language.
+    var groupSummary: String { summary(localized: false) }
+
+    /// `groupSummary` in the app language, for display only.
+    var displaySummary: String { summary(localized: true) }
+
+    private func summary(localized: Bool) -> String {
         switch kind {
         case .crash:
             let cause: String
             if details["exception_name"] != nil {
-                cause = "unhandled error"
+                cause = localized ? String(localized: "unhandled error", comment: "Crash cause in “Crashed: %@”") : "unhandled error"
             } else if case .int(let signal) = details["signal"] {
-                cause = Self.signalMeaning(signal)
+                cause = Self.signalMeaning(signal, localized: localized)
             } else {
-                cause = "unknown cause"
+                cause = localized ? String(localized: "unknown cause", comment: "Crash cause in “Crashed: %@”") : "unknown cause"
             }
-            return "Crashed" + (crashSituation.map { " \($0)" } ?? "") + ": " + cause
+            let during = crashSituation(localized: localized)
+            guard localized else { return "Crashed" + (during.map { " \($0)" } ?? "") + ": " + cause }
+            if let during { return String(localized: "Crashed \(during): \(cause)", comment: "Diagnostics problem title, e.g. “Crashed during playback: invalid memory access”") }
+            return String(localized: "Crashed: \(cause)", comment: "Diagnostics problem title, e.g. “Crashed: invalid memory access”")
         case .unexpectedExit:
-            let during = situation.map { " \($0)" } ?? ""
-            if details["likely_cause"] == .string("hang") { return "Closed by the system after freezing" + during }
-            if details["likely_cause"] == .string("memory") { return "Closed by the system" + during + ", low on memory" }
-            return "Closed unexpectedly" + during + " (cause unknown)"
+            let place = situation(localized: localized)
+            guard localized else {
+                let during = place.map { " \($0)" } ?? ""
+                if details["likely_cause"] == .string("hang") { return "Closed by the system after freezing" + during }
+                if details["likely_cause"] == .string("memory") { return "Closed by the system" + during + ", low on memory" }
+                return "Closed unexpectedly" + during + " (cause unknown)"
+            }
+            if details["likely_cause"] == .string("hang") {
+                if let place { return String(localized: "Closed by the system after freezing \(place)") }
+                return String(localized: "Closed by the system after freezing")
+            }
+            if details["likely_cause"] == .string("memory") {
+                if let place { return String(localized: "Closed by the system \(place), low on memory") }
+                return String(localized: "Closed by the system, low on memory")
+            }
+            if let place { return String(localized: "Closed unexpectedly \(place) (cause unknown)") }
+            return String(localized: "Closed unexpectedly (cause unknown)")
         case .hang:
-            return "Froze" + (situation.map { " \($0)" } ?? "")
+            let place = situation(localized: localized)
+            guard localized else { return "Froze" + (place.map { " \($0)" } ?? "") }
+            if let place { return String(localized: "Froze \(place)", comment: "Diagnostics problem title, e.g. “Froze during playback”") }
+            return String(localized: "Froze", comment: "Diagnostics problem title")
         case .playbackFailure:
-            if case .string(let reason) = details["reason"] { return Self.playbackMeaning(reason) }
-            return "Playback failed"
+            if case .string(let reason) = details["reason"] { return Self.playbackMeaning(reason, localized: localized) }
+            return localized ? String(localized: "Playback failed") : "Playback failed"
         case .appError:
-            return appErrorMeaning
+            return appErrorMeaning(localized: localized)
         case .downloadFailure:
-            return downloadMeaning
+            return downloadMeaning(localized: localized)
         case .cpuException:
-            return "Used too much processing power"
+            return localized ? String(localized: "Used too much processing power") : "Used too much processing power"
         case .diskWriteException:
-            return "Wrote too much data to storage"
+            return localized ? String(localized: "Wrote too much data to storage") : "Wrote too much data to storage"
         case .slowLaunch:
-            return "Took too long to open"
+            return localized ? String(localized: "Took too long to open") : "Took too long to open"
         }
     }
 
@@ -140,80 +170,107 @@ extension AppHealthReport {
         return path
     }
 
-    private var appErrorMeaning: String {
+    private func appErrorMeaning(localized: Bool) -> String {
         let tag: String? = { if case .string(let tag) = details["tag"] { return tag }; return nil }()
         switch tag {
-        case "Decode": return "Couldn't read a server response"
-        case "Auth": return "Sign-in problem with the server"
+        case "Decode": return localized ? String(localized: "Couldn't read a server response") : "Couldn't read a server response"
+        case "Auth": return localized ? String(localized: "Sign-in problem with the server") : "Sign-in problem with the server"
         case "HTTP":
-            if details["outcome"] == .string(HTTPDiagnosticsOutcome.decodeFailed) { return "Couldn't read a server response" }
-            if case .int(let status) = details["status"], status >= 500 { return "Server error" }
-            if case .int(let status) = details["status"], status == 401 || status == 403 { return "Server refused access" }
+            if details["outcome"] == .string(HTTPDiagnosticsOutcome.decodeFailed) {
+                return localized ? String(localized: "Couldn't read a server response") : "Couldn't read a server response"
+            }
+            if case .int(let status) = details["status"], status >= 500 {
+                return localized ? String(localized: "Server error") : "Server error"
+            }
+            if case .int(let status) = details["status"], status == 401 || status == 403 {
+                return localized ? String(localized: "Server refused access") : "Server refused access"
+            }
             if case .int(let status) = details["status"], (400..<500).contains(status) {
                 if case .string(let path) = details["path"], path.contains("/settings/"),
                    details["method"] != .string("GET") {
-                    return "Server rejected a settings change"
+                    return localized ? String(localized: "Server rejected a settings change") : "Server rejected a settings change"
                 }
-                return "Server rejected a request"
+                return localized ? String(localized: "Server rejected a request") : "Server rejected a request"
             }
-            return "Server request failed"
+            return localized ? String(localized: "Server request failed") : "Server request failed"
         default:
-            if details["category"] == .string("network") { return "Network problem" }
-            return "Something went wrong"
+            if details["category"] == .string("network") {
+                return localized ? String(localized: "Network problem") : "Network problem"
+            }
+            return localized ? String(localized: "Something went wrong") : "Something went wrong"
         }
     }
 
-    private var downloadMeaning: String {
+    private func downloadMeaning(localized: Bool) -> String {
         switch details["stage"] {
-        case .string("registration"): return "Couldn't start a download"
-        case .string("preparing"): return "Couldn't prepare a download"
-        case .string("transfer"): return "Download stopped before it finished"
-        case .string("saving"): return "Couldn't save a finished download"
-        case .string("conversion"): return "Server couldn't prepare a download"
-        default: return "Download failed"
+        case .string("registration"): return localized ? String(localized: "Couldn't start a download") : "Couldn't start a download"
+        case .string("preparing"): return localized ? String(localized: "Couldn't prepare a download") : "Couldn't prepare a download"
+        case .string("transfer"): return localized ? String(localized: "Download stopped before it finished") : "Download stopped before it finished"
+        case .string("saving"): return localized ? String(localized: "Couldn't save a finished download") : "Couldn't save a finished download"
+        case .string("conversion"): return localized ? String(localized: "Server couldn't prepare a download") : "Server couldn't prepare a download"
+        default: return localized ? String(localized: "Download failed") : "Download failed"
         }
     }
 
-    private static func playbackMeaning(_ reason: String) -> String {
+    private static func playbackMeaning(_ reason: String, localized: Bool) -> String {
         switch reason {
-        case "timeout": return "Playback timed out"
-        case "not_found": return "Playback failed: media not found on the server"
-        case "auth": return "Playback failed: server refused access"
-        case "cancelled": return "Playback was cancelled"
-        case "decode": return "Playback failed: couldn't decode the media"
-        case "remux": return "Playback failed: server couldn't prepare the stream"
-        case "network": return "Playback failed: network problem"
-        default: return "Playback failed"
+        case "timeout": return localized ? String(localized: "Playback timed out") : "Playback timed out"
+        case "not_found": return localized ? String(localized: "Playback failed: media not found on the server") : "Playback failed: media not found on the server"
+        case "auth": return localized ? String(localized: "Playback failed: server refused access") : "Playback failed: server refused access"
+        case "cancelled": return localized ? String(localized: "Playback was cancelled") : "Playback was cancelled"
+        case "decode": return localized ? String(localized: "Playback failed: couldn't decode the media") : "Playback failed: couldn't decode the media"
+        case "remux": return localized ? String(localized: "Playback failed: server couldn't prepare the stream") : "Playback failed: server couldn't prepare the stream"
+        case "network": return localized ? String(localized: "Playback failed: network problem") : "Playback failed: network problem"
+        default: return localized ? String(localized: "Playback failed") : "Playback failed"
         }
     }
 
-    private static func signalMeaning(_ signal: Int) -> String {
+    private static func signalMeaning(_ signal: Int, localized: Bool) -> String {
+        guard localized else {
+            switch signal {
+            case 5: return "internal check failed"
+            case 6: return "app stopped itself"
+            case 10, 11: return "invalid memory access"
+            case 4: return "invalid instruction"
+            case 8: return "arithmetic error"
+            default: return "system signal"
+            }
+        }
         switch signal {
-        case 5: return "internal check failed"
-        case 6: return "app stopped itself"
-        case 10, 11: return "invalid memory access"
-        case 4: return "invalid instruction"
-        case 8: return "arithmetic error"
-        default: return "system signal"
+        case 5: return String(localized: "internal check failed", comment: "Crash cause in “Crashed: %@”")
+        case 6: return String(localized: "app stopped itself", comment: "Crash cause in “Crashed: %@”")
+        case 10, 11: return String(localized: "invalid memory access", comment: "Crash cause in “Crashed: %@”")
+        case 4: return String(localized: "invalid instruction", comment: "Crash cause in “Crashed: %@”")
+        case 8: return String(localized: "arithmetic error", comment: "Crash cause in “Crashed: %@”")
+        default: return String(localized: "system signal", comment: "Crash cause in “Crashed: %@”")
         }
     }
 
     /// "during playback", "while opening" or "while browsing".
-    private var situation: String? {
+    private func situation(localized: Bool) -> String? {
         guard let context else { return nil }
-        if context["player_open"] == .bool(true) { return "during playback" }
-        if context["phase"] == .string("launching") { return "while opening" }
-        if context["phase"] == .string("browsing") { return "while browsing" }
+        if context["player_open"] == .bool(true) { return Self.duringPlayback(localized: localized) }
+        if context["phase"] == .string("launching") {
+            return localized ? String(localized: "while opening", comment: "Inserted into a diagnostics problem title, e.g. “Froze while opening”") : "while opening"
+        }
+        if context["phase"] == .string("browsing") {
+            return localized ? String(localized: "while browsing", comment: "Inserted into a diagnostics problem title, e.g. “Froze while browsing”") : "while browsing"
+        }
         return nil
     }
 
     /// Crashes can also happen in the background, where only playback (for
     /// example Picture in Picture) is worth calling out.
-    private var crashSituation: String? {
+    private func crashSituation(localized: Bool) -> String? {
         if details["foreground"] == .bool(false) {
-            return context?["player_open"] == .bool(true) ? "during playback" : "in the background"
+            if context?["player_open"] == .bool(true) { return Self.duringPlayback(localized: localized) }
+            return localized ? String(localized: "in the background", comment: "Inserted into a diagnostics problem title, e.g. “Crashed in the background: invalid memory access”") : "in the background"
         }
-        return situation
+        return situation(localized: localized)
+    }
+
+    private static func duringPlayback(localized: Bool) -> String {
+        localized ? String(localized: "during playback", comment: "Inserted into a diagnostics problem title, e.g. “Froze during playback”") : "during playback"
     }
 
     /// The first frame of the stack MetricKit attributes the problem to.

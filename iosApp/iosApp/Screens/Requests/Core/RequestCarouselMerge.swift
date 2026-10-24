@@ -17,8 +17,8 @@ enum RequestCarouselMerge {
 
     static func carousels(from sections: [RequestDiscoverySection]) -> [RequestCarousel] {
         [
-            merge(sections, keys: trendingKeys, id: "trending", title: "Trending now"),
-            merge(sections, keys: popularKeys, id: "popular", title: "Crowd favorites"),
+            merge(sections, keys: trendingKeys, id: "trending", title: String(localized: "Trending now")),
+            merge(sections, keys: popularKeys, id: "popular", title: String(localized: "Crowd favorites")),
         ].compactMap { $0 }
     }
 

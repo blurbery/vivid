@@ -48,7 +48,7 @@ struct VividStartupView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(statusText ?? "Vivid is loading")
+        .accessibilityLabel(statusText ?? String(localized: "Vivid is loading"))
         .task(id: isLoading && !isContentReady) {
             showsLoadingDots = false
             guard isLoading, !isContentReady else { return }

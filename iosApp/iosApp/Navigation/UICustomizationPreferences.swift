@@ -12,9 +12,9 @@ enum CardPosterSize: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .compact: return "Compact"
-        case .standard: return "Standard"
-        case .large: return "Large"
+        case .compact: return String(localized: "Compact")
+        case .standard: return String(localized: "Standard")
+        case .large: return String(localized: "Large")
         }
     }
 
@@ -40,9 +40,9 @@ enum CardCaptionStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .titleMetadata:
-            return "Title & Year"
-        case .title: return "Title Only"
-        case .artwork: return "Artwork Only"
+            return String(localized: "Title & Year")
+        case .title: return String(localized: "Title Only")
+        case .artwork: return String(localized: "Artwork Only")
         }
     }
 
@@ -82,10 +82,10 @@ enum CardPresentationPreset: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .balanced: return "Balanced"
-        case .compact: return "Compact"
-        case .cinema: return "Cinema"
-        case .artworkOnly: return "Artwork Only"
+        case .balanced: return String(localized: "Balanced")
+        case .compact: return String(localized: "Compact")
+        case .cinema: return String(localized: "Cinema")
+        case .artworkOnly: return String(localized: "Artwork Only")
         }
     }
 
@@ -113,10 +113,10 @@ enum PrimaryMenuBuiltin: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .home: return "Home"
-        case .movies: return "Movies"
-        case .series: return "Series"
-        case .forYou: return "For You"
+        case .home: return String(localized: "Home")
+        case .movies: return String(localized: "Movies")
+        case .series: return String(localized: "Series")
+        case .forYou: return String(localized: "For You")
         }
     }
 
@@ -451,13 +451,13 @@ enum UICustomizationCapabilityState: Equatable, Sendable {
     var userMessage: String? {
         switch self {
         case .checking:
-            return "Checking whether this server supports synced interface settings…"
+            return String(localized: "Checking whether this server supports synced interface settings…")
         case .supported:
             return nil
         case .serverUpgradeRequired:
-            return "Update this Silo server to use synced interface settings."
+            return String(localized: "Update this Silo server to use synced interface settings.")
         case .unavailable:
-            return "Interface settings are read-only until server support can be verified."
+            return String(localized: "Interface settings are read-only until server support can be verified.")
         }
     }
 }
@@ -1026,7 +1026,7 @@ final class UICustomizationPreferences {
                     guard pendingDeletes[identity]?.operationId == pendingDelete.operationId else {
                         return
                     }
-                    setSyncError("Could not reset this setting to its inherited value.", for: key)
+                    setSyncError(String(localized: "Could not reset this setting to its inherited value."), for: key)
                 }
             }
         }
@@ -1322,11 +1322,16 @@ final class UICustomizationPreferences {
     ]
 
     private static let maximumPrimaryMenuCount = 64
-    private static let primaryMenuLimitMessage = "You can show up to 64 top-menu destinations."
-    private static let effectiveValueDecodeMessage =
-        "Could not read this interface preference from the server."
-    private static let missingEffectiveValueMessage =
-        "The server did not return this interface preference."
+    // Computed so each message follows the current app language.
+    private static var primaryMenuLimitMessage: String {
+        String(localized: "You can show up to 64 top-menu destinations.")
+    }
+    private static var effectiveValueDecodeMessage: String {
+        String(localized: "Could not read this interface preference from the server.")
+    }
+    private static var missingEffectiveValueMessage: String {
+        String(localized: "The server did not return this interface preference.")
+    }
 
     private static func writeScope(for key: SettingKey) -> SettingScopeIdentity? {
         switch key {
@@ -1372,11 +1377,11 @@ final class UICustomizationPreferences {
     private static func message(for error: Error) -> String {
         switch SettingsAPIError.from(error) {
         case .serverUpgradeRequired, .unknownSetting:
-            return "Update this Silo server to sync interface preferences."
+            return String(localized: "Update this Silo server to sync interface preferences.")
         case .transport:
-            return "Saved on this device. Sync will resume when the server is reachable."
+            return String(localized: "Saved on this device. Sync will resume when the server is reachable.")
         default:
-            return "Saved on this device, but the server did not accept the change."
+            return String(localized: "Saved on this device, but the server did not accept the change.")
         }
     }
 

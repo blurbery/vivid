@@ -62,8 +62,8 @@ extension PlayerViewModel {
             vividPlaybackController.pause()
             if isAdminIssued(command) {
                 showNotice(
-                    title: "Playback paused by admin",
-                    message: "An administrator paused this session.",
+                    title: String(localized: "Playback paused by admin"),
+                    message: String(localized: "An administrator paused this session."),
                     tone: .warning,
                     duration: 6
                 )
@@ -72,8 +72,8 @@ extension PlayerViewModel {
             vividPlaybackController.play()
             if isAdminIssued(command) {
                 showNotice(
-                    title: "Playback resumed by admin",
-                    message: "An administrator resumed this session.",
+                    title: String(localized: "Playback resumed by admin"),
+                    message: String(localized: "An administrator resumed this session."),
                     tone: .info,
                     duration: 6
                 )
@@ -87,10 +87,10 @@ extension PlayerViewModel {
             }
             if isAdminIssued(command) {
                 showNotice(
-                    title: wasPaused ? "Playback resumed by admin" : "Playback paused by admin",
+                    title: wasPaused ? String(localized: "Playback resumed by admin") : String(localized: "Playback paused by admin"),
                     message: wasPaused
-                        ? "An administrator resumed this session."
-                        : "An administrator paused this session.",
+                        ? String(localized: "An administrator resumed this session.")
+                        : String(localized: "An administrator paused this session."),
                     tone: wasPaused ? .info : .warning,
                     duration: 6
                 )
@@ -109,8 +109,8 @@ extension PlayerViewModel {
             applyRemoteSeek(to: position)
             if isAdminIssued(command) {
                 showNotice(
-                    title: "Playback changed by admin",
-                    message: "An administrator changed the playback position.",
+                    title: String(localized: "Playback changed by admin"),
+                    message: String(localized: "An administrator changed the playback position."),
                     tone: .warning,
                     duration: 5
                 )
@@ -118,25 +118,25 @@ extension PlayerViewModel {
         case .displayMessage:
             showNotice(
                 title: command.payload.string(forKeys: "title")
-                    ?? (isAdminIssued(command) ? "Message from admin" : "Playback notice"),
+                    ?? (isAdminIssued(command) ? String(localized: "Message from admin") : String(localized: "Playback notice")),
                 message: command.payload.string(forKeys: "message")
-                    ?? "A server message was received.",
+                    ?? String(localized: "A server message was received."),
                 tone: isAdminIssued(command) ? .warning : .info,
                 duration: isAdminIssued(command) ? 10 : 8
             )
         case .serverRestarting:
             showNotice(
-                title: command.payload.string(forKeys: "title") ?? "Server restarting",
+                title: command.payload.string(forKeys: "title") ?? String(localized: "Server restarting"),
                 message: command.payload.string(forKeys: "message")
-                    ?? "Playback may end shortly while the server restarts.",
+                    ?? String(localized: "Playback may end shortly while the server restarts."),
                 tone: .warning,
                 duration: 10
             )
         case .serverShuttingDown:
             showNotice(
-                title: command.payload.string(forKeys: "title") ?? "Server shutting down",
+                title: command.payload.string(forKeys: "title") ?? String(localized: "Server shutting down"),
                 message: command.payload.string(forKeys: "message")
-                    ?? "Playback may end shortly while the server shuts down.",
+                    ?? String(localized: "Playback may end shortly while the server shuts down."),
                 tone: .warning,
                 duration: 10
             )
@@ -146,11 +146,11 @@ extension PlayerViewModel {
                 let isTerminate = command.name == .terminate
                 showNotice(
                     title: command.payload.string(forKeys: "title")
-                        ?? (isTerminate ? "Session ended by admin" : "Playback stopped by admin"),
+                        ?? (isTerminate ? String(localized: "Session ended by admin") : String(localized: "Playback stopped by admin")),
                     message: command.payload.string(forKeys: "message")
                         ?? (isTerminate
-                            ? "An administrator ended this playback session."
-                            : "An administrator stopped this playback session."),
+                            ? String(localized: "An administrator ended this playback session.")
+                            : String(localized: "An administrator stopped this playback session.")),
                     tone: .warning,
                     duration: 1.2
                 )

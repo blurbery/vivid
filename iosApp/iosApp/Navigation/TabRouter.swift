@@ -20,6 +20,21 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Displayed tab name. `rawValue` stays the stable English identifier.
+    var title: String {
+        switch self {
+        case .home: return String(localized: "Home")
+        case .search: return String(localized: "Search")
+        case .libraries: return String(localized: "Libraries")
+        case .recommendations: return String(localized: "For You")
+        case .calendar: return String(localized: "Calendar")
+        case .downloads: return String(localized: "Downloads")
+        case .settings: return String(localized: "Settings")
+        case .switchProfile: return String(localized: "Profile")
+        case .switchServer: return String(localized: "Server")
+        }
+    }
+
     /// Tabs that should actually be displayed for the current platform.
     /// iOS/iPadOS excludes Search — the phone/tablet shell surfaces search
     /// inline on Home/Libraries/Browse via a magnifying-glass affordance, so

@@ -20,35 +20,31 @@ enum ExtraKindLabels {
         "other",
     ]
 
-    private static let singular: [String: String] = [
-        "trailer": "Trailer",
-        "teaser": "Teaser",
-        "featurette": "Featurette",
-        "clip": "Clip",
-        "behind_the_scenes": "Behind the Scenes",
-        "bloopers": "Bloopers",
-        "deleted_scene": "Deleted Scene",
-        "other": "Extra",
-    ]
-
-    private static let plural: [String: String] = [
-        "trailer": "Trailers",
-        "teaser": "Teasers",
-        "featurette": "Featurettes",
-        "clip": "Clips",
-        "behind_the_scenes": "Behind the Scenes",
-        "bloopers": "Bloopers",
-        "deleted_scene": "Deleted Scenes",
-        "other": "Other",
-    ]
-
     /// Singular label for one card (`extraKindLabel` on web).
     static func label(for kind: String) -> String {
-        singular[kind] ?? "Extra"
+        switch kind {
+        case "trailer": String(localized: "Trailer")
+        case "teaser": String(localized: "Teaser")
+        case "featurette": String(localized: "Featurette")
+        case "clip": String(localized: "Clip")
+        case "behind_the_scenes": String(localized: "Behind the Scenes")
+        case "bloopers": String(localized: "Bloopers")
+        case "deleted_scene": String(localized: "Deleted Scene")
+        default: String(localized: "Extra")
+        }
     }
 
     /// Plural label for a section heading (`extraKindGroupLabel` on web).
     static func groupLabel(for kind: String) -> String {
-        plural[kind] ?? "Other"
+        switch kind {
+        case "trailer": String(localized: "Trailers")
+        case "teaser": String(localized: "Teasers")
+        case "featurette": String(localized: "Featurettes")
+        case "clip": String(localized: "Clips")
+        case "behind_the_scenes": String(localized: "Behind the Scenes")
+        case "bloopers": String(localized: "Bloopers")
+        case "deleted_scene": String(localized: "Deleted Scenes")
+        default: String(localized: "Other")
+        }
     }
 }

@@ -29,7 +29,8 @@ enum PlaybackFallbackMode: String, CaseIterable {
     }
     var fallbackID: String { rawValue + "-fallback" }
     var detail: String {
-        "If buffering: up to \(ApplePlaybackQuality.formatBitrate(kbps: fallbackKbps))."
+        let bitrate = ApplePlaybackQuality.formatBitrate(kbps: fallbackKbps)
+        return String(localized: "If buffering: up to \(bitrate).", comment: "Quality option detail: the bitrate it drops to while buffering")
     }
     var option: ApplePlaybackQualityOption {
         .init(id: rawValue, label: label, resolution: resolution, bitrateKbps: maximumKbps,
@@ -81,13 +82,13 @@ struct ApplePlaybackQualityOption: Identifiable, Hashable {
     var subtitle: String? {
         if let mode = PlaybackFallbackMode(rawValue: id) { return mode.detail }
         if isOriginal {
-            return "No transcoding; compatibility required."
+            return String(localized: "No transcoding; compatibility required.")
         }
         if isAuto {
-            return "Direct when possible; transcodes if needed."
+            return String(localized: "Direct when possible; transcodes if needed.")
         }
         guard bitrateKbps > 0 else { return nil }
-        return "Up to \(bitrateLabel); may transcode."
+        return String(localized: "Up to \(bitrateLabel); may transcode.", comment: "Quality option detail, for example Up to 10 Mbps; may transcode.")
     }
 
     var bitrateLabel: String {
@@ -95,10 +96,10 @@ struct ApplePlaybackQualityOption: Identifiable, Hashable {
     }
 
     var labelWithBitrate: String {
-        if isAuto { return "Auto (Recommended)" }
-        if isOriginal { return "Original Quality" }
+        if isAuto { return String(localized: "Auto (Recommended)") }
+        if isOriginal { return String(localized: "Original Quality") }
         guard !isOriginal, !isAuto, bitrateKbps > 0 else { return label }
-        return "\(label) (\(bitrateLabel))"
+        return String(localized: "\(label) (\(bitrateLabel))", comment: "Quality picker option: preset name and its bitrate, e.g. 1080p High (10 Mbps)")
     }
 }
 
@@ -117,7 +118,7 @@ enum ApplePlaybackQuality {
 
     static let original = ApplePlaybackQualityOption(
         id: originalId,
-        label: "Original",
+        label: String(localized: "Original"),
         resolution: "",
         bitrateKbps: 0,
         isOriginal: true,
@@ -126,7 +127,7 @@ enum ApplePlaybackQuality {
 
     static let auto = ApplePlaybackQualityOption(
         id: autoId,
-        label: "Auto",
+        label: String(localized: "Auto"),
         resolution: "",
         bitrateKbps: 0,
         isOriginal: false,
@@ -145,15 +146,15 @@ enum ApplePlaybackQuality {
     )
 
     static let tiers: [ApplePlaybackQualityOption] = [
-        .init(id: "1080p-high", label: "Up to 1080p HD (High)", resolution: "1080p", bitrateKbps: 20_000, isOriginal: false, isAuto: false),
-        .init(id: "1080p-medium", label: "Up to 1080p HD (Medium)", resolution: "1080p", bitrateKbps: 12_000, isOriginal: false, isAuto: false),
-        .init(id: "1080p", label: "Up to 1080p HD", resolution: "1080p", bitrateKbps: 10_000, isOriginal: false, isAuto: false),
-        .init(id: "1080p-8", label: "Up to 1080p HD", resolution: "1080p", bitrateKbps: 8_000, isOriginal: false, isAuto: false),
-        .init(id: "720p-high", label: "Up to 720p HD (High)", resolution: "720p", bitrateKbps: 4_000, isOriginal: false, isAuto: false),
-        .init(id: "720p-medium", label: "Up to 720p HD (Medium)", resolution: "720p", bitrateKbps: 3_000, isOriginal: false, isAuto: false),
-        .init(id: "720p", label: "Up to 720p HD", resolution: "720p", bitrateKbps: 2_000, isOriginal: false, isAuto: false),
-        .init(id: "480p", label: "Up to 480p", resolution: "480p", bitrateKbps: 1_500, isOriginal: false, isAuto: false),
-        .init(id: "328p", label: "Up to 328p", resolution: "328p", bitrateKbps: 700, isOriginal: false, isAuto: false),
+        .init(id: "1080p-high", label: String(localized: "Up to 1080p HD (High)"), resolution: "1080p", bitrateKbps: 20_000, isOriginal: false, isAuto: false),
+        .init(id: "1080p-medium", label: String(localized: "Up to 1080p HD (Medium)"), resolution: "1080p", bitrateKbps: 12_000, isOriginal: false, isAuto: false),
+        .init(id: "1080p", label: String(localized: "Up to 1080p HD"), resolution: "1080p", bitrateKbps: 10_000, isOriginal: false, isAuto: false),
+        .init(id: "1080p-8", label: String(localized: "Up to 1080p HD"), resolution: "1080p", bitrateKbps: 8_000, isOriginal: false, isAuto: false),
+        .init(id: "720p-high", label: String(localized: "Up to 720p HD (High)"), resolution: "720p", bitrateKbps: 4_000, isOriginal: false, isAuto: false),
+        .init(id: "720p-medium", label: String(localized: "Up to 720p HD (Medium)"), resolution: "720p", bitrateKbps: 3_000, isOriginal: false, isAuto: false),
+        .init(id: "720p", label: String(localized: "Up to 720p HD"), resolution: "720p", bitrateKbps: 2_000, isOriginal: false, isAuto: false),
+        .init(id: "480p", label: String(localized: "Up to 480p"), resolution: "480p", bitrateKbps: 1_500, isOriginal: false, isAuto: false),
+        .init(id: "328p", label: String(localized: "Up to 328p"), resolution: "328p", bitrateKbps: 700, isOriginal: false, isAuto: false),
     ]
 
     static let settingsOptions: [ApplePlaybackQualityOption] = [auto, original, ultraHD] + tiers
@@ -296,19 +297,19 @@ enum ApplePlaybackQuality {
         height: Int,
         isOriginal: Bool
     ) -> String {
-        if isOriginal { return "Original" }
+        if isOriginal { return String(localized: "Original") }
         if let serverDisplayName {
             let normalized = serverDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
             if !normalized.isEmpty { return normalized }
         }
         switch height {
-        case 2_160: return "Up to 4K"
-        case 1_080: return "Up to 1080p HD"
-        case 720: return "Up to 720p HD"
-        case 480: return "Up to 480p"
+        case 2_160: return String(localized: "Up to 4K")
+        case 1_080: return String(localized: "Up to 1080p HD")
+        case 720: return String(localized: "Up to 720p HD")
+        case 480: return String(localized: "Up to 480p")
         default:
             return requestOptions.first(where: { $0.id == id })?.label
-                ?? (height > 0 ? "Up to \(height)p" : id)
+                ?? (height > 0 ? String(localized: "Up to \(height)p", comment: "Quality cap by video height, for example Up to 576p") : id)
         }
     }
 
@@ -530,11 +531,12 @@ enum ApplePlaybackQuality {
         if kbps >= 1000 {
             let mbps = Double(kbps) / 1000.0
             if mbps.rounded(.towardZero) == mbps {
-                return "\(Int(mbps)) Mbps"
+                return String(localized: "\(Int(mbps)) Mbps", comment: "Bitrate in megabits per second")
             }
-            return String(format: "%.1f Mbps", mbps)
+            let value = String(format: "%.1f", locale: .current, mbps)
+            return String(localized: "\(value) Mbps", comment: "Bitrate in megabits per second, with a decimal")
         }
-        return "\(kbps) kbps"
+        return String(localized: "\(kbps) kbps", comment: "Bitrate in kilobits per second")
     }
 
     private static func height(for value: String?) -> Int? {

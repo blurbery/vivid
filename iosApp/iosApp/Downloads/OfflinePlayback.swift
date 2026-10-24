@@ -11,11 +11,11 @@ enum OfflinePlaybackError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .downloadNotFound:
-            return "This download is no longer on this device."
+            return String(localized: "This download is no longer on this device.")
         case .manifestUnavailable:
-            return "The offline playback data for this download is missing. Delete and re-download it."
+            return String(localized: "The offline playback data for this download is missing. Delete and re-download it.")
         case .mediaFileMissing:
-            return "The downloaded video file is missing. Delete and re-download it."
+            return String(localized: "The downloaded video file is missing. Delete and re-download it.")
         }
     }
 }
@@ -329,7 +329,7 @@ enum OfflineSubtitleFiles {
                   let filename = filenames[entry.subtitle.fetchUrl], let url = fileURL(filename), url.isFileURL,
                   FileManager.default.fileExists(atPath: url.path) else { return nil }
             return SubtitleUrl(index: index, language: entry.subtitle.language, codec: entry.ext,
-                label: entry.subtitle.title ?? "External", source: "external", forced: entry.subtitle.forced,
+                label: entry.subtitle.title ?? String(localized: "External"), source: "external", forced: entry.subtitle.forced,
                 default: entry.subtitle.isDefault, hearingImpaired: entry.subtitle.hearingImpaired, url: url.absoluteString)
         }
     }

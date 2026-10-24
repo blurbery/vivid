@@ -85,7 +85,7 @@ struct WatchlistView: View {
         }
         }
         .vividBackground()
-        .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Watchlist" : nil))
+        .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? String(localized: "Watchlist") : nil))
         .task(id: "\(watchlistRevision):\(filter.cacheKey)") { await loadWatchlist() }
         .onDisappear { loadGeneration = UUID() }
         .refreshable {
@@ -170,7 +170,7 @@ struct WatchlistView: View {
                             focusedItemId: $focusedContentId,
                             contentId: item.contentId,
                             cardWidthOverride: tvCardWidthOverride,
-                            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
+                            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series"),
                             onUserStateChanged: { state in
                                 guard !state.inWatchlist else { return }
                                 withAnimation(.easeInOut(duration: VividTheme.normalDuration)) {

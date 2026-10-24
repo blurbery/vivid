@@ -65,7 +65,9 @@ struct PlayerNextUpEpisode: Identifiable, Hashable {
     let airDate: String?
 
     var id: String { contentId }
-    var episodeLabel: String { "S\(seasonNumber):E\(episodeNumber)" }
+    var episodeLabel: String {
+        String(localized: "S\(seasonNumber):E\(episodeNumber)", comment: "Season and episode number, for example S1:E3")
+    }
 
     init(episode: EpisodeListItem, seriesId: String?, seriesTitle: String?) {
         contentId = episode.contentId
@@ -77,7 +79,7 @@ struct PlayerNextUpEpisode: Identifiable, Hashable {
         if let trimmedTitle, !trimmedTitle.isEmpty {
             title = trimmedTitle
         } else {
-            title = "Episode \(episode.episodeNumber)"
+            title = String(localized: "Episode \(episode.episodeNumber)", comment: "Fallback title for an untitled episode")
         }
         overview = episode.overview
         runtime = episode.runtime
@@ -110,7 +112,7 @@ struct PlayerOnDeckItem: Identifiable, Hashable {
 
     var secondaryTitle: String? {
         guard let seasonNumber, let episodeNumber else { return nil }
-        let episodeLabel = "S\(seasonNumber):E\(episodeNumber)"
+        let episodeLabel = String(localized: "S\(seasonNumber):E\(episodeNumber)", comment: "Season and episode number, for example S1:E3")
         if seriesTitle?.isEmpty == false, !title.isEmpty {
             return "\(episodeLabel) · \(title)"
         }
@@ -452,7 +454,17 @@ class PlayerViewModel {
 
     var isRecapSkipActive: Bool { skipWindow.inRecap }
 
-    var introSkipLabel: String { isRecapSkipActive ? "Skip Recap" : "Skip Intro" }
+    var introSkipLabel: String {
+        isRecapSkipActive ? String(localized: "Skip Recap") : String(localized: "Skip Intro")
+    }
+    /// The skip button while its auto-skip countdown runs.
+    var introSkipNowLabel: String {
+        isRecapSkipActive ? String(localized: "Skip Recap Now") : String(localized: "Skip Intro Now")
+    }
+    /// Accessibility label for cancelling the auto-skip countdown.
+    var introSkipCancelLabel: String {
+        isRecapSkipActive ? String(localized: "Cancel Skip Recap") : String(localized: "Cancel Skip Intro")
+    }
     var activeIntroSkipRange: TimeRange? { isRecapSkipActive ? recapRange : introRange }
     var openingSkipRanges: [TimeRange] { [recapRange, introRange].compactMap { $0 } }
 
@@ -540,16 +552,31 @@ class PlayerViewModel {
         default: return delivery.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
+    /// `activeRouteLabel` in the app's language. Logs and diagnostics keep
+    /// the English label.
+    var activeRouteDisplayLabel: String {
+        guard let delivery = vividPlaybackController.activeSpec?.delivery else {
+            return VividPlaybackEngineIdentity.name
+        }
+        switch delivery {
+        case PlaybackProtocolV3.PlanDelivery.originalHTTP:
+            return String(localized: "route.original", defaultValue: "Original", comment: "Playback route: the original file, played as it is")
+        case PlaybackProtocolV3.PlanDelivery.remuxProgressive: return String(localized: "Server Remux", comment: "Playback route")
+        case PlaybackProtocolV3.PlanDelivery.remuxHLS: return String(localized: "Server Remux HLS", comment: "Playback route")
+        case PlaybackProtocolV3.PlanDelivery.transcodeHLS: return String(localized: "Server Transcode HLS", comment: "Playback route")
+        default: return activeRouteLabel
+        }
+    }
     /// One-line, user-facing Vivid route description for the player HUD.
     var playbackRouteDisplay: String {
-        "\(VividPlaybackEngineIdentity.name) · \(activeRouteLabel)"
+        "\(VividPlaybackEngineIdentity.name) · \(activeRouteDisplayLabel)"
     }
     var routeStatusRows: [PlayerRouteStatusRow] {
         [
-            PlayerRouteStatusRow(label: "Playback", value: activeRouteLabel),
-            PlayerRouteStatusRow(label: "Engine", value: VividPlaybackEngineIdentity.name),
+            PlayerRouteStatusRow(label: String(localized: "Playback", comment: "Route row: how the title is being played"), value: activeRouteDisplayLabel),
+            PlayerRouteStatusRow(label: String(localized: "Engine", comment: "Route row: the playback engine"), value: VividPlaybackEngineIdentity.name),
             PlayerRouteStatusRow(
-                label: "Route",
+                label: String(localized: "Route", comment: "Route row: the engine's video route"),
                 value: vividPlaybackController.engine.videoRoute.rawValue
             ),
         ]

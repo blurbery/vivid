@@ -377,7 +377,7 @@ private struct TVCatalogGridRow: View, Equatable {
                     year: item.year,
                     userState: item.userState,
                     overlayData: OverlayData.from(item),
-                    mediaTypeLabel: showsMediaTypePills ? (VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series") : nil,
+                    mediaTypeLabel: showsMediaTypePills ? (VividMediaType.isMovieLibrary(item.type) ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")) : nil,
                     action: { onItemTap(item) },
                     playAction: playAction(item),
                     cardWidth: cardWidth,

@@ -262,9 +262,15 @@ struct TVSavedAccountCards: View {
             }
         }
         .frame(width: metric(142))
-        .accessibilityLabel(account.displayName + (account.requiresLogin ? ", signed out" : "")
-            + ", " + serverLabel(for: account)
-            + (isSettings && isCurrentAccount(account) ? ", current account" : ""))
+        .accessibilityLabel(spokenLabel(for: account))
+    }
+    /// A signed-out account is never the current one.
+    private func spokenLabel(for account: TVSavedAccount) -> String {
+        let name = account.displayName
+        let server = serverLabel(for: account)
+        if account.requiresLogin { return String(localized: "\(name), signed out, \(server)") }
+        if isSettings && isCurrentAccount(account) { return String(localized: "\(name), \(server), current account") }
+        return String(localized: "\(name), \(server)")
     }
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
         account.id == store.activeID && !account.requiresLogin && AuthService.shared.isLoggedIn
@@ -358,7 +364,7 @@ struct TVSavedAccountEditor: View {
                             in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(15.5), style: .continuous)
                         )
                     VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(7)) {
-                        Text(account == nil ? (addingServer ? "Add Server" : "Add Profile") : account!.displayName)
+                        (account.map { Text($0.displayName) } ?? Text(addingServer ? "Add Server" : "Add Profile"))
                             .font(.tvSettings(40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Account details and access on this Apple TV.")
@@ -445,7 +451,7 @@ struct TVSavedAccountEditor: View {
                         // One row for starting and replacing a code, so focus stays put.
                         Button { startCodeSignIn(service) } label: {
                             TVSettingsRowLabel(title: Text(codeSignIn.isActive ? "Get a New \(service.codeTitle)" : "Use \(service.title)"),
-                                               detail: Text(codeSignIn.isActive ? "Replace the \(service.codeName) below with a new one." : service.summary))
+                                               detail: codeSignIn.isActive ? Text("Replace the \(service.codeName) below with a new one.") : Text(service.summary))
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
                         .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -487,15 +493,15 @@ struct TVSavedAccountEditor: View {
                             SecureField("Confirm PIN", text: $confirmation)
                         }
                         Button {
-                            guard pin == confirmation else { message = "The PINs don’t match."; return }
+                            guard pin == confirmation else { message = String(localized: "The PINs don’t match."); return }
                             if store.setPIN(pin, accountID: account.id) {
-                                pinIsSet = true; pin = ""; confirmation = ""; message = "PIN saved."
+                                pinIsSet = true; pin = ""; confirmation = ""; message = String(localized: "PIN saved.")
                             }
                         } label: { TVSettingsRowLabel(title: pinIsSet ? "Change PIN" : "Set PIN") }
                         .buttonStyle(TVSettingsPaneRowStyle())
                         if pinIsSet {
                             Button {
-                                if store.removePIN(account.id) { pinIsSet = false; message = "PIN removed." }
+                                if store.removePIN(account.id) { pinIsSet = false; message = String(localized: "PIN removed.") }
                             } label: { TVSettingsRowLabel(title: "Remove PIN") }
                             .buttonStyle(TVSettingsPaneRowStyle())
                         }
@@ -568,7 +574,7 @@ struct TVSavedAccountEditor: View {
         store.error = nil
         let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
         let accountID = accountID
-        let fallback = "Couldn’t finish signing in with \(service.title). Please try again."
+        let fallback = String(localized: "Couldn’t finish signing in with \(service.title). Please try again.")
         switch service {
         case .jellyfinQuickConnect:
             codeSignIn.startQuickConnect(serverURL: address) { login in

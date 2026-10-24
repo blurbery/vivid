@@ -186,7 +186,7 @@ extension VividAPI {
     ) async throws -> SettingValueWriteReceipt {
         let trimmedMutationId = mutationId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedMutationId.isEmpty else {
-            throw SettingsAPIError.invalidValue(message: "Mutation ID must not be blank.")
+            throw SettingsAPIError.invalidValue(message: String(localized: "Mutation ID must not be blank."))
         }
         if SiloLocalInterfaceSettings.owns(key) {
             let serverId = await settingsServerId(requestIdentity)

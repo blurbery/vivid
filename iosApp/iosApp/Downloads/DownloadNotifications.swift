@@ -17,14 +17,14 @@ enum DownloadNotifier {
     static func downloadCompleted(_ record: DownloadRecord) {
         post(
             id: "download-completed-\(record.id)",
-            body: "\(displayName(for: record)) is ready to watch offline"
+            body: String(localized: "\(displayName(for: record)) is ready to watch offline", comment: "Notification when a download finishes. The title, e.g. Exodus (S2E8)")
         )
     }
 
     static func downloadFailed(_ record: DownloadRecord) {
         post(
             id: "download-failed-\(record.id)",
-            body: "Download failed: \(displayName(for: record))"
+            body: String(localized: "Download failed: \(displayName(for: record))", comment: "Notification when a download fails. The title, e.g. Exodus (S2E8)")
         )
     }
 
@@ -33,13 +33,11 @@ enum DownloadNotifier {
     /// multi-series batch falls back to a count-only summary.
     static func newEpisodesQueued(count: Int, seriesTitles: Set<String>) {
         guard count > 0 else { return }
-        let noun = count == 1 ? "episode" : "episodes"
-        let verb = count == 1 ? "is" : "are"
         let body: String
         if seriesTitles.count == 1, let title = seriesTitles.first {
-            body = "\(count) new \(noun) of \(title) \(verb) downloading"
+            body = String(localized: "\(count) new episodes of \(title) are downloading", comment: "Notification when monitoring queues new episodes of one series")
         } else {
-            body = "\(count) new \(noun) \(verb) downloading"
+            body = String(localized: "\(count) new episodes are downloading", comment: "Notification when monitoring queues new episodes of several series")
         }
         post(id: "downloads-monitoring-\(UUID().uuidString)", body: body)
     }
@@ -48,9 +46,10 @@ enum DownloadNotifier {
     /// title is preferred for episodes because the S/E marker already
     /// disambiguates which entry finished.
     private static func displayName(for record: DownloadRecord) -> String {
-        let base = record.seriesTitle ?? record.title ?? "Download"
+        let base = record.seriesTitle ?? record.title
+            ?? String(localized: "download.noun", defaultValue: "Download", comment: "Noun: one download that has no title. Not the Download button.")
         if let season = record.seasonNumber, let episode = record.episodeNumber {
-            return "\(base) (S\(season)E\(episode))"
+            return String(localized: "\(base) (S\(season)E\(episode))", comment: "A series title with its season and episode, e.g. Exodus (S2E8)")
         }
         return base
     }

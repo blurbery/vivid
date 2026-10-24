@@ -24,9 +24,17 @@ private enum TVPersonalRootDestination: Hashable, CaseIterable {
 
     var title: String {
         switch self {
-        case .watchlist: return "Watchlist"
-        case .favorites: return "Favourites"
-        case .collections: return "Collections"
+        case .watchlist: return String(localized: "Watchlist")
+        case .favorites: return String(localized: "Favourites")
+        case .collections: return String(localized: "Collections")
+        }
+    }
+
+    var emptyTitle: String {
+        switch self {
+        case .watchlist: return String(localized: "Your watchlist is empty")
+        case .favorites: return String(localized: "Your favourites is empty")
+        case .collections: return String(localized: "Your collections is empty")
         }
     }
 }
@@ -751,8 +759,8 @@ private struct TVForYouView: View {
                             ? "line.3.horizontal.decrease"
                             : (selection == .watchlist ? "bookmark" : "heart"),
                         title: selectedFilter.isActive
-                            ? "No titles match these filters"
-                            : "Your \(selection.title.lowercased()) is empty",
+                            ? String(localized: "No titles match these filters")
+                            : selection.emptyTitle,
                         subtitle: nil
                     )
                     .frame(maxWidth: .infinity, minHeight: 360)

@@ -382,7 +382,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "track-list": rawTracks = value as? [[String: Any]] ?? []; readTracks()
         case "chapter-list":
             mediaChapters = (value as? [[String: Any]] ?? []).enumerated().map {
-                MediaChapter(id: $0.offset, name: $0.element["title"] as? String ?? "Chapter \($0.offset + 1)",
+                MediaChapter(id: $0.offset, name: $0.element["title"] as? String
+                                 ?? String(localized: "Chapter \($0.offset + 1)", comment: "Fallback name for an untitled chapter"),
                              startSeconds: $0.element["time"] as? Double ?? 0)
             }
         case "aid": activeAudioTrackIndex = sourceTrackID(mpvID: (value as? String).flatMap(Int.init), type: "audio")
@@ -738,7 +739,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         audioTracks = rawTracks.filter { $0["type"] as? String == "audio" }.map(Self.trackInfo)
         subtitleTracks = rawTracks.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }.map(Self.trackInfo)
         subtitleTracks += externalTracks.sorted { $0.key < $1.key }.map { id, t in
-            TrackInfo(id: id, name: t.name ?? "External subtitles",
+            TrackInfo(id: id, name: t.name ?? String(localized: "External subtitles"),
                       codec: nativeExternalFiles[id] != nil ? "ass" : "",
                       language: t.language, isForced: t.isForced,
                       isExternal: true, isNativelyRenderedSubtitle: nativeExternalFiles[id] != nil)
