@@ -61,6 +61,20 @@ The mobile app uses a configurable glass tab bar, a looping Home spotlight and l
 
 Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
+## Languages
+
+Vivid speaks English, French, German, Spanish, Japanese and Simplified Chinese on iPhone, iPad and Apple TV. It follows your device's language, or you can pick one for Vivid in Settings > General > Language. Top Shelf, TMDb collection names and the Calendar's Trending list follow your choice too, while titles and descriptions from your server stay in its metadata language.
+
+```mermaid
+xychart-beta
+    title "Interface strings translated (%)"
+    x-axis ["English", "French", "German", "Spanish", "Japanese", "Chinese"]
+    y-axis "Translated (%)" 0 --> 100
+    bar [100, 97.9, 97.1, 96.3, 97.2, 97.0]
+```
+
+As of release 0.47.0 there are 2,111 interface strings. The few left in English in each language are symbols, number formats and product names that read the same everywhere. The translations were made with AI help and haven't been reviewed by native speakers yet, so corrections are very welcome. The [localisation guide](docs/localisation.md) covers how Vivid picks its language and how to add one.
+
 ## Plugins
 
 TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up. Optional plugins add more on top of your server, using your own free keys. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
