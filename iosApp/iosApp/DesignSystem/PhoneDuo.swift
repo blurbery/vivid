@@ -158,6 +158,7 @@ final class DuoStatusArea {
     private(set) var growth: CGFloat = 0
 
     func update(bandBottom: CGFloat, screen: CGSize) {
+        guard PhoneDuo.isDuo else { return }
         // With just the time and connectivity icons the band ends 170 points
         // down on the cover, 120 in the inner screen's landscape strip and 82
         // in its portrait corner.

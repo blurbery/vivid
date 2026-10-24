@@ -243,17 +243,19 @@ struct MainTabView: View {
                 .environment(\.usesDuoSideTabBar, duoSideBarEdge != nil)
                 .environment(\.duoSideStrip, duoSideStrip)
                 .environment(\.duoControlCorner, duoControlCorner)
-                // Folding the iPhone Duo moves the app between its screens.
-                .onChange(of: PhoneDuo.isInnerScreen(geometry)) { _, isInnerScreen in
-                    PlayerOrientationCoordinator.shared.duoScreenDidChange(
-                        portraitPagePresented: showsMobileUtilityPage && !isInnerScreen
-                    )
-                }
-                .onChange(of: PhoneDuo.sideStrip(geometry), initial: true) { _, strip in
-                    duoSideStrip = strip
-                }
-                .onChange(of: PhoneDuo.controlCorner(geometry), initial: true) { _, corner in
-                    duoControlCorner = corner
+                .onDuo {
+                    // Folding the iPhone Duo moves the app between its screens.
+                    $0.onChange(of: PhoneDuo.isInnerScreen(geometry)) { _, isInnerScreen in
+                        PlayerOrientationCoordinator.shared.duoScreenDidChange(
+                            portraitPagePresented: showsMobileUtilityPage && !isInnerScreen
+                        )
+                    }
+                    .onChange(of: PhoneDuo.sideStrip(geometry), initial: true) { _, strip in
+                        duoSideStrip = strip
+                    }
+                    .onChange(of: PhoneDuo.controlCorner(geometry), initial: true) { _, corner in
+                        duoControlCorner = corner
+                    }
                 }
             }
             .readsDuoStatusArea()

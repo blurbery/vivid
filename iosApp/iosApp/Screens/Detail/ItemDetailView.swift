@@ -92,15 +92,17 @@ struct PhoneDetailTopChrome: View {
                 .ignoresSafeArea()
             }
         }
-        .onGeometryChange(for: PhoneDuo.SideStrip?.self) { proxy in
-            PhoneDuo.sideStrip(proxy)
-        } action: { strip in
-            sideStrip = strip
-        }
-        .onGeometryChange(for: PhoneDuo.ControlCorner?.self) { proxy in
-            PhoneDuo.controlCorner(proxy)
-        } action: { corner in
-            controlCorner = corner
+        .onDuo {
+            $0.onGeometryChange(for: PhoneDuo.SideStrip?.self) { proxy in
+                PhoneDuo.sideStrip(proxy)
+            } action: { strip in
+                sideStrip = strip
+            }
+            .onGeometryChange(for: PhoneDuo.ControlCorner?.self) { proxy in
+                PhoneDuo.controlCorner(proxy)
+            } action: { corner in
+                controlCorner = corner
+            }
         }
         .zIndex(20)
     }

@@ -98,7 +98,7 @@ struct RecommendationsView: View {
                 mobileFilterMenu
             }
         }
-            .frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
+            .onDuo { $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize)) }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.top, 12)

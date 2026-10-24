@@ -263,7 +263,7 @@ struct SearchView: View {
         }.padding(5).vividGlass(in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1).allowsHitTesting(false))
         .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
-        .frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
+        .onDuo { $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize)) }
         .frame(maxWidth: .infinity)
         #elseif os(tvOS)
         HStack(spacing: 24) {

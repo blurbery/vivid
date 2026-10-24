@@ -353,7 +353,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 creditBlock(alignment: usesDuoColumn ? .center : .leading)
                 belowOverview()
             }
-            .frame(maxWidth: usesDuoColumn ? PhoneDuo.detailColumnWidth : .infinity)
+            .onDuo { $0.frame(maxWidth: usesDuoColumn ? PhoneDuo.detailColumnWidth : .infinity) }
             .padding(.horizontal, VividTheme.safePadding)
             .padding(.top, 8)
             .padding(.bottom, 12)
@@ -655,7 +655,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.vividOnSurface.opacity(0.58))
                 .lineLimit(2)
-                .multilineTextAlignment(alignment == .center ? .center : .leading)
+                .onDuo { $0.multilineTextAlignment(alignment == .center ? .center : .leading) }
                 .frame(maxWidth: .infinity, alignment: alignment)
         }
     }

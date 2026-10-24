@@ -69,7 +69,7 @@ struct PhoneStudioNetworkPage: View {
                 StudioNetworkLogo(brand: brand, url: result.logoURL, fallbackName: brandId)
                     .frame(maxWidth: 220, maxHeight: 70)
                     .frame(maxWidth: .infinity)
-                    .offset(x: logoScreenCentringOffset)
+                    .onDuo { $0.offset(x: logoScreenCentringOffset) }
                     .padding(.top, 12)
                     .accessibilityElement()
                     .accessibilityLabel(brand?.name ?? brandId)
