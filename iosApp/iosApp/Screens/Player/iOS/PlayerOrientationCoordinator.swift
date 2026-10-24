@@ -74,8 +74,10 @@ struct PlayerRotationState {
 final class PlayerOrientationCoordinator {
     static let shared = PlayerOrientationCoordinator()
 
-    /// Browsing is portrait-only on iPhone. iPad keeps every orientation its
-    /// Info.plist advertises so the split view and detail deck can rotate.
+    /// The static default: browsing is portrait-only on iPhone. iPad keeps
+    /// every orientation its Info.plist advertises so the split view and
+    /// detail deck can rotate. At runtime the iPhone Duo's inner screen
+    /// rotates too, through `rotatesBrowsing`.
     static var appDefaultOrientations: UIInterfaceOrientationMask {
         browsingOrientations(isPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
@@ -217,9 +219,11 @@ final class PlayerOrientationCoordinator {
         applyCurrentPolicy(preferredOrientation: persistedLock ?? deviceOrientationMask())
     }
 
-    /// Search and settings use full-window pages on iPhone and iPad, but both
-    /// remain portrait-only. Player activation temporarily takes precedence;
-    /// deactivation restores this policy before revealing the page.
+    /// Search and settings use full-window pages on iPhone and iPad. Callers
+    /// pass `!rotatesBrowsing`, so they stay portrait on iPhone but rotate on
+    /// iPad and the iPhone Duo's inner screen. Player activation temporarily
+    /// takes precedence; deactivation restores this policy before revealing
+    /// the page.
     func setPortraitPagePresented(_ isPresented: Bool) {
         guard isPortraitPagePresented != isPresented else { return }
         isPortraitPagePresented = isPresented

@@ -118,9 +118,12 @@ struct SearchView: View {
         #if os(iOS)
         .searchFocused($isSearchFieldFocused)
         // Half folding the iPhone Duo like a laptop brings the keyboard up
-        // on its lower half, ready to type.
+        // on its lower half, ready to type, unless a detail page, the player
+        // or a pushed page covers Search.
         .onDuoTabletopChange { tabletop in
-            if tabletop != nil { isSearchFieldFocused = true }
+            guard tabletop != nil, router.presentedItemDetail == nil,
+                  router.presentedPlayer == nil, router.path.isEmpty else { return }
+            isSearchFieldFocused = true
         }
         .onChange(of: blurRequest) { _, _ in
             isSearchFieldFocused = false

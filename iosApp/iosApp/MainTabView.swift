@@ -517,7 +517,7 @@ struct MainTabView: View {
     /// Stands the bar in the Duo's side strip, outside the safe area the
     /// pages lay out in, on the same line as the status bar's icons: iOS
     /// centres those 36 points in from the strip's inner edge. The icons take
-    /// the top of the strip, about 100 points on the inner screen and 140 on
+    /// the top of the strip, about 100 points on the inner screen and 146 on
     /// the cover, where the camera sits above them. On the cover the bar ends
     /// where the page tabs' row begins, on every tab so it never moves.
     private func duoSideTabBar(edge: HorizontalEdge, endsAtPageTabs: Bool) -> some View {
