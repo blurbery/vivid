@@ -24,7 +24,7 @@ Vivid only ships English today. The String Catalog holds the English base so tra
   </tbody>
 </table>
 
-Titles, overviews, genres and other metadata come from Silo, Emby or Jellyfin in the server's metadata language. Vivid's language doesn't change them.
+Library metadata (titles, overviews, taglines, genres and episode names) comes from Silo, Emby or Jellyfin in the server's metadata language, and Vivid's language doesn't change it. Silo sets this per profile (`catalog.metadata_language`, "Library default" when unset), and Emby and Jellyfin set it per library on the server. These settings are shared by every device using that profile or library, so Vivid doesn't change them to match a device's language. The exception is what Vivid looks up on TMDb itself, listed under [Not localised yet](#not-localised-yet).
 
 The English text mixes Australian and US spelling today, for example "Customise Tab Bar" and "Add to Favorites". Every English locale sees the same text unless a separate English variant is added.
 
@@ -70,6 +70,7 @@ These parts show English even after a translation is added.
     <tr><td>Language names</td><td><code>PlayerTrack.languageDisplayName</code>, <code>OverlayRegistry.formatLanguageName</code> and <code>SubtitleDisplayOrder.languageDisplayName</code> use English names on purpose: detail rows and subtitle grouping share one English name table, and overlay badges match the web app. Change them together, keeping the grouping keys separate from the displayed names.</td></tr>
     <tr><td>Dates</td><td>Formatters that read server dates use <code>en_US_POSIX</code> and must stay that way. Any formatter that shows a date with a fixed format should use <code>.formatted()</code> or a template instead.</td></tr>
     <tr><td>Local network prompt</td><td><code>NSLocalNetworkUsageDescription</code> needs an <code>InfoPlist.xcstrings</code> holding only that key. Leave <code>CFBundleDisplayName</code> out, because a localised name would replace the tvOS <code>$(VIVID_TV_DISPLAY_NAME)</code> build setting.</td></tr>
+    <tr><td>TMDb lookups</td><td>Studios &amp; Networks rows, collections, trailers and ratings come from TMDb through Vivid's relay, and the requests in <code>TVTMDbStore.swift</code> don't send a <code>language</code>, so TMDb answers in English. Send the app's language (for example <code>fr-FR</code>) and fall back to English where TMDb has no translation, because TMDb returns an empty overview for a missing one.</td></tr>
     <tr><td>Extensions</td><td>Top Shelf (<code>iosApp/TopShelf</code>) and the downloads Live Activity (<code>iosApp/DownloadsActivity</code>) look strings up in their own bundles, so each needs its own catalog.</td></tr>
   </tbody>
 </table>
