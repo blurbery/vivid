@@ -14,6 +14,9 @@ struct IOSPersonalMediaPosterLayout: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var columnCount: Int {
+        if PhoneDuo.usesWideLayout(hSize) {
+            return AdaptiveColumns.duoPosterCount(containerWidth: gridWidth)
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth)
         }
@@ -66,6 +69,10 @@ struct IOSPersonalMediaPosterLayout: View {
     /// MediaCard scales overrides by the selected global preference. Cancel
     /// that scale so saved-title posters fill their measured grid cells.
     private var cardWidthOverride: CGFloat {
+        if PhoneDuo.usesWideLayout(hSize) {
+            return AdaptiveColumns.duoPosterWidth(containerWidth: gridWidth)
+                / uiCustomization.cardPresentation.posterSize.scale
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth)
                 / uiCustomization.cardPresentation.posterSize.scale

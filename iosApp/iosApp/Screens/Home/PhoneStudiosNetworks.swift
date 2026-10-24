@@ -58,6 +58,7 @@ struct PhoneStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
     @Environment(AppRouter.self) private var router
+    @Environment(\.duoSideStrip) private var duoSideStrip
 
     private var brand: StudioNetworkBrand? { store.brand(brandId) }
     private var result: StudioNetworkResult { store.results[brandId] ?? StudioNetworkResult() }
@@ -68,6 +69,7 @@ struct PhoneStudioNetworkPage: View {
                 StudioNetworkLogo(brand: brand, url: result.logoURL, fallbackName: brandId)
                     .frame(maxWidth: 220, maxHeight: 70)
                     .frame(maxWidth: .infinity)
+                    .onDuo { $0.offset(x: logoScreenCentringOffset) }
                     .padding(.top, 12)
                     .accessibilityElement()
                     .accessibilityLabel(brand?.name ?? brandId)
@@ -99,6 +101,13 @@ struct PhoneStudioNetworkPage: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.loadIfNeeded() }
+    }
+
+    /// In landscape on the iPhone Duo the side status bar strip narrows the
+    /// page, so move the logo onto the middle of the whole screen.
+    private var logoScreenCentringOffset: CGFloat {
+        guard let strip = duoSideStrip, strip.isInnerScreen else { return 0 }
+        return strip.edge == .trailing ? strip.width / 2 : -strip.width / 2
     }
 
     private func header(_ title: String) -> some View {
@@ -195,6 +204,7 @@ struct PhoneStudiosNetworksSettingsView: View {
         .navigationTitle("")
         // Six are required while the row shows on Home.
         .navigationBarBackButtonHidden(store.needsMorePicks)
+        .environment(\.duoStripBackHidden, store.needsMorePicks)
         .onAppear { store.beginEditing() }
         .onDisappear { store.endEditing() }
         .task { await store.loadIfNeeded() }

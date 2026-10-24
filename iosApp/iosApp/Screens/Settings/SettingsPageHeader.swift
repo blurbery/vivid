@@ -83,6 +83,7 @@ extension View {
             .modifier(MobileTopScrollEdgeModifier())
             .toolbar(.visible, for: .navigationBar)
             .modifier(TabletSettingsWidth())
+            .duoStripBackButton()
             #endif
     }
 }
@@ -110,17 +111,54 @@ struct MobileGlassNavigationBar: View {
     let onSelect: (String) -> Void
     var onSearch: () -> Void = {}
     var onProfile: () -> Void = {}
+    /// The iPhone Duo's landscape inner screen stands the bar up in its
+    /// side strip, in the same order from top to bottom.
+    var isVertical = false
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities")) private var swapped = false
     private var profile: UserProfile? { CurrentProfileStore.shared.profile ?? TVSavedAccountStore.shared.activeAccount?.profile }
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            navigationItems(spacing: 4)
-            navigationItems(spacing: 2)
+        if isVertical {
+            ViewThatFits(in: .vertical) {
+                verticalNavigationItems(spacing: 4)
+                verticalNavigationItems(spacing: 2)
+            }
+            .buttonStyle(.plain).padding(.vertical, 7).frame(width: 50)
+            .vividGlass(in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1).allowsHitTesting(false))
+            .frame(maxHeight: 420)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                navigationItems(spacing: 4)
+                navigationItems(spacing: 2)
+            }
+            .buttonStyle(.plain).padding(.horizontal, 7).frame(height: 50)
+            .vividGlass(in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1).allowsHitTesting(false))
+            .frame(maxWidth: 420)
         }
-        .buttonStyle(.plain).padding(.horizontal, 7).frame(height: 50)
-        .vividGlass(in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1).allowsHitTesting(false))
-        .frame(maxWidth: 420)
+    }
+
+    private func verticalNavigationItems(spacing: CGFloat) -> some View {
+        VStack(spacing: spacing) {
+            if swapped { profileButton } else { searchButton }
+            Rectangle().fill(.white.opacity(0.2)).frame(width: 24, height: 1)
+            VStack(spacing: spacing) {
+                ForEach(items) { item in
+                    Button { onSelect(item.id) } label: {
+                        Image(systemName: selectedID == item.id ? (item.selectedIcon ?? item.icon) : item.icon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(maxHeight: .infinity).frame(width: 34)
+                            .foregroundStyle(selectedID == item.id ? Color.black : .white.opacity(0.7))
+                            .background(selectedID == item.id ? Color.white : .clear, in: Capsule())
+                            .contentShape(Rectangle())
+                    }.frame(maxHeight: .infinity)
+                    .accessibilityLabel(item.title)
+                    .accessibilityAddTraits(selectedID == item.id ? .isSelected : [])
+                }
+            }.frame(maxHeight: .infinity).frame(width: 44)
+            Rectangle().fill(.white.opacity(0.2)).frame(width: 24, height: 1)
+            if swapped { searchButton } else { profileButton }
+        }
     }
 
     private func navigationItems(spacing: CGFloat) -> some View {

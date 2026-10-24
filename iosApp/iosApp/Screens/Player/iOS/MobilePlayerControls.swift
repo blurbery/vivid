@@ -22,6 +22,11 @@ import SwiftUI
 struct MobilePlayerControls: View {
     let viewModel: PlayerViewModel
     let onDismiss: () -> Void
+    /// The iPhone Duo half folded like a laptop. The controls then fill the
+    /// lower half as a deck that stays up, and the video plays above it.
+    var tabletop: DuoTabletop? = nil
+    /// An episode's series poster for the half-folded deck's info card.
+    @State private var deckSeriesPosterURL: String?
 
     @State private var activeSheet: PlayerSheet?
     @State private var activePopover: PlayerPopover?
@@ -46,7 +51,9 @@ struct MobilePlayerControls: View {
         // the sheet mid-interaction — then re-presents it when controls come
         // back, because @State activeSheet survives the rebuild.
         ZStack {
-            if viewModel.showControls || activePopover != nil {
+            if let tabletop {
+                tabletopDeck(tabletop)
+            } else if viewModel.showControls || activePopover != nil {
                 // GeometryReader pins the control stack to the player's own
                 // bounds. The bars are siblings of the shared player notice in
                 // `PlayerView`'s ZStack; inside the player's `.fullScreenCover`
@@ -310,6 +317,264 @@ struct MobilePlayerControls: View {
         return primary.isEmpty ? viewModel.title : primary
     }
 
+    // MARK: - Half-folded deck
+
+    /// Laid out like a laptop's lower half: close, title, PiP and AirPlay;
+    /// large back, play/pause and forward tiles; the scrubber; then the
+    /// Quality, Audio, Subtitles and Chapters buttons.
+    private func tabletopDeck(_ tabletop: DuoTabletop) -> some View {
+        VStack(spacing: 18) {
+            // Close, PiP and AirPlay stand as tall as the info card.
+            HStack(spacing: Self.deckSpacing) {
+                deckSquare(
+                    systemImage: "xmark",
+                    accessibilityLabel: "Close Player",
+                    width: Self.deckSideWidth,
+                    height: Self.deckInfoHeight,
+                    action: onDismiss
+                )
+                .accessibilityIdentifier("player.close")
+                deckInfoCard
+                deckExternalPlaybackColumn
+            }
+            .frame(height: Self.deckInfoHeight)
+            Spacer(minLength: 0)
+            HStack(spacing: Self.deckSpacing) {
+                tabletopTile(systemImage: "gobackward.10", accessibilityLabel: "Skip Back 10 Seconds") {
+                    viewModel.skipBackward(10)
+                }
+                .frame(maxWidth: 150)
+                tabletopTile(
+                    systemImage: viewModel.isPlaying ? "pause.fill" : "play.fill",
+                    accessibilityLabel: viewModel.isPlaying ? "Pause" : "Play",
+                    isPrimary: true
+                ) {
+                    viewModel.togglePlayPause()
+                }
+                tabletopTile(systemImage: "goforward.10", accessibilityLabel: "Skip Forward 10 Seconds") {
+                    viewModel.skipForward(10)
+                }
+                .frame(maxWidth: 150)
+            }
+            .frame(height: 84)
+            Spacer(minLength: 0)
+            VStack(spacing: 10) {
+                PlayerTickIsolated { progressSlider }
+                PlayerTickIsolated { timeRow }
+            }
+            actionRow(asTiles: true)
+                .frame(height: Self.deckSquareSize)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, tabletop.crease.maxY)
+        .ignoresSafeArea(edges: .top)
+        .transition(.opacity)
+        .task(id: viewModel.currentWatchDetail?.seriesId) {
+            await loadDeckSeriesPoster()
+        }
+    }
+
+    /// Episodes show their series' poster, from the series page's cached
+    /// details when there are some.
+    private func loadDeckSeriesPoster() async {
+        deckSeriesPosterURL = nil
+        guard let seriesId = viewModel.currentWatchDetail?.seriesId, !seriesId.isEmpty else { return }
+        let key = CacheKey.itemDetail(seriesId)
+        let cached: ItemDetail? = ResponseCache.shared.get(key)
+        let detail: ItemDetail?
+        if let cached {
+            detail = cached
+        } else {
+            detail = try? await VividAPI.shared.itemDetail(contentId: seriesId)
+        }
+        guard !Task.isCancelled, let poster = detail?.posterUrl, !poster.isEmpty else { return }
+        deckSeriesPosterURL = poster
+    }
+
+    private static let deckSquareSize: CGFloat = 56
+    private static let deckSpacing: CGFloat = 10
+    /// Two squares and the gap between them.
+    private static let deckInfoHeight: CGFloat = 2 * deckSquareSize + deckSpacing
+    /// Close on the left and PiP over AirPlay on the right, either side of
+    /// the info card.
+    private static let deckSideWidth: CGFloat = 96
+
+    private func deckSquare(
+        systemImage: String,
+        accessibilityLabel: String,
+        width: CGFloat = deckSquareSize,
+        height: CGFloat = deckSquareSize,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(MobilePlayerTileButtonStyle())
+        .frame(width: width, height: height)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// What's playing: the poster, the show and episode line with the title,
+    /// and the synopsis beside them, over a soft wash of the backdrop.
+    private var deckInfoCard: some View {
+        let shape = MobilePlayerTileButtonStyle.shape
+        let synopses = Self.synopsisCandidates(viewModel.metadata.overview)
+        return HStack(alignment: .center, spacing: 12) {
+            if let poster = deckPosterURL {
+                AsyncImageView(url: poster, contentMode: .fill)
+                    .frame(width: 64, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
+                    )
+                    .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                if let eyebrow = titleEyebrow {
+                    Text(eyebrow)
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(2)
+                }
+                Text(heroTitle)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: 124, alignment: .leading)
+            if !synopses.isEmpty {
+                Rectangle()
+                    .fill(.white.opacity(0.12))
+                    .frame(width: 0.5)
+                    .padding(.vertical, 4)
+                // The whole synopsis when it fits, otherwise its first
+                // sentences, so it ends on a full stop rather than "...".
+                ViewThatFits(in: .vertical) {
+                    ForEach(synopses, id: \.self) { synopsis in
+                        deckSynopsisText(synopsis)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let first = synopses.last {
+                        deckSynopsisText(first).lineLimit(5)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            if let backdrop = deckBackdropURL {
+                AsyncImageView(url: backdrop, contentMode: .fill, placeholderStyle: .clear)
+                    .blur(radius: 24)
+                    .opacity(0.32)
+                    .overlay(
+                        LinearGradient(
+                            colors: [.black.opacity(0.1), .black.opacity(0.45)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .accessibilityHidden(true)
+            }
+        }
+        .clipShape(shape)
+        .vividPlayerGlass(in: shape)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func deckSynopsisText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12.5))
+            .foregroundStyle(.white.opacity(0.72))
+            .lineSpacing(1.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The synopsis, then shorter versions of it made of its first whole
+    /// sentences, longest first.
+    private static func synopsisCandidates(_ overview: String?) -> [String] {
+        guard let overview = overview?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !overview.isEmpty else { return [] }
+        var sentences: [String] = []
+        overview.enumerateSubstrings(in: overview.startIndex..., options: .bySentences) { sentence, _, _, _ in
+            if let sentence = sentence?.trimmingCharacters(in: .whitespacesAndNewlines), !sentence.isEmpty {
+                sentences.append(sentence)
+            }
+        }
+        guard sentences.count > 1 else { return [overview] }
+        return (1...sentences.count).reversed().map { sentences.prefix($0).joined(separator: " ") }
+    }
+
+    private var deckPosterURL: String? {
+        [deckSeriesPosterURL, viewModel.artworkPosterURLHint, viewModel.artworkBackdropURLHint]
+            .compactMap { $0 }
+            .first { !$0.isEmpty }
+    }
+
+    private var deckBackdropURL: String? {
+        [viewModel.artworkBackdropURLHint, viewModel.artworkPosterURLHint]
+            .compactMap { $0 }
+            .first { !$0.isEmpty }
+    }
+
+    /// PiP over AirPlay. Both always show so the deck keeps its shape, and
+    /// are dimmed while the device or stream can't use them.
+    private var deckExternalPlaybackColumn: some View {
+        VStack(spacing: Self.deckSpacing) {
+            deckSquare(
+                systemImage: pictureInPicture.isActive ? "pip.exit" : "pip.enter",
+                accessibilityLabel: pictureInPicture.isActive ? "Stop Picture in Picture" : "Start Picture in Picture",
+                width: Self.deckSideWidth
+            ) {
+                pictureInPicture.toggle()
+            }
+            .disabled(
+                !pictureInPicture.isSupported
+                    || !pictureInPicture.hasSource
+                    || (!pictureInPicture.isPossible && !pictureInPicture.isActive)
+            )
+            if viewModel.supportsExternalPlayback {
+                AirPlayRoutePicker { isPresentingRoutes in
+                    if isPresentingRoutes { viewModel.pinControlsVisible() }
+                    else { viewModel.resumeAutoHide() }
+                }
+                .frame(width: Self.deckSideWidth, height: Self.deckSquareSize)
+                .vividPlayerGlass(in: MobilePlayerTileButtonStyle.shape, interactive: true)
+            } else {
+                deckSquare(systemImage: "airplayvideo", accessibilityLabel: "AirPlay", width: Self.deckSideWidth) {}
+                    .disabled(true)
+            }
+        }
+    }
+
+    private func tabletopTile(
+        systemImage: String,
+        accessibilityLabel: String,
+        isPrimary: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: isPrimary ? 30 : 24, weight: isPrimary ? .semibold : .medium))
+                .foregroundStyle(isPrimary ? Color.black.opacity(0.85) : .white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(MobilePlayerTileButtonStyle(tint: isPrimary ? .white.opacity(0.9) : nil))
+        .accessibilityLabel(accessibilityLabel)
+    }
+
     // MARK: - Center
 
     /// Every circle matches the detail page's 44pt close/remote controls.
@@ -358,7 +623,7 @@ struct MobilePlayerControls: View {
 
     private var bottomStack: some View {
         VStack(spacing: 10) {
-            actionRow
+            actionRow()
                 .opacity(recedingOpacity)
             PlayerTickIsolated { progressSlider }
             PlayerTickIsolated { timeRow }
@@ -565,13 +830,15 @@ struct MobilePlayerControls: View {
 
     // MARK: - Action row
 
-    private var actionRow: some View {
-        HStack(spacing: 8) {
-            Spacer(minLength: 0)
+    /// Round buttons above the video; equal rounded squares across the
+    /// half-folded deck.
+    private func actionRow(asTiles: Bool = false) -> some View {
+        HStack(spacing: asTiles ? Self.deckSpacing : 8) {
+            if !asTiles { Spacer(minLength: 0) }
             Button { activePopover = .quality } label: {
-                selectorIcon("slider.horizontal.3")
+                selectorIcon("slider.horizontal.3", asTile: asTiles)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .mobilePlayerSelectorStyle(asTile: asTiles)
             .disabled(viewModel.isQualitySwitching)
             .accessibilityLabel("Streaming quality")
             .accessibilityIdentifier("player.quality")
@@ -581,9 +848,9 @@ struct MobilePlayerControls: View {
                     .presentationCompactAdaptation(.popover)
             }
             Button { activePopover = .audio } label: {
-                selectorIcon("speaker.wave.2")
+                selectorIcon("speaker.wave.2", asTile: asTiles)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .mobilePlayerSelectorStyle(asTile: asTiles)
             .disabled(viewModel.audioTracks.isEmpty)
             .accessibilityLabel("Audio")
             .accessibilityIdentifier("player.audio")
@@ -593,9 +860,9 @@ struct MobilePlayerControls: View {
                     .presentationCompactAdaptation(.popover)
             }
             Button { activePopover = .subtitles } label: {
-                selectorIcon("captions.bubble")
+                selectorIcon("captions.bubble", asTile: asTiles)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .mobilePlayerSelectorStyle(asTile: asTiles)
             .accessibilityLabel("Subtitles")
             .accessibilityIdentifier("player.subtitles")
             .popover(isPresented: popoverBinding(.subtitles), attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
@@ -605,9 +872,9 @@ struct MobilePlayerControls: View {
             }
 
             Button { activePopover = .chapters } label: {
-                selectorIcon("list.bullet.rectangle")
+                selectorIcon("list.bullet.rectangle", asTile: asTiles)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .mobilePlayerSelectorStyle(asTile: asTiles)
             .accessibilityLabel("Chapters")
             .accessibilityIdentifier("player.chapters")
             .popover(isPresented: popoverBinding(.chapters), attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
@@ -714,11 +981,16 @@ struct MobilePlayerControls: View {
         }
     }
 
-    private func selectorIcon(_ symbol: String) -> some View {
-        Image(systemName: symbol)
+    @ViewBuilder
+    private func selectorIcon(_ symbol: String, asTile: Bool = false) -> some View {
+        let icon = Image(systemName: symbol)
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+        if asTile {
+            icon.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            icon.frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+        }
     }
 
 
@@ -772,8 +1044,9 @@ struct MobilePlayerControls: View {
             }
             .padding(.horizontal, 24)
             // Reserve the same control clearance whether chrome is visible or hidden.
-            .padding(.bottom, bottomControlsHeight + 24)
+            .padding(.bottom, skipPillClearance)
         }
+        .duoTabletopTopHalf(tabletop)
         .transition(.opacity)
     }
 
@@ -795,9 +1068,15 @@ struct MobilePlayerControls: View {
                 .accessibilityLabel("Skip Credits")
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, bottomControlsHeight + 24)
+            .padding(.bottom, skipPillClearance)
         }
+        .duoTabletopTopHalf(tabletop)
         .transition(.opacity)
+    }
+
+    /// Half folded, the skip pills sit at the foot of the video instead.
+    private var skipPillClearance: CGFloat {
+        tabletop == nil ? bottomControlsHeight + 24 : 16
     }
 
     // MARK: - Sheet identifier
@@ -836,6 +1115,37 @@ struct MobilePlayerGlassButtonStyle: ButtonStyle {
             .vividPlayerGlass(in: Capsule(), tint: tint, interactive: true)
             .onChange(of: configuration.isPressed) { _, pressed in controlPressChanged(pressed) }
             .onDisappear { if configuration.isPressed { controlPressChanged(false) } }
+    }
+}
+
+/// Large rounded tile for the half-folded deck, in the same glass as the
+/// round player buttons.
+struct MobilePlayerTileButtonStyle: ButtonStyle {
+    static let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+    var tint: Color? = nil
+    @Environment(\.mobilePlayerControlPressChanged) private var controlPressChanged
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = Self.shape
+        configuration.label
+            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.35)
+            .contentShape(shape)
+            .vividPlayerGlass(in: shape, tint: tint, interactive: true)
+            .onChange(of: configuration.isPressed) { _, pressed in controlPressChanged(pressed) }
+            .onDisappear { if configuration.isPressed { controlPressChanged(false) } }
+    }
+}
+
+extension View {
+    /// Round glass button above the video, or a rounded square in the deck.
+    @ViewBuilder
+    func mobilePlayerSelectorStyle(asTile: Bool) -> some View {
+        if asTile {
+            buttonStyle(MobilePlayerTileButtonStyle())
+        } else {
+            buttonStyle(MobilePlayerGlassButtonStyle())
+        }
     }
 }
 

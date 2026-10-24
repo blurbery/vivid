@@ -83,6 +83,7 @@ struct DownloadActionButton: View {
     /// presentation state when the server offers multiple download qualities.
     @Binding private var showOptions: Bool
     @State private var showCompactOptions = false
+    @Environment(\.phoneDetailActionsShareRow) private var sharesActionRow
     private var optionsPresented: Binding<Bool> { style == .compact ? $showCompactOptions : $showOptions }
 
     private var manager: DownloadManager { DownloadManager.shared }
@@ -493,9 +494,10 @@ struct DownloadActionButton: View {
         active: Bool,
         @ViewBuilder glyph: () -> Glyph
     ) -> some View {
-        VStack(spacing: 6) {
+        let metrics = PhoneLabeledActionMetrics(sharesRow: sharesActionRow)
+        return VStack(spacing: 6) {
             glyph()
-                .frame(width: 42, height: 42)
+                .frame(width: metrics.circle, height: metrics.circle)
                 .background(
                     Circle().fill(Color.white.opacity(active ? 0.18 : 0.10))
                 )
@@ -504,8 +506,10 @@ struct DownloadActionButton: View {
                 .foregroundColor(captionTint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: sharesActionRow, vertical: false)
         }
-        .frame(maxWidth: .infinity, minHeight: 58)
+        .frame(width: metrics.slotWidth)
+        .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: 58)
         .contentShape(Rectangle())
     }
 

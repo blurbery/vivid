@@ -72,7 +72,7 @@ struct SeasonDetailContent<BelowOverview: View>: View {
     }
 
     private var heroToContentSpacing: CGFloat {
-        horizontalSizeClass == .regular ? 16 : 32
+        PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass) ? 32 : 16
     }
 
     // MARK: - Hero
@@ -103,14 +103,17 @@ struct SeasonDetailContent<BelowOverview: View>: View {
     @ViewBuilder
     private var actionStack: some View {
         VStack(spacing: 12) {
-            PhonePrimaryPillButton(
-                icon: "play.fill",
-                title: nextUpEpisode.map(playButtonLabel) ?? "Play",
-                action: handlePrimaryPlayTap,
-                fullWidth: true,
-                resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
-            )
-            labeledActionRow
+            PhoneDetailPrimaryActions(stackedSpacing: 12) {
+                PhonePrimaryPillButton(
+                    icon: "play.fill",
+                    title: nextUpEpisode.map(playButtonLabel) ?? "Play",
+                    action: handlePrimaryPlayTap,
+                    fullWidth: true,
+                    resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
+                )
+            } actions: {
+                labeledActionRow
+            }
             if nextUpEpisode != nil, let effectiveNextUpVersion {
                 PhonePlaybackSelectorRow(
                     versions: nextUpVersions,

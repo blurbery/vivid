@@ -14,19 +14,30 @@ struct MobileSearchPage: View {
 
     let safeAreaInsets: EdgeInsets
     let onDismiss: () -> Void
+    @Environment(\.duoControlCorner) private var duoControlCorner
 
     var body: some View {
         MobileUtilityPage(safeAreaInsets: safeAreaInsets, onDismiss: dismissPage) {
             NavigationStack(path: $searchRouter.path) {
                 SearchView(blurRequest: blurRequest)
                     .toolbar {
-                        MobileUtilityCloseToolbar(accessibilityLabel: "Close search", action: dismissPage)
+                        if duoControlCorner == nil {
+                            MobileUtilityCloseToolbar(accessibilityLabel: "Close search", action: dismissPage)
+                        }
+                    }
+                    .overlay {
+                        if let duoControlCorner {
+                            DuoStripButton(corner: duoControlCorner, systemName: "xmark", accessibilityLabel: "Close search", action: dismissPage)
+                        }
                     }
                     .navigationDestination(for: Route.self) { route in
-                        switch route {
-                        case .requestDetail(let type, let id): RequestDetailView(mediaType: type, tmdbId: id)
-                        default: EmptyView()
+                        Group {
+                            switch route {
+                            case .requestDetail(let type, let id): RequestDetailView(mediaType: type, tmdbId: id)
+                            default: EmptyView()
+                            }
                         }
+                        .duoStripBackButton()
                     }
             }
             .environment(\.zoomNamespace, zoomNamespace)
@@ -56,6 +67,7 @@ struct MobileSettingsPage: View {
     let onDismiss: () -> Void
 
     @State private var isOverviewVisible = false
+    @Environment(\.duoControlCorner) private var duoControlCorner
 
     var body: some View {
         MobileUtilityPage(safeAreaInsets: safeAreaInsets, allowsPullToDismiss: isOverviewVisible, onDismiss: onDismiss) {
@@ -65,7 +77,14 @@ struct MobileSettingsPage: View {
                     .onDisappear { isOverviewVisible = false }
                     .toggleStyle(SwitchToggleStyle(tint: .green))
                     .toolbar {
-                        MobileUtilityCloseToolbar(accessibilityLabel: "Close settings", action: onDismiss)
+                        if duoControlCorner == nil {
+                            MobileUtilityCloseToolbar(accessibilityLabel: "Close settings", action: onDismiss)
+                        }
+                    }
+                    .overlay {
+                        if let duoControlCorner {
+                            DuoStripButton(corner: duoControlCorner, systemName: "xmark", accessibilityLabel: "Close settings", action: onDismiss)
+                        }
                     }
             }
             .modifier(MobileTopScrollEdgeModifier())

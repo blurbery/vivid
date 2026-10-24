@@ -24,6 +24,7 @@ struct SeriesDownloadMenuButton: View {
     @State private var resolvedSeriesPosterPath: String?
     @State private var resolvedSeriesPosterThumbhash: String?
     @State private var showUnavailable = false
+    @Environment(\.phoneDetailActionsShareRow) private var sharesActionRow
 
     /// Presentation of the trigger. `labeled` matches the detail page's named
     /// action row; `circle` is the original chrome, still used elsewhere.
@@ -99,24 +100,27 @@ struct SeriesDownloadMenuButton: View {
     /// Filled, borderless circle over a caption, matching
     /// `PhoneLabeledAction`'s metrics.
     private var labeledLabel: some View {
-        VStack(spacing: 6) {
+        let metrics = PhoneLabeledActionMetrics(sharesRow: sharesActionRow)
+        return VStack(spacing: 6) {
             ZStack {
                 Circle().fill(Color.white.opacity(isMonitored || isDownloading ? 0.18 : 0.10))
                 Image(systemName: isDownloading ? "arrow.down" : (isMonitored ? "arrow.down.circle.fill" : "arrow.down.to.line"))
-                    .font(.system(size: isDownloading ? 11 : 19, weight: isDownloading ? .bold : .regular))
+                    .font(.system(size: isDownloading ? 11 : metrics.iconSize, weight: isDownloading ? .bold : .regular))
                     .foregroundColor(Color.vividOnSurface)
                 if isDownloading {
-                    DownloadActivityRing(diameter: 34, lineWidth: 2.5)
+                    DownloadActivityRing(diameter: metrics.circle - 8, lineWidth: 2.5)
                 }
             }
-            .frame(width: 42, height: 42)
+            .frame(width: metrics.circle, height: metrics.circle)
             Text(isDownloading ? "Downloading" : (isMonitored ? "Monitored" : "Download"))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(Color.vividOnSurface.opacity(isMonitored || isDownloading ? 0.92 : 0.6))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: sharesActionRow, vertical: false)
         }
-        .frame(maxWidth: .infinity, minHeight: 58)
+        .frame(width: metrics.slotWidth)
+        .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: 58)
         .contentShape(Rectangle())
     }
 
@@ -136,17 +140,20 @@ struct SeriesDownloadMenuButton: View {
             }
             .frame(width: 44, height: 44)
         case .labeled:
+            let metrics = PhoneLabeledActionMetrics(sharesRow: sharesActionRow)
             VStack(spacing: 6) {
-                DownloadUnavailableGlyph(size: 19)
-                    .frame(width: 42, height: 42)
+                DownloadUnavailableGlyph(size: metrics.iconSize)
+                    .frame(width: metrics.circle, height: metrics.circle)
                     .background(Circle().fill(Color.white.opacity(0.10)))
                 Text("Unavailable")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(Color.vividOnSurface.opacity(0.6))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: sharesActionRow, vertical: false)
             }
-            .frame(maxWidth: .infinity, minHeight: 58)
+            .frame(width: metrics.slotWidth)
+            .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: 58)
             .contentShape(Rectangle())
         }
     }

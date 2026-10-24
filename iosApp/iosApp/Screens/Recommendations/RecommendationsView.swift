@@ -15,6 +15,8 @@ struct RecommendationsView: View {
 
     @State private var viewModel: RecommendationsViewModel
     @State private var mobileSelection = "Watchlist"
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.usesDuoSideTabBar) private var usesDuoSideTabBar
     /// One Filter choice per For You list, reset on launch.
     @State private var mobileFilters: [String: PersonalListFilter] = [:]
     @State private var savedListSelection: SavedShortcut = .watchlist
@@ -65,7 +67,14 @@ struct RecommendationsView: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(MobileTopScrollEdgeModifier())
-        .environment(\.forYouScrollHeader, AnyView(mobileSectionTabs))
+        // With the Duo's tab bar in its side strip, the page tabs take the
+        // free space at the bottom instead of scrolling with the list.
+        .environment(\.forYouScrollHeader, usesDuoSideTabBar ? nil : AnyView(mobileSectionTabs))
+        .onDuo {
+            $0.safeAreaInset(edge: .bottom) {
+                if usesDuoSideTabBar { mobileSectionTabs.padding(.bottom, PhoneDuo.pageTabsBottomPadding) }
+            }
+        }
         .environment(chromeScrollState)
         .background(VividAppBackdrop())
         .toolbar(.hidden, for: .navigationBar)
@@ -89,6 +98,7 @@ struct RecommendationsView: View {
                 mobileFilterMenu
             }
         }
+            .onDuo { $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize)) }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.top, 12)

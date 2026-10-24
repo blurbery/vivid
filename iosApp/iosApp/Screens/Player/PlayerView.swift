@@ -61,6 +61,9 @@ struct PlayerView: View {
     @Environment(\.dismiss) var dismiss
     #if os(iOS)
     @State private var orientationCoordinator = PlayerOrientationCoordinator.shared
+    /// The iPhone Duo half folded like a laptop: video above the crease,
+    /// controls below it.
+    @State private var duoTabletop: DuoTabletop?
     #endif
     #if os(tvOS)
     @Environment(\.scenePhase) private var scenePhase
@@ -102,7 +105,8 @@ struct PlayerView: View {
 
     var body: some View {
         PlayerSurfaceLayout(isPreview: viewModel.showNextUpScreen,
-                            isTransitioning: viewModel.isNextUpTransitioning) {
+                            isTransitioning: viewModel.isNextUpTransitioning,
+                            topRegionHeight: tabletopVideoHeight) {
             playerSurface()
                 .opacity(viewModel.error == nil ? 1 : 0)
                 .accessibilityHidden(viewModel.error != nil)
@@ -271,10 +275,12 @@ struct PlayerView: View {
                             // hold-2×, pinch) live in a dedicated
                             // layer under the button overlay.
                             MobilePlayerGestureLayer(viewModel: viewModel)
+                                .duoTabletopTopHalf(duoTabletop)
                         }
                         MobilePlayerControls(
                             viewModel: viewModel,
-                            onDismiss: { dismissPlayer() }
+                            onDismiss: { dismissPlayer() },
+                            tabletop: duoTabletop
                         )
                         #endif
 
@@ -295,6 +301,9 @@ struct PlayerView: View {
                         isPlaying: viewModel.isPlaying,
                         currentTime: { viewModel.currentTime }
                     )
+                    #if os(iOS)
+                    .duoTabletopTopHalf(duoTabletop)
+                    #endif
                 }
             }
         }
@@ -302,7 +311,7 @@ struct PlayerView: View {
         .overlay(alignment: .topTrailing) {
             MobilePlayerRotationControls(
                 orientationCoordinator: orientationCoordinator,
-                isVisible: viewModel.shouldShowMobilePlayerChrome
+                isVisible: viewModel.shouldShowMobilePlayerChrome && duoTabletop == nil
             ) {
                 viewModel.resumeAutoHide()
             }
@@ -311,6 +320,10 @@ struct PlayerView: View {
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { _ in
             orientationCoordinator.refreshInterfaceOrientation()
+        }
+        .onDuoTabletopChange { tabletop in
+            duoTabletop = tabletop
+            orientationCoordinator.setDuoTabletop(tabletop != nil)
         }
         #endif
         #if os(tvOS)
@@ -599,6 +612,15 @@ struct PlayerView: View {
         }
     }
     #endif
+
+    /// Video height above the iPhone Duo's crease while it's half folded.
+    private var tabletopVideoHeight: CGFloat? {
+        #if os(iOS)
+        duoTabletop?.crease.minY
+        #else
+        nil
+        #endif
+    }
 
     /// Video surface. tvOS uses focus-driven transport; on iOS the touch
     /// gestures (tap-to-toggle, pinch, double-tap skip, …) live in

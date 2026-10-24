@@ -99,7 +99,7 @@ struct PhoneDetailPageSurface<Content: View>: View {
         guard enablesArtworkGlass, !reduceTransparency else { return false }
         #if os(iOS)
         return UIDevice.current.userInterfaceIdiom == .phone
-            && horizontalSizeClass != .regular
+            && PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
         #else
         return false
         #endif
@@ -249,7 +249,7 @@ struct PhoneDetailParallaxArtwork: View {
         guard isEnabled, !reduceMotion else { return false }
         #if os(iOS)
         return UIDevice.current.userInterfaceIdiom == .phone
-            && horizontalSizeClass != .regular
+            && PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
         #else
         return false
         #endif
@@ -327,6 +327,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     }
 
     private var usesExpandedLayout: Bool {
+        if PhoneDuo.isDuo { return false }
         if horizontalSizeClass == .compact, verticalSizeClass == .regular {
             return false
         }
@@ -349,9 +350,10 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                     .padding(.top, 2)
 
                 overviewBlock
-                creditBlock(alignment: .leading)
+                creditBlock(alignment: usesDuoColumn ? .center : .leading)
                 belowOverview()
             }
+            .onDuo { $0.frame(maxWidth: usesDuoColumn ? PhoneDuo.detailColumnWidth : .infinity) }
             .padding(.horizontal, VividTheme.safePadding)
             .padding(.top, 8)
             .padding(.bottom, 12)
@@ -377,6 +379,12 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         // Artwork clips before its top-attachment transform. Clipping the
         // parent here would cut off the pixels filling a top rubber-band gap.
         .accessibilityElement(children: .contain)
+    }
+
+    /// The iPhone Duo's inner screen is too wide for the phone's full-width
+    /// stack, so the copy and controls share one centred column.
+    private var usesDuoColumn: Bool {
+        PhoneDuo.usesWideLayout(horizontalSizeClass)
     }
 
     private var compactArtworkHeight: CGFloat {
@@ -621,8 +629,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .foregroundStyle(Color.vividOnSurface.opacity(0.80))
                 .lineSpacing(3)
                 .lineLimit(3)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(usesDuoColumn ? .center : .leading)
+                .frame(maxWidth: .infinity, alignment: usesDuoColumn ? .center : .leading)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     showFullOverview = true
@@ -647,6 +655,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.vividOnSurface.opacity(0.58))
                 .lineLimit(2)
+                .onDuo { $0.multilineTextAlignment(alignment == .center ? .center : .leading) }
                 .frame(maxWidth: .infinity, alignment: alignment)
         }
     }

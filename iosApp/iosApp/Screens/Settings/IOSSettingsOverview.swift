@@ -8,6 +8,7 @@ struct IOSSettingsOverview: View {
     @Environment(AppRouter.self) private var router
     @State private var profileEditorRoute: PhoneProfileEditorRoute?
     @State private var unsentDiagnostics = 0
+    @Environment(\.duoSideStrip) private var duoSideStrip
 
     var body: some View {
         List {
@@ -17,13 +18,15 @@ struct IOSSettingsOverview: View {
                 .accessibilityAddTraits(.isHeader)
                 .settingsPageHeaderRow()
 
-            Section {
-                PhoneSavedAccountCards(isSettings: true, editorRoute: $profileEditorRoute)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 8, trailing: 0))
-            } header: {
-                PhoneSettingsSectionHeader("Profiles")
+            if duoSideStrip == nil {
+                Section {
+                    profileCards
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 8, trailing: 0))
+                } header: {
+                    PhoneSettingsSectionHeader("Profiles")
+                }
             }
 
             Section {
@@ -48,6 +51,11 @@ struct IOSSettingsOverview: View {
                 .listRowSeparator(.hidden)
         }
         .settingsListChrome()
+        .overlay {
+            if let duoSideStrip {
+                profileStrip(duoSideStrip)
+            }
+        }
         .preferredColorScheme(.dark)
         .navigationTitle("")
         .navigationDestination(item: $profileEditorRoute) { route in
@@ -57,6 +65,25 @@ struct IOSSettingsOverview: View {
         .onReceive(NotificationCenter.default.publisher(for: AppHealthStore.didChange)) { _ in
             Task { await refreshDiagnosticsCount() }
         }
+    }
+
+    private var profileCards: some View {
+        PhoneSavedAccountCards(isSettings: true, editorRoute: $profileEditorRoute)
+    }
+
+    /// Beside the iPhone Duo's side status bar the profiles stand in the
+    /// strip as a bar of avatars, like the tab bar on other pages, under the
+    /// X and on the status icons' line.
+    private func profileStrip(_ strip: PhoneDuo.SideStrip) -> some View {
+        PhoneSavedAccountCards(isSettings: true, editorRoute: $profileEditorRoute, isStrip: true)
+            .frame(width: 2 * PhoneDuo.ControlCorner.centreFromEdge)
+            .padding(.top, strip.controlsTop + 44 + 14)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: strip.edge == .trailing ? .topTrailing : .topLeading
+            )
+            .ignoresSafeArea()
     }
 
     private var diagnosticsSubtitle: String {
@@ -262,6 +289,8 @@ struct PhoneSavedAccountCards: View {
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
     @Binding var editorRoute: PhoneProfileEditorRoute?
+    /// A narrow glass bar of avatars for the iPhone Duo's side strip.
+    var isStrip = false
     @GestureState private var reorderGestureActive = false
     @State private var cardFrames: [String: CGRect] = [:]
     @State private var dragStartFrame: CGRect = .zero
@@ -277,7 +306,9 @@ struct PhoneSavedAccountCards: View {
     @State private var pinError: String?
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            if isSettings {
+            if isStrip {
+                stripBar
+            } else if isSettings {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: avatarSize, maximum: 112), spacing: 12, alignment: .top)], alignment: .leading, spacing: 16) {
                     profileCards
                 }
@@ -376,6 +407,44 @@ struct PhoneSavedAccountCards: View {
         }
     }
     private var avatarSize: CGFloat { isSettings ? 72 : 88 }
+
+    /// The same taps as the cards; reordering stays with the full cards.
+    private var stripBar: some View {
+        VStack(spacing: 10) {
+            ForEach(displayedAccounts) { account in
+                Button { activateProfile(account) } label: {
+                    ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: account.displayName, size: 36,
+                                      cacheScope: account.profile.map {
+                                          VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: $0.id)
+                                      })
+                        .overlay {
+                            Circle().strokeBorder(isCurrentAccount(account) ? Color.white : .clear, lineWidth: 2)
+                        }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isCurrentAccount(account) ? "\(account.displayName), current account" : account.displayName)
+            }
+            if store.canAddAccount {
+                Button { editorRoute = .add } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(.white.opacity(0.12), in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add Profile")
+            }
+        }
+        .padding(.vertical, 7)
+        .frame(width: 50)
+        .vividGlass(in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1).allowsHitTesting(false))
+    }
 
     @ViewBuilder
     private var profileCards: some View {

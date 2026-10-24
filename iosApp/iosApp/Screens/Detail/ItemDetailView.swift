@@ -32,22 +32,28 @@ struct PhoneDetailTopChrome: View {
     let leadingSystemName: String?
     let leadingAccessibilityLabel: String?
     let onLeadingTap: () -> Void
+    /// Beside the iPhone Duo's side status bar the X or back button stands in
+    /// the strip, under the connectivity icon and on the same line as the
+    /// icons. There's no top status bar there for the glass and title.
+    @State private var sideStrip: PhoneDuo.SideStrip?
+    /// On the Duo the X or back button stands under the status icons.
+    @State private var controlCorner: PhoneDuo.ControlCorner?
 
     var body: some View {
         ZStack(alignment: .top) {
             PhoneDetailTopGlass(
-                isEnabled: isScrollGlassEnabled,
+                isEnabled: showsScrollGlass,
                 scrollState: scrollState
             )
 
             PhoneDetailScrollTitle(
                 title: title,
-                isEnabled: isScrollGlassEnabled,
+                isEnabled: showsScrollGlass,
                 scrollState: scrollState
             )
 
             HStack {
-                if let leadingSystemName {
+                if let leadingSystemName, controlCorner == nil {
                     Button(action: onLeadingTap) {
                         controlIcon(
                             systemName: leadingSystemName,
@@ -65,14 +71,53 @@ struct PhoneDetailTopChrome: View {
             .padding(.leading, 9)
             .padding(.trailing, 18)
             .padding(.top, 9)
+
+            if let corner = controlCorner, let leadingSystemName {
+                // Measured from the window's edge, like the other pages.
+                Button(action: onLeadingTap) {
+                    controlIcon(
+                        systemName: leadingSystemName,
+                        size: leadingSystemName == "chevron.left" ? 17 : 16
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(leadingAccessibilityLabel ?? "Back")
+                .frame(width: 2 * PhoneDuo.ControlCorner.centreFromEdge)
+                .padding(.top, corner.top)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: corner.edge == .trailing ? .topTrailing : .topLeading
+                )
+                .ignoresSafeArea()
+            }
+        }
+        .onDuo {
+            $0.onGeometryChange(for: PhoneDuo.SideStrip?.self) { proxy in
+                PhoneDuo.sideStrip(proxy)
+            } action: { strip in
+                sideStrip = strip
+            }
+            .onGeometryChange(for: PhoneDuo.ControlCorner?.self) { proxy in
+                PhoneDuo.controlCorner(proxy)
+            } action: { corner in
+                controlCorner = corner
+            }
         }
         .zIndex(20)
+    }
+
+    /// The controls keep their own glass where the scroll glass is off. On
+    /// the Duo the X or back stands under the status icons, with no glass bar
+    /// or title fading in behind it.
+    private var showsScrollGlass: Bool {
+        isScrollGlassEnabled && sideStrip == nil && controlCorner == nil
     }
 
     private func controlIcon(systemName: String, size: CGFloat) -> some View {
         ZStack {
             PhoneDetailControlGlass(
-                isScrollGlassEnabled: isScrollGlassEnabled,
+                isScrollGlassEnabled: showsScrollGlass,
                 scrollState: scrollState
             )
 
@@ -460,7 +505,7 @@ private struct ItemDetailPhoneContent: View {
 
     private var supportsScrollGlassChrome: Bool {
         guard UIDevice.current.userInterfaceIdiom == .phone,
-              horizontalSizeClass != .regular,
+              PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass),
               let detail = viewModel.detail else {
             return false
         }

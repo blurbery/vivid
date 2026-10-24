@@ -8,6 +8,8 @@ struct SearchView: View {
     @State private var seerr = TVSeerrConnectionStore.shared
     #endif
     @Environment(AppRouter.self) private var router
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.usesDuoSideTabBar) private var usesDuoSideTabBar
     #if os(iOS)
     @FocusState private var isSearchFieldFocused: Bool
     #endif
@@ -53,7 +55,7 @@ struct SearchView: View {
                     .frame(maxWidth: .infinity)
                 }
                 #endif
-                if shouldShowFilters {
+                if shouldShowFilters, !usesDuoSideTabBar {
                     mediaTypeFilter
                     #if os(tvOS)
                         .padding(.horizontal, VividTheme.padding)
@@ -87,6 +89,20 @@ struct SearchView: View {
             .padding(.top, VividTheme.smallPadding)
             #endif
         }
+        #if os(iOS)
+        // On the Duo's landscape inner screen the media tabs sit at the
+        // bottom, as For You's do.
+        .onDuo {
+            $0.safeAreaInset(edge: .bottom) {
+                if shouldShowFilters, usesDuoSideTabBar {
+                    mediaTypeFilter
+                        .frame(height: PhoneDuo.pageTabsRowHeight)
+                        .padding(.horizontal, VividTheme.padding)
+                        .padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+                }
+            }
+        }
+        #endif
         #if os(tvOS)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #else
@@ -103,6 +119,14 @@ struct SearchView: View {
         .modifier(SearchNativeField(query: $viewModel.query, prompt: searchPrompt))
         #if os(iOS)
         .searchFocused($isSearchFieldFocused)
+        // Half folding the iPhone Duo like a laptop brings the keyboard up
+        // on its lower half, ready to type, unless a detail page, the player
+        // or a pushed page covers Search.
+        .onDuoTabletopChange { tabletop in
+            guard tabletop != nil, router.presentedItemDetail == nil,
+                  router.presentedPlayer == nil, router.path.isEmpty else { return }
+            isSearchFieldFocused = true
+        }
         .onChange(of: blurRequest) { _, _ in
             isSearchFieldFocused = false
         }
@@ -239,6 +263,7 @@ struct SearchView: View {
         }.padding(5).vividGlass(in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1).allowsHitTesting(false))
         .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
+        .onDuo { $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize)) }
         .frame(maxWidth: .infinity)
         #elseif os(tvOS)
         HStack(spacing: 24) {

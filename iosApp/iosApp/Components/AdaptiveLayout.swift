@@ -18,6 +18,17 @@ enum AdaptiveColumns {
         return max(1, (containerWidth - CGFloat(count - 1) * spacing) / CGFloat(count))
     }
 
+    /// iPhone Duo inner-screen grids fill each row like Apple TV: six posters
+    /// across in landscape and four in portrait, close to iPhone poster size.
+    static func duoPosterCount(containerWidth: CGFloat, spacing: CGFloat = 8) -> Int {
+        max(3, Int((max(1, containerWidth) + spacing) / (125 + spacing)))
+    }
+
+    static func duoPosterWidth(containerWidth: CGFloat, spacing: CGFloat = 8) -> CGFloat {
+        let count = duoPosterCount(containerWidth: containerWidth, spacing: spacing)
+        return max(1, (containerWidth - CGFloat(count - 1) * spacing) / CGFloat(count))
+    }
+
     static func posters(
         for sizeClass: UserInterfaceSizeClass?,
         posterSize: CardPosterSize = .standard,

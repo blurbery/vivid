@@ -36,6 +36,10 @@ struct CatalogGrid: View {
     @Environment(\.horizontalSizeClass) private var hSize
     private var columns: [GridItem] {
         #if os(iOS)
+        if PhoneDuo.usesWideLayout(hSize) {
+            return Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
+                         count: AdaptiveColumns.duoPosterCount(containerWidth: gridWidth))
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
                          count: AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth))
@@ -137,6 +141,10 @@ struct CatalogGrid: View {
     /// that scale here so three-column library/search cards fill their cells.
     private var gridCardWidthOverride: CGFloat? {
         #if os(iOS)
+        if PhoneDuo.usesWideLayout(hSize) {
+            return AdaptiveColumns.duoPosterWidth(containerWidth: gridWidth)
+                / uiCustomization.cardPresentation.posterSize.scale
+        }
         if UIDevice.current.userInterfaceIdiom == .pad {
             return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth)
                 / uiCustomization.cardPresentation.posterSize.scale

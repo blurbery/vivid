@@ -74,8 +74,10 @@ struct PlayerRotationState {
 final class PlayerOrientationCoordinator {
     static let shared = PlayerOrientationCoordinator()
 
-    /// Browsing is portrait-only on iPhone. iPad keeps every orientation its
-    /// Info.plist advertises so the split view and detail deck can rotate.
+    /// The static default: browsing is portrait-only on iPhone. iPad keeps
+    /// every orientation its Info.plist advertises so the split view and
+    /// detail deck can rotate. At runtime the iPhone Duo's inner screen
+    /// rotates too, through `rotatesBrowsing`.
     static var appDefaultOrientations: UIInterfaceOrientationMask {
         browsingOrientations(isPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
@@ -89,6 +91,9 @@ final class PlayerOrientationCoordinator {
 
     private var rotationState = PlayerRotationState()
     private(set) var isPortraitPagePresented = false
+    /// The iPhone Duo is half folded like a laptop under the player, which
+    /// then stays portrait with the video on the upper half.
+    private(set) var isDuoTabletop = false
     private let motionManager = CMMotionManager()
     private var motionCandidate: UIInterfaceOrientationMask?
     private var motionCandidateSince: TimeInterval = 0
@@ -100,13 +105,26 @@ final class PlayerOrientationCoordinator {
 
     private var currentBrowsingOrientations: UIInterfaceOrientationMask {
         Self.browsingOrientations(
-            isPad: UIDevice.current.userInterfaceIdiom == .pad,
+            isPad: rotatesBrowsing,
             portraitPagePresented: isPortraitPagePresented
         )
     }
 
+    /// iPad, and the iPhone Duo's unfolded inner screen, browse in every
+    /// orientation. The Duo's cover screen stays portrait like other iPhones.
+    var rotatesBrowsing: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || isOnDuoInnerScreen
+    }
+
+    private var isOnDuoInnerScreen: Bool {
+        PhoneDuo.isDuo && activeWindowScenes().contains {
+            PhoneDuo.isInnerScreen($0.coordinateSpace.bounds.size)
+        }
+    }
+
     var supportedOrientations: UIInterfaceOrientationMask {
-        Self.orientationMask(isPlayerActive: isPlayerActive,
+        if isPlayerActive, isDuoTabletop { return .portrait }
+        return Self.orientationMask(isPlayerActive: isPlayerActive,
                              lockedOrientation: rotationState.lockedOrientation,
                              browsingOrientations: currentBrowsingOrientations)
     }
@@ -177,7 +195,7 @@ final class PlayerOrientationCoordinator {
             guard motion.timestamp - self.motionCandidateSince >= 0.35,
                   self.lastMotionOrientation != orientation else { return }
             self.lastMotionOrientation = orientation
-            guard !self.isRotationLocked, UIApplication.shared.applicationState == .active,
+            guard !self.isRotationLocked, !self.isDuoTabletop, UIApplication.shared.applicationState == .active,
                   self.currentInterfaceOrientation().flatMap(Self.exactMask) != orientation else { return }
             self.applyCurrentPolicy(preferredOrientation: orientation)
         }
@@ -201,9 +219,11 @@ final class PlayerOrientationCoordinator {
         applyCurrentPolicy(preferredOrientation: persistedLock ?? deviceOrientationMask())
     }
 
-    /// Search and settings use full-window pages on iPhone and iPad, but both
-    /// remain portrait-only. Player activation temporarily takes precedence;
-    /// deactivation restores this policy before revealing the page.
+    /// Search and settings use full-window pages on iPhone and iPad. Callers
+    /// pass `!rotatesBrowsing`, so they stay portrait on iPhone but rotate on
+    /// iPad and the iPhone Duo's inner screen. Player activation temporarily
+    /// takes precedence; deactivation restores this policy before revealing
+    /// the page.
     func setPortraitPagePresented(_ isPresented: Bool) {
         guard isPortraitPagePresented != isPresented else { return }
         isPortraitPagePresented = isPresented
@@ -211,10 +231,45 @@ final class PlayerOrientationCoordinator {
         applyCurrentPolicy(preferredOrientation: isPresented ? .portrait : currentBrowsingOrientations)
     }
 
+    /// Folding or unfolding the iPhone Duo moves the scene to the other
+    /// screen. Only re-query the supported orientations: iOS turns the cover
+    /// to portrait itself, and the inner screen follows the device. A
+    /// geometry request here is replayed after the next unfold and pins the
+    /// inner screen in portrait.
+    func duoScreenDidChange(portraitPagePresented: Bool) {
+        guard PhoneDuo.isDuo else { return }
+        isPortraitPagePresented = portraitPagePresented
+        guard !isPlayerActive else { return }
+        refreshSupportedOrientations()
+    }
+
+    /// Only re-queries the orientations, for the same reason as a fold.
+    func setDuoTabletop(_ isTabletop: Bool) {
+        guard PhoneDuo.isDuo, isDuoTabletop != isTabletop else { return }
+        isDuoTabletop = isTabletop
+        refreshSupportedOrientations()
+    }
+
+    private func refreshSupportedOrientations() {
+        for scene in activeWindowScenes() {
+            for window in scene.windows {
+                guard let rootViewController = window.rootViewController else { continue }
+                notifyOrientationChange(for: rootViewController)
+            }
+        }
+    }
+
     func deactivatePlayer() {
         guard isPlayerActive else { return }
         rotationState.deactivate()
         stopMotionUpdates()
+        // A geometry request on the iPhone Duo is replayed after the next
+        // unfold, so only re-query the orientations there: the cover returns
+        // to portrait and the inner screen keeps the video's orientation.
+        if PhoneDuo.isDuo {
+            UIView.performWithoutAnimation { refreshSupportedOrientations() }
+            return
+        }
         let preferredOrientation: UIInterfaceOrientationMask = currentBrowsingOrientations.contains(.portrait)
             ? .portrait : currentBrowsingOrientations
         if UIDevice.current.userInterfaceIdiom == .phone {
