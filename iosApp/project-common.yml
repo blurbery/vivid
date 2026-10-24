@@ -23,6 +23,15 @@ settings:
     # simulator SDKs so Apple Silicon Macs don't try to link missing slices.
     EXCLUDED_ARCHS[sdk=appletvsimulator*]: x86_64
     EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+    # English is the source language and the fallback. The app follows the
+    # device's language order through Resources/Localizable.xcstrings, whose
+    # entries are all marked manual and kept up to date by
+    # scripts/l10n/sync-string-catalog.sh. That script turns compiler
+    # extraction on for its own iOS and tvOS builds. It stays off here
+    # because Xcode syncs the catalog after every build using only the
+    # platform it just built, which would drop the other platform's strings.
+    LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
+    SWIFT_EMIT_LOC_STRINGS: "NO"
 
 # One committed version/channel baseline for every shippable target: the app
 # and its embedded extensions must ship the same CFBundleVersion, and five

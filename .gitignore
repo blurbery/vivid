@@ -70,6 +70,7 @@ docs/*
 !docs/diagnostics-relay.md
 !docs/tmdb-relay.md
 !docs/plugins.md
+!docs/localisation.md
 !docs/images/
 !docs/cores/
 !docs/cores/*.md
