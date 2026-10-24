@@ -215,8 +215,11 @@ jobs:
           fi
 
           gh pr view "$PR" --repo "$REPO" --json title,body --jq '"# \(.title)\n\n\(.body)"' > "$dir/pr.md"
+          # Anyone can comment on a pull request in a public repository, so
+          # only comments from the owner, members, collaborators and bots
+          # (this review's earlier findings and other review apps) reach Claude.
           gh api --paginate "repos/$REPO/pulls/$PR/comments" \
-            --jq '.[] | "- \(.user.login) on \(.path):\(.line // .original_line) (comment \(.id)\(if .in_reply_to_id then ", replying to \(.in_reply_to_id)" else "" end)): \(.body | gsub("<!--[^>]*-->"; "") | split("<details>")[0] | gsub("\\s+"; " ") | .[0:800])"' \
+            --jq '.[] | select(.user.type == "Bot" or .author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | "- \(.user.login) on \(.path):\(.line // .original_line) (comment \(.id)\(if .in_reply_to_id then ", replying to \(.in_reply_to_id)" else "" end)): \(.body | gsub("<!--[^>]*-->"; "") | split("<details>")[0] | gsub("\\s+"; " ") | .[0:800])"' \
             > "$dir/comments.md"
           if [ ! -s "$dir/comments.md" ]; then echo "No review comments yet." > "$dir/comments.md"; fi
 
