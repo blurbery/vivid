@@ -97,6 +97,25 @@ enum PhoneDuo {
         #endif
     }
 
+    /// Where a page's X or back button stands on the Duo: centred on the
+    /// same line as the status icons, which iOS keeps 48 points in from the
+    /// screen's edge, 14 points under the connectivity icon. That's in the
+    /// side strip on the cover and in landscape, and the top corner on the
+    /// inner screen in portrait, where the icons end about 62 points down.
+    struct ControlCorner: Equatable {
+        let edge: HorizontalEdge
+        let top: CGFloat
+        static let centreFromEdge: CGFloat = 48
+    }
+
+    @MainActor static func controlCorner(_ geometry: GeometryProxy) -> ControlCorner? {
+        if let strip = sideStrip(geometry) {
+            return ControlCorner(edge: strip.edge, top: strip.controlsTop)
+        }
+        let isInner = isInnerScreen(geometry) || windowSize.map(isInnerScreen) == true
+        return isInner ? ControlCorner(edge: .trailing, top: 76) : nil
+    }
+
     /// The cover screen, and the inner screen in landscape, put the status
     /// bar in a strip down one side. Vivid's tab bar stands in that strip.
     static func sideBarEdge(_ geometry: GeometryProxy) -> HorizontalEdge? {
@@ -113,8 +132,11 @@ extension EnvironmentValues {
     /// Search then move their page tabs into the free space at the bottom.
     @Entry var usesDuoSideTabBar = false
     /// The Duo's status bar strip beside the tab view and the pages it
-    /// pushes, where their X and back buttons stand.
+    /// pushes.
     @Entry var duoSideStrip: PhoneDuo.SideStrip? = nil
+    /// Where X and back buttons stand on the Duo, beside or under the status
+    /// icons.
+    @Entry var duoControlCorner: PhoneDuo.ControlCorner? = nil
     /// Set by a page that hides its back button, so the strip shows none.
     @Entry var duoStripBackHidden = false
 }

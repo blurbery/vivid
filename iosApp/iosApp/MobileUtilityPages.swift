@@ -14,20 +14,20 @@ struct MobileSearchPage: View {
 
     let safeAreaInsets: EdgeInsets
     let onDismiss: () -> Void
-    @Environment(\.duoSideStrip) private var duoSideStrip
+    @Environment(\.duoControlCorner) private var duoControlCorner
 
     var body: some View {
         MobileUtilityPage(safeAreaInsets: safeAreaInsets, onDismiss: dismissPage) {
             NavigationStack(path: $searchRouter.path) {
                 SearchView(blurRequest: blurRequest)
                     .toolbar {
-                        if duoSideStrip == nil {
+                        if duoControlCorner == nil {
                             MobileUtilityCloseToolbar(accessibilityLabel: "Close search", action: dismissPage)
                         }
                     }
                     .overlay {
-                        if let duoSideStrip {
-                            DuoStripButton(strip: duoSideStrip, systemName: "xmark", accessibilityLabel: "Close search", action: dismissPage)
+                        if let duoControlCorner {
+                            DuoStripButton(corner: duoControlCorner, systemName: "xmark", accessibilityLabel: "Close search", action: dismissPage)
                         }
                     }
                     .navigationDestination(for: Route.self) { route in
@@ -67,7 +67,7 @@ struct MobileSettingsPage: View {
     let onDismiss: () -> Void
 
     @State private var isOverviewVisible = false
-    @Environment(\.duoSideStrip) private var duoSideStrip
+    @Environment(\.duoControlCorner) private var duoControlCorner
 
     var body: some View {
         MobileUtilityPage(safeAreaInsets: safeAreaInsets, allowsPullToDismiss: isOverviewVisible, onDismiss: onDismiss) {
@@ -77,13 +77,13 @@ struct MobileSettingsPage: View {
                     .onDisappear { isOverviewVisible = false }
                     .toggleStyle(SwitchToggleStyle(tint: .green))
                     .toolbar {
-                        if duoSideStrip == nil {
+                        if duoControlCorner == nil {
                             MobileUtilityCloseToolbar(accessibilityLabel: "Close settings", action: onDismiss)
                         }
                     }
                     .overlay {
-                        if let duoSideStrip {
-                            DuoStripButton(strip: duoSideStrip, systemName: "xmark", accessibilityLabel: "Close settings", action: onDismiss)
+                        if let duoControlCorner {
+                            DuoStripButton(corner: duoControlCorner, systemName: "xmark", accessibilityLabel: "Close settings", action: onDismiss)
                         }
                     }
             }

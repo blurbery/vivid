@@ -192,6 +192,7 @@ struct MainTabView: View {
     /// The side the tab bar stands in on the iPhone Duo's landscape inner
     /// screen, or nil for the usual bottom bar.
     @State private var duoSideStrip: PhoneDuo.SideStrip?
+    @State private var duoControlCorner: PhoneDuo.ControlCorner?
     private var duoSideBarEdge: HorizontalEdge? { duoSideStrip?.edge }
     @Bindable var router: AppRouter
     @State private var selectedDestinationID: MainTabDestinationID = .app(.home)
@@ -241,6 +242,7 @@ struct MainTabView: View {
                 }
                 .environment(\.usesDuoSideTabBar, duoSideBarEdge != nil)
                 .environment(\.duoSideStrip, duoSideStrip)
+                .environment(\.duoControlCorner, duoControlCorner)
                 // Folding the iPhone Duo moves the app between its screens.
                 .onChange(of: PhoneDuo.isInnerScreen(geometry)) { _, isInnerScreen in
                     PlayerOrientationCoordinator.shared.duoScreenDidChange(
@@ -249,6 +251,9 @@ struct MainTabView: View {
                 }
                 .onChange(of: PhoneDuo.sideStrip(geometry), initial: true) { _, strip in
                     duoSideStrip = strip
+                }
+                .onChange(of: PhoneDuo.controlCorner(geometry), initial: true) { _, corner in
+                    duoControlCorner = corner
                 }
             }
             // A keyboard inside the player must not lift the underlying Home tab bar.

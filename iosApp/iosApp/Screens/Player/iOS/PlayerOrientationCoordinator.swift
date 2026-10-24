@@ -89,6 +89,9 @@ final class PlayerOrientationCoordinator {
 
     private var rotationState = PlayerRotationState()
     private(set) var isPortraitPagePresented = false
+    /// The iPhone Duo is half folded like a laptop under the player, which
+    /// then stays portrait with the video on the upper half.
+    private(set) var isDuoTabletop = false
     private let motionManager = CMMotionManager()
     private var motionCandidate: UIInterfaceOrientationMask?
     private var motionCandidateSince: TimeInterval = 0
@@ -118,7 +121,8 @@ final class PlayerOrientationCoordinator {
     }
 
     var supportedOrientations: UIInterfaceOrientationMask {
-        Self.orientationMask(isPlayerActive: isPlayerActive,
+        if isPlayerActive, isDuoTabletop { return .portrait }
+        return Self.orientationMask(isPlayerActive: isPlayerActive,
                              lockedOrientation: rotationState.lockedOrientation,
                              browsingOrientations: currentBrowsingOrientations)
     }
@@ -189,7 +193,7 @@ final class PlayerOrientationCoordinator {
             guard motion.timestamp - self.motionCandidateSince >= 0.35,
                   self.lastMotionOrientation != orientation else { return }
             self.lastMotionOrientation = orientation
-            guard !self.isRotationLocked, UIApplication.shared.applicationState == .active,
+            guard !self.isRotationLocked, !self.isDuoTabletop, UIApplication.shared.applicationState == .active,
                   self.currentInterfaceOrientation().flatMap(Self.exactMask) != orientation else { return }
             self.applyCurrentPolicy(preferredOrientation: orientation)
         }
@@ -232,6 +236,13 @@ final class PlayerOrientationCoordinator {
         guard PhoneDuo.isDuo else { return }
         isPortraitPagePresented = portraitPagePresented
         guard !isPlayerActive else { return }
+        refreshSupportedOrientations()
+    }
+
+    /// Only re-queries the orientations, for the same reason as a fold.
+    func setDuoTabletop(_ isTabletop: Bool) {
+        guard PhoneDuo.isDuo, isDuoTabletop != isTabletop else { return }
+        isDuoTabletop = isTabletop
         refreshSupportedOrientations()
     }
 

@@ -117,6 +117,11 @@ struct SearchView: View {
         .modifier(SearchNativeField(query: $viewModel.query, prompt: searchPrompt))
         #if os(iOS)
         .searchFocused($isSearchFieldFocused)
+        // Half folding the iPhone Duo like a laptop brings the keyboard up
+        // on its lower half, ready to type.
+        .onDuoTabletopChange { tabletop in
+            if tabletop != nil { isSearchFieldFocused = true }
+        }
         .onChange(of: blurRequest) { _, _ in
             isSearchFieldFocused = false
         }

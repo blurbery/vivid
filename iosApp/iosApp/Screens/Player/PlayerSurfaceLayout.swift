@@ -23,6 +23,9 @@ struct PlayerPreviewBoundsKey: PreferenceKey {
 struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
     let isPreview: Bool
     var isTransitioning: Bool = false
+    /// Holds the video to the top of the screen, this tall, while the iPhone
+    /// Duo is half folded like a laptop. Nil fills the screen.
+    var topRegionHeight: CGFloat? = nil
     @ViewBuilder let surface: () -> Surface
     @ViewBuilder let content: () -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,7 +34,9 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
         content()
             .overlayPreferenceValue(PlayerPreviewBoundsKey.self) { geometry in
                 GeometryReader { proxy in
-                    let fullFrame = CGRect(origin: .zero, size: proxy.size)
+                    let fullFrame = topRegionHeight.map {
+                        CGRect(x: 0, y: 0, width: proxy.size.width, height: min($0, proxy.size.height))
+                    } ?? CGRect(origin: .zero, size: proxy.size)
                     let showsPreview = isPreview && !isTransitioning
                     let frame = showsPreview ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
                     let viewport = showsPreview ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
