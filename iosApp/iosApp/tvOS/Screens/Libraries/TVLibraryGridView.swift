@@ -43,8 +43,12 @@ struct TVLibraryGridView: View {
     @State private var returnControl: TVBrowseControlFocus = .sort
     @State private var controlFocusRequest = 0
     @State private var lastShellFocusRequest = 0
+    /// Cleared while a pushed page covers the grid, so coming back to the app
+    /// there doesn't swap page 1 under the card focus will return to.
+    @State private var isOnScreen = false
 
     @Environment(AppRouter.self) private var router
+    @Environment(\.scenePhase) private var scenePhase
 
     init(
         libraryId: Int,
@@ -109,12 +113,26 @@ struct TVLibraryGridView: View {
             async let facetLoad: Void = model.loadFacetsIfNeeded()
             if model.items.isEmpty {
                 await model.loadInitial()
+            } else if !model.hasFetchedFirstPage {
+                // Checked once per visit: returning from a title keeps the
+                // page it left, so an inserted title can't shift its card.
+                await model.refreshFirstPage()
             }
             await facetLoad
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, isOnScreen else { return }
+            Task { await viewModel.refreshFirstPage() }
+        }
         .onChange(of: viewModel.filter.namePrefix) { _, prefix in selectedPrefix = prefix }
-        .onAppear { noteShellFocusRequest(focusRequest) }
-        .onDisappear { viewModel.cancelPosterPrefetch() }
+        .onAppear {
+            isOnScreen = true
+            noteShellFocusRequest(focusRequest)
+        }
+        .onDisappear {
+            isOnScreen = false
+            viewModel.cancelPosterPrefetch()
+        }
         .onChange(of: focusRequest) { _, request in noteShellFocusRequest(request) }
         .onChange(of: isTopMenuFocused) { _, focused in
             if !focused { noteShellFocusRequest(focusRequest) }

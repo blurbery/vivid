@@ -44,6 +44,11 @@ final class TVLibraryGridViewModel {
 
     private var snapshot: String? = nil
     private var nextOffset: Int = 0
+    /// False while page 1 has only come from the cache, which never expires.
+    private(set) var hasFetchedFirstPage = false
+    /// Set once a page past the first lands; `refreshFirstPage` then leaves
+    /// the grid alone so a deep scroll position survives.
+    private var hasLoadedMorePages = false
     @ObservationIgnored private var prefetchedPosterURLs: Set<URL> = []
     @ObservationIgnored private var visiblePosterRows: [Int: Range<Int>] = [:]
     /// Decoded into the memory cache so a cell scrolling into view paints the
@@ -100,6 +105,16 @@ final class TVLibraryGridViewModel {
     func loadMoreIfNeeded() async {
         guard hasMore, !isLoading, !isRefreshing else { return }
         await fetchPage(reset: false)
+    }
+
+    /// Fetch page 1 again behind the cards already on screen. The cached
+    /// page never expires and its snapshot fences every later page, so
+    /// without this, titles added since it was cached stay hidden until the
+    /// sort changes or the app restarts. Once more pages have loaded the grid
+    /// is left as it is.
+    func refreshFirstPage() async {
+        guard !items.isEmpty, !hasLoadedMorePages, !isLoading, !isRefreshing else { return }
+        await fetchPage(reset: true)
     }
 
     /// Jump to a name prefix (A–Z + "#"). Resets pagination. Like iPhone and
@@ -236,6 +251,8 @@ final class TVLibraryGridViewModel {
         nextOffset = 0
         hasMore = true
         snapshot = nil
+        hasFetchedFirstPage = false
+        hasLoadedMorePages = false
         error = nil
         if useCache { hydratePage1FromCache() }
         refreshPosterPrefetch()
@@ -282,10 +299,12 @@ final class TVLibraryGridViewModel {
                 ResponseCache.shared.set(response, for: currentCacheKey)
                 nextOffset = response.items.count
                 snapshot = response.snapshot
+                hasFetchedFirstPage = true
             } else {
                 items.append(contentsOf: response.items)
                 nextOffset += response.items.count
                 if snapshot == nil { snapshot = response.snapshot }
+                hasLoadedMorePages = true
             }
             hasMore = response.hasMore ?? false
             refreshPosterPrefetch()
