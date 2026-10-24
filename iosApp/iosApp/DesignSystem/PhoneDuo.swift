@@ -67,7 +67,9 @@ enum PhoneDuo {
         /// Where controls start, 14 points under the status icons. The time
         /// and connectivity icons end about 100 points down on the inner
         /// screen and 146 on the cover, where the camera sits above them.
-        let controlsTop: CGFloat
+        var usualControlsTop: CGFloat { isInnerScreen ? 114 : 160 }
+        /// Widgets added to the strip push the controls further down.
+        @MainActor var controlsTop: CGFloat { usualControlsTop + DuoStatusArea.shared.growth }
         /// iOS centres the status icons this far in from the strip's inner
         /// edge, rather than in the middle of the strip.
         static let iconCentreInset: CGFloat = 36
@@ -81,8 +83,7 @@ enum PhoneDuo {
         return SideStrip(
             edge: edge,
             width: edge == .trailing ? geometry.safeAreaInsets.trailing : geometry.safeAreaInsets.leading,
-            isInnerScreen: isInner,
-            controlsTop: isInner ? 114 : 160
+            isInnerScreen: isInner
         )
     }
 
@@ -102,18 +103,20 @@ enum PhoneDuo {
     /// screen's edge, 14 points under the connectivity icon. That's in the
     /// side strip on the cover and in landscape, and the top corner on the
     /// inner screen in portrait, where the icons end about 62 points down.
+    /// Widgets added to the status bar push it further down.
     struct ControlCorner: Equatable {
         let edge: HorizontalEdge
-        let top: CGFloat
+        let usualTop: CGFloat
+        @MainActor var top: CGFloat { usualTop + DuoStatusArea.shared.growth }
         static let centreFromEdge: CGFloat = 48
     }
 
     @MainActor static func controlCorner(_ geometry: GeometryProxy) -> ControlCorner? {
         if let strip = sideStrip(geometry) {
-            return ControlCorner(edge: strip.edge, top: strip.controlsTop)
+            return ControlCorner(edge: strip.edge, usualTop: strip.usualControlsTop)
         }
         let isInner = isInnerScreen(geometry) || windowSize.map(isInnerScreen) == true
-        return isInner ? ControlCorner(edge: .trailing, top: 76) : nil
+        return isInner ? ControlCorner(edge: .trailing, usualTop: 76) : nil
     }
 
     /// The cover screen, and the inner screen in landscape, put the status
@@ -124,6 +127,30 @@ enum PhoneDuo {
         if insets.trailing >= 60 { return .trailing }
         if insets.leading >= 60 { return .leading }
         return nil
+    }
+}
+
+/// The band iOS keeps clear at the top of the Duo's side strip, or of its top
+/// corner in portrait, for the camera, the status icons and any widgets
+/// added there. `DuoStatusAreaView` measures it on iOS 27.1.
+@MainActor @Observable
+final class DuoStatusArea {
+    static let shared = DuoStatusArea()
+
+    /// How much further down than usual the band ends. The strip's controls
+    /// and tab bar move down by this much. Stays 0 when the band can't be
+    /// read.
+    private(set) var growth: CGFloat = 0
+
+    func update(bandBottom: CGFloat, screen: CGSize) {
+        // With just the time and connectivity icons the band ends 170 points
+        // down on the cover, 120 in the inner screen's landscape strip and 82
+        // in its portrait corner.
+        let usualBottom: CGFloat = PhoneDuo.isInnerScreen(screen)
+            ? (screen.width > screen.height ? 120 : 82)
+            : 170
+        let growth = max(0, (bandBottom - usualBottom).rounded())
+        if growth != self.growth { self.growth = growth }
     }
 }
 

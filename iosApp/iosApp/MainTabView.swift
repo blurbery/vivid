@@ -256,6 +256,7 @@ struct MainTabView: View {
                     duoControlCorner = corner
                 }
             }
+            .readsDuoStatusArea()
             // A keyboard inside the player must not lift the underlying Home tab bar.
             .ignoresSafeArea(.keyboard, edges: showsMobileUtilityPage ? [] : .bottom)
             #else
@@ -520,13 +521,17 @@ struct MainTabView: View {
     /// the top of the strip, about 100 points on the inner screen and 146 on
     /// the cover, where the camera sits above them. On the cover the bar ends
     /// where the page tabs' row begins, on every tab so it never moves.
+    /// Widgets added to the strip push its top down by as much as they take
+    /// and it gets that much shorter, so its bottom stays put.
     private func duoSideTabBar(edge: HorizontalEdge, endsAtPageTabs: Bool) -> some View {
         let column: CGFloat = 2 * 36
         let side: Alignment = edge == .trailing ? .trailing : .leading
         let bottomSide: Alignment = edge == .trailing ? .bottomTrailing : .bottomLeading
+        let growth = DuoStatusArea.shared.growth
         return mobileGlassTabBar(isVertical: true)
             .frame(width: column)
-            .padding(.top, 150)
+            .frame(maxHeight: 420 - growth)
+            .padding(.top, 150 + growth)
             .padding(.bottom, endsAtPageTabs ? PhoneDuo.pageTabsBottomPadding + PhoneDuo.pageTabsRowHeight : 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: endsAtPageTabs ? bottomSide : side)
             .offset(x: edge == .trailing ? column : -column)
