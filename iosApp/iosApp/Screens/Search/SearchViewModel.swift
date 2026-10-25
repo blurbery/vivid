@@ -109,13 +109,14 @@ class SearchViewModel {
                 "limit": String(pageSize),
                 "offset": String(requestOffset),
             ]
-            searchQuery["type"] = selectedMediaType.queryValue
+            let type = selectedMediaType.queryValue
+            searchQuery["type"] = type
 
             // Only the first page adds titles found by the query's pieces, so
             // `spiderman` also shows Spider-Man. See `SearchMatching`.
             async let added = Self.pieceMatches(
                 reset ? SearchMatching.pieces(of: trimmed) : [],
-                query: trimmed, type: selectedMediaType.queryValue
+                query: trimmed, type: type
             )
 
             let response: CatalogResponse = try await VividAPI.shared.get(
@@ -146,11 +147,14 @@ class SearchViewModel {
             if reset {
                 let found = await added
                 guard !Task.isCancelled, generation == searchGeneration else { return }
-                let shown = Set(results.map(\.contentId))
-                let extra = found.filter { !shown.contains($0.contentId) }
-                results.append(contentsOf: extra)
-                addedIDs = Set(extra.map(\.contentId))
-                updateTotal()
+                add(found)
+                // With nothing holding the query yet, the title may split it
+                // before the pieces reach, as X-Men splits `xmen`.
+                if !SearchMatching.hasMatch(in: results, query: trimmed) {
+                    let split = await Self.pieceMatches(SearchMatching.splits(of: trimmed), query: trimmed, type: type)
+                    guard !Task.isCancelled, generation == searchGeneration else { return }
+                    add(split)
+                }
             }
         } catch let err {
             guard !Task.isCancelled, generation == searchGeneration else { return }
@@ -165,6 +169,15 @@ class SearchViewModel {
             }
         }
         isSearching = false
+    }
+
+    /// Adds the titles the query's pieces found that aren't shown yet.
+    private func add(_ found: [BrowseItem]) {
+        let shown = Set(results.map(\.contentId))
+        let extra = found.filter { !shown.contains($0.contentId) }
+        results.append(contentsOf: extra)
+        addedIDs.formUnion(extra.map(\.contentId))
+        updateTotal()
     }
 
     private func updateTotal() {

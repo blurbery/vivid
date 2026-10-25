@@ -40,6 +40,29 @@ final class SearchMatchingTests: XCTestCase {
         XCTAssertEqual(SearchMatching.pieces(of: "?!"), [])
     }
 
+    func testSplitsHyphenateTheLongestWordBeforeThePiecesStart() {
+        XCTAssertEqual(SearchMatching.splits(of: "xmen"), ["x-men", "xm-en"])
+        XCTAssertEqual(SearchMatching.splits(of: "heman"), ["h-eman", "he-man"])
+        XCTAssertEqual(SearchMatching.splits(of: "toystory"), ["t-oystory", "to-ystory", "toy-story"])
+        XCTAssertEqual(SearchMatching.splits(of: "HarryPotter"),
+                       ["h-arrypotter", "ha-rrypotter", "har-rypotter", "harr-ypotter", "harry-potter"])
+        // A long word stops at five, so its first title word can be up to five letters.
+        XCTAssertEqual(SearchMatching.splits(of: "supercalifragilistic").count, 5)
+        // Splits from the second half on are already the pieces' to find.
+        XCTAssertEqual(SearchMatching.splits(of: "spiderman"), ["s-piderman", "sp-iderman", "spi-derman", "spid-erman"])
+        XCTAssertEqual(SearchMatching.splits(of: "her"), [])
+        XCTAssertEqual(SearchMatching.splits(of: "x men"), [])
+    }
+
+    func testHasMatchLooksForTheQueryInEachTitle() throws {
+        let xMen = try item("1", "X-Men: First Class")
+        let xanadu = try item("2", "Xanadu")
+        XCTAssertTrue(SearchMatching.hasMatch(in: [xanadu, xMen], query: "xmen"))
+        XCTAssertFalse(SearchMatching.hasMatch(in: [xanadu], query: "xmen"))
+        XCTAssertFalse(SearchMatching.hasMatch(in: [], query: "xmen"))
+        XCTAssertFalse(SearchMatching.hasMatch(in: [xMen], query: "--"))
+    }
+
     func testMatchesKeepTitlesHoldingTheQueryWhateverTheirPunctuation() throws {
         let amazing = try item("1", "The Amazing Spider-Man")
         let spiderMan = try item("2", "Spider-Man")
