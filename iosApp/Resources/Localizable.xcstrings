@@ -45149,7 +45149,7 @@
       }
     },
     "Popular Series" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -45173,6 +45173,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "人気のシリーズ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "热门剧集"
+          }
+        }
+      }
+    },
+    "Popular TV Shows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beliebte Serien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Series populares"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Séries TV populaires"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "人気のテレビ番組"
           }
         },
         "zh-Hans" : {
@@ -47181,41 +47216,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近事件（续）"
-          }
-        }
-      }
-    },
-    "Recently Added" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zuletzt hinzugefügt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadidos recientemente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouts récents"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近追加した項目"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近添加"
           }
         }
       }

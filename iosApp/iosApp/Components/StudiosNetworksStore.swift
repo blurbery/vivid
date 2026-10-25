@@ -44,6 +44,9 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     /// follow TMDb's names for the networks and companies above, with
     /// older names a server may still use.
     var libraryNames: [String] = []
+    /// Name beginnings that count too, for a brand whose every arm counts,
+    /// such as Warner Bros. Animation, Television and its regional studios.
+    var libraryNamePrefixes: [String] = []
 }
 
 /// Matched library titles for one brand. The TMDb lists keep TMDb's
@@ -90,21 +93,22 @@ struct StudioNetworkLibraryFilter: Equatable {
         }
     }
 
-    enum Sort: CaseIterable {
-        case recentlyAdded, releaseDate, title
+    var show = Show.all
+    /// The libraries' sort keys, newest added first to begin with.
+    var sort = CatalogSortKey.addedAt
+    var order = CatalogSortKey.addedAt.defaultOrder
+    var genre: String?
 
-        var label: String {
-            switch self {
-            case .recentlyAdded: String(localized: "Recently Added")
-            case .releaseDate: String(localized: "Release Date")
-            case .title: String(localized: "A–Z")
-            }
+    /// Sorts by `key` in its natural order, or flips the order when it's
+    /// already the sort, as the libraries' Sort menu does.
+    mutating func choose(_ key: CatalogSortKey) {
+        if key == sort {
+            order = order.flipped
+        } else {
+            sort = key
+            order = key.defaultOrder
         }
     }
-
-    var show = Show.all
-    var sort = Sort.recentlyAdded
-    var genre: String?
 
     /// Narrower than every title, so the menu's button shows it's in use.
     var isNarrowed: Bool { show != .all || genre != nil }
@@ -141,11 +145,12 @@ struct StudioNetworkLibraryFilter: Equatable {
         func byTitle(_ lhs: BrowseItem, _ rhs: BrowseItem) -> Bool {
             lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
         }
-        // Dates without one go last, and ties fall back to the title.
-        func newestFirst(_ key: (BrowseItem) -> String?) -> [BrowseItem] {
+        // Titles without a value go last in either order, and ties fall
+        // back to the title.
+        func ordered<Value: Comparable>(_ value: (BrowseItem) -> Value?) -> [BrowseItem] {
             kept.sorted { lhs, rhs in
-                switch (key(lhs), key(rhs)) {
-                case let (l?, r?) where l != r: l > r
+                switch (value(lhs), value(rhs)) {
+                case let (l?, r?) where l != r: order == .asc ? l < r : l > r
                 case (.some, nil): true
                 case (nil, .some): false
                 default: byTitle(lhs, rhs)
@@ -153,11 +158,24 @@ struct StudioNetworkLibraryFilter: Equatable {
             }
         }
         return switch sort {
-        case .recentlyAdded: newestFirst(\.addedAt)
+        case .title: order == .asc ? kept.sorted(by: byTitle) : kept.sorted { byTitle($1, $0) }
+        case .addedAt: ordered(\.addedAt)
         // Emby and Jellyfin send a time after the date, Silo the date alone.
-        case .releaseDate: newestFirst { $0.releaseDate.map { String($0.prefix(10)) } ?? $0.year.map { String($0) } }
-        case .title: kept.sorted(by: byTitle)
+        case .releaseDate: ordered { $0.releaseDate.map { String($0.prefix(10)) } ?? $0.year.map { String($0) } }
+        case .year: ordered(\.year)
+        // Emby and Jellyfin's community rating stands in where there's no IMDb one.
+        case .ratingImdb: ordered { $0.ratingImdb ?? $0.ratingTmdb }
+        case .runtime: ordered(\.runtime)
+        case .resolution: ordered { Self.resolutionHeight($0.overlaySummary?.resolution) }
         }
+    }
+
+    /// A resolution badge such as "2160p", "4K" or "SD" as a height in lines.
+    static func resolutionHeight(_ badge: String?) -> Int? {
+        guard let badge = badge?.lowercased().trimmingCharacters(in: .whitespaces), !badge.isEmpty else { return nil }
+        if badge == "sd" { return 480 }
+        if badge.hasSuffix("k"), let thousands = Int(badge.dropLast()) { return thousands * 540 }
+        return Int(badge.prefix { $0.isNumber })
     }
 }
 
@@ -174,9 +192,9 @@ struct StudioNetworkFilterMenuContent: View {
                 }
             }
         }
-        Section("Sort") {
-            ForEach(StudioNetworkLibraryFilter.Sort.allCases, id: \.self) { option in
-                Button { filter.sort = option } label: { choice(option.label, isOn: option == filter.sort) }
+        Menu("Sort") {
+            ForEach(CatalogSortKey.available(for: .mixed), id: \.self) { key in
+                Button { filter.choose(key) } label: { sortChoice(key) }
             }
         }
         let genres = filter.genres(in: items)
@@ -193,6 +211,20 @@ struct StudioNetworkFilterMenuContent: View {
     @ViewBuilder
     private func choice(_ title: String, isOn: Bool) -> some View {
         if isOn { Label(title, systemImage: "checkmark") } else { Text(title) }
+    }
+
+    /// Marks the current sort the way each platform's library Sort menu does.
+    @ViewBuilder
+    private func sortChoice(_ key: CatalogSortKey) -> some View {
+        if key != filter.sort {
+            Text(key.label)
+        } else {
+            #if os(tvOS)
+            Label("\(key.label) · \(key.directionLabel(for: filter.order))", systemImage: "checkmark")
+            #else
+            Label(key.label, systemImage: filter.order == .asc ? "arrow.up" : "arrow.down")
+            #endif
+        }
     }
 }
 
@@ -233,25 +265,35 @@ private struct StudioNetworkIndexFile: Codable, Sendable {
     let movies: [String: BrowseItem]
     let series: [String: BrowseItem]
     /// Library titles by the brand the server tags them with, in title order.
-    /// Nil in an index saved before tags were read, which is read again.
     var tagged: [String: [BrowseItem]]?
+    /// The matching revision the tags were read with. An index saved before
+    /// tags were read, or before a brand's names changed, is read again.
+    var revision: Int?
 }
 
 /// Finds the brands a title's server tags put it under. A network counts a
 /// title's networks and studios, as Emby and Jellyfin keep a series' network
 /// with its studios; a studio counts studios only. Names match whole, ignoring
-/// case, accents and spaces around them, so Disney Channel is never Disney+.
+/// case, accents and spaces around them, so Disney Channel is never Disney+,
+/// unless the brand counts every name with a given beginning.
 struct StudioNetworkTagMatcher: Sendable {
     private var networks: [String: [String]] = [:]
     private var studios: [String: [String]] = [:]
+    private var networkPrefixes: [(prefix: String, id: String)] = []
+    private var studioPrefixes: [(prefix: String, id: String)] = []
 
     init(_ brands: [StudioNetworkBrand]) {
         for brand in brands {
+            let prefixes = brand.libraryNamePrefixes.map { (prefix: Self.key($0), id: brand.id) }
             for name in Set(brand.libraryNames.map(Self.key)) {
                 switch brand.kind {
                 case .network: networks[name, default: []].append(brand.id)
                 case .studio: studios[name, default: []].append(brand.id)
                 }
+            }
+            switch brand.kind {
+            case .network: networkPrefixes += prefixes
+            case .studio: studioPrefixes += prefixes
             }
         }
     }
@@ -259,8 +301,11 @@ struct StudioNetworkTagMatcher: Sendable {
     func brandIDs(for item: BrowseItem) -> [String] {
         let studioNames = Set((item.studios ?? []).map(Self.key))
         let networkNames = studioNames.union((item.networks ?? []).map(Self.key))
-        let ids = networkNames.flatMap { networks[$0] ?? [] } + studioNames.flatMap { studios[$0] ?? [] }
-        return Array(NSOrderedSet(array: ids).array.compactMap { $0 as? String })
+        func ids(_ names: Set<String>, _ exact: [String: [String]], _ prefixes: [(prefix: String, id: String)]) -> [String] {
+            names.flatMap { name in (exact[name] ?? []) + prefixes.filter { name.hasPrefix($0.prefix) }.map(\.id) }
+        }
+        let found = ids(networkNames, networks, networkPrefixes) + ids(studioNames, studios, studioPrefixes)
+        return Array(NSOrderedSet(array: found).array.compactMap { $0 as? String })
     }
 
     static func key(_ name: String) -> String {
@@ -378,8 +423,9 @@ final class StudiosNetworksStore {
     /// streaming service, so its TMDb list is the only way they reach All in
     /// Your Library, and it's read twice as deep. The relay allows 10.
     nonisolated static let networkMoviePages = 10
-    /// Bumped when matching changes, so saved results are matched again.
-    nonisolated static let resultsRevision = 2
+    /// Bumped when matching or a brand's names change, so saved results are
+    /// matched again and the saved library index is tagged again.
+    nonisolated static let resultsRevision = 3
     static let refreshInterval: TimeInterval = 24 * 60 * 60
     /// Silo signs artwork URLs for a few hours, far less than the daily
     /// refresh, so posters are re-read this long before the first one expires.
@@ -393,7 +439,7 @@ final class StudiosNetworksStore {
 
     nonisolated static let catalogue: [StudioNetworkBrand] = [
         .init(id: "netflix", name: "Netflix", kind: .network, tmdbId: 213, watchProviderIds: [8], libraryNames: ["Netflix"]),
-        .init(id: "hbo", name: "HBO", kind: .network, tmdbId: 49, watchProviderIds: [1899], libraryNames: ["HBO"]),
+        .init(id: "hbo", name: "HBO", kind: .network, tmdbId: 49, watchProviderIds: [1899], libraryNames: ["HBO", "HBO Max", "Max"]),
         .init(id: "appletv", name: "Apple TV", kind: .network, tmdbId: 2552, watchProviderIds: [350], usesWordmark: true,
               libraryNames: ["Apple TV", "Apple TV+"]),
         .init(id: "disneyplus", name: "Disney+", kind: .network, tmdbId: 2739, watchProviderIds: [337], libraryNames: ["Disney+"]),
@@ -412,18 +458,19 @@ final class StudiosNetworksStore {
                              "BBC Alba", "BBC iPlayer", "CBBC", "CBeebies", "ITV", "ITV1", "ITV2", "ITV3", "ITV4", "ITVBe",
                              "ITVX", "ITV Encore"]),
         .init(id: "amc", name: "AMC", kind: .network, tmdbId: 174, watchProviderIds: [80, 526, 528, 635, 1854], libraryNames: ["AMC", "AMC+"]),
-        .init(id: "fx", name: "FX", kind: .network, tmdbId: 88, watchProviderIds: [123], libraryNames: ["FX"]),
+        .init(id: "fx", name: "FX", kind: .network, tmdbId: 88, watchProviderIds: [123], libraryNames: ["FX", "FXX"]),
         .init(id: "pixar", name: "Pixar", kind: .studio, tmdbId: 3, libraryNames: ["Pixar", "Pixar Animation Studios"]),
         .init(id: "marvel", name: "Marvel Studios", kind: .studio, tmdbId: 420, knocksOutLogoText: true, libraryNames: ["Marvel Studios"]),
         .init(id: "a24", name: "A24", kind: .studio, tmdbId: 41077, libraryNames: ["A24"]),
         .init(id: "lucasfilm", name: "Lucasfilm", kind: .studio, tmdbId: 1, libraryNames: ["Lucasfilm", "Lucasfilm Ltd.", "Lucasfilm Animation"]),
-        .init(id: "dreamworks", name: "DreamWorks", kind: .studio, tmdbId: 521,
-              libraryNames: ["DreamWorks Animation", "DreamWorks Animation Television"]),
+        .init(id: "dreamworks", name: "DreamWorks", kind: .studio, tmdbId: 521, labelIds: [7],
+              libraryNames: ["DreamWorks", "DreamWorks Animation", "DreamWorks Animation Television", "DreamWorks Pictures",
+                             "DreamWorks Television"]),
         .init(id: "ghibli", name: "Studio Ghibli", kind: .studio, tmdbId: 10342, libraryNames: ["Studio Ghibli"]),
         .init(id: "sony", name: "Sony Pictures", kind: .studio, tmdbId: 34, labelIds: [5, 2251, 559], stacksLogoWords: true,
               libraryNames: ["Sony Pictures", "Columbia Pictures", "Sony Pictures Animation", "TriStar Pictures"]),
-        .init(id: "warnerbros", name: "Warner Bros.", kind: .studio, tmdbId: 174, knocksOutLogoText: true, logoHeightScale: 1.35,
-              libraryNames: ["Warner Bros. Pictures", "Warner Bros."]),
+        .init(id: "warnerbros", name: "Warner Bros.", kind: .studio, tmdbId: 174, labelIds: [2785, 1957], knocksOutLogoText: true,
+              logoHeightScale: 1.35, libraryNamePrefixes: ["Warner Bros", "Warner Brothers"]),
         .init(id: "universal", name: "Universal", kind: .studio, tmdbId: 33, libraryNames: ["Universal Pictures"]),
         .init(id: "disney", name: "Walt Disney Pictures", kind: .studio, tmdbId: 2, labelIds: [6125],
               libraryNames: ["Walt Disney Pictures", "Walt Disney Animation Studios"]),
@@ -590,7 +637,7 @@ final class StudiosNetworksStore {
         func pick(recent: [BrowseItem], allTime: [BrowseItem]) -> [BrowseItem] {
             isStudio || recent.count < minimumCount ? allTime : recent
         }
-        let series = (title: String(localized: "Popular Series"), items: pick(recent: result.recentSeries, allTime: result.series))
+        let series = (title: String(localized: "Popular TV Shows"), items: pick(recent: result.recentSeries, allTime: result.series))
         let movies = (title: String(localized: "Popular Movies"), items: pick(recent: result.recentMovies, allTime: result.movies))
         return (isStudio ? [movies, series] : [series, movies])
             .filter { $0.items.count >= minimumCount }
@@ -730,7 +777,7 @@ final class StudiosNetworksStore {
             async let lists = Self.brandLists(brands) { [weak self] in self?.noteListsLoaded(scope) }
             let index: StudioNetworkIndexFile
             if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
-               cached.tagged != nil,
+               cached.revision == Self.resultsRevision,
                Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval,
                await Self.hasCurrentArtwork(cached) {
                 index = cached
@@ -891,7 +938,7 @@ final class StudiosNetworksStore {
         let (movieIndex, seriesIndex) = try await (movies, series)
         let index = StudioNetworkIndexFile(
             savedAt: Date(), movies: movieIndex.index, series: seriesIndex.index,
-            tagged: movieIndex.tagged.merging(seriesIndex.tagged) { $0 + $1 }
+            tagged: movieIndex.tagged.merging(seriesIndex.tagged) { $0 + $1 }, revision: Self.resultsRevision
         )
         await Self.write(index, scope.cacheURL("library"))
         return index

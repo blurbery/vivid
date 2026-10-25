@@ -63,7 +63,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
         result.recentSeries = try (0..<7).map { try item("new\($0)", "New \($0)", year: 2026, type: "series") }
         result.recentMovies = try (0..<6).map { try item("m\($0)", "Movie \($0)", year: 2026) }
         let rows = StudiosNetworksStore.pageRows(for: brand, result: result)
-        XCTAssertEqual(rows.map(\.title), ["Popular Series", "Popular Movies"])
+        XCTAssertEqual(rows.map(\.title), ["Popular TV Shows", "Popular Movies"])
         XCTAssertEqual(rows.first?.items.first?.contentId, "new0")
     }
 
@@ -269,7 +269,21 @@ final class StudiosNetworksStoreTests: XCTestCase {
         let pixar = try XCTUnwrap(StudiosNetworksStore.catalogue.first { $0.id == "pixar" })
         XCTAssertEqual(StudiosNetworksStore.moviePages(for: netflix), 10)
         XCTAssertEqual(StudiosNetworksStore.moviePages(for: pixar), StudiosNetworksStore.pagesPerList)
-        XCTAssertTrue(StudiosNetworksStore.catalogue.allSatisfy { !$0.libraryNames.isEmpty })
+        XCTAssertTrue(StudiosNetworksStore.catalogue.allSatisfy { !($0.libraryNames + $0.libraryNamePrefixes).isEmpty })
+    }
+
+    func testBrandsCountTheirOtherNamesAndArms() throws {
+        let matcher = StudiosNetworksStore.tagMatcher
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("a", networks: ["HBO Max"])), ["hbo"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("b", networks: ["Max"])), ["hbo"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("c", networks: ["Cinemax"])), [])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("d", networks: ["FXX"])), ["fx"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("e", type: "movie", studios: ["DreamWorks Pictures"])), ["dreamworks"])
+        for name in ["Warner Bros. Pictures", "Warner Bros. Animation", "Warner Bros. Television", "Warner Bros. Japan"] {
+            XCTAssertEqual(matcher.brandIDs(for: try tagged(name, type: "movie", studios: [name])), ["warnerbros"], name)
+        }
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("f", type: "movie", networks: ["Warner Bros. Television"])), [],
+                       "Studios only count a title's studios")
     }
 
     func testLibraryFilterSortsNewestAddedFirstWithUndatedLast() throws {
@@ -289,10 +303,36 @@ final class StudiosNetworksStoreTests: XCTestCase {
             try tagged("apple", title: "Apple"),
         ]
         var filter = StudioNetworkLibraryFilter()
-        filter.sort = .releaseDate
+        filter.choose(.releaseDate)
         XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["silo", "emby", "apple", "zebra"])
-        filter.sort = .title
+        filter.choose(.title)
         XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["apple", "emby", "silo", "zebra"])
+    }
+
+    func testChoosingTheSortAgainFlipsItsOrderKeepingBlanksLast() throws {
+        let items = [
+            try tagged("old", releaseDate: "2001-01-01"),
+            try tagged("none"),
+            try tagged("new", releaseDate: "2020-01-01"),
+        ]
+        var filter = StudioNetworkLibraryFilter()
+        filter.choose(.releaseDate)
+        XCTAssertEqual(filter.order, .desc)
+        filter.choose(.releaseDate)
+        XCTAssertEqual(filter.order, .asc)
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["old", "new", "none"])
+        filter.choose(.title)
+        XCTAssertEqual(filter.order, .asc, "A new key starts in its natural order")
+        filter.choose(.title)
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["old", "none", "new"])
+    }
+
+    func testResolutionBadgesSortAsHeights() {
+        XCTAssertEqual(StudioNetworkLibraryFilter.resolutionHeight("2160p"), 2160)
+        XCTAssertEqual(StudioNetworkLibraryFilter.resolutionHeight("4K"), 2160)
+        XCTAssertEqual(StudioNetworkLibraryFilter.resolutionHeight("1080p"), 1080)
+        XCTAssertEqual(StudioNetworkLibraryFilter.resolutionHeight("SD"), 480)
+        XCTAssertNil(StudioNetworkLibraryFilter.resolutionHeight(nil))
     }
 
     func testLibraryFilterNarrowsByTypeAndGenre() throws {
@@ -304,7 +344,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
         var filter = StudioNetworkLibraryFilter()
         XCTAssertTrue(StudioNetworkLibraryFilter.offersShow(in: items))
         XCTAssertFalse(StudioNetworkLibraryFilter.offersShow(in: Array(items.prefix(2))))
-        filter.sort = .title
+        filter.choose(.title)
         filter.setShow(.series, in: items)
         XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["comedy", "drama"])
         XCTAssertEqual(filter.genres(in: items), ["Comedy", "Drama"])
