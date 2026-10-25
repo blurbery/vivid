@@ -9388,6 +9388,41 @@
         }
       }
     },
+    "All Genres" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Genres"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos los géneros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous les genres"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのジャンル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有类型"
+          }
+        }
+      }
+    },
     "All Seasons" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20349,8 +20384,43 @@
         }
       }
     },
-    "Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least %lld." : {
+    "Counts are titles in your library from each network or studio. Brands need at least %lld." : {
       "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gezählt werden die Titel deiner Mediathek von jedem Sender oder Studio. Marken brauchen mindestens %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recuentos son los títulos de tu biblioteca de cada cadena o estudio. Las marcas necesitan al menos %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les nombres indiquent les titres de votre bibliothèque pour chaque chaîne ou studio. Chaque marque doit en compter au moins %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "件数は、各ネットワークまたはスタジオのライブラリ内のタイトル数です。各ブランドには%lldタイトル以上が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数量为你的资料库中来自各电视网或制片公司的作品数。品牌至少需要 %lld 部。"
+          }
+        }
+      }
+    },
+    "Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least %lld." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -47111,6 +47181,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近事件（续）"
+          }
+        }
+      }
+    },
+    "Recently Added" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuletzt hinzugefügt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadidos recientemente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouts récents"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近追加した項目"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近添加"
           }
         }
       }

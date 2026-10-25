@@ -42,7 +42,7 @@ Nothing from the client's request reaches TMDb except the path and the checked q
 | `502` | TMDb couldn't be reached, answered with an error or sent something too large | Treats it as unavailable |
 | `503` | The token is missing or TMDb rejected it | Treats it as unavailable. It never reports a key problem, because there's no key in the app |
 
-Studios & Networks is the busiest caller: a full refresh reads up to five pages of four lists for each of 24 brands, about 500 requests, once a day per device and profile. The app keeps at most 12 TMDb requests in flight, and the per-address limit leaves room for two devices refreshing at once.
+Studios & Networks is the busiest caller: a full refresh reads up to five pages of four lists for each of 24 brands, and ten of each network's film list, about 560 requests, once a day per device and profile. The app keeps at most 12 TMDb requests in flight, and the per-address limit leaves room for two devices refreshing at once.
 
 ## TVmaze
 
@@ -89,7 +89,7 @@ To change the token, run `npx wrangler secret put TMDB_READ_TOKEN` again with th
 
 ### Plan limits
 
-The Workers free plan allows 100,000 requests a day, resetting at midnight UTC. Past that, Cloudflare answers `1027` errors until the reset, and TMDb features show nothing. Each device's Studios & Networks refresh uses about 500 requests a day, plus a few for each movie or series page opened, so the free plan suits a few hundred active devices a day. Workers Paid includes 10 million requests a month.
+The Workers free plan allows 100,000 requests a day, resetting at midnight UTC. Past that, Cloudflare answers `1027` errors until the reset, and TMDb features show nothing. Each device's Studios & Networks refresh uses about 560 requests a day, plus a few for each movie or series page opened, so the free plan suits a little under 200 active devices a day. Workers Paid includes 10 million requests a month.
 
 ## Tests
 

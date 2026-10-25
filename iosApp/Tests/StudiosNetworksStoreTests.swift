@@ -198,13 +198,123 @@ final class StudiosNetworksStoreTests: XCTestCase {
             try item("a", "A", year: 2020, poster: "https://silo.example.com/api/v2/artwork/a.webp?exp=1791100000&sig=1"),
             try item("s", "S", year: 2021, type: "series", poster: "https://silo.example.com/api/v2/artwork/s.webp?exp=1791100000&sig=2"),
         ]
-        let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(in: ["pixar": result], with: fresh)["pixar"])
+        let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(in: ["pixar": result], with: fresh, tagged: [:])["pixar"])
         XCTAssertEqual(refreshed.movies.map(\.contentId), ["a"])
-        XCTAssertEqual(refreshed.all.map(\.contentId), ["a"])
+        XCTAssertEqual(refreshed.all.map(\.contentId), ["a", "s"])
         XCTAssertEqual(refreshed.movies.first?.posterUrl, fresh[0].posterUrl)
         XCTAssertEqual(refreshed.series.first?.posterUrl, fresh[1].posterUrl)
         XCTAssertEqual(refreshed.matchCount, 2)
         XCTAssertEqual(StudiosNetworksStore.artworkExpiry(of: refreshed.items), Date(timeIntervalSince1970: 1_791_100_000))
+    }
+
+    func testReplacingArtworkAddsTitlesTheServerNowTags() throws {
+        var result = StudioNetworkResult()
+        result.series = [try item("s", "S", year: 2021, type: "series")]
+        result.all = result.series
+        result.matchCount = 1
+        let added = try item("new", "New", year: 2026, type: "series")
+        let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(
+            in: ["netflix": result], with: result.series + [added], tagged: ["netflix": [added]]
+        )["netflix"])
+        XCTAssertEqual(refreshed.all.map(\.contentId), ["new", "s"])
+        XCTAssertEqual(refreshed.matchCount, 2)
+    }
+
+    private func tagged(_ id: String, type: String = "series", networks: [String]? = nil, studios: [String]? = nil,
+                        genres: [String]? = nil, addedAt: String? = nil, releaseDate: String? = nil,
+                        title: String? = nil) throws -> BrowseItem {
+        var fields: [String: Any] = ["contentId": id, "type": type, "title": title ?? id]
+        fields["networks"] = networks
+        fields["studios"] = studios
+        fields["genres"] = genres
+        fields["addedAt"] = addedAt
+        fields["releaseDate"] = releaseDate
+        return try JSONDecoder().decode(BrowseItem.self, from: JSONSerialization.data(withJSONObject: fields))
+    }
+
+    func testServerTagsMatchWholeNamesIgnoringCaseAndSpaces() throws {
+        let matcher = StudiosNetworksStore.tagMatcher
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("a", networks: [" netflix "])), ["netflix"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("b", networks: ["Disney Channel", "Disney XD"])), [])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("c", networks: ["Apple TV+"])), ["appletv"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("d", networks: ["Paramount+ with Showtime"])), ["paramountplus"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("e", networks: ["Stanley"])), [])
+    }
+
+    func testBritBoxCountsBBCAndITVSeries() throws {
+        let matcher = StudiosNetworksStore.tagMatcher
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("a", networks: ["BBC One"])), ["britbox"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("b", networks: ["ITV1"])), ["britbox"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("c", networks: ["BBC America"])), [], "A US channel, not BritBox")
+    }
+
+    func testNetworksReadStudiosTooAsEmbyKeepsThemThere() throws {
+        let matcher = StudiosNetworksStore.tagMatcher
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("a", studios: ["Netflix"])), ["netflix"])
+        XCTAssertEqual(Set(matcher.brandIDs(for: try tagged("b", type: "movie", studios: ["Columbia Pictures", "Marvel Studios"]))),
+                       ["sony", "marvel"])
+        XCTAssertEqual(matcher.brandIDs(for: try tagged("c", type: "movie", networks: ["Pixar"])), [],
+                       "Studios only count a title's studios")
+    }
+
+    func testLibraryTitlesPutTaggedFirstAndCountEachOnce() throws {
+        let a = try item("a", "A", year: 2020, type: "series")
+        let b = try item("b", "B", year: 2021)
+        let c = try item("c", "C", year: 2022)
+        XCTAssertEqual(StudiosNetworksStore.libraryTitles(tagged: [a, b], matched: [c, a]).map(\.contentId), ["a", "b", "c"])
+    }
+
+    func testOnlyNetworksReadTenPagesOfFilms() throws {
+        let netflix = try XCTUnwrap(StudiosNetworksStore.catalogue.first { $0.id == "netflix" })
+        let pixar = try XCTUnwrap(StudiosNetworksStore.catalogue.first { $0.id == "pixar" })
+        XCTAssertEqual(StudiosNetworksStore.moviePages(for: netflix), 10)
+        XCTAssertEqual(StudiosNetworksStore.moviePages(for: pixar), StudiosNetworksStore.pagesPerList)
+        XCTAssertTrue(StudiosNetworksStore.catalogue.allSatisfy { !$0.libraryNames.isEmpty })
+    }
+
+    func testLibraryFilterSortsNewestAddedFirstWithUndatedLast() throws {
+        let items = [
+            try tagged("old", addedAt: "2024-01-01T00:00:00Z"),
+            try tagged("none"),
+            try tagged("new", addedAt: "2026-10-01T00:00:00Z"),
+        ]
+        XCTAssertEqual(StudioNetworkLibraryFilter().apply(to: items).map(\.contentId), ["new", "old", "none"])
+    }
+
+    func testLibraryFilterSortsByReleaseDateAcrossServerFormats() throws {
+        let items = [
+            try tagged("emby", releaseDate: "2010-07-15T00:00:00.0000000Z"),
+            try tagged("silo", releaseDate: "2012-05-04"),
+            try tagged("zebra", title: "Zebra"),
+            try tagged("apple", title: "Apple"),
+        ]
+        var filter = StudioNetworkLibraryFilter()
+        filter.sort = .releaseDate
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["silo", "emby", "apple", "zebra"])
+        filter.sort = .title
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["apple", "emby", "silo", "zebra"])
+    }
+
+    func testLibraryFilterNarrowsByTypeAndGenre() throws {
+        let items = [
+            try tagged("drama", type: "series", genres: ["Drama"]),
+            try tagged("comedy", type: "series", genres: ["Comedy"]),
+            try tagged("film", type: "movie", genres: ["Comedy"]),
+        ]
+        var filter = StudioNetworkLibraryFilter()
+        XCTAssertTrue(StudioNetworkLibraryFilter.offersShow(in: items))
+        XCTAssertFalse(StudioNetworkLibraryFilter.offersShow(in: Array(items.prefix(2))))
+        filter.sort = .title
+        filter.setShow(.series, in: items)
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["comedy", "drama"])
+        XCTAssertEqual(filter.genres(in: items), ["Comedy", "Drama"])
+        filter.genre = "Drama"
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["drama"])
+        XCTAssertTrue(filter.isNarrowed)
+        // Movies have no Drama, so the genre is dropped rather than emptying the grid.
+        filter.setShow(.movies, in: items)
+        XCTAssertNil(filter.genre)
+        XCTAssertEqual(filter.apply(to: items).map(\.contentId), ["film"])
     }
 
     func testCatalogueIDsAreUniqueAndAppleTVUsesAWordmark() {

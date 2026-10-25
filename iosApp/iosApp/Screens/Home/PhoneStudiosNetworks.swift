@@ -57,6 +57,7 @@ struct PhoneStudiosNetworksRow: View {
 struct PhoneStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
+    @State private var filter = StudioNetworkLibraryFilter()
     @Environment(AppRouter.self) private var router
     @Environment(\.duoSideStrip) private var duoSideStrip
 
@@ -81,9 +82,9 @@ struct PhoneStudioNetworkPage: View {
 
                 if !result.all.isEmpty {
                     VStack(alignment: .leading, spacing: HomeFeedMetrics.headerGap) {
-                        header(String(localized: "All in Your Library"))
+                        libraryHeader(result.all)
                         CatalogGrid(
-                            items: result.all,
+                            items: filter.apply(to: result.all),
                             isLoading: false,
                             hasMore: false,
                             forcesThreeColumnsOnPhone: true,
@@ -115,6 +116,35 @@ struct PhoneStudioNetworkPage: View {
             .font(.system(size: 20, weight: .bold))
             .padding(.horizontal, HomeFeedMetrics.gutter)
             .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The heading with the filter menu at the end of its row, in the
+    /// library's Sort and Filter chip style.
+    private func libraryHeader(_ items: [BrowseItem]) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text("All in Your Library")
+                .font(.system(size: 20, weight: .bold))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            Menu {
+                StudioNetworkFilterMenuContent(filter: $filter, items: items)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(filter.label)
+                        .font(.vividBody)
+                        .lineLimit(1)
+                }
+                .foregroundColor(.vividOnSurface)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .vividGlass(in: .capsule)
+            }
+            .accessibilityLabel(Text("Filter"))
+            .accessibilityValue(filter.label)
+        }
+        .padding(.horizontal, HomeFeedMetrics.gutter)
     }
 
     private func rail(title: String, items: [BrowseItem]) -> some View {
@@ -241,7 +271,7 @@ struct PhoneStudiosNetworksSettingsView: View {
             Button("Reset to Automatic") { store.resetToAutomatic() }
                 .frame(maxWidth: .infinity)
         } footer: {
-            Text("Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least \(StudiosNetworksStore.minimumCount).")
+            Text("Counts are titles in your library from each network or studio. Brands need at least \(StudiosNetworksStore.minimumCount).")
         }
     }
 
