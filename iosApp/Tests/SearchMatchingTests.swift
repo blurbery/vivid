@@ -63,6 +63,27 @@ final class SearchMatchingTests: XCTestCase {
         XCTAssertFalse(SearchMatching.hasMatch(in: [xMen], query: "--"))
     }
 
+    func testResultListOnlyAppendsOrReplacesInPlace() throws {
+        var list = SearchResultList()
+        let spiderMan = try item("1", "Spider-Man")
+        let amazing = try item("2", "The Amazing Spider-Man")
+        list.append([spiderMan, amazing])
+
+        // The server's cards replace the index's where they stand; new ones go last.
+        let fresh = try item("2", "The Amazing Spider-Man (2012)")
+        let homecoming = try item("3", "Spider-Man: Homecoming")
+        list.merge([homecoming, fresh])
+        XCTAssertEqual(list.items.map(\.contentId), ["1", "2", "3"])
+        XCTAssertEqual(list.items[1].title, "The Amazing Spider-Man (2012)")
+
+        // Appending never replaces a shown card, and replacing never adds one.
+        list.append([try item("1", "Stale"), try item("4", "Spider-Verse")])
+        list.replace([try item("3", "Homecoming"), try item("5", "Not shown")])
+        XCTAssertEqual(list.items.map(\.title), ["Spider-Man", "The Amazing Spider-Man (2012)", "Homecoming", "Spider-Verse"])
+        XCTAssertTrue(list.contains("4"))
+        XCTAssertFalse(list.contains("5"))
+    }
+
     func testMatchesKeepTitlesHoldingTheQueryWhateverTheirPunctuation() throws {
         let amazing = try item("1", "The Amazing Spider-Man")
         let spiderMan = try item("2", "Spider-Man")

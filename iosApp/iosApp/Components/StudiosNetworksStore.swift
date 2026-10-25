@@ -322,6 +322,13 @@ private struct StudioNetworkIndexMovieCards: Decodable, Sendable {
     let movies: [String: SimilarPosterItem]
 }
 
+/// The movie and series cards from a saved library index, for Search.
+/// Decoding this skips the brand tags' copies of them.
+private struct StudioNetworkIndexTitles: Decodable, Sendable {
+    let movies: [String: BrowseItem]
+    let series: [String: BrowseItem]
+}
+
 /// Library movies with just what a poster card needs, keyed like the library
 /// index. Saved beside it so a movie page can find the rest of its TMDb
 /// collection without searching the server.
@@ -518,6 +525,8 @@ final class StudiosNetworksStore {
     var isLoading: Bool { loadTask != nil }
     private let defaults = SharedDefaults.shared
     @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
+    @ObservationIgnored private var searchIndexCache: (scope: Scope, modified: Date, index: LibrarySearchIndex)?
+    @ObservationIgnored private var searchIndexTask: Task<Void, Never>?
     /// Changes whenever a movie lookup is saved, so open movie pages load
     /// their collection row again once the lookup exists.
     private(set) var movieLookupRevision = 0
@@ -685,6 +694,7 @@ final class StudiosNetworksStore {
             loadTask?.cancel()
             loadTask = nil
             loadedScope = scope
+            searchIndexCache = nil
             results = [:]
             resultsSavedAt = nil
             resultsSavedRevision = nil
@@ -975,6 +985,10 @@ final class StudiosNetworksStore {
                 if let year = entry.item.year {
                     let key = titleKey(entry.item.title, year: year)
                     if index[key] == nil { index[key] = entry.item }
+                } else if entry.tmdbId?.isEmpty ?? true {
+                    // Kept for Search, which reads every title. Nothing looks
+                    // a title up by this key.
+                    index["c:" + entry.item.contentId] = entry.item
                 }
                 // Every title is checked, including those without a year or
                 // TMDb ID, which the keys above can't hold.
@@ -1226,6 +1240,34 @@ final class StudiosNetworksStore {
             guard let url, let data = try? JSONEncoder().encode(value) else { return }
             try? data.write(to: url, options: .atomic)
         }.value
+    }
+
+    // MARK: Search index
+
+    /// Every movie and series in the saved library index, for Search to match
+    /// titles on the device. Nil while it first loads and until the library
+    /// has been read, so a search never waits for it: the first call starts
+    /// the load in the background. It follows the saved index, which every
+    /// library read rewrites, and the previous one serves while a newer loads.
+    func searchIndex() -> LibrarySearchIndex? {
+        guard let scope = Scope.current, let url = scope.cacheURL("library"),
+              let modified = Self.modificationDate(url) else { return nil }
+        let cached = searchIndexCache.flatMap { $0.scope == scope ? $0 : nil }
+        if let cached, cached.modified == modified { return cached.index }
+        if searchIndexTask == nil {
+            searchIndexTask = Task { [weak self] in
+                let index = await Task.detached(priority: .userInitiated) { () -> LibrarySearchIndex? in
+                    guard let data = try? Data(contentsOf: url),
+                          let file = try? JSONDecoder().decode(StudioNetworkIndexTitles.self, from: data)
+                    else { return nil }
+                    return LibrarySearchIndex(items: Array([file.movies.values, file.series.values].joined()))
+                }.value
+                guard let self else { return }
+                self.searchIndexTask = nil
+                if let index, Scope.current == scope { self.searchIndexCache = (scope, modified, index) }
+            }
+        }
+        return cached?.index
     }
 
     // MARK: Movie lookup

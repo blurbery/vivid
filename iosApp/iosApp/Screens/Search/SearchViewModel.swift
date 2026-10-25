@@ -45,8 +45,11 @@ class SearchViewModel {
     static let pieceLimit = 100
     private var offset = 0
     private var searchGeneration = 0
+    /// The most titles the library index adds to a search.
+    private static let localLimit = 100
     /// The server's own total for the query, without the titles its pieces added.
     private var serverTotal: Int?
+    private var list = SearchResultList()
 
     /// Debounced search triggered on query change.
     func onQueryChanged() {
@@ -96,9 +99,39 @@ class SearchViewModel {
         if reset { searchGeneration += 1 }
         let generation = searchGeneration
         let requestOffset = reset ? 0 : offset
+        let type = selectedMediaType.queryValue
 
         isSearching = true
         error = nil
+
+        // The first page starts with what the library index finds on the
+        // device, so typos and any spacing or punctuation still match. Strong
+        // matches show straight away, ahead of the server's titles, and weaker
+        // ones follow the server's. See `LibrarySearchIndex`.
+        var local: [LibrarySearchIndex.Match] = []
+        // Until something replaces them, the last query's results stay up.
+        var startedList = !reset
+        if reset {
+            let index = await StudiosNetworksStore.shared.searchIndex()
+            let types: Set<String>? = selectedMediaType == .all ? nil : [type]
+            local = await Self.localMatches(index, query: trimmed, types: types)
+            guard !Task.isCancelled, generation == searchGeneration else { return }
+            let strong = local.filter(\.isStrong).map(\.item)
+            if !strong.isEmpty {
+                list = SearchResultList()
+                list.append(strong)
+                startedList = true
+                serverTotal = nil
+                hasMore = false
+                offset = 0
+                show()
+                hasSearched = true
+            }
+        }
+        let weaker = local.filter { !$0.isStrong }.map(\.item)
+        // Without an index, or when it finds nothing (a title added since the
+        // library was read), the query's pieces stand in for it.
+        let usesPieces = reset && local.isEmpty
 
         do {
             var searchQuery: [String: String] = [
@@ -107,13 +140,11 @@ class SearchViewModel {
                 "limit": String(pageSize),
                 "offset": String(requestOffset),
             ]
-            let type = selectedMediaType.queryValue
             searchQuery["type"] = type
 
-            // Only the first page adds titles found by the query's pieces, so
-            // `spiderman` also shows Spider-Man. See `SearchMatching`.
+            // `spiderman` also asks for `spide`, so Spider-Man shows. See `SearchMatching`.
             async let added = Self.pieceMatches(
-                reset ? SearchMatching.pieces(of: trimmed) : [],
+                usesPieces ? SearchMatching.pieces(of: trimmed) : [],
                 query: trimmed, type: type
             )
 
@@ -126,52 +157,60 @@ class SearchViewModel {
             let supportedItems = response.items.filter {
                 VividMediaType.isSupportedSectionItem($0.type)
             }
-            if reset {
-                results = supportedItems
-            } else {
-                let existingIds = Set(results.map(\.contentId))
-                results.append(contentsOf: supportedItems.filter {
-                    !existingIds.contains($0.contentId)
-                })
-            }
+            if !startedList { list = SearchResultList() }
+            list.merge(supportedItems)
+            list.append(weaker)
 
             offset = requestOffset + response.items.count
             serverTotal = response.total
             hasMore = response.hasMore ?? false
-            updateTotal()
+            show()
             hasSearched = true
 
             if reset {
                 let found = await added
                 guard !Task.isCancelled, generation == searchGeneration else { return }
-                add(found)
+                list.append(found)
                 // With nothing holding the query yet, the title may split it
                 // before the pieces reach, as X-Men splits `xmen`.
-                if !SearchMatching.hasMatch(in: results, query: trimmed) {
+                if usesPieces, !SearchMatching.hasMatch(in: list.items, query: trimmed) {
                     let split = await Self.pieceMatches(SearchMatching.splits(of: trimmed), query: trimmed, type: type)
                     guard !Task.isCancelled, generation == searchGeneration else { return }
-                    add(split)
+                    list.append(split)
                 }
+                show()
+                await refreshArtwork(of: local.map(\.item), besides: supportedItems, type: type, generation: generation)
             }
         } catch let err {
             guard !Task.isCancelled, generation == searchGeneration else { return }
-            self.error = ErrorState(err)
-            if reset {
-                results = []
-                total = 0
+            if reset, !local.isEmpty {
+                // The index's titles still show when the server can't answer.
+                if !startedList { list = SearchResultList() }
+                list.append(weaker)
                 serverTotal = nil
                 hasMore = false
-                hasSearched = true
+                show()
+            } else {
+                self.error = ErrorState(err)
+                if reset {
+                    list = SearchResultList()
+                    serverTotal = nil
+                    hasMore = false
+                    show()
+                }
             }
+            if reset { hasSearched = true }
         }
         isSearching = false
     }
 
-    /// Adds the titles the query's pieces found that aren't shown yet.
-    private func add(_ found: [BrowseItem]) {
-        let shown = Set(results.map(\.contentId))
-        let extra = found.filter { !shown.contains($0.contentId) }
-        results.append(contentsOf: extra)
+    /// Starts loading the library index, so it's ready by the first search.
+    func prepare() {
+        Task { @MainActor in _ = StudiosNetworksStore.shared.searchIndex() }
+    }
+
+    private func show() {
+        results = list.items
         updateTotal()
     }
 
@@ -187,6 +226,33 @@ class SearchViewModel {
     /// it as their own `SearchTerm`, as they do the query.
     static func pieceQuery(_ piece: String, type: String) -> [String: String] {
         ["source": "query", "q": piece, "type": type, "limit": String(pieceLimit), "offset": "0"]
+    }
+
+    /// The library index's matches, best first, worked out off the main actor.
+    private static func localMatches(
+        _ index: LibrarySearchIndex?, query: String, types: Set<String>?
+    ) async -> [LibrarySearchIndex.Match] {
+        guard let index else { return [] }
+        return await Task.detached(priority: .userInitiated) {
+            index.search(query, types: types, limit: localLimit)
+        }.value
+    }
+
+    /// Silo signs poster URLs for a few hours, and the library index can be
+    /// older. When a title only the index found has an expired poster, that
+    /// title is searched for once, and the server's fresh cards replace the
+    /// shown ones where they stand.
+    private func refreshArtwork(of local: [BrowseItem], besides fresh: [BrowseItem], type: String, generation: Int) async {
+        let current = Set(fresh.map(\.contentId))
+        let soon = Date().addingTimeInterval(60)
+        guard let stale = local.first(where: { item in
+            !current.contains(item.contentId)
+                && (item.posterUrl.flatMap(SiloAPICompatibility.artworkExpiry).map { $0 < soon } ?? false)
+        }) else { return }
+        guard let response = try? await VividAPI.shared.catalog(query: Self.pieceQuery(stale.title, type: type)),
+              !Task.isCancelled, generation == searchGeneration else { return }
+        list.replace(response.items)
+        show()
     }
 
     /// The titles the query's pieces find that match it apart from spacing and
@@ -208,6 +274,7 @@ class SearchViewModel {
     }
 
     private func resetState() {
+        list = SearchResultList()
         results = []
         isSearching = false
         error = nil

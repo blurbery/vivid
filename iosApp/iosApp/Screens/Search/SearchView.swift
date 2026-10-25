@@ -157,6 +157,7 @@ struct SearchView: View {
         .onChange(of: seerr.identity) { _, _ in requestsViewModel.onQueryChanged(viewModel.query, mediaType: requestMediaType) }
         #endif
         .onAppear {
+            viewModel.prepare()
             requestsViewModel.onQueryChanged(viewModel.query, mediaType: requestMediaType)
         }
     }
