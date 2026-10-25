@@ -163,7 +163,8 @@ struct StudioNetworkLibraryFilter: Equatable {
         // Emby and Jellyfin send a time after the date, Silo the date alone.
         case .releaseDate: ordered { $0.releaseDate.map { String($0.prefix(10)) } ?? $0.year.map { String($0) } }
         case .year: ordered(\.year)
-        // Emby and Jellyfin's community rating stands in where there's no IMDb one.
+        // The TMDb rating stands in where there's no IMDb one. On Emby and
+        // Jellyfin it's the community rating.
         case .ratingImdb: ordered { $0.ratingImdb ?? $0.ratingTmdb }
         case .runtime: ordered(\.runtime)
         case .resolution: ordered { Self.resolutionHeight($0.overlaySummary?.resolution) }
