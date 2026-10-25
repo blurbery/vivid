@@ -137,6 +137,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
 
     @Environment(AppRouter.self) private var router
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
+    @State private var filter = StudioNetworkLibraryFilter()
 
     private static let inset: CGFloat = 80
     private static let columns = 7
@@ -167,17 +168,18 @@ private struct TVStudioNetworkPageContent: View, Equatable {
                 }
 
                 if !all.isEmpty {
+                    let shown = filter.apply(to: all)
                     VStack(alignment: .leading, spacing: 24) {
-                        sectionTitle(String(localized: "All in Your Library"))
+                        libraryHeader
                         // The first row is built up front so Down from the
-                        // last rail always has somewhere to land. The rest is
+                        // filter always has somewhere to land. The rest is
                         // the For You and library grid, which builds rows as
                         // they near the screen and prefetches their artwork.
                         VStack(alignment: .leading, spacing: Self.gridRowSpacing) {
-                            firstGridRow(Array(all.prefix(Self.columns)))
-                            if all.count > Self.columns {
+                            firstGridRow(Array(shown.prefix(Self.columns)))
+                            if shown.count > Self.columns {
                                 TVCatalogGrid(
-                                    items: Array(all.dropFirst(Self.columns)),
+                                    items: Array(shown.dropFirst(Self.columns)),
                                     isLoading: false,
                                     hasMore: false,
                                     onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
@@ -204,6 +206,31 @@ private struct TVStudioNetworkPageContent: View, Equatable {
             .font(.system(size: 36, weight: .semibold))
             .padding(.leading, Self.inset)
             .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The heading with the filter menu at the end of its row. A native menu
+    /// owns presentation and returns focus to its button, like the library
+    /// pills. The row is a focus section, so Down from any rail card lands
+    /// on the filter and Down again reaches the grid.
+    private var libraryHeader: some View {
+        HStack(alignment: .center, spacing: 24) {
+            Text("All in Your Library")
+                .font(.system(size: 36, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            Menu {
+                StudioNetworkFilterMenuContent(filter: $filter, items: all)
+            } label: {
+                Label(filter.label, systemImage: "line.3.horizontal.decrease")
+            }
+            .menuStyle(.button)
+            .buttonStyle(TVBrowseControlPillStyle(active: filter.isNarrowed))
+            .font(.system(size: 24, weight: .medium))
+            .accessibilityLabel(Text("Filter"))
+            .accessibilityValue(filter.label)
+        }
+        .padding(.horizontal, Self.inset)
+        .focusSection()
     }
 
     /// Uses the same collection row as Home, which keeps left and right
@@ -354,7 +381,7 @@ struct TVStudiosNetworksSettingsView: View {
 
         pickSection(title: "NETWORKS", kind: .network)
         pickSection(title: "STUDIOS", kind: .studio)
-        TVSettingsFooter("Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least \(StudiosNetworksStore.minimumCount).")
+        TVSettingsFooter("Counts are titles in your library from each network or studio. Brands need at least \(StudiosNetworksStore.minimumCount).")
 
         Button("Reset to Automatic") { store.resetToAutomatic() }
             .buttonStyle(TVHomeSectionsControlButtonStyle())
