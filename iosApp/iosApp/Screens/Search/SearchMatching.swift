@@ -23,12 +23,12 @@ enum SearchMatching {
     /// also splits that word, as Spider-Man splits `spiderman`, the start of
     /// the word finds it, since servers match the start of a title's words.
     /// The start is half the word, so a split anywhere in its second half is
-    /// found. Pieces are at least three characters, and queries under four
-    /// letters and digits add none.
+    /// found. Pieces are at least three characters: the start needs a word of
+    /// five letters and digits, and the word on its own needs four, so `dune`
+    /// and `x men` add none.
     static func pieces(of query: String) -> [String] {
         let words = Self.words(of: query)
-        guard words.joined().count >= 4,
-              let longest = words.max(by: { $0.count < $1.count }) else { return [] }
+        guard let longest = words.max(by: { $0.count < $1.count }) else { return [] }
 
         var pieces: [String] = []
         if words.count > 1, longest.count >= 4 { pieces.append(longest) }
@@ -43,9 +43,7 @@ enum SearchMatching {
     /// place matches nothing. Up to five, so a first word of up to five
     /// letters is found, as in `harry-potter`.
     static func splits(of query: String) -> [String] {
-        let words = Self.words(of: query)
-        guard words.joined().count >= 4,
-              let longest = words.max(by: { $0.count < $1.count }),
+        guard let longest = Self.words(of: query).max(by: { $0.count < $1.count }),
               longest.count >= 4 else { return [] }
         return (1..<min(startLength(of: longest), 6)).map { split in
             "\(longest.prefix(split))-\(longest.dropFirst(split))"

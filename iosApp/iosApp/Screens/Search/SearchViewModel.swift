@@ -47,8 +47,6 @@ class SearchViewModel {
     private var searchGeneration = 0
     /// The server's own total for the query, without the titles its pieces added.
     private var serverTotal: Int?
-    /// Titles the pieces added that the query's own pages haven't returned yet.
-    private var addedIDs: Set<String> = []
 
     /// Debounced search triggered on query change.
     func onQueryChanged() {
@@ -138,10 +136,9 @@ class SearchViewModel {
             }
 
             offset = requestOffset + response.items.count
-            if reset { addedIDs = [] } else { addedIDs.subtract(supportedItems.map(\.contentId)) }
             serverTotal = response.total
-            updateTotal()
             hasMore = response.hasMore ?? false
+            updateTotal()
             hasSearched = true
 
             if reset {
@@ -163,7 +160,6 @@ class SearchViewModel {
                 results = []
                 total = 0
                 serverTotal = nil
-                addedIDs = []
                 hasMore = false
                 hasSearched = true
             }
@@ -176,12 +172,15 @@ class SearchViewModel {
         let shown = Set(results.map(\.contentId))
         let extra = found.filter { !shown.contains($0.contentId) }
         results.append(contentsOf: extra)
-        addedIDs.formUnion(extra.map(\.contentId))
         updateTotal()
     }
 
+    /// A title the pieces added can also be on a page that hasn't loaded, and
+    /// so already in the server's total. Until every page is in, the count is
+    /// the server's total or the titles shown, whichever is more. After that
+    /// it's the titles shown.
     private func updateTotal() {
-        total = serverTotal.map { $0 + addedIDs.count } ?? results.count
+        total = hasMore ? max(serverTotal ?? 0, results.count) : results.count
     }
 
     /// The catalog request for one piece of the query. Emby and Jellyfin send
@@ -216,7 +215,6 @@ class SearchViewModel {
         hasMore = false
         total = 0
         serverTotal = nil
-        addedIDs = []
         offset = 0
     }
 }
