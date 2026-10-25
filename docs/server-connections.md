@@ -107,6 +107,24 @@ Home first presents its account-scoped cached content, then reconciles it with t
 
 Successful final playback-progress writes and detail-page watched/unwatched changes also request a Home refresh. Hidden Apple TV refresh requests wait until return. Overlapping requests are coalesced and stale responses cannot replace newer state. Continue Watching changes when the server response reflects the update; this is separate from the private iCloud account vault and does not guarantee immediate server-push invalidation. The implementation is in [HomeView](../iosApp/iosApp/Screens/Home/HomeView.swift) and [HomeViewModel](../iosApp/iosApp/Screens/Home/HomeViewModel.swift).
 
+## Search matching
+
+Search finds titles whatever their spacing and punctuation, on iPhone, iPad and Apple TV with Silo, Emby and Jellyfin alike: `spiderman` finds Spider-Man, `oceans eleven` finds Ocean's Eleven and `walle` finds WALL·E. The server still answers the query as typed, and those results come first in the server's order. Vivid also asks the server for one or two pieces of the query: the first half of its longest word, plus that whole word when the query has more than one. From those results it adds the titles whose letters and digits, ignoring case and accents, contain the query's, with titles that start with the query first. Only the first page adds them. Later pages are the server's own, and the result count includes the added titles. Emby and Jellyfin send each piece as their own `SearchTerm`, the same as the query.
+
+<table width="100%">
+  <thead><tr><th align="left">Server</th><th align="left" width="10000">Why the query alone can miss, and what the pieces find</th></tr></thead>
+  <tbody>
+    <tr><td>Silo</td><td>Silo matches whole words, the last one by its start, and turns punctuation into spaces, so Spider-Man is "spider man". Its own fuzzy matching only steps in when very few titles match. <code>spide</code> matches the start of "spider".</td></tr>
+    <tr><td>Emby</td><td>Emby 4.10 searches a word index that splits titles at punctuation, so <code>spiderman</code> and <code>walle</code> match no word of Spider-Man or WALL·E. <code>spide</code> and <code>wal</code> match the start of "spider" and "wall".</td></tr>
+    <tr><td>Jellyfin</td><td>Jellyfin looks for the query inside the title with punctuation turned into spaces (older versions keep the punctuation), so <code>oceans eleven</code> isn't in "ocean s eleven". <code>oce</code> is.</td></tr>
+  </tbody>
+</table>
+
+> [!NOTE]
+> This doesn't allow for typos, and it only checks the title Vivid shows, not original or alternative titles. Queries under four letters and digits add nothing, and a word split in its first half, such as `xmen` for X-Men, isn't found this way (`x men` still goes to the server as typed). Each piece returns at most 100 titles, so a piece matching much of a large library can miss some. A piece that fails adds nothing and leaves the server's own results.
+
+The matching is in [SearchMatching](../iosApp/iosApp/Screens/Search/SearchMatching.swift) and [SearchViewModel](../iosApp/iosApp/Screens/Search/SearchViewModel.swift). `SearchMatchingTests` cover the pieces and the matching, and an Emby and a Jellyfin adapter test each check that a piece goes out as that server's `SearchTerm` and that its results are matched. On an Emby 4.10.2 library, read-only checks of its search index found no movie or series matching `spiderman` or `walle`, while `spide`, `oce`, `wal` and `ant` reached Spider-Man, Ocean's Eight, WALL·E and Ant-Man, each with under 100 movies and series. The Silo and Jellyfin rows come from their source code. Search hasn't been tried in the app against a live server yet.
+
 ## Private iCloud account sync
 
 When iCloud is available, Vivid stores saved server accounts, login sessions and optional Vivid PIN records in an encrypted-values record (`account-vault-v1`) in the user’s private CloudKit database. Silo household members' cards go in a second record, `account-vault-profiles-v1` (see [Silo household profiles](#silo-household-profiles)); deletion records and shared preferences stay in the first. The same vault is used on iPhone, iPad and Apple TV. Sync runs during startup, when the app becomes active, and after account authentication, sign-out, PIN, profile-order or deletion changes. If iCloud is unavailable or the initial restore fails, Vivid continues using local accounts or opens server setup when none are available. On a new Apple TV, the server choices open directly. A centred Restore from iCloud button below them opens an optional restore screen; Back remains available during a check or after an error. Restored accounts open the saved-profile selector. An iPhone and existing iCloud data are not required to set up an Apple TV. Vivid tries syncing again later, and still fetches the existing vault before uploading local changes.
