@@ -47,6 +47,8 @@ class SearchViewModel {
     private var searchGeneration = 0
     /// The most titles the library index adds to a search.
     private static let localLimit = 100
+    /// The most titles searched for again when their index posters have expired.
+    private static let artworkRefreshLimit = 3
     /// The server's own total for the query, without the titles its pieces added.
     private var serverTotal: Int?
     private var list = SearchResultList()
@@ -132,6 +134,8 @@ class SearchViewModel {
         // Without an index, or when it finds nothing (a title added since the
         // library was read), the query's pieces stand in for it.
         let usesPieces = reset && local.isEmpty
+        // The first page's cards from the server, once it answers.
+        var serverCards: [BrowseItem]?
 
         do {
             var searchQuery: [String: String] = [
@@ -179,7 +183,7 @@ class SearchViewModel {
                     list.append(split)
                 }
                 show()
-                await refreshArtwork(of: local.map(\.item), besides: supportedItems, type: type, generation: generation)
+                serverCards = supportedItems
             }
         } catch let err {
             guard !Task.isCancelled, generation == searchGeneration else { return }
@@ -202,6 +206,9 @@ class SearchViewModel {
             if reset { hasSearched = true }
         }
         isSearching = false
+        if let serverCards, !local.isEmpty {
+            await refreshArtwork(of: local.map(\.item), besides: serverCards, type: type, generation: generation)
+        }
     }
 
     /// Starts loading the library index, so it's ready by the first search.
@@ -239,19 +246,29 @@ class SearchViewModel {
     }
 
     /// Silo signs poster URLs for a few hours, and the library index can be
-    /// older. When a title only the index found has an expired poster, that
-    /// title is searched for once, and the server's fresh cards replace the
-    /// shown ones where they stand.
+    /// older. Titles only the index found whose posters have expired are
+    /// searched for again, up to `artworkRefreshLimit` different titles at
+    /// once, and the server's fresh cards replace the shown ones where they
+    /// stand. It runs after the search has finished, so loading more results
+    /// never waits for it.
     private func refreshArtwork(of local: [BrowseItem], besides fresh: [BrowseItem], type: String, generation: Int) async {
         let current = Set(fresh.map(\.contentId))
         let soon = Date().addingTimeInterval(60)
-        guard let stale = local.first(where: { item in
-            !current.contains(item.contentId)
-                && (item.posterUrl.flatMap(SiloAPICompatibility.artworkExpiry).map { $0 < soon } ?? false)
-        }) else { return }
-        guard let response = try? await VividAPI.shared.catalog(query: Self.pieceQuery(stale.title, type: type)),
-              !Task.isCancelled, generation == searchGeneration else { return }
-        list.replace(response.items)
+        var titles: [String] = []
+        for item in local where !current.contains(item.contentId) && !titles.contains(item.title)
+            && (item.posterUrl.flatMap(SiloAPICompatibility.artworkExpiry).map { $0 < soon } ?? false) {
+            titles.append(item.title)
+            if titles.count == Self.artworkRefreshLimit { break }
+        }
+        guard !titles.isEmpty else { return }
+        let cards = await withTaskGroup(of: [BrowseItem].self) { group in
+            for title in titles {
+                group.addTask { (try? await VividAPI.shared.catalog(query: Self.pieceQuery(title, type: type)))?.items ?? [] }
+            }
+            return await group.reduce(into: []) { $0 += $1 }
+        }
+        guard !Task.isCancelled, generation == searchGeneration else { return }
+        list.replace(cards)
         show()
     }
 

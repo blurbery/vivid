@@ -980,16 +980,23 @@ final class StudiosNetworksStore {
         var taggedIDs = Set<String>()
         func add(_ page: StudioNetworkIndexPage) {
             for entry in page.items {
-                if let id = entry.tmdbId, !id.isEmpty, index[id] == nil { index[id] = entry.item }
+                var kept = false
+                if let id = entry.tmdbId, !id.isEmpty, index[id] == nil {
+                    index[id] = entry.item
+                    kept = true
+                }
                 // Servers that leave provider IDs out of lists still match here.
                 if let year = entry.item.year {
                     let key = titleKey(entry.item.title, year: year)
-                    if index[key] == nil { index[key] = entry.item }
-                } else if entry.tmdbId?.isEmpty ?? true {
-                    // Kept for Search, which reads every title. Nothing looks
-                    // a title up by this key.
-                    index["c:" + entry.item.contentId] = entry.item
+                    if index[key] == nil {
+                        index[key] = entry.item
+                        kept = true
+                    }
                 }
+                // A title without either key, or whose keys an earlier title
+                // took, such as a second copy of a film, is kept for Search,
+                // which reads every title. Nothing looks a title up by this key.
+                if !kept { index["c:" + entry.item.contentId] = entry.item }
                 // Every title is checked, including those without a year or
                 // TMDb ID, which the keys above can't hold.
                 let brands = tagMatcher.brandIDs(for: entry.item)
