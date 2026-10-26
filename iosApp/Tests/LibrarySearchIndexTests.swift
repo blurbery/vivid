@@ -141,13 +141,14 @@ final class LibrarySearchIndexTests: XCTestCase {
             "Red", "Blue", "Night", "City", "River", "Storm", "Silent", "Golden", "Lost", "Hidden",
             "Last", "Dark", "Bright", "Winter", "Summer", "Ocean", "Mountain", "Shadow", "Iron", "Glass",
         ]
-        var objects: [[String: Any]] = (0..<20_000).map { index -> [String: Any] in
-            [
-                "contentId": String(index),
-                "type": index % 3 == 0 ? "series" : "movie",
-                "title": "\(words[index % 20]) \(words[(index / 20) % 20]) \(index)",
-                "year": 1950 + index % 75,
-            ]
+        // Built in typed steps: Xcode 26 gives up type-checking this as one literal.
+        var objects: [[String: Any]] = []
+        objects.reserveCapacity(20_000)
+        for index in 0..<20_000 {
+            let type: String = index % 3 == 0 ? "series" : "movie"
+            let title: String = words[index % 20] + " " + words[(index / 20) % 20] + " " + String(index)
+            let year: Int = 1950 + index % 75
+            objects.append(["contentId": String(index), "type": type, "title": title, "year": year])
         }
         objects[12_345] = ["contentId": "12345", "type": "movie", "title": "Interstellar", "year": 2014]
         objects[777] = ["contentId": "777", "type": "movie", "title": "Interstate 60", "year": 2002]
