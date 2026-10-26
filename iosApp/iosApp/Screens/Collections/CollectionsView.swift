@@ -442,6 +442,10 @@ private class LibraryCollectionsViewModel {
     var isEmpty: Bool { sections.allSatisfy { $0.collections.isEmpty } }
 
     func loadCollections(libraryId: Int) async {
+        if MediaServerProvider.active.usesNativeUser {
+            // Brings in the counts Emby leaves out of this list.
+            Task { await HomeCollectionsStore.shared.loadIfNeeded() }
+        }
         let key = "library:\(libraryId):collections"
         if sections.isEmpty,
            let cached: [LibraryCollectionSection] = ResponseCache.shared.get(key) {
