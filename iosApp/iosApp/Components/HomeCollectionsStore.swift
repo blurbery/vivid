@@ -53,6 +53,9 @@ final class HomeCollectionsStore {
     /// The A to Z list split into carousels of 20.
     private(set) var carousels: [[HomeCollection]] = []
     @ObservationIgnored private var collectionsByID: [String: HomeCollection] = [:]
+    /// Each collection's title count. Emby leaves counts out of its quick
+    /// collection lists, so For You takes them from here (`withKnownCount`).
+    private var itemCounts: [String: Int] = [:]
 
     private var loadedScope: Scope?
     private var loadedAt: Date?
@@ -71,6 +74,14 @@ final class HomeCollectionsStore {
     // MARK: Picks
 
     func collection(_ id: String) -> HomeCollection? { collectionsByID[id] }
+
+    /// `collection` with the title count this list has for it, when it came
+    /// without one and the list is for the current server and profile.
+    func withKnownCount(_ collection: LibraryCollection) -> LibraryCollection {
+        guard collection.itemCount == nil, loadedScope != nil, loadedScope == Scope.current,
+              let count = itemCounts[collection.id] else { return collection }
+        return collection.withItemCount(count)
+    }
 
     var automaticPicks: [String] { Self.automaticPicks(collections.map(\.collection)) }
 
@@ -185,6 +196,7 @@ final class HomeCollectionsStore {
     private func setCollections(_ entries: [HomeCollection]) {
         collections = entries
         collectionsByID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        itemCounts = collectionsByID.compactMapValues(\.collection.itemCount)
         carousels = Self.carousels(entries)
         updatePicks()
     }
@@ -347,7 +359,10 @@ final class HomeCollectionsStore {
     /// `HomeCollection.personalLibraryID` standing for them when they fail.
     private static func fetchCollections(profileID: String) async throws -> (entries: [HomeCollection], failedLibraries: Set<Int>) {
         if MediaServerProvider.active.usesNativeUser {
-            let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
+            // Automatic and the row's captions need counts, which Emby only
+            // sends when asked and takes many seconds to work out.
+            let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get(
+                "/api/v1/collections", query: ["counts": "true"])
             return (sorted(response.collections
                 .filter { ($0.kind ?? .regular) == .regular }
                 .map { HomeCollection(collection: $0, libraryID: 0) }), [])

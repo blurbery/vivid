@@ -1330,6 +1330,13 @@ struct LibraryCollection: Codable, Identifiable, Hashable {
         creatorProfileId = try c.decodeIfPresent(String.self, forKey: .creatorProfileId)
     }
 
+    /// This collection with a title count from somewhere else.
+    func withItemCount(_ count: Int) -> LibraryCollection {
+        LibraryCollection(id: id, name: name, collectionType: collectionType, itemCount: count,
+                          posterUrl: posterUrl, posterThumbhash: posterThumbhash, kind: kind,
+                          creatorProfileId: creatorProfileId)
+    }
+
     /// A profile's own collection, as a user collection it made.
     init(personal: UserCollection, profileID: String?) {
         self.init(

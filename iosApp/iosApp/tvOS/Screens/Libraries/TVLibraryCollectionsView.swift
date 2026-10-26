@@ -64,11 +64,21 @@ struct TVLibraryCollectionsView: View {
 
     @State private var collectionSections: [LibraryCollectionSection] = []
     private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
+    /// Emby leaves title counts out of these lists, so the Home Collections
+    /// row's list fills them in once it has them.
+    private var countedSections: [LibraryCollectionSection] {
+        guard MediaServerProvider.active.usesNativeUser else { return collectionSections }
+        let store = HomeCollectionsStore.shared
+        return collectionSections.map { section in
+            LibraryCollectionSection(id: section.id, name: section.name, kind: section.kind,
+                                     collections: section.collections.map(store.withKnownCount))
+        }
+    }
     private var displayedSections: [LibraryCollectionSection] {
         let active = activeFilter
-        guard active.isActive else { return collectionSections }
+        guard active.isActive else { return countedSections }
         let profileID = ServerRegistry.shared.activeProfileId
-        return collectionSections.compactMap { section in
+        return countedSections.compactMap { section in
             let matching = section.collections.filter { collection in
                 active.matchesCollection(
                     kind: collection.kind ?? section.kind,
@@ -292,6 +302,10 @@ struct TVLibraryCollectionsView: View {
     private func loadCollections() async {
         isLoadingCollections = true
         collectionsError = nil
+        if MediaServerProvider.active.usesNativeUser {
+            // Brings in the counts Emby leaves out (`countedSections`).
+            Task { await HomeCollectionsStore.shared.loadIfNeeded() }
+        }
         if let cached: CachedCollections = ResponseCache.shared.get(cacheKey) {
             collectionSections = cached.sections
             collectionLibraryIds = cached.libraryIds

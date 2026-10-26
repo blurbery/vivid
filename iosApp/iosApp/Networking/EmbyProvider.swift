@@ -896,12 +896,21 @@ struct EmbyAdapter {
     private var storagePrefix: String { "vivid.emby." + (connection.identity?.account.serverId ?? connection.serverURL) + "." + userID }
     private var watchlistIDs: [String] { UserDefaults.standard.stringArray(forKey: storagePrefix + ".watchlist") ?? [] }
 
-    /// Collection cards only show a name, poster and item count. Recursive
-    /// counts and overviews made Emby take many seconds to answer.
+    /// Collection cards only need a name and poster to show. Emby works out
+    /// each collection's count title by title for the user, so with counts a
+    /// list of 162 collections took 3 to 22 seconds and without them about a
+    /// fifth of a second. Lists leave counts out; `counts=true` asks for them,
+    /// which the Home Collections row does in the background and keeps.
     nonisolated static let collectionListQuery: [String: String] = [
-        "Recursive":"true", "IncludeItemTypes":"BoxSet", "Fields":"ChildCount",
+        "Recursive":"true", "IncludeItemTypes":"BoxSet",
         "EnableUserData":"false", "EnableImageTypes":"Primary", "ImageTypeLimit":"1",
     ]
+
+    nonisolated static func collectionListQuery(counts: Bool) -> [String: String] {
+        var query = collectionListQuery
+        if counts { query["Fields"] = "ChildCount" }
+        return query
+    }
 
     /// `DisplayOrder` keeps the order set on each collection (release date unless
     /// changed to name). Older servers get no sort, as Emby's own client does there.
@@ -1098,7 +1107,7 @@ struct EmbyAdapter {
             return [:]
         }
         if path == "/api/v1/collections", method == "GET" {
-            let raw = try await connection.object("GET", "/Users/\(userID)/Items", query:Self.collectionListQuery.merging(["SortBy":"SortName", "SortOrder":"Ascending"]) { _, new in new })
+            let raw = try await connection.object("GET", "/Users/\(userID)/Items", query:Self.collectionListQuery(counts: query["counts"] == "true").merging(["SortBy":"SortName", "SortOrder":"Ascending"]) { _, new in new })
             return ["collections":(raw["Items"] as? [[String:Any]] ?? []).compactMap(collection),"groups":[]]
         }
         if p.count == 5, p[2] == "library", p[4] == "collections" {
