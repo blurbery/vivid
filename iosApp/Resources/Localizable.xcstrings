@@ -7894,6 +7894,41 @@
         }
       }
     },
+    "ALL COLLECTIONS" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ALLE SAMMLUNGEN"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TODAS LAS COLECCIONES"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TOUTES LES COLLECTIONS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのコレクション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有合集"
+          }
+        }
+      }
+    },
     "API returned %@, expected %@." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9384,6 +9419,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已全部看完"
+          }
+        }
+      }
+    },
+    "All Collections" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Sammlungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las colecciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toutes les collections"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのコレクション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有合集"
           }
         }
       }
@@ -11702,6 +11772,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动"
+          }
+        }
+      }
+    },
+    "Automatic shows the %lld collections with the most titles." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatisch zeigt die %lld Sammlungen mit den meisten Titeln."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automático muestra las %lld colecciones con más títulos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le mode automatique affiche les %lld collections qui comptent le plus de titres."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動では、タイトル数が多い%lld個のコレクションを表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动模式会显示作品最多的 %lld 个合集。"
           }
         }
       }
@@ -15208,6 +15313,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请选择其他日期，或显示全部。"
+          }
+        }
+      }
+    },
+    "Choose collections below to show them on Home." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle unten Sammlungen aus, um sie auf Home zu zeigen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige colecciones abajo para mostrarlas en Inicio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez des collections ci-dessous pour les afficher sur l’accueil."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下のコレクションを選ぶと、ホームに表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在下方选择合集，即可在主页上显示。"
           }
         }
       }
@@ -19894,6 +20034,41 @@
         }
       }
     },
+    "Couldn’t load your server’s collections. Check your connection and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Sammlungen deines Servers konnten nicht geladen werden. Prüfe deine Verbindung und versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron cargar las colecciones de tu servidor. Comprueba la conexión e inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de charger les collections de votre serveur. Vérifiez votre connexion et réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバのコレクションを読み込めませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法载入服务器的合集。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
     "Couldn’t open your profile" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24488,6 +24663,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下载使用原始画质。服务器允许下载转码时，会出现更小的画质选项。"
+          }
+        }
+      }
+    },
+    "Drag posters to reorder. Tap − to remove." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ziehe Poster, um sie neu anzuordnen. Tippe auf −, um sie zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra los pósteres para reordenarlos. Toca − para quitarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser les affiches pour les réorganiser. Touchez − pour en retirer une."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポスターをドラッグして並べ替えます。−をタップすると削除します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖移海报以重新排序。轻点“−”以移除。"
           }
         }
       }
@@ -33252,6 +33462,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在载入你的主页"
+          }
+        }
+      }
+    },
+    "Loading your server’s collections…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sammlungen deines Servers werden geladen …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando las colecciones de tu servidor…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chargement des collections de votre serveur…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバのコレクションを読み込み中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在载入服务器的合集…"
           }
         }
       }
@@ -45848,6 +46093,41 @@
         }
       }
     },
+    "Press and hold a poster to rearrange. Changes save automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halte ein Poster gedrückt, um neu anzuordnen. Änderungen werden automatisch gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantén pulsado un póster para reordenar. Los cambios se guardan automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenez une affiche enfoncée pour réorganiser. Les modifications sont enregistrées automatiquement."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポスターを長押しすると並べ替えられます。変更は自動的に保存されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住海报以重新排列。更改会自动存储。"
+          }
+        }
+      }
+    },
     "Press and hold a tile to rearrange. Changes save automatically." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52987,6 +53267,47 @@
         }
       }
     },
+    "Select a collection to add it to Home or remove it. Up to %lld can be chosen. Automatic shows the %lld collections with the most titles." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle eine Sammlung aus, um sie zu Home hinzuzufügen oder zu entfernen. Bis zu %1$lld können ausgewählt werden. Automatisch zeigt die %2$lld Sammlungen mit den meisten Titeln."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a collection to add it to Home or remove it. Up to %1$lld can be chosen. Automatic shows the %2$lld collections with the most titles."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona una colección para añadirla a Inicio o quitarla. Puedes elegir hasta %1$lld. Automático muestra las %2$lld colecciones con más títulos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionnez une collection pour l’ajouter à l’accueil ou la retirer. Vous pouvez en choisir jusqu’à %1$lld. Le mode automatique affiche les %2$lld collections qui comptent le plus de titres."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コレクションを選択すると、ホームに追加または削除できます。最大%1$lld個まで選べます。自動では、タイトル数が多い%2$lld個のコレクションを表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择合集即可将其添加到主页或移除。最多可选择 %1$lld 个。自动模式会显示作品最多的 %2$lld 个合集。"
+          }
+        }
+      }
+    },
     "Select a profile before starting playback." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -56605,6 +56926,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先登录，再选择个人资料。"
+          }
+        }
+      }
+    },
+    "Sign in to a server and choose a profile to use Collections." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich bei einem Server an und wähle ein Profil, um Sammlungen zu nutzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión en un servidor y elige un perfil para usar Colecciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous à un serveur et choisissez un profil pour utiliser Collections."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「コレクション」を使用するには、サーバにサインインしてプロフィールを選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录服务器并选择个人资料，即可使用“合集”。"
           }
         }
       }
@@ -61423,6 +61779,41 @@
         }
       }
     },
+    "Tap a collection to add it to Home or remove it. Up to %lld can be chosen." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tippe auf eine Sammlung, um sie zu Home hinzuzufügen oder zu entfernen. Bis zu %lld können ausgewählt werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toca una colección para añadirla a Inicio o quitarla. Puedes elegir hasta %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touchez une collection pour l’ajouter à l’accueil ou la retirer. Vous pouvez en choisir jusqu’à %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コレクションをタップすると、ホームに追加または削除できます。最大%lld個まで選べます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点合集即可将其添加到主页或移除。最多可选择 %lld 个。"
+          }
+        }
+      }
+    },
     "Tap the bookmark icon on any item to add it here" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -62790,6 +63181,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法更新该项目。请重试。"
+          }
+        }
+      }
+    },
+    "The last row on Home. %lld of %lld chosen." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die letzte Zeile auf Home. %1$lld von %2$lld ausgewählt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last row on Home. %1$lld of %2$lld chosen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La última fila de Inicio. Elegidas: %1$lld de %2$lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dernière rangée de l’accueil. Sélection : %1$lld sur %2$lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ホームの最後の行です。%2$lld個中%1$lld個を選択済みです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主页的最后一行。已选择 %1$lld 个，共 %2$lld 个。"
           }
         }
       }
@@ -65363,6 +65795,41 @@
         }
       }
     },
+    "This server has no collections yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Server hat noch keine Sammlungen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor aún no tiene colecciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur n’a pas encore de collections."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このサーバにはまだコレクションがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此服务器还没有合集。"
+          }
+        }
+      }
+    },
     "This server is too old to store playback preferences. Playback still works using this device's defaults. Ask your server administrator to update Silo." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -66375,6 +66842,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最佳结果"
+          }
+        }
+      }
+    },
+    "Touch and hold a poster to rearrange. Changes save automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halte ein Poster gedrückt, um neu anzuordnen. Änderungen werden automatisch gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantén pulsado un póster para reordenar. Los cambios se guardan automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenez le doigt sur une affiche pour réorganiser. Les modifications sont enregistrées automatiquement."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポスターを長押しすると並べ替えられます。変更は自動的に保存されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住海报以重新排列。更改会自动存储。"
           }
         }
       }
