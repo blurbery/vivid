@@ -11776,37 +11776,37 @@
         }
       }
     },
-    "Automatic shows the %lld collections with the most titles." : {
+    "Automatic shows the %lld server collections with the most titles." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Automatisch zeigt die %lld Sammlungen mit den meisten Titeln."
+            "value" : "Automatisch zeigt die %lld Server-Sammlungen mit den meisten Titeln."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Automático muestra las %lld colecciones con más títulos."
+            "value" : "Automático muestra las %lld colecciones del servidor con más títulos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le mode automatique affiche les %lld collections qui comptent le plus de titres."
+            "value" : "Le mode automatique affiche les %lld collections du serveur qui comptent le plus de titres."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自動では、タイトル数が多い%lld個のコレクションを表示します。"
+            "value" : "自動では、タイトル数が多い%lld個のサーバコレクションを表示します。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动模式会显示作品最多的 %lld 个合集。"
+            "value" : "自动模式会显示作品最多的 %lld 个服务器合集。"
           }
         }
       }
@@ -53267,43 +53267,43 @@
         }
       }
     },
-    "Select a collection to add it to Home or remove it. Up to %lld can be chosen. Automatic shows the %lld collections with the most titles." : {
+    "Select a collection to add it to Home or remove it. Up to %lld can be chosen. Automatic shows the %lld server collections with the most titles." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wähle eine Sammlung aus, um sie zu Home hinzuzufügen oder zu entfernen. Bis zu %1$lld können ausgewählt werden. Automatisch zeigt die %2$lld Sammlungen mit den meisten Titeln."
+            "value" : "Wähle eine Sammlung aus, um sie zu Home hinzuzufügen oder zu entfernen. Bis zu %1$lld können ausgewählt werden. Automatisch zeigt die %2$lld Server-Sammlungen mit den meisten Titeln."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a collection to add it to Home or remove it. Up to %1$lld can be chosen. Automatic shows the %2$lld collections with the most titles."
+            "value" : "Select a collection to add it to Home or remove it. Up to %1$lld can be chosen. Automatic shows the %2$lld server collections with the most titles."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selecciona una colección para añadirla a Inicio o quitarla. Puedes elegir hasta %1$lld. Automático muestra las %2$lld colecciones con más títulos."
+            "value" : "Selecciona una colección para añadirla a Inicio o quitarla. Puedes elegir hasta %1$lld. Automático muestra las %2$lld colecciones del servidor con más títulos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sélectionnez une collection pour l’ajouter à l’accueil ou la retirer. Vous pouvez en choisir jusqu’à %1$lld. Le mode automatique affiche les %2$lld collections qui comptent le plus de titres."
+            "value" : "Sélectionnez une collection pour l’ajouter à l’accueil ou la retirer. Vous pouvez en choisir jusqu’à %1$lld. Le mode automatique affiche les %2$lld collections du serveur qui comptent le plus de titres."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コレクションを選択すると、ホームに追加または削除できます。最大%1$lld個まで選べます。自動では、タイトル数が多い%2$lld個のコレクションを表示します。"
+            "value" : "コレクションを選択すると、ホームに追加または削除できます。最大%1$lld個まで選べます。自動では、タイトル数が多い%2$lld個のサーバコレクションを表示します。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择合集即可将其添加到主页或移除。最多可选择 %1$lld 个。自动模式会显示作品最多的 %2$lld 个合集。"
+            "value" : "选择合集即可将其添加到主页或移除。最多可选择 %1$lld 个。自动模式会显示作品最多的 %2$lld 个服务器合集。"
           }
         }
       }

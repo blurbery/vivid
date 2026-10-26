@@ -597,6 +597,35 @@ actor VividAPI {
         return LibraryCollectionsResponse(collections: wire.collections, sections: wire.sections)
     }
 
+    /// `libraryCollections` for a page that reads every library at once.
+    /// The library list is the account's, so it can name a library the
+    /// profile hides or isn't allowed, which Silo answers with 404. That
+    /// library has no collections for this profile rather than failing.
+    func visibleLibraryCollections(libraryId: Int) async throws -> LibraryCollectionsResponse {
+        do {
+            return try await libraryCollections(libraryId: libraryId)
+        } catch where Self.isNotFound(error) {
+            return LibraryCollectionsResponse(collections: [], sections: [])
+        }
+    }
+
+    /// The active profile's own collections, shaped like library collections
+    /// so they can sit beside the server's. A server without personal
+    /// collections answers 404, which reads as none.
+    func personalCollections(profileID: String?) async throws -> [LibraryCollection] {
+        do {
+            return (try await collections().collections ?? []).map { LibraryCollection(personal: $0, profileID: profileID) }
+        } catch where Self.isNotFound(error) {
+            return []
+        }
+    }
+
+    nonisolated static func isNotFound(_ error: Error) -> Bool {
+        if let error = error as? HTTPError { return error.statusCode == 404 }
+        if case .httpError(404)? = error as? APIError { return true }
+        return false
+    }
+
     func libraryCollectionItems(
         libraryId: Int,
         collectionId: String,

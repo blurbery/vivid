@@ -79,7 +79,7 @@ struct PhoneHomeCollectionsRow: View {
         return Button {
             router.navigate(to: .libraryCollection(
                 libraryId: entry.libraryID, collectionId: entry.id,
-                title: entry.collection.name, kind: .regular
+                title: entry.collection.name, kind: entry.collection.kind ?? .regular
             ))
         } label: {
             VStack(alignment: .leading, spacing: 7) {
@@ -208,7 +208,7 @@ struct PhoneHomeCollectionsSettingsView: View {
                 Button("Reset to Automatic") { store.resetToAutomatic() }
                     .frame(maxWidth: .infinity)
             } footer: {
-                Text("Automatic shows the \(HomeCollectionsStore.maxPicks) collections with the most titles.")
+                Text("Automatic shows the \(HomeCollectionsStore.maxPicks) server collections with the most titles.")
             }
         }
     }

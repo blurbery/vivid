@@ -85,7 +85,7 @@ struct TVHomeCollectionsRow: View {
                                 onOpen()
                                 router.navigate(to: .libraryCollection(
                                     libraryId: entry.libraryID, collectionId: entry.id,
-                                    title: entry.collection.name, kind: .regular
+                                    title: entry.collection.name, kind: entry.collection.kind ?? .regular
                                 ))
                             },
                             focusedItemId: $focusedCard,
@@ -221,7 +221,7 @@ struct TVHomeCollectionsSettingsView: View {
                 }
             }
             .disabled(movingID != nil)
-            TVSettingsFooter("Select a collection to add it to Home or remove it. Up to \(HomeCollectionsStore.maxPicks) can be chosen. Automatic shows the \(HomeCollectionsStore.maxPicks) collections with the most titles.")
+            TVSettingsFooter("Select a collection to add it to Home or remove it. Up to \(HomeCollectionsStore.maxPicks) can be chosen. Automatic shows the \(HomeCollectionsStore.maxPicks) server collections with the most titles.")
 
             Button("Reset to Automatic") { store.resetToAutomatic() }
                 .buttonStyle(TVHomeSectionsControlButtonStyle())

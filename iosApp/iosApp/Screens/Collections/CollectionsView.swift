@@ -1015,32 +1015,49 @@ struct MobileForYouCollections: View {
                 excludingPersonalIDs: []
             )
 
-            try await withThrowingTaskGroup(of: (Int, [LibraryCollectionSection]).self) { group in
+            // Every library the account has is read, so a library this
+            // profile can't see counts as empty, and one that fails leaves
+            // the others on screen.
+            var failure: Error?
+            await withTaskGroup(of: (Int, Result<[LibraryCollectionSection], Error>).self) { group in
                 for library in libraries {
                     group.addTask {
-                        let response = try await VividAPI.shared.libraryCollections(libraryId: library.id)
-                        return (library.id, response.resolvedSections)
+                        do {
+                            let response = try await VividAPI.shared.visibleLibraryCollections(libraryId: library.id)
+                            return (library.id, .success(response.resolvedSections))
+                        } catch {
+                            return (library.id, .failure(error))
+                        }
                     }
                 }
-                for try await (libraryID, sections) in group {
-                    try Task.checkCancellation()
-                    sectionsByLibrary[libraryID] = sections
-                    ResponseCache.shared.set(sections, for: "library:\(libraryID):collections")
-                    publishEntries(
-                        from: sectionsByLibrary,
-                        libraries: libraries,
-                        excludingPersonalIDs: []
-                    )
+                for await (libraryID, result) in group {
+                    guard !Task.isCancelled else { return }
+                    switch result {
+                    case .success(let sections):
+                        sectionsByLibrary[libraryID] = sections
+                        ResponseCache.shared.set(sections, for: "library:\(libraryID):collections")
+                        publishEntries(
+                            from: sectionsByLibrary,
+                            libraries: libraries,
+                            excludingPersonalIDs: []
+                        )
+                    case .failure(let error):
+                        failure = failure ?? error
+                    }
                 }
             }
 
             await personalLoad
-            error = personal.error
             publishEntries(
                 from: sectionsByLibrary,
                 libraries: libraries,
                 excludingPersonalIDs: Set(personal.collections.map(\.id))
             )
+            if let failure, entries.isEmpty {
+                error = ErrorState(failure)
+            } else {
+                error = personal.error
+            }
         } catch {
             self.error = ErrorState(error)
             await personalLoad

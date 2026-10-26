@@ -1329,6 +1329,20 @@ struct LibraryCollection: Codable, Identifiable, Hashable {
         }
         creatorProfileId = try c.decodeIfPresent(String.self, forKey: .creatorProfileId)
     }
+
+    /// A profile's own collection, as a user collection it made.
+    init(personal: UserCollection, profileID: String?) {
+        self.init(
+            id: personal.id,
+            name: personal.name,
+            collectionType: personal.collectionType,
+            itemCount: personal.itemCount,
+            posterUrl: personal.posterUrl,
+            posterThumbhash: personal.posterThumbhash,
+            kind: .userCollections,
+            creatorProfileId: profileID
+        )
+    }
 }
 
 /// Runtime-synthesized response from `VividAPI.libraryCollections`.

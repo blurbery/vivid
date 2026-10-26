@@ -1,22 +1,27 @@
 import Foundation
 import Observation
 
-/// One server collection the Collections row can show, with the library it
-/// was read from so its page opens the same way as from For You.
+/// One collection the Collections row can show, with the library it was read
+/// from so its page opens the same way as from For You.
 struct HomeCollection: Codable, Identifiable, Hashable {
     let collection: LibraryCollection
     let libraryID: Int
 
     var id: String { collection.id }
+
+    /// The library ID given to the profile's own Silo collections, which
+    /// belong to no library. Silo's library IDs start at 1.
+    static let personalLibraryID = 0
 }
 
 /// Loads, caches and remembers the Collections row pinned to the bottom of Home.
 ///
 /// Reads the server's own collections, as For You does with Source set to
 /// Server: Emby and Jellyfin in one request, Silo from each movie, series and
-/// mixed library. User collections are left out. The list is cached per
-/// server and profile, so Home shows the row straight away and refreshes it
-/// in the background.
+/// mixed library. On Silo the profile's own collections are offered too, but
+/// other profiles' shared ones are left out. The list is cached per server
+/// and profile, so Home shows the row straight away and refreshes it in the
+/// background.
 @MainActor
 @Observable
 final class HomeCollectionsStore {
@@ -35,10 +40,10 @@ final class HomeCollectionsStore {
     enum Status: Equatable { case idle, needsAccount, loading, ready, failed }
 
     private(set) var status: Status = .idle
-    /// Every server collection, A to Z.
+    /// Every collection that can be chosen, A to Z.
     private(set) var collections: [HomeCollection] = []
     private(set) var isEnabled = true
-    /// nil means automatic: the collections with the most titles.
+    /// nil means automatic: the server collections with the most titles.
     private(set) var customPicks: [String]?
     /// Chosen or automatic picks that are still on the server, up to 20.
     /// Kept up to date when the list or the choices change, so the settings
@@ -56,8 +61,9 @@ final class HomeCollectionsStore {
     private var loadTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var hydratedScope: Scope?
-    /// False while some Silo libraries failed to load, so the list may be
-    /// missing collections that are still on the server.
+    /// False while some Silo libraries or the profile's own collections
+    /// failed to load, so the list may be missing collections that are still
+    /// on the server.
     @ObservationIgnored private var listIsComplete = true
     private let defaults = SharedDefaults.shared
 
@@ -67,10 +73,12 @@ final class HomeCollectionsStore {
 
     var automaticPicks: [String] { Self.automaticPicks(collections.map(\.collection)) }
 
-    /// The collections with the most titles, ties A to Z. Silo's smart
-    /// collections have no count, so they come last.
+    /// The server collections with the most titles, ties A to Z. Silo's smart
+    /// collections have no count, so they come last. The profile's own
+    /// collections show only when chosen.
     static func automaticPicks(_ collections: [LibraryCollection]) -> [String] {
         Array(collections
+            .filter { $0.kind != .userCollections }
             .sorted { lhs, rhs in
                 switch (lhs.itemCount, rhs.itemCount) {
                 case let (l?, r?) where l != r: return l > r
@@ -163,8 +171,9 @@ final class HomeCollectionsStore {
     }
 
     /// A partial Silo list keeps the earlier entries from the libraries that
-    /// failed this time, so they don't empty. Libraries that answered show
-    /// exactly what they returned.
+    /// failed this time, so they don't empty. The profile's own collections
+    /// count as one more library. Libraries that answered show exactly what
+    /// they returned.
     static func merged(_ fresh: [HomeCollection], previous: [HomeCollection],
                        failedLibraries: Set<Int>) -> [HomeCollection] {
         guard !failedLibraries.isEmpty else { return fresh }
@@ -309,7 +318,7 @@ final class HomeCollectionsStore {
     private func load(_ scope: Scope, generation: Int) async {
         defer { if generation == loadGeneration { loadTask = nil } }
         do {
-            let (fresh, failedLibraries) = try await Self.fetchCollections()
+            let (fresh, failedLibraries) = try await Self.fetchCollections(profileID: scope.profile)
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
             let entries = Self.merged(fresh, previous: collections, failedLibraries: failedLibraries)
             setCollections(entries)
@@ -333,13 +342,16 @@ final class HomeCollectionsStore {
     }
 
     /// The server's collections, and the Silo libraries that failed to answer.
-    private static func fetchCollections() async throws -> (entries: [HomeCollection], failedLibraries: Set<Int>) {
+    /// On Silo the profile's own collections are added, with
+    /// `HomeCollection.personalLibraryID` standing for them when they fail.
+    private static func fetchCollections(profileID: String) async throws -> (entries: [HomeCollection], failedLibraries: Set<Int>) {
         if MediaServerProvider.active.usesNativeUser {
             let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
             return (sorted(response.collections
                 .filter { ($0.kind ?? .regular) == .regular }
                 .map { HomeCollection(collection: $0, libraryID: 0) }), [])
         }
+        async let personalLoad = personalCollections(profileID: profileID)
         let libraries = try await StartupContentPrefetcher.fetchUserLibraries().libraries.filter {
             $0.isMovieLibrary || $0.isSeriesLibrary || $0.isMixedLibrary
         }
@@ -351,7 +363,7 @@ final class HomeCollectionsStore {
             for library in libraries {
                 group.addTask {
                     do {
-                        let response = try await VividAPI.shared.libraryCollections(libraryId: library.id)
+                        let response = try await VividAPI.shared.visibleLibraryCollections(libraryId: library.id)
                         let regular = response.resolvedSections.flatMap { section in
                             section.collections.filter { ($0.kind ?? section.kind) == .regular }
                         }
@@ -370,7 +382,14 @@ final class HomeCollectionsStore {
                 }
             }
         }
-        if byLibrary.isEmpty, let failure { throw failure }
+        var personal: [LibraryCollection] = []
+        switch await personalLoad {
+        case .success(let collections): personal = collections
+        case .failure(let error):
+            failure = failure ?? error
+            failedLibraries.insert(HomeCollection.personalLibraryID)
+        }
+        if byLibrary.isEmpty, personal.isEmpty, let failure { throw failure }
         var seen = Set<String>()
         var entries: [HomeCollection] = []
         for library in libraries {
@@ -378,7 +397,18 @@ final class HomeCollectionsStore {
                 entries.append(HomeCollection(collection: collection, libraryID: library.id))
             }
         }
+        for collection in personal where seen.insert(collection.id).inserted {
+            entries.append(HomeCollection(collection: collection, libraryID: HomeCollection.personalLibraryID))
+        }
         return (sorted(entries), failedLibraries)
+    }
+
+    private static func personalCollections(profileID: String) async -> Result<[LibraryCollection], Error> {
+        do {
+            return .success(try await VividAPI.shared.personalCollections(profileID: profileID))
+        } catch {
+            return .failure(error)
+        }
     }
 
     static func sorted(_ entries: [HomeCollection]) -> [HomeCollection] {
