@@ -121,20 +121,18 @@ struct TVHomeCollectionsSettingsView: View {
     @State private var movingID: String?
     /// The carousel holding focus, so only nearby carousels load artwork.
     @State private var focusedCarousel = 0
+    /// Done, the preview and Reset. Each carousel tracks its own focus, so
+    /// moving along one redraws only that carousel.
     @FocusState private var focus: Target?
     @Environment(\.dismiss) private var dismiss
 
-    private enum Target: Hashable { case done, slot(String), pick(String), reset }
+    private enum Target: Hashable { case done, slot(String), reset }
 
     private let previewSpacing: CGFloat = TVSettingsLayout.scaled(24)
-    private let pickSpacing: CGFloat = TVSettingsLayout.scaled(20)
-    /// Room around the clipped strips for a focused poster's lift.
+    /// Room around the clipped preview for a focused poster's lift.
     private let gutter: CGFloat = TVSettingsLayout.scaled(24)
     private var previewWidth: CGFloat {
         (TVSettingsLayout.contentWidth - previewSpacing * 6) / 7
-    }
-    private var pickWidth: CGFloat {
-        (TVSettingsLayout.contentWidth - pickSpacing * 7) / 8
     }
 
     private var subtitle: String {
@@ -182,11 +180,6 @@ struct TVHomeCollectionsSettingsView: View {
         .onExitCommand {
             if movingID != nil { movingID = nil } else { dismiss() }
         }
-        .onChange(of: focus) { _, target in
-            guard case .pick(let id)? = target,
-                  let index = store.carousels.firstIndex(where: { $0.contains { $0.id == id } }) else { return }
-            focusedCarousel = index
-        }
     }
 
     @ViewBuilder
@@ -205,11 +198,22 @@ struct TVHomeCollectionsSettingsView: View {
                 : "Move left or right, then press centre to drop. Press Play/Pause to remove.")
 
             TVSettingsSectionHeader("ALL COLLECTIONS")
+            let picked = Set(store.picks)
+            let isFull = store.picks.count >= HomeCollectionsStore.maxPicks
             // Not lazy: carousels below the screen must exist for Down to
             // land on them, otherwise focus could skip to Reset.
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(32)) {
                 ForEach(Array(store.carousels.enumerated()), id: \.offset) { index, carousel in
-                    pickCarousel(carousel, loadsArtwork: abs(index - focusedCarousel) <= 2)
+                    TVCollectionPickCarousel(
+                        index: index,
+                        entries: carousel,
+                        picked: picked.intersection(carousel.map(\.id)),
+                        isFull: isFull,
+                        loadsArtwork: abs(index - focusedCarousel) <= 2,
+                        onToggle: { store.toggle($0) },
+                        onFocus: { if focusedCarousel != $0 { focusedCarousel = $0 } }
+                    )
+                    .equatable()
                 }
             }
             .disabled(movingID != nil)
@@ -300,41 +304,68 @@ struct TVHomeCollectionsSettingsView: View {
         .accessibilityLabel(isMoving ? Text("Move \(name). Move left or right, then press centre to drop.") : Text(name))
         .accessibilityAction(named: "Rearrange") { movingID = id }
     }
+}
 
-    // MARK: Pick carousels
+/// One carousel of up to 20 small posters, A to Z. It only redraws when its
+/// own posters, choices or artwork loading change, and builds the posters
+/// near the screen as it scrolls.
+private struct TVCollectionPickCarousel: View, Equatable {
+    let index: Int
+    let entries: [HomeCollection]
+    /// Chosen collections in this carousel.
+    let picked: Set<String>
+    /// 20 are chosen, so unchosen posters do nothing.
+    let isFull: Bool
+    let loadsArtwork: Bool
+    let onToggle: (String) -> Void
+    let onFocus: (Int) -> Void
 
-    /// Up to 20 small posters, A to Z, scrolling sideways.
-    private func pickCarousel(_ carousel: [HomeCollection], loadsArtwork: Bool) -> some View {
+    @FocusState private var focused: String?
+
+    private static let spacing: CGFloat = TVSettingsLayout.scaled(20)
+    /// Room around the clipped strip for a focused poster's lift.
+    private static let gutter: CGFloat = TVSettingsLayout.scaled(24)
+    static let posterWidth: CGFloat = (TVSettingsLayout.contentWidth - spacing * 7) / 8
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.index == rhs.index && lhs.entries == rhs.entries && lhs.picked == rhs.picked
+            && lhs.isFull == rhs.isFull && lhs.loadsArtwork == rhs.loadsArtwork
+    }
+
+    var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: pickSpacing) {
-                ForEach(carousel) { entry in
-                    pickTile(entry, loadsArtwork: loadsArtwork)
+            LazyHStack(alignment: .top, spacing: Self.spacing) {
+                ForEach(entries) { entry in
+                    tile(entry)
                 }
             }
         }
-        .contentMargins(gutter, for: .scrollContent)
-        .padding(-gutter)
+        .contentMargins(Self.gutter, for: .scrollContent)
+        .padding(-Self.gutter)
         .focusSection()
+        .onChange(of: focused) { _, id in
+            if id != nil { onFocus(index) }
+        }
     }
 
-    private func pickTile(_ entry: HomeCollection, loadsArtwork: Bool) -> some View {
-        let picked = store.isPicked(entry.id)
-        let unavailable = !picked && store.picks.count >= HomeCollectionsStore.maxPicks
+    private func tile(_ entry: HomeCollection) -> some View {
+        let isPicked = picked.contains(entry.id)
+        let unavailable = !isPicked && isFull
         let name = entry.collection.name
         var label = name
-        if picked { label = String(localized: "\(label), chosen") }
+        if isPicked { label = String(localized: "\(label), chosen") }
         if unavailable { label = String(localized: "\(label), unavailable") }
         return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
             // Unavailable posters stay focusable but do nothing, so every
             // carousel can still be reached and scrolled.
-            Button { if !unavailable { store.toggle(entry.id) } } label: {
-                TVHomeCollectionPoster(collection: entry.collection, width: pickWidth, loadsArtwork: loadsArtwork)
+            Button { if !unavailable { onToggle(entry.id) } } label: {
+                TVHomeCollectionPoster(collection: entry.collection, width: Self.posterWidth, loadsArtwork: loadsArtwork)
                     .overlay(alignment: .topTrailing) {
-                        if picked { WatchedCheckPill().padding(TVSettingsLayout.scaled(8)) }
+                        if isPicked { WatchedCheckPill().padding(TVSettingsLayout.scaled(8)) }
                     }
             }
             .buttonStyle(.card)
-            .focused($focus, equals: .pick(entry.id))
+            .focused($focused, equals: entry.id)
             .opacity(unavailable ? 0.4 : 1)
             .accessibilityLabel(label)
 
@@ -342,7 +373,7 @@ struct TVHomeCollectionsSettingsView: View {
                 .font(.tvSettings(18, weight: .semibold))
                 .lineLimit(1)
         }
-        .frame(width: pickWidth, alignment: .leading)
+        .frame(width: Self.posterWidth, alignment: .leading)
     }
 }
 #endif

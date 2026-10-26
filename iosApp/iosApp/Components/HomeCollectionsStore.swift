@@ -40,6 +40,13 @@ final class HomeCollectionsStore {
     private(set) var isEnabled = true
     /// nil means automatic: the collections with the most titles.
     private(set) var customPicks: [String]?
+    /// Chosen or automatic picks that are still on the server, up to 20.
+    /// Kept up to date when the list or the choices change, so the settings
+    /// page doesn't work them out again for every poster it draws.
+    private(set) var picks: [String] = []
+    /// The A to Z list split into carousels of 20.
+    private(set) var carousels: [[HomeCollection]] = []
+    @ObservationIgnored private var collectionsByID: [String: HomeCollection] = [:]
 
     private var loadedScope: Scope?
     private var loadedAt: Date?
@@ -53,7 +60,7 @@ final class HomeCollectionsStore {
 
     // MARK: Picks
 
-    func collection(_ id: String) -> HomeCollection? { collections.first { $0.id == id } }
+    func collection(_ id: String) -> HomeCollection? { collectionsByID[id] }
 
     var automaticPicks: [String] { Self.automaticPicks(collections.map(\.collection)) }
 
@@ -81,8 +88,6 @@ final class HomeCollectionsStore {
             .compactMap { $0 as? String }.prefix(maxPicks))
     }
 
-    var picks: [String] { Self.picks(custom: customPicks, available: collections.map(\.collection)) }
-
     /// The row's collections in order, for the current server and profile only.
     var rowCollections: [HomeCollection] {
         guard loadedScope != nil, loadedScope == Scope.current else { return [] }
@@ -90,9 +95,6 @@ final class HomeCollectionsStore {
     }
 
     var showsRow: Bool { isEnabled && !rowCollections.isEmpty }
-
-    /// The A to Z list split into carousels of 20.
-    var carousels: [[HomeCollection]] { Self.carousels(collections) }
 
     static func carousels(_ collections: [HomeCollection]) -> [[HomeCollection]] {
         stride(from: 0, to: collections.count, by: carouselSize).map {
@@ -137,13 +139,30 @@ final class HomeCollectionsStore {
     }
 
     func resetToAutomatic() {
-        customPicks = nil
+        setCustomPicks(nil)
         savePreferences()
     }
 
     private func setPicks(_ ids: [String]) {
-        customPicks = ids
+        setCustomPicks(ids)
         savePreferences()
+    }
+
+    private func setCollections(_ entries: [HomeCollection]) {
+        collections = entries
+        collectionsByID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        carousels = Self.carousels(entries)
+        updatePicks()
+    }
+
+    private func setCustomPicks(_ ids: [String]?) {
+        customPicks = ids
+        updatePicks()
+    }
+
+    private func updatePicks() {
+        let updated = Self.picks(custom: customPicks, available: collections.map(\.collection))
+        if updated != picks { picks = updated }
     }
 
     // MARK: Preferences
@@ -193,7 +212,7 @@ final class HomeCollectionsStore {
             loadGeneration += 1
             loadedScope = scope
             hydratedScope = nil
-            collections = []
+            setCollections([])
             loadedAt = nil
             artworkExpiresAt = nil
             status = .idle
@@ -202,7 +221,7 @@ final class HomeCollectionsStore {
             defaults.data(forKey: scope.preferencesKey).flatMap { try? JSONDecoder().decode(StoredPreferences.self, from: $0) }
         } ?? StoredPreferences()
         isEnabled = stored.isEnabled
-        customPicks = stored.picks.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(Self.maxPicks)) }
+        setCustomPicks(stored.picks.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(Self.maxPicks)) })
     }
 
     private func savePreferences() {
@@ -254,7 +273,7 @@ final class HomeCollectionsStore {
             (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(CacheFile.self, from: $0) }
         }.value
         guard let cached, loadedScope == scope, collections.isEmpty else { return }
-        collections = cached.collections
+        setCollections(cached.collections)
         loadedAt = cached.savedAt
         artworkExpiresAt = Self.artworkExpiry(of: cached.collections)
         status = .ready
@@ -265,7 +284,7 @@ final class HomeCollectionsStore {
         do {
             let fresh = try await Self.fetchCollections()
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
-            collections = fresh
+            setCollections(fresh)
             loadedAt = Date()
             artworkExpiresAt = Self.artworkExpiry(of: fresh)
             status = .ready
