@@ -26,7 +26,7 @@ final class HomeCollectionsStoreTests: XCTestCase {
     }
 
     func testAutomaticPicksStopAtTwenty() {
-        let collections = (0..<30).map { collection("\($0)", "Collection \($0)", count: $0) }
+        let collections = (0..<30).map { (n: Int) in collection("\(n)", "Collection \(n)", count: n) }
         let picks = HomeCollectionsStore.automaticPicks(collections)
         XCTAssertEqual(picks.count, HomeCollectionsStore.maxPicks)
         XCTAssertEqual(picks.first, "29", "Most titles first")

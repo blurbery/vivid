@@ -354,7 +354,8 @@ struct PhoneHomeCollectionsSettingsView: View {
 
     // MARK: Pick carousels
 
-    /// Up to 20 small posters, A to Z, scrolling sideways.
+    /// Up to 20 small posters, A to Z, scrolling sideways. Posters only: the
+    /// artwork says which collection it is, and VoiceOver reads the name.
     private func pickCarousel(_ carousel: [HomeCollection]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 10) {
@@ -371,16 +372,10 @@ struct PhoneHomeCollectionsSettingsView: View {
         let unavailable = !picked && store.picks.count >= HomeCollectionsStore.maxPicks
         let name = entry.collection.name
         return Button { withAnimation { store.toggle(entry.id) } } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                PhoneHomeCollectionPoster(collection: entry.collection, width: Self.pickWidth, cornerRadius: 6)
-                    .overlay(alignment: .topTrailing) {
-                        if picked { WatchedCheckPill().scaleEffect(0.8).padding(3) }
-                    }
-                Text(name)
-                    .font(.caption2.weight(.semibold))
-                    .lineLimit(1)
-            }
-            .frame(width: Self.pickWidth, alignment: .leading)
+            PhoneHomeCollectionPoster(collection: entry.collection, width: Self.pickWidth, cornerRadius: 6)
+                .overlay(alignment: .topTrailing) {
+                    if picked { WatchedCheckPill().scaleEffect(0.8).padding(3) }
+                }
         }
         .buttonStyle(.plain)
         .disabled(unavailable)
