@@ -23,7 +23,7 @@ enum HomeFeedMetrics {
     /// act on most, so it reads as "one card plus a peek" rather than matching
     /// the poster rows' density — at 184 the stills felt like thumbnails and
     /// the progress rail was hard to read. Android's backdrop card is 280dp.
-    /// Scaled by the Poster Size setting at the call site.
+    /// Scaled to Home's Large poster size at the call site.
     static let stillWidth: CGFloat = 240
     /// Runway under the last row so captions clear the floating tab bar.
     static let bottomRunway: CGFloat = 96

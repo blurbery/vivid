@@ -119,14 +119,6 @@ struct TVGeneralSettingsPane: View {
 
             TVSettingsGroup {
                 TVSettingsOptionMenu(
-                    title: "Poster Size", value: homeCards.presentation.posterSize.title,
-                    options: CardPosterSize.allCases.map { .init(id: $0.rawValue, label: $0.title) },
-                    selection: Binding(
-                        get: { homeCards.presentation.posterSize.rawValue },
-                        set: { if let value = CardPosterSize(rawValue: $0) { homeCards.setPosterSize(value) } }
-                    )
-                )
-                TVSettingsOptionMenu(
                     title: "Captions", value: homeCards.presentation.caption.title,
                     options: CardCaptionStyle.allCases.map { .init(id: $0.rawValue, label: $0.title) },
                     selection: Binding(

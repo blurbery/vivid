@@ -17,7 +17,7 @@ struct TVDetailCastRail: View {
     var onFocus: (() -> Void)? = nil
 
     // Same poster size and spacing as More Like This, following Home's
-    // poster size preference.
+    // Large poster size.
     @State private var homeCards = TVHomeCardPreferences.shared
     private var photoWidth: CGFloat {
         VividTheme.Skyline.densePosterCardWidth * homeCards.presentation.posterSize.scale

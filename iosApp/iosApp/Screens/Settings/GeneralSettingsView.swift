@@ -69,9 +69,6 @@ struct GeneralSettingsView: View {
                 }
             } header: { PhoneSettingsSectionHeader("Home Screen") }
             Section {
-                Picker("Poster Size", selection: Binding(get: { homeCards.presentation.posterSize }, set: { homeCards.setPosterSize($0) })) {
-                    ForEach(CardPosterSize.allCases) { Text($0.title).tag($0) }
-                }
                 Picker("Captions", selection: Binding(get: { homeCards.presentation.caption }, set: { homeCards.setCaptionStyle($0) })) {
                     ForEach(CardCaptionStyle.allCases) { Text($0.title).tag($0) }
                 }
