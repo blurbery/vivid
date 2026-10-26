@@ -106,7 +106,10 @@ struct TVLibraryCollectionsView: View {
         .frame(maxWidth: .infinity)
         .onChange(of: artworkEntries) { _, entries in artworkWindow.update(entries) }
         .onAppear { artworkWindow.update(artworkEntries) }
-        .onDisappear { artworkWindow.clear() }
+        .onDisappear {
+            artworkWindow.clear()
+            visibleCollectionKeys.removeAll()
+        }
         .onGeometryChange(for: CGFloat.self) { max(1, $0.size.width - 2 * VividTheme.safePadding) } action: { availableWidth = $0 }
         .task(id: sourceLibraries.map(\.id)) {
             await loadCollections()
@@ -201,6 +204,10 @@ struct TVLibraryCollectionsView: View {
                                     let key = collectionKey(collection, kind: section.kind)
                                     if visible { visibleCollectionKeys.insert(key) } else { visibleCollectionKeys.remove(key) }
                                 }
+                                // A card the lazy grid drops without a last
+                                // visibility change would otherwise hold the
+                                // artwork window on rows already scrolled past.
+                                .onDisappear { visibleCollectionKeys.remove(collectionKey(collection, kind: section.kind)) }
                             }
                         }
                         .padding(.horizontal, VividTheme.safePadding)
@@ -392,7 +399,8 @@ struct TVLibraryCollectionsView: View {
                 sources[key] = HomeCollection.personalLibraryID
                 combined[.userCollections, default: []].append(collection)
             }
-            sections = [LibraryCollectionKind.regular, .userCollections].compactMap { kind in
+            // User collections come first, above the server's.
+            sections = [LibraryCollectionKind.userCollections, .regular].compactMap { kind in
                 guard let items = combined[kind], !items.isEmpty else { return nil }
                 return LibraryCollectionSection(
                     id: kind.rawValue,
