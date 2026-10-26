@@ -14,16 +14,31 @@ func collectionTypeLabel(_ type: String?) -> String? {
     }
 }
 
+@MainActor
 func libraryCollectionAccessibilityLabel(_ collection: LibraryCollection) -> String {
+    let collection = countedCollection(collection)
     let type = collection.kind == .userCollections
         ? String(localized: "User collection")
         : collectionTypeLabel(collection.collectionType) ?? String(localized: "Collection")
-    let count = if let itemCount = collection.itemCount {
-        String(localized: "\(itemCount) items")
-    } else {
-        String(localized: "Smart")
+    return ([collection.name, type] + [collectionCountLabel(collection, items: true)].compactMap { $0 })
+        .joined(separator: ", ")
+}
+
+/// Emby leaves title counts out of its collection lists, so they come from
+/// the Home Collections row's list once it has them.
+@MainActor
+private func countedCollection(_ collection: LibraryCollection) -> LibraryCollection {
+    MediaServerProvider.active.usesNativeUser ? HomeCollectionsStore.shared.withKnownCount(collection) : collection
+}
+
+/// A Silo collection without a count is a smart one. On Emby and Jellyfin
+/// the count just hasn't arrived, so nothing is shown.
+@MainActor
+private func collectionCountLabel(_ collection: LibraryCollection, items: Bool) -> String? {
+    if let itemCount = collection.itemCount {
+        return items ? String(localized: "\(itemCount) items") : "\(itemCount)"
     }
-    return [collection.name, type, count].joined(separator: ", ")
+    return MediaServerProvider.active.usesNativeUser ? nil : String(localized: "Smart")
 }
 
 /// List of user-created collections, grouped into named buckets +
@@ -606,14 +621,16 @@ private struct LibraryCollectionCard: View {
             ZStack(alignment: .bottomTrailing) {
                 poster
 
-                Text(countLabel)
-                    .font(.vividSmall)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.black.opacity(0.65))
-                    .clipShape(Capsule())
-                    .padding(8)
+                if let countLabel = collectionCountLabel(countedCollection(collection), items: false) {
+                    Text(countLabel)
+                        .font(.vividSmall)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.65))
+                        .clipShape(Capsule())
+                        .padding(8)
+                }
             }
             .frame(width: cardWidth, height: cardHeight)
             .clipShape(RoundedRectangle(cornerRadius: VividTheme.smallCornerRadius))
@@ -655,13 +672,6 @@ private struct LibraryCollectionCard: View {
             }
             .frame(width: cardWidth, height: cardHeight)
         }
-    }
-
-    private var countLabel: String {
-        if let itemCount = collection.itemCount {
-            return "\(itemCount)"
-        }
-        return String(localized: "Smart")
     }
 
     private var typeLabel: String {
@@ -963,6 +973,8 @@ struct MobileForYouCollections: View {
         isLoading = true
         error = nil
         if MediaServerProvider.active.usesNativeUser {
+            // Brings in the counts Emby leaves out of this list.
+            Task { await HomeCollectionsStore.shared.loadIfNeeded() }
             // Paint the last list straight away, like the library path below,
             // so a return visit doesn't wait for the server.
             nativeLoadGeneration += 1
