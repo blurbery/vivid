@@ -43,6 +43,27 @@ final class HomeCollectionsStoreTests: XCTestCase {
         XCTAssertEqual(picks, [])
     }
 
+    func testAnEditWhileALibraryFailedKeepsItsChoices() {
+        let kept = HomeCollectionsStore.keepingUnloadedPicks(
+            ["b", "c"], previous: ["a", "x", "b"], loaded: ["a", "b", "c"], listIsComplete: false)
+        XCTAssertEqual(kept, ["b", "c", "x"], "x is from the library that failed, so it stays after the edit")
+    }
+
+    func testAnEditWithACompleteListDropsChoicesNoLongerOnTheServer() {
+        let kept = HomeCollectionsStore.keepingUnloadedPicks(
+            ["b", "c"], previous: ["a", "x", "b"], loaded: ["a", "b", "c"], listIsComplete: true)
+        XCTAssertEqual(kept, ["b", "c"])
+    }
+
+    func testAPartialListKeepsEarlierEntriesForCollectionsItMissed() {
+        let previous = [HomeCollection(collection: collection("1", "Alien"), libraryID: 1),
+                        HomeCollection(collection: collection("2", "Bond"), libraryID: 2)]
+        let fresh = [HomeCollection(collection: collection("1", "Alien", count: 4), libraryID: 1)]
+        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, isComplete: false).map(\.id), ["1", "2"])
+        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, isComplete: false).first?.collection.itemCount, 4)
+        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, isComplete: true).map(\.id), ["1"])
+    }
+
     func testCollectionsSortAToZWithNumbersInOrder() {
         let sorted = HomeCollectionsStore.sorted([
             HomeCollection(collection: collection("1", "Toy Story"), libraryID: 1),

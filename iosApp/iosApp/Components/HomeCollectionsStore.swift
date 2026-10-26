@@ -56,6 +56,9 @@ final class HomeCollectionsStore {
     private var loadTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var hydratedScope: Scope?
+    /// False while some Silo libraries failed to load, so the list may be
+    /// missing collections that are still on the server.
+    @ObservationIgnored private var listIsComplete = true
     private let defaults = SharedDefaults.shared
 
     // MARK: Picks
@@ -144,8 +147,27 @@ final class HomeCollectionsStore {
     }
 
     private func setPicks(_ ids: [String]) {
-        setCustomPicks(ids)
+        setCustomPicks(Self.keepingUnloadedPicks(ids, previous: customPicks,
+                                                 loaded: Set(collectionsByID.keys), listIsComplete: listIsComplete))
         savePreferences()
+    }
+
+    /// An edit while some libraries failed to load keeps the earlier choices
+    /// from those libraries, after the edited ones, instead of losing them.
+    /// With a complete list, choices that aren't in it are gone from the
+    /// server and are dropped.
+    static func keepingUnloadedPicks(_ edited: [String], previous: [String]?,
+                                     loaded: Set<String>, listIsComplete: Bool) -> [String] {
+        guard !listIsComplete, let previous else { return edited }
+        return edited + previous.filter { !loaded.contains($0) && !edited.contains($0) }
+    }
+
+    /// A partial Silo list keeps the earlier entries for collections it
+    /// didn't return, so a library that failed this time doesn't empty them.
+    static func merged(_ fresh: [HomeCollection], previous: [HomeCollection], isComplete: Bool) -> [HomeCollection] {
+        guard !isComplete else { return fresh }
+        let freshIDs = Set(fresh.map(\.id))
+        return sorted(fresh + previous.filter { !freshIDs.contains($0.id) })
     }
 
     private func setCollections(_ entries: [HomeCollection]) {
@@ -212,6 +234,7 @@ final class HomeCollectionsStore {
             loadGeneration += 1
             loadedScope = scope
             hydratedScope = nil
+            listIsComplete = true
             setCollections([])
             loadedAt = nil
             artworkExpiresAt = nil
@@ -221,7 +244,9 @@ final class HomeCollectionsStore {
             defaults.data(forKey: scope.preferencesKey).flatMap { try? JSONDecoder().decode(StoredPreferences.self, from: $0) }
         } ?? StoredPreferences()
         isEnabled = stored.isEnabled
-        setCustomPicks(stored.picks.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(Self.maxPicks)) })
+        // Saved choices can hold a few beyond 20 while a library is failing
+        // to load (see `keepingUnloadedPicks`); the row still shows 20 at most.
+        setCustomPicks(stored.picks.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(Self.maxPicks * 2)) })
     }
 
     private func savePreferences() {
@@ -282,12 +307,17 @@ final class HomeCollectionsStore {
     private func load(_ scope: Scope, generation: Int) async {
         defer { if generation == loadGeneration { loadTask = nil } }
         do {
-            let fresh = try await Self.fetchCollections()
+            let (fresh, isComplete) = try await Self.fetchCollections()
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
-            setCollections(fresh)
-            loadedAt = Date()
-            artworkExpiresAt = Self.artworkExpiry(of: fresh)
+            let entries = Self.merged(fresh, previous: collections, isComplete: isComplete)
+            setCollections(entries)
+            listIsComplete = isComplete
+            artworkExpiresAt = Self.artworkExpiry(of: entries)
             status = .ready
+            // A partial list isn't cached or treated as fresh, so the next
+            // Home visit reads the server again.
+            guard isComplete else { return }
+            loadedAt = Date()
             Self.save(CacheFile(savedAt: Date(), collections: fresh), to: scope.cacheURL)
         } catch {
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
@@ -297,12 +327,13 @@ final class HomeCollectionsStore {
         }
     }
 
-    private static func fetchCollections() async throws -> [HomeCollection] {
+    /// The server's collections, and whether every library answered.
+    private static func fetchCollections() async throws -> (entries: [HomeCollection], isComplete: Bool) {
         if MediaServerProvider.active.usesNativeUser {
             let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
-            return sorted(response.collections
+            return (sorted(response.collections
                 .filter { ($0.kind ?? .regular) == .regular }
-                .map { HomeCollection(collection: $0, libraryID: 0) })
+                .map { HomeCollection(collection: $0, libraryID: 0) }), true)
         }
         let libraries = try await StartupContentPrefetcher.fetchUserLibraries().libraries.filter {
             $0.isMovieLibrary || $0.isSeriesLibrary || $0.isMixedLibrary
@@ -339,7 +370,7 @@ final class HomeCollectionsStore {
                 entries.append(HomeCollection(collection: collection, libraryID: library.id))
             }
         }
-        return sorted(entries)
+        return (sorted(entries), failure == nil)
     }
 
     static func sorted(_ entries: [HomeCollection]) -> [HomeCollection] {
