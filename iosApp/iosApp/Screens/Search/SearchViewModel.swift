@@ -131,8 +131,10 @@ class SearchViewModel {
             }
         }
         let weaker = local.filter { !$0.isStrong }.map(\.item)
-        // Without an index, or when it finds nothing (a title added since the
-        // library was read), the query's pieces stand in for it.
+        // Without an index, or when it finds nothing, the query's pieces stand
+        // in for it. While the index finds other titles they don't run, so a
+        // title added since the library was read only shows if the server
+        // matches the query as typed, until the next read.
         let usesPieces = reset && local.isEmpty
         // The first page's cards from the server, once it answers.
         var serverCards: [BrowseItem]?
