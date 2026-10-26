@@ -119,8 +119,9 @@ struct TVHomeCollectionsRow: View {
 struct TVHomeCollectionsSettingsView: View {
     @State private var store = HomeCollectionsStore.shared
     @State private var movingID: String?
-    /// The carousel holding focus, so only nearby carousels load artwork.
-    @State private var focusedCarousel = 0
+    /// Carousels whose posters have loaded. Focus adds the carousels around
+    /// it, and loaded ones stay loaded, so scrolling back never blanks them.
+    @State private var artworkCarousels = Set(0...4)
     /// Done, the preview and Reset. Each carousel tracks its own focus, so
     /// moving along one redraws only that carousel.
     @FocusState private var focus: Target?
@@ -209,9 +210,12 @@ struct TVHomeCollectionsSettingsView: View {
                         entries: carousel,
                         picked: picked.intersection(carousel.map(\.id)),
                         isFull: isFull,
-                        loadsArtwork: abs(index - focusedCarousel) <= 2,
+                        loadsArtwork: artworkCarousels.contains(index),
                         onToggle: { store.toggle($0) },
-                        onFocus: { if focusedCarousel != $0 { focusedCarousel = $0 } }
+                        onFocus: { index in
+                            let nearby = Set(max(0, index - 3)...(index + 5))
+                            if !nearby.isSubset(of: artworkCarousels) { artworkCarousels.formUnion(nearby) }
+                        }
                     )
                     .equatable()
                 }
@@ -306,9 +310,10 @@ struct TVHomeCollectionsSettingsView: View {
     }
 }
 
-/// One carousel of up to 20 small posters, A to Z. It only redraws when its
-/// own posters, choices or artwork loading change, and builds the posters
-/// near the screen as it scrolls.
+/// One carousel of up to 20 small posters, A to Z, without names: the
+/// artwork says which collection it is, and VoiceOver reads the name. It
+/// only redraws when its own posters, choices or artwork loading change,
+/// and builds the posters near the screen as it scrolls.
 private struct TVCollectionPickCarousel: View, Equatable {
     let index: Int
     let entries: [HomeCollection]
@@ -355,25 +360,18 @@ private struct TVCollectionPickCarousel: View, Equatable {
         var label = name
         if isPicked { label = String(localized: "\(label), chosen") }
         if unavailable { label = String(localized: "\(label), unavailable") }
-        return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
-            // Unavailable posters stay focusable but do nothing, so every
-            // carousel can still be reached and scrolled.
-            Button { if !unavailable { onToggle(entry.id) } } label: {
-                TVHomeCollectionPoster(collection: entry.collection, width: Self.posterWidth, loadsArtwork: loadsArtwork)
-                    .overlay(alignment: .topTrailing) {
-                        if isPicked { WatchedCheckPill().padding(TVSettingsLayout.scaled(8)) }
-                    }
-            }
-            .buttonStyle(.card)
-            .focused($focused, equals: entry.id)
-            .opacity(unavailable ? 0.4 : 1)
-            .accessibilityLabel(label)
-
-            Text(name)
-                .font(.tvSettings(18, weight: .semibold))
-                .lineLimit(1)
+        // Unavailable posters stay focusable but do nothing, so every
+        // carousel can still be reached and scrolled.
+        return Button { if !unavailable { onToggle(entry.id) } } label: {
+            TVHomeCollectionPoster(collection: entry.collection, width: Self.posterWidth, loadsArtwork: loadsArtwork)
+                .overlay(alignment: .topTrailing) {
+                    if isPicked { WatchedCheckPill().padding(TVSettingsLayout.scaled(8)) }
+                }
         }
-        .frame(width: Self.posterWidth, alignment: .leading)
+        .buttonStyle(.card)
+        .focused($focused, equals: entry.id)
+        .opacity(unavailable ? 0.4 : 1)
+        .accessibilityLabel(label)
     }
 }
 #endif
