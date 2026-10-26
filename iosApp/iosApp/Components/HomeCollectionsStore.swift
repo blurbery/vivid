@@ -40,7 +40,8 @@ final class HomeCollectionsStore {
     enum Status: Equatable { case idle, needsAccount, loading, ready, failed }
 
     private(set) var status: Status = .idle
-    /// Every collection that can be chosen, A to Z.
+    /// Every collection that can be chosen: the profile's own first, then
+    /// the server's, each A to Z.
     private(set) var collections: [HomeCollection] = []
     private(set) var isEnabled = true
     /// nil means automatic: the server collections with the most titles.
@@ -411,8 +412,14 @@ final class HomeCollectionsStore {
         }
     }
 
+    /// The profile's own collections first, so they are easy to find in the
+    /// settings carousels, then the server's, each A to Z.
     static func sorted(_ entries: [HomeCollection]) -> [HomeCollection] {
-        entries.sorted { precedes($0.collection, $1.collection) }
+        entries.sorted { lhs, rhs in
+            let lhsMine = lhs.collection.kind == .userCollections
+            let rhsMine = rhs.collection.kind == .userCollections
+            return lhsMine == rhsMine ? precedes(lhs.collection, rhs.collection) : lhsMine
+        }
     }
 
     private static func precedes(_ lhs: LibraryCollection, _ rhs: LibraryCollection) -> Bool {

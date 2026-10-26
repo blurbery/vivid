@@ -107,6 +107,16 @@ final class HomeCollectionsStoreTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.collection.name), ["Alien", "Collection 9", "Collection 10", "Toy Story"])
     }
 
+    func testTheProfilesOwnCollectionsComeFirst() {
+        let mine = LibraryCollection(id: "m", name: "Weekend Movies", itemCount: 3, kind: .userCollections)
+        let sorted = HomeCollectionsStore.sorted([
+            HomeCollection(collection: collection("1", "Alien"), libraryID: 1),
+            HomeCollection(collection: mine, libraryID: HomeCollection.personalLibraryID),
+            HomeCollection(collection: collection("2", "Zombies"), libraryID: 1),
+        ])
+        XCTAssertEqual(sorted.map(\.id), ["m", "1", "2"])
+    }
+
     func testCarouselsHoldTwentyEach() {
         let entries = (0..<45).map { HomeCollection(collection: collection("\($0)", "C\($0)"), libraryID: 0) }
         let carousels = HomeCollectionsStore.carousels(entries)
