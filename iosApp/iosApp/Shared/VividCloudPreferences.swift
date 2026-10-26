@@ -240,7 +240,7 @@ final class VividCloudPreferences {
         for account in accounts {
             guard let profile = account.profile?.id else { continue }
             let suffix = "\(account.serverID).\(profile)"
-            keys.formUnion(["tvos.homeSections.v1.\(suffix)", "tvos.homeSpotlight.v1.\(suffix)", "tvos.homeStudiosNetworks.v1.\(suffix)", "tvos.homeCards.v1.\(suffix)", "tvos.homeCards.v1.\(suffix).captions"])
+            keys.formUnion(["tvos.homeSections.v1.\(suffix)", "tvos.homeSpotlight.v1.\(suffix)", "tvos.homeStudiosNetworks.v1.\(suffix)", "tvos.homeCollections.v1.\(suffix)", "tvos.homeCards.v1.\(suffix)", "tvos.homeCards.v1.\(suffix).captions"])
             for key in storedKeys {
                 for prefix in ["ios.browsePrefs.", "tv.browsePrefs."] where key.hasPrefix(prefix + suffix + ".") {
                     let canonical = "vivid.browsePrefs." + String(key.dropFirst(prefix.count))
@@ -299,6 +299,7 @@ final class VividCloudPreferences {
         }
         for key in defaults { SharedDefaults.shared.removeObject(forKey: key) }
         if !profile.isEmpty { StudiosNetworksStore.removeCache(server: account.serverID, profile: profile) }
+        if !profile.isEmpty { HomeCollectionsStore.removeCache(server: account.serverID, profile: profile) }
         TVHomeCardPreferences.shared.cloudPreferencesChanged()
         try persist()
     }
@@ -514,6 +515,7 @@ final class VividCloudPreferences {
             HomeSectionPreferences.shared.refresh(force: true)
             TVHomeSpotlightPreferences.shared.refresh(force: true)
             StudiosNetworksStore.shared.refresh(force: true)
+            HomeCollectionsStore.shared.refresh(force: true)
             TVHomeCardPreferences.shared.cloudPreferencesChanged()
             TVTMDbStore.shared.reloadForCurrentProfile(force: true)
             TVSeerrConnectionStore.shared.cloudPreferencesChanged()

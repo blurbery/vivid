@@ -531,6 +531,8 @@ enum StartupContentPrefetcher {
         // Home for it (`TVLoginPreparation`, up to two minutes); cold launches
         // and saved-profile switches don't wait. Home's own request joins it.
         Task(priority: .utility) { await StudiosNetworksStore.shared.loadIfNeeded() }
+        // The Collections row's list loads alongside it; nothing waits for it.
+        Task(priority: .utility) { await HomeCollectionsStore.shared.loadIfNeeded() }
         #endif
         prefetchHomeSections()
         Task {

@@ -54,6 +54,12 @@ struct GeneralSettingsView: View {
                         Text("Choose which rows appear on Home and arrange their order.").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
+                #if os(iOS)
+                NavigationLink { PhoneHomeCollectionsSettingsView() } label: {
+                    LabeledContent("Collections",
+                                   value: HomeCollectionsStore.shared.isEnabled ? String(localized: "On") : String(localized: "Off"))
+                }
+                #endif
 
                 if MediaServerProvider.forServerID(registry.activeServerId) == .emby {
                     Toggle("Combine Next Up with Continue Watching", isOn: Binding(
@@ -86,8 +92,8 @@ struct GeneralSettingsView: View {
             #endif
             VividCopyrightFooter().frame(maxWidth: .infinity).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
-        .onAppear { homeSections.refresh() }
-        .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
+        .onAppear { homeSections.refresh(); HomeCollectionsStore.shared.refresh() }
+        .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh(); HomeCollectionsStore.shared.refresh() }
         .alert("Reopen Vivid", isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {

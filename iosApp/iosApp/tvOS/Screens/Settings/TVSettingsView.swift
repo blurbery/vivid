@@ -356,6 +356,7 @@ enum TVSettingsDetailFocus: Hashable {
     case generalLanguage
     case generalTheme
     case generalHomeSections
+    case generalHomeCollections
     case generalHomeScreen
     case generalTopMenu
     case playbackAudioLanguage
