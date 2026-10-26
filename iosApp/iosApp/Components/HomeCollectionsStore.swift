@@ -438,13 +438,13 @@ final class HomeCollectionsStore {
         }
     }
 
-    /// The profile's own collections first, so they are easy to find in the
-    /// settings carousels, then the server's, each A to Z.
     nonisolated static func retryIsDue(after failure: Date?, now: Date = Date()) -> Bool {
         guard let failure else { return true }
         return now.timeIntervalSince(failure) >= retryDelay
     }
 
+    /// The profile's own collections first, so they are easy to find in the
+    /// settings carousels, then the server's, each A to Z.
     static func sorted(_ entries: [HomeCollection]) -> [HomeCollection] {
         entries.sorted { lhs, rhs in
             let lhsMine = lhs.collection.kind == .userCollections
