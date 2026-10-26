@@ -1065,15 +1065,16 @@ struct MobileForYouCollections: View {
                 libraries: libraries,
                 excludingPersonalIDs: Set(personal.collections.map(\.id))
             )
-            if let failure, entries.isEmpty {
-                error = ErrorState(failure)
+            // An error only shows when nothing loaded at all.
+            if entries.isEmpty, personal.collections.isEmpty {
+                error = failure.map { ErrorState($0) } ?? personal.error
             } else {
-                error = personal.error
+                error = nil
             }
         } catch {
-            self.error = ErrorState(error)
             await personalLoad
-            if self.error == nil { self.error = personal.error }
+            // Without the library list, the profile's own collections still show.
+            self.error = entries.isEmpty && personal.collections.isEmpty ? ErrorState(error) : nil
         }
         isLoading = false
     }
