@@ -800,7 +800,8 @@ final class StudiosNetworksStore {
             } else {
                 // Counts as a poster refresh, so a page that waited on a read
                 // that failed doesn't read the library again straight away.
-                artworkRefreshedAt = Date()
+                // Not once the account or profile has switched.
+                if loadedScope == scope { artworkRefreshedAt = Date() }
                 index = try await readLibrary(scope, reportsProgress: true)
             }
             await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
