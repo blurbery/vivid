@@ -217,15 +217,18 @@ struct PhoneHomeCollectionsSettingsView: View {
 
     /// Five posters a row, wrapping onto new rows as more are picked, so
     /// every poster stays on screen and can be dragged to any slot.
-    @ViewBuilder
+    /// The grid stays in place while nothing is chosen. Swapping it for the
+    /// message left the list row at the message's height, so posters added
+    /// back were cut off until the page was opened again.
     private var preview: some View {
-        if displayedPicks.isEmpty {
-            Text("Choose collections below to show them on Home.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-        } else {
+        VStack(spacing: 0) {
+            if displayedPicks.isEmpty {
+                Text("Choose collections below to show them on Home.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+            }
             previewGrid
         }
     }
