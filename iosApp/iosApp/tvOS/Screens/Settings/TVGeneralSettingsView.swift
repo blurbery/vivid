@@ -15,6 +15,8 @@ struct TVGeneralSettingsPane: View {
     @State private var showsMenuEditor = false
     @State private var showsStudiosNetworksEditor = false
     @State private var studiosNetworks = StudiosNetworksStore.shared
+    @State private var showsCollectionsEditor = false
+    @State private var homeCollections = HomeCollectionsStore.shared
     @State private var tmdb = TVTMDbStore.shared
     @State private var registry = ServerRegistry.shared
     @State private var librarySnapshot = MainTabLibrarySnapshot.cachedForCurrentAuthority()
@@ -96,6 +98,12 @@ struct TVGeneralSettingsPane: View {
                 .buttonStyle(TVSettingsPaneRowStyle())
                 .focused(detailFocus, equals: .generalHomeSections)
 
+                TVSettingsPickerRow(
+                    title: "Collections",
+                    value: homeCollections.isEnabled ? "On" : "Off"
+                ) { showsCollectionsEditor = true }
+                .focused(detailFocus, equals: .generalHomeCollections)
+
                 if MediaServerProvider.forServerID(registry.activeServerId) == .emby {
                     TVSettingsToggleRow(
                         title: "Combine Next Up with Continue Watching",
@@ -163,6 +171,9 @@ struct TVGeneralSettingsPane: View {
         .navigationDestination(isPresented: $showsStudiosNetworksEditor) {
             TVStudiosNetworksSettingsView()
         }
+        .navigationDestination(isPresented: $showsCollectionsEditor) {
+            TVHomeCollectionsSettingsView()
+        }
         .navigationDestination(isPresented: $showsMenuEditor) {
             TVMenuCustomizationSheet(libraries: libraries)
         }
@@ -170,8 +181,9 @@ struct TVGeneralSettingsPane: View {
             homeSections.refresh()
             tmdb.reloadForCurrentProfile()
             studiosNetworks.refresh()
+            homeCollections.refresh()
         }
-        .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
+        .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh(); homeCollections.refresh() }
         .tvSystemAlert(
             "Reopen Vivid",
             isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } }),

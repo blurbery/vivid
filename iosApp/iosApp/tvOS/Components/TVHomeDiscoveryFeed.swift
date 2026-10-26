@@ -13,6 +13,8 @@ struct TVHomeDiscoveryFeed: View {
     let onItemTap: (String, SectionItem) -> Void
     var onRemoveFromContinueWatching: ((SectionItem) -> Void)? = nil
     var onSetWatched: ((SectionItem, Bool) async -> Bool)? = nil
+    /// Home pins the Collections row below its rows; other feeds don't.
+    var showsCollections = false
 
     @State private var homeCards = TVHomeCardPreferences.shared
     @State private var spotlightEnterRequest = 0
@@ -24,6 +26,8 @@ struct TVHomeDiscoveryFeed: View {
     @State private var studiosNetworksFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var studiosNetworksOpenedDetail = false
+    @State private var collectionsFocusRequest = 0
+    @State private var collectionsOpenedDetail = false
     @State private var appliedFocusRequest = 0
 
     private static let spotlightAnchor = "vivid.home.discovery.spotlight"
@@ -31,6 +35,8 @@ struct TVHomeDiscoveryFeed: View {
     /// section, so no section restores focus, and the top menu boundary
     /// knows focus has left the Spotlight.
     private static let studiosNetworksOwner = "vivid.home.studiosNetworks"
+    /// Focus owner while the Collections row has focus, for the same reasons.
+    private static let collectionsOwner = "vivid.home.collections"
 
     var body: some View {
         let _ = scrollDiagnostics.event("feed.body")
@@ -54,6 +60,7 @@ struct TVHomeDiscoveryFeed: View {
                             onSelect: { slide in
                                 spotlightOpenedDetail = true
                                 studiosNetworksOpenedDetail = false
+                                collectionsOpenedDetail = false
                                 rowFocusOwnership.rowID = nil
                                 onItemTap(slide.item.contentId, slide.item)
                             }
@@ -72,6 +79,7 @@ struct TVHomeDiscoveryFeed: View {
                                 onItemTap: { id, item in
                                     spotlightOpenedDetail = false
                                     studiosNetworksOpenedDetail = false
+                                    collectionsOpenedDetail = false
                                     onItemTap(id, item)
                                 },
                                 onRemoveFromContinueWatching: onRemoveFromContinueWatching,
@@ -82,7 +90,8 @@ struct TVHomeDiscoveryFeed: View {
                                 focusRequest: index == 0 ? firstRowFocusRequest : 0,
                                 defaultFocusItemId: rowFocusMemory.items[section.id],
                                 focusRequestItemId: rowFocusMemory.items[section.id],
-                                detailReturnFocusRequest: spotlightOpenedDetail || studiosNetworksOpenedDetail ? 0 : detailReturnFocusRequest,
+                                detailReturnFocusRequest: spotlightOpenedDetail || studiosNetworksOpenedDetail || collectionsOpenedDetail
+                                    ? 0 : detailReturnFocusRequest,
                                 onMoveUp: index == 0 && slides.isEmpty && !StudiosNetworksStore.shared.showsRow
                                     ? { onTopMenuFocusRequest?() } : nil,
                                 onItemFocus: { item in
@@ -113,6 +122,11 @@ struct TVHomeDiscoveryFeed: View {
                     }
                     // Controlled eager-row comparison: keep the reserved geometry
                     // and artwork gates while mounting the real row containers.
+
+                    // Always last, below the server's rows and outside their limit.
+                    if showsCollections, HomeCollectionsStore.shared.showsRow {
+                        collectionsRow
+                    }
                 }
                 .environment(\.tvHomeStableRows, true)
                 .padding(.top, 152)
@@ -128,6 +142,7 @@ struct TVHomeDiscoveryFeed: View {
             .onChange(of: detailReturnFocusRequest) { _, _ in
                 if spotlightOpenedDetail { enterSpotlight() }
                 else if studiosNetworksOpenedDetail { enterStudiosNetworks() }
+                else if collectionsOpenedDetail { enterCollections() }
             }
             .onChange(of: slides.isEmpty) { _, empty in
                 if empty && rowFocusMemory.spotlightFocused { enterStudiosNetworks() }
@@ -167,8 +182,40 @@ struct TVHomeDiscoveryFeed: View {
             onOpen: {
                 spotlightOpenedDetail = false
                 studiosNetworksOpenedDetail = true
+                collectionsOpenedDetail = false
             }
         )
+    }
+
+    /// Pinned below the last row, with the same reserved height as a poster row.
+    private var collectionsRow: some View {
+        TVHomeCollectionsRow(
+            enterRequest: collectionsFocusRequest,
+            onFocused: {
+                if rowFocusOwnership.rowID != Self.collectionsOwner { rowFocusOwnership.rowID = Self.collectionsOwner }
+                rowArtworkWindow.focus(index: sections.count)
+            },
+            onOpen: {
+                spotlightOpenedDetail = false
+                studiosNetworksOpenedDetail = false
+                collectionsOpenedDetail = true
+            }
+        )
+        .frame(height: TVHomeRowGeometry.headingHeight
+            + TVHomeRowGeometry.headingSpacing
+            + TVHomeRowGeometry.stripHeight(
+                layout: .poster,
+                posterWidth: VividTheme.Skyline.densePosterCardWidth,
+                presentation: homeCards.presentation
+            ), alignment: .top)
+        .modifier(TVHomeRowArtworkVisibility(index: sections.count, window: rowArtworkWindow))
+    }
+
+    /// Back from a collection's page, focus returns to the card that opened it.
+    private func enterCollections() {
+        guard HomeCollectionsStore.shared.showsRow else { enterFirstRow(); return }
+        rowFocusOwnership.rowID = Self.collectionsOwner
+        collectionsFocusRequest += 1
     }
 
     /// Spotlight Down lands on Studios & Networks when it's showing,

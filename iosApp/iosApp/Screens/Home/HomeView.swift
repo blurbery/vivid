@@ -63,7 +63,8 @@ struct HomeView: View {
                     onTopMenuFocusRequest: onTopMenuFocusRequest,
                     onItemTap: navigateToDetail,
                     onRemoveFromContinueWatching: dismissContinueWatching,
-                    onSetWatched: setWatched
+                    onSetWatched: setWatched,
+                    showsCollections: true
                 )
                 // Rebuild the feed when row visibility or ordering changes.
                 .id(homeSectionPreferences.layoutRevision)
@@ -248,6 +249,12 @@ struct HomeView: View {
             }
             #endif
         }
+        // The Collections row reads the server's collections on each Home
+        // entry once its list is older than the refresh interval.
+        .task(id: shouldSyncHome) {
+            guard shouldSyncHome else { return }
+            await HomeCollectionsStore.shared.loadIfNeeded()
+        }
         #if os(iOS)
         // Without a Home timer, any failed Emby refresh (on entry, after
         // playback or from a pull) retries every 10 seconds until one succeeds.
@@ -326,6 +333,10 @@ struct HomeView: View {
                             .id(HomeFocusTarget.row(section.id))
                         }
                     }
+                    #if os(iOS)
+                    // Always last, below the server's rows and outside their limit.
+                    PhoneHomeCollectionsRow()
+                    #endif
                 }
                 .padding(.bottom, HomeFeedMetrics.bottomRunway)
             }
@@ -415,7 +426,8 @@ struct HomeView: View {
         async let homeRefresh: Void = viewModel.loadSections()
         async let libraryRefresh: LibrariesResponse? = try? await StartupContentPrefetcher
             .fetchUserLibraries()
-        _ = await (homeRefresh, libraryRefresh)
+        async let collectionsRefresh: Void = HomeCollectionsStore.shared.loadIfNeeded(force: true)
+        _ = await (homeRefresh, libraryRefresh, collectionsRefresh)
 
         await MainActor.run {
             scheduleRefreshStatusHide()
