@@ -177,6 +177,14 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertEqual(SiloAPICompatibility.artworkExpiry(url.absoluteString), Date(timeIntervalSince1970: 1_791_000_000))
     }
 
+    func testOnlyPostersAboutToExpireTakeFreshLinks() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        XCTAssertFalse(StudiosNetworksStore.artworkHasLapsed(expiresAt: nil, now: now), "Unsigned, Emby and Jellyfin posters")
+        XCTAssertFalse(StudiosNetworksStore.artworkHasLapsed(expiresAt: now.addingTimeInterval(2 * 60 * 60), now: now))
+        XCTAssertTrue(StudiosNetworksStore.artworkHasLapsed(expiresAt: now.addingTimeInterval(5 * 60), now: now))
+        XCTAssertTrue(StudiosNetworksStore.artworkHasLapsed(expiresAt: now.addingTimeInterval(-60), now: now))
+    }
+
     func testResultsArtworkExpiryIsTheEarliestSignedPoster() throws {
         let items = [
             try item("a", "A", year: 2020, poster: siloPoster),
