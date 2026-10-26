@@ -24,7 +24,7 @@ private struct PhoneStudioNetworkTile: View {
 
 /// Pinned under the Spotlight with no header. Scrolls like the other Home
 /// rows, with tiles half the width of a Continue Watching still at the
-/// current Poster Size.
+/// Large Home poster size.
 struct PhoneStudiosNetworksRow: View {
     @State private var store = StudiosNetworksStore.shared
     @State private var homeCards = TVHomeCardPreferences.shared

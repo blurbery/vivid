@@ -154,11 +154,11 @@ struct TVHomeSpotlightSlide: Identifiable, Codable, Equatable {
     #endif
 }
 /// Device-local card choices for Home, isolated by server and viewing profile.
+/// Home posters are always Large; only the captions can be chosen.
 @Observable
 @MainActor
 final class TVHomeCardPreferences {
     static let shared = TVHomeCardPreferences()
-    static let profileDefault = CardPresentationPreference(posterSize: .large, caption: .title)
     private var revision = 0
     private let defaults = SharedDefaults.shared
     private var key: String? {
@@ -166,41 +166,32 @@ final class TVHomeCardPreferences {
               let profile = AuthService.shared.profileId else { return nil }
         return "tvos.homeCards.v1.\(server).\(profile)"
     }
-    /// Cards read `presentation` many times per body. Decode it once per
+    /// Cards read `presentation` many times per body. Read it once per
     /// profile key and revision instead of on every access.
     @ObservationIgnored private var cachedPresentation: (key: String?, revision: Int, value: CardPresentationPreference)?
+    /// A poster size saved by an older build, or synced from a device still
+    /// running one, is ignored.
     var presentation: CardPresentationPreference {
         let revision = revision
         let key = key
         if let cached = cachedPresentation, cached.key == key, cached.revision == revision {
             return cached.value
         }
-        var value = Self.profileDefault
-        if let key, let data = defaults.data(forKey: key),
-           let saved = try? JSONDecoder().decode(CardPresentationPreference.self, from: data) {
-            value = saved
-        }
-        value.caption = key.flatMap { defaults.string(forKey: $0 + ".captions") }
+        let caption = key.flatMap { defaults.string(forKey: $0 + ".captions") }
             .flatMap(CardCaptionStyle.init(rawValue:)) ?? .titleMetadata
+        let value = CardPresentationPreference(posterSize: .large, caption: caption)
         cachedPresentation = (key, revision, value)
         return value
     }
     func cloudPreferencesChanged() { revision += 1 }
-    func setPosterSize(_ size: CardPosterSize) {
-        var value = presentation; value.posterSize = size; save(value)
-    }
     func setCaptionStyle(_ caption: CardCaptionStyle) {
         guard let key else { return }
         defaults.set(caption.rawValue, forKey: key + ".captions")
         revision += 1
     }
     func reset() {
-        if let key { defaults.removeObject(forKey: key + ".captions") }
-        save(Self.profileDefault)
-    }
-    private func save(_ value: CardPresentationPreference) {
-        guard let key, let data = try? JSONEncoder().encode(value) else { return }
-        defaults.set(data, forKey: key)
+        guard let key else { return }
+        defaults.removeObject(forKey: key + ".captions")
         revision += 1
     }
 }

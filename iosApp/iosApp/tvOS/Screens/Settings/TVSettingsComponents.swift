@@ -201,9 +201,8 @@ struct TVSettingsRowLabel: View {
     private static let descriptions: [String: LocalizedStringResource] = [
         "Spotlight": "Choose up to three rows for your discovery spotlight.",
         "Home Sections": "Choose which rows appear on Home and arrange their order.",
-        "Poster Size": "Adjust card sizes on Home only.",
         "Captions": "Choose titles and years, titles only, or artwork only.",
-        "Use Profile Default": "Restore Large Home posters and Title & Year captions.",
+        "Use Profile Default": "Restore Title & Year captions.",
         "Customise Tab Bar": "Reorder or hide tabs. Changes save automatically.",
         "Quality": "Preferred playback resolution and bitrate.",
         "Audio Language": "Prefer a matching audio track when available.",
