@@ -16,10 +16,10 @@ struct HomeCollection: Codable, Identifiable, Hashable {
 
 /// Loads, caches and remembers the Collections row pinned to the bottom of Home.
 ///
-/// Reads the server's own collections, as For You does with Source set to
-/// Server: Emby and Jellyfin in one request, Silo from each movie, series and
-/// mixed library. On Silo the profile's own collections are offered too, but
-/// other profiles' shared ones are left out. The list is cached per server
+/// Reads the server's own collections (For You's Server source) plus, on
+/// Silo, the profile's own (its Mine source): Emby and Jellyfin in one
+/// request, Silo from each movie, series and mixed library and the profile's
+/// collections list. Other profiles' shared collections are left out. The list is cached per server
 /// and profile, so Home shows the row straight away and refreshes it in the
 /// background.
 @MainActor

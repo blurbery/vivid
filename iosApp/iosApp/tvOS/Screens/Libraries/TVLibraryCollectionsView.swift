@@ -23,7 +23,9 @@ struct TVLibraryCollectionsView: View {
         displayedSections.flatMap { section in section.collections.map { collectionKey($0, kind: section.kind) } }
     }
     private var artworkRange: Range<Int> {
-        let first = flatCollectionKeys.firstIndex { visibleCollectionKeys.contains($0) } ?? 0
+        // With no card counted as on screen, as after returning from a
+        // collection, the window follows the remembered focus instead.
+        let first = flatCollectionKeys.firstIndex { visibleCollectionKeys.contains($0) }
         return TVPosterArtworkWindow.range(
             firstVisible: first,
             focusedIndex: flatCollectionKeys.firstIndex { $0 == lastFocusedCollectionKey },
