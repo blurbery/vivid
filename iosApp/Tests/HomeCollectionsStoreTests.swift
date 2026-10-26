@@ -32,6 +32,36 @@ final class HomeCollectionsStoreTests: XCTestCase {
         XCTAssertEqual(picks.first, "29", "Most titles first")
     }
 
+    func testAutomaticPicksLeaveOutTheProfilesOwnCollections() {
+        let mine = LibraryCollection(personal: UserCollection(
+            id: "mine", name: "Weekend Movies", collectionType: nil, createdAt: nil, description: nil, groupId: nil,
+            sortOrder: nil, itemCount: 300, posterUrl: nil, posterThumbhash: nil, includeInServerCollections: nil
+        ), profileID: "profile-1")
+        XCTAssertEqual(mine.kind, .userCollections)
+        XCTAssertEqual(mine.creatorProfileId, "profile-1")
+        let available = [mine, collection("a", "Alien", count: 4)]
+        XCTAssertEqual(HomeCollectionsStore.automaticPicks(available), ["a"])
+        XCTAssertEqual(HomeCollectionsStore.picks(custom: ["mine", "a"], available: available), ["mine", "a"],
+                       "A chosen personal collection still shows")
+    }
+
+    func testAPersonalListThatFailedKeepsItsEarlierEntries() {
+        let personalID = HomeCollection.personalLibraryID
+        let previous = [HomeCollection(collection: collection("1", "Alien"), libraryID: 1),
+                        HomeCollection(collection: collection("mine", "Weekend Movies"), libraryID: personalID)]
+        let fresh = [HomeCollection(collection: collection("1", "Alien"), libraryID: 1)]
+        let partial = HomeCollectionsStore.merged(fresh, previous: previous, failedLibraries: [personalID])
+        XCTAssertEqual(partial.map(\.id), ["1", "mine"])
+    }
+
+    func testOnlyANotFoundAnswerCountsAsNotFound() {
+        XCTAssertTrue(VividAPI.isNotFound(HTTPError.http(statusCode: 404, body: nil)))
+        XCTAssertTrue(VividAPI.isNotFound(APIError.httpError(statusCode: 404)))
+        XCTAssertFalse(VividAPI.isNotFound(HTTPError.http(statusCode: 500, body: nil)))
+        XCTAssertFalse(VividAPI.isNotFound(APIError.httpError(statusCode: 403)))
+        XCTAssertFalse(VividAPI.isNotFound(URLError(.timedOut)))
+    }
+
     func testChosenPicksKeepTheirOrderAndDropCollectionsNoLongerOnTheServer() {
         let available = [collection("a", "Alien"), collection("b", "Bond"), collection("c", "Cars")]
         let picks = HomeCollectionsStore.picks(custom: ["c", "gone", "a", "c"], available: available)
@@ -75,6 +105,23 @@ final class HomeCollectionsStoreTests: XCTestCase {
             HomeCollection(collection: collection("4", "Collection 9"), libraryID: 2),
         ])
         XCTAssertEqual(sorted.map(\.collection.name), ["Alien", "Collection 9", "Collection 10", "Toy Story"])
+    }
+
+    func testTheProfilesOwnCollectionsComeFirst() {
+        let mine = LibraryCollection(id: "m", name: "Weekend Movies", itemCount: 3, kind: .userCollections)
+        let sorted = HomeCollectionsStore.sorted([
+            HomeCollection(collection: collection("1", "Alien"), libraryID: 1),
+            HomeCollection(collection: mine, libraryID: HomeCollection.personalLibraryID),
+            HomeCollection(collection: collection("2", "Zombies"), libraryID: 1),
+        ])
+        XCTAssertEqual(sorted.map(\.id), ["m", "1", "2"])
+    }
+
+    func testAFailedReadWaitsBeforeTryingAgain() {
+        let failed = Date(timeIntervalSince1970: 1_790_000_000)
+        XCTAssertTrue(HomeCollectionsStore.retryIsDue(after: nil, now: failed))
+        XCTAssertFalse(HomeCollectionsStore.retryIsDue(after: failed, now: failed.addingTimeInterval(60)))
+        XCTAssertTrue(HomeCollectionsStore.retryIsDue(after: failed, now: failed.addingTimeInterval(HomeCollectionsStore.retryDelay)))
     }
 
     func testCarouselsHoldTwentyEach() {

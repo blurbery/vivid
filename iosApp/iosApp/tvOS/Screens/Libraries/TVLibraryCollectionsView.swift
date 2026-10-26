@@ -23,7 +23,9 @@ struct TVLibraryCollectionsView: View {
         displayedSections.flatMap { section in section.collections.map { collectionKey($0, kind: section.kind) } }
     }
     private var artworkRange: Range<Int> {
-        let first = flatCollectionKeys.firstIndex { visibleCollectionKeys.contains($0) } ?? 0
+        // With no card counted as on screen, as after returning from a
+        // collection, the window follows the remembered focus instead.
+        let first = flatCollectionKeys.firstIndex { visibleCollectionKeys.contains($0) }
         return TVPosterArtworkWindow.range(
             firstVisible: first,
             focusedIndex: flatCollectionKeys.firstIndex { $0 == lastFocusedCollectionKey },
@@ -46,6 +48,7 @@ struct TVLibraryCollectionsView: View {
     private struct CachedCollections {
         let sections: [LibraryCollectionSection]
         let libraryIds: [String: Int]
+        let personal: [LibraryCollection]?
     }
     private var cacheKey: String {
         "personal:tvCollections:\(library == nil ? "combined" : "library"):\(sourceLibraries.map { String($0.id) }.joined(separator: ","))"
@@ -61,11 +64,21 @@ struct TVLibraryCollectionsView: View {
 
     @State private var collectionSections: [LibraryCollectionSection] = []
     private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
+    /// Emby leaves title counts out of these lists, so the Home Collections
+    /// row's list fills them in once it has them.
+    private var countedSections: [LibraryCollectionSection] {
+        guard MediaServerProvider.active.usesNativeUser else { return collectionSections }
+        let store = HomeCollectionsStore.shared
+        return collectionSections.map { section in
+            LibraryCollectionSection(id: section.id, name: section.name, kind: section.kind,
+                                     collections: section.collections.map(store.withKnownCount))
+        }
+    }
     private var displayedSections: [LibraryCollectionSection] {
         let active = activeFilter
-        guard active.isActive else { return collectionSections }
+        guard active.isActive else { return countedSections }
         let profileID = ServerRegistry.shared.activeProfileId
-        return collectionSections.compactMap { section in
+        return countedSections.compactMap { section in
             let matching = section.collections.filter { collection in
                 active.matchesCollection(
                     kind: collection.kind ?? section.kind,
@@ -81,6 +94,9 @@ struct TVLibraryCollectionsView: View {
     @State private var isLoadingCollections = true
     @State private var collectionsError: ErrorState?
     @State private var collectionLibraryIds: [String: Int] = [:]
+    /// The profile's own Silo collections, which For You lists with the
+    /// user collections. Nil until they load, and on library tabs.
+    @State private var personalCollections: [LibraryCollection]?
     @State private var uiCustomization = UICustomizationPreferences.shared
 
     @State private var hasPendingFocusClaim = false
@@ -102,7 +118,10 @@ struct TVLibraryCollectionsView: View {
         .frame(maxWidth: .infinity)
         .onChange(of: artworkEntries) { _, entries in artworkWindow.update(entries) }
         .onAppear { artworkWindow.update(artworkEntries) }
-        .onDisappear { artworkWindow.clear() }
+        .onDisappear {
+            artworkWindow.clear()
+            visibleCollectionKeys.removeAll()
+        }
         .onGeometryChange(for: CGFloat.self) { max(1, $0.size.width - 2 * VividTheme.safePadding) } action: { availableWidth = $0 }
         .task(id: sourceLibraries.map(\.id)) {
             await loadCollections()
@@ -197,6 +216,10 @@ struct TVLibraryCollectionsView: View {
                                     let key = collectionKey(collection, kind: section.kind)
                                     if visible { visibleCollectionKeys.insert(key) } else { visibleCollectionKeys.remove(key) }
                                 }
+                                // A card the lazy grid drops without a last
+                                // visibility change would otherwise hold the
+                                // artwork window on rows already scrolled past.
+                                .onDisappear { visibleCollectionKeys.remove(collectionKey(collection, kind: section.kind)) }
                             }
                         }
                         .padding(.horizontal, VividTheme.safePadding)
@@ -279,9 +302,14 @@ struct TVLibraryCollectionsView: View {
     private func loadCollections() async {
         isLoadingCollections = true
         collectionsError = nil
+        if MediaServerProvider.active.usesNativeUser {
+            // Brings in the counts Emby leaves out (`countedSections`).
+            Task { await HomeCollectionsStore.shared.loadIfNeeded() }
+        }
         if let cached: CachedCollections = ResponseCache.shared.get(cacheKey) {
             collectionSections = cached.sections
             collectionLibraryIds = cached.libraryIds
+            personalCollections = cached.personal
             isLoadingCollections = false
         }
 
@@ -300,32 +328,60 @@ struct TVLibraryCollectionsView: View {
             isLoadingCollections = false
         }
 
-        do {
-            try await withThrowingTaskGroup(of: (Int, [LibraryCollectionSection]).self) { group in
-                for source in sourceLibraries {
-                    group.addTask {
-                        let response = try await VividAPI.shared.libraryCollections(libraryId: source.id)
-                        return (source.id, response.resolvedSections)
+        // For You reads every library the account has, so a library this
+        // profile can't see counts as empty, and one that fails leaves the
+        // others on screen. A library tab still reports its own failure.
+        let isCombined = library == nil
+        let loadsPersonal = isCombined && !MediaServerProvider.active.usesNativeUser
+        let profileID = ServerRegistry.shared.activeProfileId
+        var failure: Error?
+        await withTaskGroup(of: Loaded.self) { group in
+            for source in sourceLibraries {
+                group.addTask {
+                    do {
+                        let response = isCombined
+                            ? try await VividAPI.shared.visibleLibraryCollections(libraryId: source.id)
+                            : try await VividAPI.shared.libraryCollections(libraryId: source.id)
+                        return .library(source.id, .success(response.resolvedSections))
+                    } catch {
+                        return .library(source.id, .failure(error))
                     }
                 }
+            }
+            if loadsPersonal {
+                group.addTask { .personal(try? await VividAPI.shared.personalCollections(profileID: profileID)) }
+            }
 
-                // Publish each completed library instead of leaving the page
-                // empty until the slowest server response finishes.
-                for try await (id, sections) in group {
-                    try Task.checkCancellation()
+            // Publish each completed library instead of leaving the page
+            // empty until the slowest server response finishes.
+            for await loaded in group {
+                guard !Task.isCancelled else { return }
+                switch loaded {
+                case .library(let id, .success(let sections)):
                     responses[id] = sections
                     ResponseCache.shared.set(sections, for: "library:\(id):collections")
-                    applyCollectionResponses(responses)
-                    isLoadingCollections = false
+                case .library(_, .failure(let error)):
+                    failure = failure ?? error
+                    continue
+                case .personal(let collections):
+                    // A failed read keeps the last list rather than emptying it.
+                    guard let collections else { continue }
+                    personalCollections = collections
                 }
-            }
-        } catch {
-            guard !Task.isCancelled else { return }
-            if collectionSections.isEmpty {
-                collectionsError = ErrorState(error)
+                applyCollectionResponses(responses)
+                isLoadingCollections = false
             }
         }
+        guard !Task.isCancelled else { return }
+        if collectionSections.isEmpty, let failure {
+            collectionsError = ErrorState(failure)
+        }
         isLoadingCollections = false
+    }
+
+    private enum Loaded {
+        case library(Int, Result<[LibraryCollectionSection], Error>)
+        case personal([LibraryCollection]?)
     }
 
     private func applyCollectionResponses(
@@ -351,7 +407,16 @@ struct TVLibraryCollectionsView: View {
         }
 
         if library == nil {
-            sections = [LibraryCollectionKind.regular, .userCollections].compactMap { kind in
+            // The profile's own collections, except any already listed from
+            // a library tab they were added to.
+            for collection in personalCollections ?? [] {
+                let key = collectionKey(collection, kind: .userCollections)
+                guard seen.insert(key).inserted else { continue }
+                sources[key] = HomeCollection.personalLibraryID
+                combined[.userCollections, default: []].append(collection)
+            }
+            // User collections come first, above the server's.
+            sections = [LibraryCollectionKind.userCollections, .regular].compactMap { kind in
                 guard let items = combined[kind], !items.isEmpty else { return nil }
                 return LibraryCollectionSection(
                     id: kind.rawValue,
@@ -368,7 +433,7 @@ struct TVLibraryCollectionsView: View {
         collectionLibraryIds = sources
         collectionSections = sections
         ResponseCache.shared.set(
-            CachedCollections(sections: sections, libraryIds: sources),
+            CachedCollections(sections: sections, libraryIds: sources, personal: personalCollections),
             for: cacheKey
         )
     }

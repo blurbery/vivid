@@ -14,16 +14,31 @@ func collectionTypeLabel(_ type: String?) -> String? {
     }
 }
 
+@MainActor
 func libraryCollectionAccessibilityLabel(_ collection: LibraryCollection) -> String {
+    let collection = countedCollection(collection)
     let type = collection.kind == .userCollections
         ? String(localized: "User collection")
         : collectionTypeLabel(collection.collectionType) ?? String(localized: "Collection")
-    let count = if let itemCount = collection.itemCount {
-        String(localized: "\(itemCount) items")
-    } else {
-        String(localized: "Smart")
+    return ([collection.name, type] + [collectionCountLabel(collection, items: true)].compactMap { $0 })
+        .joined(separator: ", ")
+}
+
+/// Emby leaves title counts out of its collection lists, so they come from
+/// the Home Collections row's list once it has them.
+@MainActor
+private func countedCollection(_ collection: LibraryCollection) -> LibraryCollection {
+    MediaServerProvider.active.usesNativeUser ? HomeCollectionsStore.shared.withKnownCount(collection) : collection
+}
+
+/// A Silo collection without a count is a smart one. On Emby and Jellyfin
+/// the count just hasn't arrived, so nothing is shown.
+@MainActor
+private func collectionCountLabel(_ collection: LibraryCollection, items: Bool) -> String? {
+    if let itemCount = collection.itemCount {
+        return items ? String(localized: "\(itemCount) items") : "\(itemCount)"
     }
-    return [collection.name, type, count].joined(separator: ", ")
+    return MediaServerProvider.active.usesNativeUser ? nil : String(localized: "Smart")
 }
 
 /// List of user-created collections, grouped into named buckets +
@@ -427,6 +442,10 @@ private class LibraryCollectionsViewModel {
     var isEmpty: Bool { sections.allSatisfy { $0.collections.isEmpty } }
 
     func loadCollections(libraryId: Int) async {
+        if MediaServerProvider.active.usesNativeUser {
+            // Brings in the counts Emby leaves out of this list.
+            Task { await HomeCollectionsStore.shared.loadIfNeeded() }
+        }
         let key = "library:\(libraryId):collections"
         if sections.isEmpty,
            let cached: [LibraryCollectionSection] = ResponseCache.shared.get(key) {
@@ -606,14 +625,16 @@ private struct LibraryCollectionCard: View {
             ZStack(alignment: .bottomTrailing) {
                 poster
 
-                Text(countLabel)
-                    .font(.vividSmall)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.black.opacity(0.65))
-                    .clipShape(Capsule())
-                    .padding(8)
+                if let countLabel = collectionCountLabel(countedCollection(collection), items: false) {
+                    Text(countLabel)
+                        .font(.vividSmall)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.65))
+                        .clipShape(Capsule())
+                        .padding(8)
+                }
             }
             .frame(width: cardWidth, height: cardHeight)
             .clipShape(RoundedRectangle(cornerRadius: VividTheme.smallCornerRadius))
@@ -655,13 +676,6 @@ private struct LibraryCollectionCard: View {
             }
             .frame(width: cardWidth, height: cardHeight)
         }
-    }
-
-    private var countLabel: String {
-        if let itemCount = collection.itemCount {
-            return "\(itemCount)"
-        }
-        return String(localized: "Smart")
     }
 
     private var typeLabel: String {
@@ -963,6 +977,8 @@ struct MobileForYouCollections: View {
         isLoading = true
         error = nil
         if MediaServerProvider.active.usesNativeUser {
+            // Brings in the counts Emby leaves out of this list.
+            Task { await HomeCollectionsStore.shared.loadIfNeeded() }
             // Paint the last list straight away, like the library path below,
             // so a return visit doesn't wait for the server.
             nativeLoadGeneration += 1
@@ -1015,36 +1031,54 @@ struct MobileForYouCollections: View {
                 excludingPersonalIDs: []
             )
 
-            try await withThrowingTaskGroup(of: (Int, [LibraryCollectionSection]).self) { group in
+            // Every library the account has is read, so a library this
+            // profile can't see counts as empty, and one that fails leaves
+            // the others on screen.
+            var failure: Error?
+            await withTaskGroup(of: (Int, Result<[LibraryCollectionSection], Error>).self) { group in
                 for library in libraries {
                     group.addTask {
-                        let response = try await VividAPI.shared.libraryCollections(libraryId: library.id)
-                        return (library.id, response.resolvedSections)
+                        do {
+                            let response = try await VividAPI.shared.visibleLibraryCollections(libraryId: library.id)
+                            return (library.id, .success(response.resolvedSections))
+                        } catch {
+                            return (library.id, .failure(error))
+                        }
                     }
                 }
-                for try await (libraryID, sections) in group {
-                    try Task.checkCancellation()
-                    sectionsByLibrary[libraryID] = sections
-                    ResponseCache.shared.set(sections, for: "library:\(libraryID):collections")
-                    publishEntries(
-                        from: sectionsByLibrary,
-                        libraries: libraries,
-                        excludingPersonalIDs: []
-                    )
+                for await (libraryID, result) in group {
+                    guard !Task.isCancelled else { return }
+                    switch result {
+                    case .success(let sections):
+                        sectionsByLibrary[libraryID] = sections
+                        ResponseCache.shared.set(sections, for: "library:\(libraryID):collections")
+                        publishEntries(
+                            from: sectionsByLibrary,
+                            libraries: libraries,
+                            excludingPersonalIDs: []
+                        )
+                    case .failure(let error):
+                        failure = failure ?? error
+                    }
                 }
             }
 
             await personalLoad
-            error = personal.error
             publishEntries(
                 from: sectionsByLibrary,
                 libraries: libraries,
                 excludingPersonalIDs: Set(personal.collections.map(\.id))
             )
+            // An error only shows when nothing loaded at all.
+            if entries.isEmpty, personal.collections.isEmpty {
+                error = failure.map { ErrorState($0) } ?? personal.error
+            } else {
+                error = nil
+            }
         } catch {
-            self.error = ErrorState(error)
             await personalLoad
-            if self.error == nil { self.error = personal.error }
+            // Without the library list, the profile's own collections still show.
+            self.error = entries.isEmpty && personal.collections.isEmpty ? ErrorState(error) : nil
         }
         isLoading = false
     }

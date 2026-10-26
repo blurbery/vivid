@@ -1047,6 +1047,21 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertNotNil(card.posterUrl)
     }
 
+    func testCollectionListsAskForCountsOnlyWhenRequested() async throws {
+        var requests: [[String: String]] = []
+        let adapter = stubbedAdapter { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            requests.append(Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
+            return (200, ["Items": [["Id": "3", "Name": "Film collection", "Type": "BoxSet", "ChildCount": 4]], "TotalRecordCount": 1])
+        }
+        _ = try await adapter.route(method: "GET", path: "/api/v1/collections", query: [:], body: nil)
+        _ = try await adapter.route(method: "GET", path: "/api/v1/collections", query: ["counts": "true"], body: nil)
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertNil(requests[0]["Fields"], "Counting each collection's titles is what makes Emby slow")
+        XCTAssertEqual(requests[1]["Fields"], "ChildCount")
+        XCTAssertEqual(requests.map { $0["IncludeItemTypes"] }, ["BoxSet", "BoxSet"])
+    }
+
     func testSeasonTabsExcludeEpisodeRecordsAndPreserveCounts() throws {
         let rows: [[String:Any]] = [
             ["Id":"season-4","Name":"Gone Tomorrow","Type":"Season","IndexNumber":4,"ChildCount":8],

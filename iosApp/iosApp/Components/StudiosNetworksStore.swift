@@ -727,7 +727,13 @@ final class StudiosNetworksStore {
             status = .needsAccount
             return
         }
-        if let loadTask { await loadTask.value; return }
+        if let loadTask {
+            await loadTask.value
+            // A load that failed keeps the saved results, whose posters may
+            // still need fresh links. A failed library read has already
+            // started the cooldown, so it's tried again on a later visit.
+            guard self.loadTask == nil, status == .ready, artworkNeedsRefresh else { return }
+        }
         guard let scope = loadedScope else { return }
         // Ready results only need fresh posters, for an app left open past
         // their expiry.
@@ -793,11 +799,20 @@ final class StudiosNetworksStore {
                await Self.hasCurrentArtwork(cached) {
                 index = cached
             } else {
+                // Counts as a poster refresh, so a page that waited on a read
+                // that failed doesn't read the library again straight away.
+                // Not once the account or profile has switched.
+                if loadedScope == scope { artworkRefreshedAt = Date() }
                 index = try await readLibrary(scope, reportsProgress: true)
             }
             await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
             libraryIsRead = true
             if loadedScope == scope { showMatchingProgress() }
+            // The saved results stay on screen while TMDb is matched, and stay
+            // if it fails, so expired posters take the library's fresh links now.
+            if loadedScope == scope, !results.isEmpty, artworkHasLapsed {
+                await applyArtwork(from: index, scope)
+            }
             let loaded = await Self.matched(try await lists, index: index)
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
@@ -835,10 +850,18 @@ final class StudiosNetworksStore {
     // MARK: Poster refresh
 
     private var artworkNeedsRefresh: Bool {
-        guard let artworkExpiresAt,
-              artworkExpiresAt.timeIntervalSinceNow < Self.artworkRefreshLead else { return false }
+        guard artworkHasLapsed else { return false }
         guard let artworkRefreshedAt else { return true }
         return Date().timeIntervalSince(artworkRefreshedAt) > Self.artworkRefreshCooldown
+    }
+
+    /// Whether the shown posters' links have expired or are about to.
+    private var artworkHasLapsed: Bool { Self.artworkHasLapsed(expiresAt: artworkExpiresAt) }
+
+    /// Links without an expiry (Emby, Jellyfin, unsigned) never lapse.
+    nonisolated static func artworkHasLapsed(expiresAt: Date?, now: Date = Date()) -> Bool {
+        guard let expiresAt else { return false }
+        return expiresAt.timeIntervalSince(now) < artworkRefreshLead
     }
 
     /// Swaps fresh poster URLs into the shown results by re-reading the
@@ -853,22 +876,28 @@ final class StudiosNetworksStore {
             await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
-            let current = results
-            let refreshed = await Task.detached(priority: .utility) {
-                Self.replacingArtwork(in: current, with: [index.movies.values, index.series.values].joined(),
-                                      tagged: index.tagged ?? [:])
-            }.value
-            let expiry = await Self.artworkExpiry(in: refreshed)
-            guard loadedScope == scope else { return }
-            results = refreshed
-            artworkExpiresAt = expiry
-            await Self.write(StudioNetworkResultsFile(savedAt: resultsSavedAt ?? Date(), results: refreshed,
-                                                      revision: resultsSavedRevision),
-                             scope.cacheURL("results"))
+            await applyArtwork(from: index, scope)
         } catch {
             // Keep the current results. The next visit after the cooldown
             // tries again, and the daily refresh reads the library anyway.
         }
+    }
+
+    /// Swaps a library read's poster links into the shown results and saves
+    /// them, keeping when they were matched.
+    private func applyArtwork(from index: StudioNetworkIndexFile, _ scope: Scope) async {
+        let current = results
+        let refreshed = await Task.detached(priority: .utility) {
+            Self.replacingArtwork(in: current, with: [index.movies.values, index.series.values].joined(),
+                                  tagged: index.tagged ?? [:])
+        }.value
+        let expiry = await Self.artworkExpiry(in: refreshed)
+        guard loadedScope == scope else { return }
+        results = refreshed
+        artworkExpiresAt = expiry
+        await Self.write(StudioNetworkResultsFile(savedAt: resultsSavedAt ?? Date(), results: refreshed,
+                                                  revision: resultsSavedRevision),
+                         scope.cacheURL("results"))
     }
 
     /// The results with every title replaced by its entry from a fresh
