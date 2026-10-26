@@ -730,7 +730,8 @@ final class StudiosNetworksStore {
         if let loadTask {
             await loadTask.value
             // A load that failed keeps the saved results, whose posters may
-            // still need fresh links. Anything else is settled.
+            // still need fresh links. A failed library read has already
+            // started the cooldown, so it's tried again on a later visit.
             guard self.loadTask == nil, status == .ready, artworkNeedsRefresh else { return }
         }
         guard let scope = loadedScope else { return }

@@ -33,6 +33,10 @@ final class HomeCollectionsStore {
     static let carouselSize = 20
     /// How long a loaded list is used before Home reads it again.
     static let refreshInterval: TimeInterval = 30 * 60
+    /// How long a failed read waits before another visit tries again. Emby
+    /// takes many seconds to count each collection's titles, so a server that
+    /// can't finish isn't asked again on every Collections visit.
+    nonisolated static let retryDelay: TimeInterval = 5 * 60
     /// Silo signs poster URLs for a few hours, so the list is read again
     /// this long before the first one expires.
     nonisolated static let artworkRefreshLead: TimeInterval = 15 * 60
@@ -69,6 +73,8 @@ final class HomeCollectionsStore {
     /// failed to load, so the list may be missing collections that are still
     /// on the server.
     @ObservationIgnored private var listIsComplete = true
+    /// When the last read failed, for `retryDelay`.
+    @ObservationIgnored private var failedAt: Date?
     private let defaults = SharedDefaults.shared
 
     // MARK: Picks
@@ -259,6 +265,7 @@ final class HomeCollectionsStore {
             loadedScope = scope
             hydratedScope = nil
             listIsComplete = true
+            failedAt = nil
             setCollections([])
             loadedAt = nil
             artworkExpiresAt = nil
@@ -304,6 +311,8 @@ final class HomeCollectionsStore {
            artworkExpiresAt.map({ $0.timeIntervalSinceNow > Self.artworkRefreshLead }) ?? true {
             return
         }
+        // Pull to refresh and the settings page still read at once.
+        if !force, !Self.retryIsDue(after: failedAt) { return }
         if let loadTask {
             await loadTask.value
             return
@@ -333,6 +342,7 @@ final class HomeCollectionsStore {
         do {
             let (fresh, failedLibraries) = try await Self.fetchCollections(profileID: scope.profile)
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
+            failedAt = nil
             let entries = Self.merged(fresh, previous: collections, failedLibraries: failedLibraries)
             setCollections(entries)
             listIsComplete = failedLibraries.isEmpty
@@ -348,6 +358,7 @@ final class HomeCollectionsStore {
             Self.save(CacheFile(savedAt: Date(), collections: fresh), to: scope.cacheURL)
         } catch {
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
+            failedAt = Date()
             // A list already on screen stays up; with nothing to show, report
             // the failure rather than an empty state that reads as none.
             status = collections.isEmpty ? .failed : .ready
@@ -429,6 +440,11 @@ final class HomeCollectionsStore {
 
     /// The profile's own collections first, so they are easy to find in the
     /// settings carousels, then the server's, each A to Z.
+    nonisolated static func retryIsDue(after failure: Date?, now: Date = Date()) -> Bool {
+        guard let failure else { return true }
+        return now.timeIntervalSince(failure) >= retryDelay
+    }
+
     static func sorted(_ entries: [HomeCollection]) -> [HomeCollection] {
         entries.sorted { lhs, rhs in
             let lhsMine = lhs.collection.kind == .userCollections

@@ -117,6 +117,13 @@ final class HomeCollectionsStoreTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.id), ["m", "1", "2"])
     }
 
+    func testAFailedReadWaitsBeforeTryingAgain() {
+        let failed = Date(timeIntervalSince1970: 1_790_000_000)
+        XCTAssertTrue(HomeCollectionsStore.retryIsDue(after: nil, now: failed))
+        XCTAssertFalse(HomeCollectionsStore.retryIsDue(after: failed, now: failed.addingTimeInterval(60)))
+        XCTAssertTrue(HomeCollectionsStore.retryIsDue(after: failed, now: failed.addingTimeInterval(HomeCollectionsStore.retryDelay)))
+    }
+
     func testCarouselsHoldTwentyEach() {
         let entries = (0..<45).map { HomeCollection(collection: collection("\($0)", "C\($0)"), libraryID: 0) }
         let carousels = HomeCollectionsStore.carousels(entries)
