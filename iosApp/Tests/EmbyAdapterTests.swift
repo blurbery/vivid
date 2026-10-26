@@ -287,6 +287,28 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(types.take(), ["Movie,Episode"], "History keeps its own item types")
     }
 
+    /// Emby matches the start of each word in a title, so `spiderman` misses
+    /// Spider-Man. Search's piece `spide` reaches it as a `SearchTerm`.
+    func testSearchPieceFindsTitlesThatSplitTheQuery() async throws {
+        let sent = LoadedRows()
+        let adapter = stubbedAdapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            sent.append(["SearchTerm", "IncludeItemTypes", "StartIndex", "Limit"]
+                .map { name in query.first { $0.name == name }?.value ?? "" }.joined(separator: "|"))
+            return (200, ["Items": [["Id": "1", "Name": "Spider-Man", "Type": "Movie"],
+                                    ["Id": "2", "Name": "Spiders", "Type": "Movie"],
+                                    ["Id": "3", "Name": "The Amazing Spider-Man", "Type": "Movie"]],
+                          "TotalRecordCount": 3])
+        }
+        let pieces = SearchMatching.pieces(of: "spiderman")
+        XCTAssertEqual(pieces, ["spide"])
+        let raw = try await adapter.catalog(SearchViewModel.pieceQuery(pieces[0], type: SearchMediaType.all.queryValue))
+        XCTAssertEqual(sent.take(), ["spide|Movie,Series|0|100"])
+        let page = try EmbyAdapter.decode(raw, as: CatalogResponse.self)
+        XCTAssertEqual(SearchMatching.matches(in: [page.items], query: "spiderman").map(\.title),
+                       ["Spider-Man", "The Amazing Spider-Man"])
+    }
+
     func testCombinedHomeFetchRetainsHiddenNextUpOnlyWhenConsumed() {
         let definitions = [
             adapter.homeSection(["Id": "resume", "SectionType": "Resume"], catalog: [:]),

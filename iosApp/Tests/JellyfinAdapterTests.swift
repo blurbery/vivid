@@ -600,6 +600,28 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(types, ["Movie,Episode"], "History keeps its own item types")
     }
 
+    /// Jellyfin turns a title's punctuation into spaces and matches the query
+    /// inside it, so `oceans eleven` misses "ocean s eleven". Search's piece
+    /// `oce` reaches it as a `SearchTerm`.
+    func testSearchPieceFindsTitlesThatSplitTheQuery() async throws {
+        var sent: [String] = []
+        let adapter = adapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            sent.append(["SearchTerm", "IncludeItemTypes", "StartIndex", "Limit"]
+                .map { name in query.first { $0.name == name }?.value ?? "" }.joined(separator: "|"))
+            return (200, ["Items": [["Id": "33333333333333333333333333333333", "Name": "Ocean's Eleven", "Type": "Movie"],
+                                    ["Id": "44444444444444444444444444444444", "Name": "Ocean Waves", "Type": "Movie"],
+                                    ["Id": "55555555555555555555555555555555", "Name": "Ocean's Twelve", "Type": "Movie"]],
+                          "TotalRecordCount": 3])
+        }
+        let pieces = SearchMatching.pieces(of: "oceans eleven")
+        XCTAssertEqual(pieces, ["oceans", "oce"])
+        let raw = try await adapter.catalog(SearchViewModel.pieceQuery(pieces[1], type: SearchMediaType.all.queryValue))
+        XCTAssertEqual(sent, ["oce|Movie,Series|0|100"])
+        let page: CatalogResponse = try JellyfinAdapter.decode(raw)
+        XCTAssertEqual(SearchMatching.matches(in: [page.items], query: "oceans eleven").map(\.title), ["Ocean's Eleven"])
+    }
+
     func testLibraryBrowseAsksJellyfinNotToGroupTitlesIntoCollections() async throws {
         var browse: [String: String] = [:]
         let adapter = adapter { request in
