@@ -162,12 +162,14 @@ final class HomeCollectionsStore {
         return edited + previous.filter { !loaded.contains($0) && !edited.contains($0) }
     }
 
-    /// A partial Silo list keeps the earlier entries for collections it
-    /// didn't return, so a library that failed this time doesn't empty them.
-    static func merged(_ fresh: [HomeCollection], previous: [HomeCollection], isComplete: Bool) -> [HomeCollection] {
-        guard !isComplete else { return fresh }
+    /// A partial Silo list keeps the earlier entries from the libraries that
+    /// failed this time, so they don't empty. Libraries that answered show
+    /// exactly what they returned.
+    static func merged(_ fresh: [HomeCollection], previous: [HomeCollection],
+                       failedLibraries: Set<Int>) -> [HomeCollection] {
+        guard !failedLibraries.isEmpty else { return fresh }
         let freshIDs = Set(fresh.map(\.id))
-        return sorted(fresh + previous.filter { !freshIDs.contains($0.id) })
+        return sorted(fresh + previous.filter { failedLibraries.contains($0.libraryID) && !freshIDs.contains($0.id) })
     }
 
     private func setCollections(_ entries: [HomeCollection]) {
@@ -307,16 +309,19 @@ final class HomeCollectionsStore {
     private func load(_ scope: Scope, generation: Int) async {
         defer { if generation == loadGeneration { loadTask = nil } }
         do {
-            let (fresh, isComplete) = try await Self.fetchCollections()
+            let (fresh, failedLibraries) = try await Self.fetchCollections()
             guard generation == loadGeneration, loadedScope == scope, !Task.isCancelled else { return }
-            let entries = Self.merged(fresh, previous: collections, isComplete: isComplete)
+            let entries = Self.merged(fresh, previous: collections, failedLibraries: failedLibraries)
             setCollections(entries)
-            listIsComplete = isComplete
+            listIsComplete = failedLibraries.isEmpty
             artworkExpiresAt = Self.artworkExpiry(of: entries)
             status = .ready
             // A partial list isn't cached or treated as fresh, so the next
             // Home visit reads the server again.
-            guard isComplete else { return }
+            guard listIsComplete else {
+                loadedAt = nil
+                return
+            }
             loadedAt = Date()
             Self.save(CacheFile(savedAt: Date(), collections: fresh), to: scope.cacheURL)
         } catch {
@@ -327,19 +332,20 @@ final class HomeCollectionsStore {
         }
     }
 
-    /// The server's collections, and whether every library answered.
-    private static func fetchCollections() async throws -> (entries: [HomeCollection], isComplete: Bool) {
+    /// The server's collections, and the Silo libraries that failed to answer.
+    private static func fetchCollections() async throws -> (entries: [HomeCollection], failedLibraries: Set<Int>) {
         if MediaServerProvider.active.usesNativeUser {
             let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
             return (sorted(response.collections
                 .filter { ($0.kind ?? .regular) == .regular }
-                .map { HomeCollection(collection: $0, libraryID: 0) }), true)
+                .map { HomeCollection(collection: $0, libraryID: 0) }), [])
         }
         let libraries = try await StartupContentPrefetcher.fetchUserLibraries().libraries.filter {
             $0.isMovieLibrary || $0.isSeriesLibrary || $0.isMixedLibrary
         }
         // One library failing shouldn't hide the others' collections.
         var byLibrary: [Int: [LibraryCollection]] = [:]
+        var failedLibraries = Set<Int>()
         var failure: Error?
         await withTaskGroup(of: (Int, Result<[LibraryCollection], Error>).self) { group in
             for library in libraries {
@@ -358,7 +364,9 @@ final class HomeCollectionsStore {
             for await (libraryID, result) in group {
                 switch result {
                 case .success(let collections): byLibrary[libraryID] = collections
-                case .failure(let error): failure = error
+                case .failure(let error):
+                    failure = error
+                    failedLibraries.insert(libraryID)
                 }
             }
         }
@@ -370,7 +378,7 @@ final class HomeCollectionsStore {
                 entries.append(HomeCollection(collection: collection, libraryID: library.id))
             }
         }
-        return (sorted(entries), failure == nil)
+        return (sorted(entries), failedLibraries)
     }
 
     static func sorted(_ entries: [HomeCollection]) -> [HomeCollection] {

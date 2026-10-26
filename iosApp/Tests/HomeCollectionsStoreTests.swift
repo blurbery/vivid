@@ -55,13 +55,16 @@ final class HomeCollectionsStoreTests: XCTestCase {
         XCTAssertEqual(kept, ["b", "c"])
     }
 
-    func testAPartialListKeepsEarlierEntriesForCollectionsItMissed() {
+    func testAPartialListKeepsEarlierEntriesOnlyFromLibrariesThatFailed() {
         let previous = [HomeCollection(collection: collection("1", "Alien"), libraryID: 1),
-                        HomeCollection(collection: collection("2", "Bond"), libraryID: 2)]
+                        HomeCollection(collection: collection("2", "Bond"), libraryID: 2),
+                        HomeCollection(collection: collection("3", "Cars"), libraryID: 1)]
+        // Library 1 answered without Cars (deleted); library 2 failed.
         let fresh = [HomeCollection(collection: collection("1", "Alien", count: 4), libraryID: 1)]
-        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, isComplete: false).map(\.id), ["1", "2"])
-        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, isComplete: false).first?.collection.itemCount, 4)
-        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, isComplete: true).map(\.id), ["1"])
+        let partial = HomeCollectionsStore.merged(fresh, previous: previous, failedLibraries: [2])
+        XCTAssertEqual(partial.map(\.id), ["1", "2"])
+        XCTAssertEqual(partial.first?.collection.itemCount, 4)
+        XCTAssertEqual(HomeCollectionsStore.merged(fresh, previous: previous, failedLibraries: []).map(\.id), ["1"])
     }
 
     func testCollectionsSortAToZWithNumbersInOrder() {
