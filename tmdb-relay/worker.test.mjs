@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {handle, limits} from './worker.mjs';
+import {handle, limits, trendingBlocks} from './worker.mjs';
 
 const token = 'test-read-token';
 
@@ -62,6 +62,7 @@ test('every path the app uses is accepted', async () => {
     '/3/tv/1399/external_ids', '/tvmaze/shows/82/seasons', '/tvmaze/seasons/307/episodes',
     '/3/movie/603?language=fr-FR', '/3/tv/1399?language=ja-JP', '/3/collection/10?language=zh-CN',
     `/3/discover/tv?${discover}&with_networks=213&language=de-DE`,
+    '/3/trending/tv/week?block=1', '/3/trending/movie/week?block=20',
   ]) {
     const response = await run(path, makeEnv());
     assert.equal(response.status, 200, path);
@@ -103,6 +104,8 @@ test('queries are checked against what the app sends', async () => {
     `/3/discover/movie?${discover}&with_networks=213&with_networks=49`,
     `/3/discover/movie?${discover}&with_genres=18`,
     `/3/discover/tv?${discover}&air_date.gte=18-10-2025`,
+    '/3/trending/tv/week', '/3/trending/tv/week?page=1', '/3/trending/tv/week?block=0', '/3/trending/tv/week?block=21',
+    '/3/trending/movie/week?block=1&language=fr-FR', '/3/trending/movie/week?block=1&with_networks=213',
   ]) {
     assert.equal((await run(path, env)).status, 400, path);
   }
@@ -203,4 +206,38 @@ test('other TVmaze paths and queries are refused without reaching TVmaze', async
     assert.equal((await run(path, env)).status, 400, path);
   }
   assert.equal(env.calls.length, 0);
+});
+
+test('weekly trending is read in blocks of 25 pages, cut down to the fields the app matches on', async () => {
+  const env = makeEnv({upstream: url => {
+    const page = Number(new URL(url).searchParams.get('page'));
+    const results = page > 30 ? [] : [{id: page, name: `Show ${page}`, first_air_date: '2026-01-01', genre_ids: [18],
+      original_language: 'en', origin_country: ['US'], overview: 'A long overview', popularity: 9, poster_path: '/p.jpg'}];
+    return new Response(JSON.stringify({page, results}), {status: 200});
+  }});
+  const response = await run('/3/trending/tv/week?block=2', env);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Cache-Control'), /max-age=21600/);
+  assert.equal(env.calls.length, trendingBlocks.pages);
+  assert.equal(env.calls[0].url, 'https://api.themoviedb.org/3/trending/tv/week?page=26');
+  assert.equal(env.calls.at(-1).url, 'https://api.themoviedb.org/3/trending/tv/week?page=50');
+  assert.equal(env.calls[0].init.headers.Authorization, `Bearer ${token}`);
+  const {results} = await response.json();
+  // Page 31 is empty, which ends the list.
+  assert.deepEqual(results.map(title => title.id), [26, 27, 28, 29, 30]);
+  assert.deepEqual(Object.keys(results[0]).sort(), ['first_air_date', 'genre_ids', 'id', 'name', 'origin_country', 'original_language']);
+  await run('/3/trending/tv/week?block=2', env);
+  assert.equal(env.calls.length, trendingBlocks.pages, 'the second request is served from the cache');
+  for (const path of ['/3/trending/tv/day?block=1', '/3/trending/all/week?block=1', '/3/trending/person/week?block=1']) {
+    assert.equal((await run(path, env)).status, 404, path);
+  }
+});
+
+test('a trending block with a failed page fails and is not cached', async () => {
+  for (const [status, expected] of [[429, 429], [500, 502], [401, 503]]) {
+    const env = makeEnv({upstream: url => new URL(url).searchParams.get('page') === '7'
+      ? new Response('{}', {status}) : new Response('{"results":[{"id":1}]}', {status: 200})});
+    assert.equal((await run('/3/trending/movie/week?block=1', env)).status, expected, String(status));
+    assert.equal(env.cache.keys().length, 0);
+  }
 });

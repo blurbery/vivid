@@ -866,7 +866,19 @@ struct MobileForYouCollections: View {
     private struct Entry: Identifiable {
         let libraryID: Int
         let collection: LibraryCollection
-        var id: String { "\(libraryID):\(collection.kind?.rawValue ?? "regular"):\(collection.id)" }
+        /// A collection listed by more than one library is shown once.
+        var id: String { "\((collection.kind ?? .regular).rawValue):\(collection.id)" }
+    }
+
+    /// A headed group of cards, as on Apple TV: User Collections, then the
+    /// server's Collections.
+    private struct Section: Identifiable {
+        let kind: LibraryCollectionKind
+        let entries: [Entry]
+        var id: String { kind.rawValue }
+        var title: String {
+            kind == .regular ? String(localized: "Collections") : String(localized: "User Collections")
+        }
     }
 
     @State private var personal = CollectionsViewModel()
@@ -905,72 +917,99 @@ struct MobileForYouCollections: View {
 
     private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
 
-    /// The rows above the grid are this profile's own collections.
-    private var visiblePersonal: [UserCollection] {
-        [.all, .mine].contains(activeFilter.source) ? personal.collections : []
+    /// This profile's own collections, as cards that open like any other
+    /// user collection. Mine shows them whether or not they are shared into
+    /// a library. Emby and Jellyfin have none.
+    private var personalEntries: [Entry] {
+        guard !MediaServerProvider.active.usesNativeUser,
+              [.all, .mine].contains(activeFilter.source) else { return [] }
+        let profileID = ServerRegistry.shared.activeProfileId
+        return personal.collections.map {
+            Entry(
+                libraryID: HomeCollection.personalLibraryID,
+                collection: LibraryCollection(personal: $0, profileID: profileID)
+            )
+        }
     }
 
-    private var visibleEntries: [Entry] {
+    /// User Collections first, above the server's Collections, each A to Z.
+    private var sections: [Section] {
         let profileID = ServerRegistry.shared.activeProfileId
-        return entries.filter {
-            activeFilter.matchesCollection(
-                kind: $0.collection.kind ?? .regular,
-                creatorProfileID: $0.collection.creatorProfileId,
+        let ownIDs = Set(personal.collections.map(\.id))
+        let libraryEntries = entries.filter { entry in
+            // One of the profile's own collections shared into a library is
+            // listed once, as the profile's own.
+            if entry.collection.kind == .userCollections, ownIDs.contains(entry.collection.id) { return false }
+            return activeFilter.matchesCollection(
+                kind: entry.collection.kind ?? .regular,
+                creatorProfileID: entry.collection.creatorProfileId,
                 activeProfileID: profileID
             )
+        }
+        let byKind = Dictionary(grouping: personalEntries + libraryEntries) { $0.collection.kind ?? .regular }
+        return [LibraryCollectionKind.userCollections, .regular].compactMap { kind in
+            guard let items = byKind[kind], !items.isEmpty else { return nil }
+            return Section(kind: kind, entries: items.sorted { lhs, rhs in
+                let order = lhs.collection.name.localizedStandardCompare(rhs.collection.name)
+                return order == .orderedSame ? lhs.collection.id < rhs.collection.id : order == .orderedAscending
+            })
         }
     }
 
     var body: some View {
         ScrollView {
             scrollHeader
-            LazyVStack(spacing: 16) {
-                ForEach(visiblePersonal) { collection in
-                    Button {
-                        router.navigate(to: .collectionDetail(collectionId: collection.id))
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "square.stack")
-                            Text(collection.name)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                        }
-                        .foregroundStyle(.white)
-                        .padding(16)
-                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-                    }.buttonStyle(.plain)
+            LazyVStack(spacing: 24) {
+                ForEach(sections) { section in
+                    sectionView(section)
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount), spacing: 16) {
-                    ForEach(visibleEntries) { entry in
-                        NavigationLink(value: Route.libraryCollection(
-                            libraryId: entry.libraryID,
-                            collectionId: entry.collection.id,
-                            title: entry.collection.name,
-                            kind: entry.collection.kind
-                        )) {
-                            LibraryCollectionCard(collection: entry.collection, cardWidthOverride: cardWidth)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(libraryCollectionAccessibilityLabel(entry.collection))
-                    }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
                 if isLoading { ProgressView().tint(.white) }
                 if let error {
                     ErrorView(state: error, onRetry: { Task { await load() } })
-                } else if !isLoading && visibleEntries.isEmpty && visiblePersonal.isEmpty {
+                } else if !isLoading && sections.isEmpty {
                     if activeFilter.isActive {
                         EmptyStateView(icon: "line.3.horizontal.decrease", title: "No collections match these filters")
                     } else {
                         EmptyStateView(icon: "square.stack", title: "No collections", subtitle: "Your collections will appear here.")
                     }
                 }
-            }.padding(16)
+            }
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
+            .padding(16)
         }
         .reportsPageChromeScroll()
         .vividBackground()
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    private func sectionView(_ section: Section) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Apple TV's group header: spaced mono capitals, dimmed.
+            Text(section.title)
+                .font(.system(size: 12, design: .monospaced))
+                .tracking(12 * 0.26)
+                .textCase(.uppercase)
+                .foregroundColor(.vividOnSurface.opacity(0.38))
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount), spacing: 16) {
+                ForEach(section.entries) { entry in
+                    NavigationLink(value: Route.libraryCollection(
+                        libraryId: entry.libraryID,
+                        collectionId: entry.collection.id,
+                        title: entry.collection.name,
+                        kind: entry.collection.kind ?? section.kind
+                    )) {
+                        LibraryCollectionCard(collection: entry.collection, cardWidthOverride: cardWidth)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(libraryCollectionAccessibilityLabel(entry.collection))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func load() async {
@@ -1025,11 +1064,7 @@ struct MobileForYouCollections: View {
                     sectionsByLibrary[library.id] = cached
                 }
             }
-            publishEntries(
-                from: sectionsByLibrary,
-                libraries: libraries,
-                excludingPersonalIDs: []
-            )
+            publishEntries(from: sectionsByLibrary, libraries: libraries)
 
             // Every library the account has is read, so a library this
             // profile can't see counts as empty, and one that fails leaves
@@ -1052,11 +1087,7 @@ struct MobileForYouCollections: View {
                     case .success(let sections):
                         sectionsByLibrary[libraryID] = sections
                         ResponseCache.shared.set(sections, for: "library:\(libraryID):collections")
-                        publishEntries(
-                            from: sectionsByLibrary,
-                            libraries: libraries,
-                            excludingPersonalIDs: []
-                        )
+                        publishEntries(from: sectionsByLibrary, libraries: libraries)
                     case .failure(let error):
                         failure = failure ?? error
                     }
@@ -1064,11 +1095,6 @@ struct MobileForYouCollections: View {
             }
 
             await personalLoad
-            publishEntries(
-                from: sectionsByLibrary,
-                libraries: libraries,
-                excludingPersonalIDs: Set(personal.collections.map(\.id))
-            )
             // An error only shows when nothing loaded at all.
             if entries.isEmpty, personal.collections.isEmpty {
                 error = failure.map { ErrorState($0) } ?? personal.error
@@ -1083,24 +1109,20 @@ struct MobileForYouCollections: View {
         isLoading = false
     }
 
+    /// `sections` groups and sorts these, and leaves out the profile's own.
     private func publishEntries(
         from sectionsByLibrary: [Int: [LibraryCollectionSection]],
-        libraries: [Library],
-        excludingPersonalIDs personalIDs: Set<String>
+        libraries: [Library]
     ) {
         var loaded: [Entry] = []
         var seen = Set<String>()
         for library in libraries {
             for collection in sectionsByLibrary[library.id, default: []].flatMap(\.collections) {
-                if collection.kind == .userCollections,
-                   personalIDs.contains(collection.id) { continue }
                 let entry = Entry(libraryID: library.id, collection: collection)
                 if seen.insert(entry.id).inserted { loaded.append(entry) }
             }
         }
-        entries = loaded.sorted {
-            $0.collection.name.localizedStandardCompare($1.collection.name) == .orderedAscending
-        }
+        entries = loaded
     }
 }
 #endif
