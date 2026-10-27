@@ -317,6 +317,16 @@ extension View {
             .lineLimit(1)
             .truncationMode(.tail)
     }
+
+    /// The line under Home's poster title, such as the year. For You's
+    /// Watchlist and Favourites cards use it too.
+    func homePosterSecondLineStyle() -> some View {
+        font(.system(size: 11, weight: .regular))
+            .foregroundStyle(Color.vividOnSurface.opacity(0.5))
+            .monospacedDigit()
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
 }
 
 /// Poster card with the shipping card's flaws corrected: true 2:3 artwork,
@@ -427,11 +437,7 @@ struct HomePosterCard: View {
 
             if showsMetadata, let secondLine = HomeFeedMeta.cardSecondLine(for: item) {
                 Text(secondLine)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.5))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .homePosterSecondLineStyle()
             }
         }
         .frame(width: width, alignment: .leading)
