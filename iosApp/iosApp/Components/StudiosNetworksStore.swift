@@ -77,7 +77,11 @@ struct StudioNetworkResult: Codable, Equatable {
     var count: Int { matchCount }
 
     /// Every title the page can show, for reading poster expiry.
-    var items: [BrowseItem] { movies + series + recentSeries + recentMovies + (trendingSeries ?? []) + (trendingMovies ?? []) + all }
+    var items: [BrowseItem] {
+        let trending: [BrowseItem] = (trendingSeries ?? []) + (trendingMovies ?? [])
+        let popular: [BrowseItem] = movies + series + recentSeries + recentMovies
+        return popular + trending + all
+    }
 }
 
 /// How a brand page's All in Your Library grid is narrowed and ordered, from
@@ -267,8 +271,8 @@ private struct StudioNetworkResultsFile: Codable, Sendable {
     /// How the results were matched. Results saved by an older version are
     /// matched again on the next load instead of waiting for the daily refresh.
     var revision: Int?
-    /// True when a trending list didn't load, so the next load an hour on
-    /// tries again instead of waiting for the daily refresh.
+    /// True when a trending list didn't load, so it's read again an hour on
+    /// instead of waiting for the daily refresh.
     var missesTrending: Bool?
 }
 
@@ -458,8 +462,8 @@ final class StudiosNetworksStore {
     /// pages from TMDb, so only a few go at a time.
     nonisolated static let concurrentTrendingBlocks = 4
     static let refreshInterval: TimeInterval = 24 * 60 * 60
-    /// How long results saved without a trending list wait before the next
-    /// load reads again.
+    /// How long results saved without a trending list wait before the
+    /// trending lists are read again, and between later tries.
     static let trendingRetryDelay: TimeInterval = 60 * 60
     /// Silo signs artwork URLs for a few hours, far less than the daily
     /// refresh, so posters are re-read this long before the first one expires.
@@ -545,6 +549,8 @@ final class StudiosNetworksStore {
     /// when none carries an expiry, as with Emby and Jellyfin.
     private var artworkExpiresAt: Date?
     private var artworkRefreshedAt: Date?
+    /// The last time the trending lists alone were read again.
+    private var trendingRetriedAt: Date?
     private var titlesRead: [String: Int] = [:]
     /// Brands whose TMDb lists have arrived in the current load.
     private var listsLoaded = 0
@@ -741,6 +747,7 @@ final class StudiosNetworksStore {
             resultsMissTrending = false
             artworkExpiresAt = nil
             artworkRefreshedAt = nil
+            trendingRetriedAt = nil
             progressText = nil
             status = .idle
         }
@@ -812,11 +819,10 @@ final class StudiosNetworksStore {
             // do results matched the way an older version did.
             let missesBrands = Self.catalogue.contains { cached.results[$0.id] == nil }
             let isOutdated = cached.revision != Self.resultsRevision
-            let age = Date().timeIntervalSince(cached.savedAt)
-            let retriesTrending = cached.missesTrending == true && age > Self.trendingRetryDelay
-            guard missesBrands || isOutdated || retriesTrending || age > Self.refreshInterval else {
+            guard missesBrands || isOutdated || Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else {
                 Self.saveMissingMovieLookup(library: scope.cacheURL("library"), lookup: scope.cacheURL("movies"))
                 if artworkNeedsRefresh { await refreshArtwork(scope) }
+                if trendingNeedsRetry { await retryTrending(scope) }
                 return
             }
         } else {
@@ -831,9 +837,11 @@ final class StudiosNetworksStore {
         libraryIsRead = false
         do {
             // TMDb's lists don't depend on the library, so they download while
-            // the library is read and are matched once both are in. Any TMDb
-            // failure throws to the catch below, so a partial result never
-            // replaces good saved results or resets the refresh timer.
+            // the library is read and are matched once both are in. A brand
+            // list's failure throws to the catch below, so a partial result
+            // never replaces good saved results or resets the refresh timer.
+            // A trending list that doesn't load doesn't throw: see
+            // `trendingResults`.
             let brands = Self.catalogue
             async let lists = Self.brandLists(brands) { [weak self] in self?.noteListsLoaded(scope) }
             async let trending = Self.trendingLists()
@@ -919,6 +927,32 @@ final class StudiosNetworksStore {
     /// but Silo's signed artwork URLs stop working after a few hours and every
     /// poster would be left on its blurred placeholder. Status and progress
     /// stay as they are, so this runs unseen behind the current results.
+    /// Results saved without a trending list read it again an hour after
+    /// they were matched, then at most once an hour.
+    private var trendingNeedsRetry: Bool {
+        guard resultsMissTrending, let since = trendingRetriedAt ?? resultsSavedAt else { return false }
+        return Date().timeIntervalSince(since) > Self.trendingRetryDelay
+    }
+
+    /// Reads only the trending lists again and matches them with the saved
+    /// library, keeping the rest of the results and when they were matched,
+    /// so a failed trending read costs its 40 requests to retry, not a whole
+    /// refresh. A retry that fails again changes nothing.
+    private func retryTrending(_ scope: Scope) async {
+        trendingRetriedAt = Date()
+        let trending = await Self.trendingLists()
+        guard trending.isComplete, loadedScope == scope,
+              let index = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")) else { return }
+        let current = results
+        let updated = await Self.withTrending(trending, in: current, index: index)
+        guard loadedScope == scope else { return }
+        results = updated
+        resultsMissTrending = false
+        await Self.write(StudioNetworkResultsFile(savedAt: resultsSavedAt ?? Date(), results: updated,
+                                                  revision: resultsSavedRevision, missesTrending: false),
+                         scope.cacheURL("results"))
+    }
+
     private func refreshArtwork(_ scope: Scope) async {
         artworkRefreshedAt = Date()
         do {
@@ -1242,7 +1276,7 @@ final class StudiosNetworksStore {
     /// One whole trending list, in trending order, or nil when a block fails:
     /// a gap would move the titles after it up. A failed list never fails the
     /// refresh. The rows keep each brand's previous trending titles, and the
-    /// next load an hour on tries again.
+    /// trending lists alone are read again an hour on (`retryTrending`).
     private nonisolated static func trendingResults(
         _ media: String, gate: RequestGate
     ) async -> [TVTMDbStore.DiscoverPage.Result]? {
@@ -1329,6 +1363,26 @@ final class StudiosNetworksStore {
             all: all,
             matchCount: all.count
         )
+    }
+
+    /// Saved results with freshly read trending titles. A brand's titles are
+    /// the ones its saved results list.
+    private nonisolated static func withTrending(
+        _ trending: TrendingLists, in results: [String: StudioNetworkResult], index: StudioNetworkIndexFile
+    ) async -> [String: StudioNetworkResult] {
+        await Task.detached(priority: .utility) {
+            guard let series = trending.series, let movies = trending.movies else { return results }
+            let seriesMatches = trendingMatches(series, index.series)
+            let movieMatches = trendingMatches(movies, index.movies)
+            return Dictionary(uniqueKeysWithValues: results.map { id, saved in
+                var result = saved
+                let keepsAnime = catalogue.first { $0.id == id }?.keepsAnime ?? false
+                let brandTitles = Set((saved.all + saved.recentSeries + saved.recentMovies).map(\.contentId))
+                result.trendingSeries = trendingTitles(seriesMatches, brandTitles: brandTitles, keepsAnime: keepsAnime)
+                result.trendingMovies = trendingTitles(movieMatches, brandTitles: brandTitles, keepsAnime: keepsAnime)
+                return (id, result)
+            })
+        }.value
     }
 
     /// A trending title matched with the library, with TMDb's details kept so
