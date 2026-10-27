@@ -275,7 +275,12 @@ struct ServerListView: View {
                 serverId: entry.id,
                 resolveDestinationProfile: true
             ) else { return }
-            await MainActor.run { refreshAuthState() }
+            await MainActor.run {
+                // iCloud sync must not switch back to the active saved
+                // profile's server when the person returns to Vivid.
+                TVSavedAccountStore.shared.noteChosenServer()
+                refreshAuthState()
+            }
         }
     }
 

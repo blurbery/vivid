@@ -69,6 +69,10 @@ class ServerSetupViewModel {
             attempted.append(candidate)
             do {
                 let status = try await auth.checkServer(url: candidate, provider: provider)
+                // Keeps this sign-in when the person leaves Vivid to fetch a
+                // password: iCloud sync on return won't restore the saved
+                // profile they were using before.
+                await TVSavedAccountStore.shared.noteChosenServer()
                 router.resetToLogin()
                 if status.needsSetup {
                     router.navigate(to: .serverNeedsSetup)

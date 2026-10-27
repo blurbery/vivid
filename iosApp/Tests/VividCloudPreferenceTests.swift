@@ -50,6 +50,23 @@ final class VividCloudPreferenceTests: XCTestCase {
             accountServer: "silo", accountProfile: nil, requiresLogin: false))
     }
 
+    /// Adding a server, then leaving Vivid to copy its password, must not
+    /// switch back to the saved profile that was active before.
+    func testSyncKeepsAChosenServerUntilItsProfileIsActive() {
+        XCTAssertTrue(VividCloudRestorePolicy.keepsChosenServer(chosenServerID: "new", activeServerID: "new",
+                                                                activeAccountServerID: "old"))
+        XCTAssertTrue(VividCloudRestorePolicy.keepsChosenServer(chosenServerID: "new", activeServerID: "new",
+                                                                activeAccountServerID: nil))
+        // A saved profile on the chosen server, a later switch elsewhere and a
+        // relaunch (nothing chosen yet) all restore as before.
+        XCTAssertFalse(VividCloudRestorePolicy.keepsChosenServer(chosenServerID: "new", activeServerID: "new",
+                                                                 activeAccountServerID: "new"))
+        XCTAssertFalse(VividCloudRestorePolicy.keepsChosenServer(chosenServerID: "new", activeServerID: "old",
+                                                                 activeAccountServerID: "old"))
+        XCTAssertFalse(VividCloudRestorePolicy.keepsChosenServer(chosenServerID: nil, activeServerID: "new",
+                                                                 activeAccountServerID: "old"))
+    }
+
     func testMissingPluginKeyPreservesSavedCredentialAndRemoteValue() {
         let saved = VividCloudPreference(value: Data("test-key".utf8), modifiedAt: Date(timeIntervalSince1970: 10), writer: "phone")
         let captured = VividCloudPreferencePolicy.capturedPluginCredential(nil, previous: saved,

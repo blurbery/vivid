@@ -207,6 +207,19 @@ enum VividCloudDeletionPolicy {
     }
 }
 
+enum VividCloudRestorePolicy {
+    /// iCloud sync leaves the active server alone while the person is signing
+    /// in to a server they chose, until a saved profile on it is active.
+    /// Restoring another saved profile would switch servers under them and
+    /// rebuild the sign-in screen, losing what they typed, for example after
+    /// leaving Vivid to copy a password.
+    static func keepsChosenServer(chosenServerID: String?, activeServerID: String?,
+                                  activeAccountServerID: String?) -> Bool {
+        guard let chosenServerID, chosenServerID == activeServerID else { return false }
+        return activeAccountServerID != chosenServerID
+    }
+}
+
 enum TVAccountRoute: Hashable {
     case editor(String?)
 }
@@ -242,6 +255,10 @@ final class TVSavedAccountStore {
     var showsAnimation = false
     private(set) var busy = false
     private(set) var pendingProfileChoice: PendingSiloProfileChoice?
+    /// The server the person last chose from server setup or the server list
+    /// (see ``VividCloudRestorePolicy``). Never saved, so a relaunch restores
+    /// the active saved profile as before.
+    private var chosenServerID: String?
     private(set) var contentRevision = UUID()
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     /// Saved profiles per device, or per native Apple TV user.
@@ -277,6 +294,17 @@ final class TVSavedAccountStore {
     }
 
     var activeAccount: TVSavedAccount? { accounts.first { $0.id == activeID } }
+
+    /// The person chose the registry's active server, to sign in to or to use.
+    func noteChosenServer() {
+        chosenServerID = ServerRegistry.shared.activeServerId
+    }
+
+    private var keepsChosenServer: Bool {
+        VividCloudRestorePolicy.keepsChosenServer(chosenServerID: chosenServerID,
+                                                  activeServerID: ServerRegistry.shared.activeServerId,
+                                                  activeAccountServerID: activeAccount?.serverID)
+    }
 
     private func sessionKey(_ id: String) -> String { "vivid.account.\(id).session.v1" }
 
@@ -1051,7 +1079,7 @@ final class TVSavedAccountStore {
         if let activeID, !accounts.contains(where: { $0.id == activeID }) {
             self.activeID = nil
         }
-        if activeID == nil, pendingProfileChoice == nil {
+        if activeID == nil, pendingProfileChoice == nil, !keepsChosenServer {
             activeID = accounts
                 .filter { !$0.requiresLogin && session($0.id) != nil }
                 .max { (modificationDates[$0.id] ?? .distantPast) < (modificationDates[$1.id] ?? .distantPast) }?
@@ -1084,6 +1112,7 @@ final class TVSavedAccountStore {
            ServerRegistry.shared.activeServerId == account.serverID {
             return true
         }
+        guard !keepsChosenServer else { return false }
         do {
             try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             return true
