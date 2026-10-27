@@ -71,12 +71,10 @@ class LoginViewModel {
             let verified = try await VerifiedServerLogin.signIn(serverURL: server.url, provider: server.provider,
                                                                 username: username, password: password)
             guard !leftSignIn else { return }
-            // Keeps the name the server gave, which the saved profile doesn't carry.
-            _ = ServerRegistry.shared.addOrUpdate(ServerEntry(id: server.id, url: server.url,
-                                                              fetchedName: server.fetchedName, lastUsedAt: Date()))
             let store = await TVSavedAccountStore.shared
             if await store.authenticate(id: nil, serverURL: server.url, username: username, password: password,
-                                        router: router, provider: server.provider, verified: verified) {
+                                        router: router, provider: server.provider, verified: verified,
+                                        serverName: server.fetchedName) {
                 password = ""
             } else {
                 error = await store.error

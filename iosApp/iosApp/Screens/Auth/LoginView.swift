@@ -209,20 +209,19 @@ struct LoginView: View {
     private func startAddingCodeSignIn(_ service: CodeSignIn.Service, server: ServerProbe) {
         let store = TVSavedAccountStore.shared
         let fallback = String(localized: "Couldn’t finish signing in with \(service.title). Please try again.")
-        let entry = ServerEntry(id: server.id, url: server.url, fetchedName: server.fetchedName, lastUsedAt: Date())
         switch service {
         case .jellyfinQuickConnect:
             codeSignIn.startQuickConnect(serverURL: server.url) { login in
-                _ = ServerRegistry.shared.addOrUpdate(entry)
                 let success = await store.authenticate(id: nil, serverURL: server.url, username: login.username, password: "",
-                                                       router: router, provider: .jellyfin, quickConnect: login)
+                                                       router: router, provider: .jellyfin, quickConnect: login,
+                                                       serverName: server.fetchedName)
                 return success ? nil : store.error ?? fallback
             }
         case .embyConnect:
             codeSignIn.startEmbyConnect(serverURL: server.url) { login in
-                _ = ServerRegistry.shared.addOrUpdate(entry)
                 let success = await store.authenticate(id: nil, serverURL: server.url, username: login.username, password: "",
-                                                       router: router, provider: .emby, embyConnect: login)
+                                                       router: router, provider: .emby, embyConnect: login,
+                                                       serverName: server.fetchedName)
                 return success ? nil : store.error ?? fallback
             }
         }

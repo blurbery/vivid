@@ -290,14 +290,21 @@ struct PendingSiloProfileChoice: Equatable {
 final class TVSavedAccountStore {
     static let shared = TVSavedAccountStore()
     private(set) var accounts: [TVSavedAccount] = []
-    private(set) var activeID: String?
+    private(set) var activeID: String? {
+        didSet {
+            // A saved profile on the chosen server is in use, so the note has
+            // done its job. Later sign-outs and deletions sync as before.
+            if let chosenServerID, activeAccount?.serverID == chosenServerID { self.chosenServerID = nil }
+        }
+    }
     var showsSelector = false
     var showsAnimation = false
     private(set) var busy = false
     private(set) var pendingProfileChoice: PendingSiloProfileChoice?
     /// The server the person last chose from server setup or the server list
-    /// (see ``VividCloudRestorePolicy``). Never saved, so a relaunch restores
-    /// the active saved profile as before.
+    /// (see ``VividCloudRestorePolicy``), until a saved profile on it is
+    /// active. Never saved, so a relaunch restores the active saved profile as
+    /// before.
     private var chosenServerID: String?
     private(set) var contentRevision = UUID()
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
@@ -697,7 +704,8 @@ final class TVSavedAccountStore {
     ///     Connect, used the same way.
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter,
                       provider requestedProvider: MediaServerProvider? = nil, quickConnect: JellyfinLogin? = nil,
-                      embyConnect: EmbyLogin? = nil, verified: VerifiedServerLogin? = nil) async -> Bool {
+                      embyConnect: EmbyLogin? = nil, verified: VerifiedServerLogin? = nil,
+                      serverName: String? = nil) async -> Bool {
         guard !busy else { return false }
         guard id != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles. Delete a saved profile to add another."); return false }
         await captureCurrent(refreshMetadata: false)
@@ -733,7 +741,7 @@ final class TVSavedAccountStore {
                 let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
                                                  profile: nil, profileToken: nil, nativeUserID: nativeUserID)
                 let entry = ServerEntry(id: serverID, url: normalized,
-                                        fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName, lastUsedAt: Date())
+                                        fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName ?? serverName, lastUsedAt: Date())
                 guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
                 try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
                 if let identity = await TokenStore.shared.refreshAccountIdentity() {
@@ -763,7 +771,7 @@ final class TVSavedAccountStore {
                                              profile: pairing, profileToken: nil, nativeUserID: nativeUserID)
             try saveSession(saved, id: accountID)
             let entry = ServerEntry(id: serverID, url: normalized,
-                                    fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName, lastUsedAt: Date())
+                                    fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName ?? serverName, lastUsedAt: Date())
             guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
             try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
             if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
