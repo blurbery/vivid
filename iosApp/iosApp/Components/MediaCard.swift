@@ -77,8 +77,9 @@ struct MediaCard: View {
     /// collection thumbnails) leave this off.
     var overlayData: OverlayData? = nil
     var titleFont: Font = .vividSubheadline
-    /// Draws the title and the year in Home's poster caption style. For You's
-    /// Watchlist and Favourites on iPhone and iPad use it.
+    /// Draws the title and the year in Home's poster caption style. Watchlist
+    /// and Favourites on iPhone and iPad use it, in For You and on their own
+    /// pages.
     var usesHomeCaption = false
     let action: () -> Void
     /// tvOS-only shortcut invoked by the remote's Play/Pause button while
