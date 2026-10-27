@@ -354,12 +354,20 @@ final class TVTMDbStore {
             /// The Calendar's Trending posters and details.
             let posterPath: String?
             var overview: String?
+            /// What Studios & Networks leaves out of its Popular rows: anime
+            /// and talk shows.
+            var genreIds: [Int]?
+            var originalLanguage: String?
+            var originCountry: [String]?
 
             private enum CodingKeys: String, CodingKey {
                 case id, popularity, title, name, overview
                 case releaseDate = "release_date"
                 case firstAirDate = "first_air_date"
                 case posterPath = "poster_path"
+                case genreIds = "genre_ids"
+                case originalLanguage = "original_language"
+                case originCountry = "origin_country"
             }
         }
         var results: [Result]
@@ -399,6 +407,13 @@ final class TVTMDbStore {
             if let overview = overviews[result.results[index].id] ?? nil { result.results[index].overview = overview }
         }
         return result
+    }
+
+    /// One page of this week's worldwide trending titles, in English. It
+    /// has no filters, so Studios & Networks keeps each brand's own titles.
+    func trending(media: String, page: Int) async throws -> DiscoverPage {
+        guard isConfigured else { throw Failure.unavailable }
+        return try await request("trending/\(media)/week", query: ["page": String(page)])
     }
 
     /// The logo for a TMDb company or network. `kind` is "company" or "network".

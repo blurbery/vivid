@@ -63,6 +63,16 @@ const routes = [
     },
     required: ['sort_by', 'include_adult', 'page'],
   },
+  // This week's worldwide trending titles, which order Studios & Networks'
+  // Popular rows. It's one list for every brand, so it's read deeper than a
+  // brand's list, and kept for a few hours because TMDb updates it daily.
+  {
+    path: /^trending\/(movie|tv)\/week$/,
+    query: {page: /^[1-9][0-9]?$/, language},
+    required: ['page'],
+    maxPage: 25,
+    cacheSeconds: 3 * 60 * 60,
+  },
 ];
 
 // TVmaze, for the Calendar's episode air times. A lookup matches a show by
@@ -104,7 +114,7 @@ export function checkedQuery(route, params) {
   }
   if ((route.required ?? []).some(name => !names.has(name))) return null;
   if (route.oneOf && route.oneOf.filter(name => names.has(name)).length !== 1) return null;
-  if (names.has('page') && Number(params.get('page')) > limits.maxPage) return null;
+  if (names.has('page') && Number(params.get('page')) > (route.maxPage ?? limits.maxPage)) return null;
   return entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join('&');
 }

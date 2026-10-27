@@ -62,6 +62,7 @@ test('every path the app uses is accepted', async () => {
     '/3/tv/1399/external_ids', '/tvmaze/shows/82/seasons', '/tvmaze/seasons/307/episodes',
     '/3/movie/603?language=fr-FR', '/3/tv/1399?language=ja-JP', '/3/collection/10?language=zh-CN',
     `/3/discover/tv?${discover}&with_networks=213&language=de-DE`,
+    '/3/trending/tv/week?page=1', '/3/trending/movie/week?page=25', '/3/trending/movie/week?page=3&language=fr-FR',
   ]) {
     const response = await run(path, makeEnv());
     assert.equal(response.status, 200, path);
@@ -103,6 +104,8 @@ test('queries are checked against what the app sends', async () => {
     `/3/discover/movie?${discover}&with_networks=213&with_networks=49`,
     `/3/discover/movie?${discover}&with_genres=18`,
     `/3/discover/tv?${discover}&air_date.gte=18-10-2025`,
+    '/3/trending/tv/week', '/3/trending/tv/week?page=0', '/3/trending/tv/week?page=26',
+    '/3/trending/movie/week?page=1&with_networks=213', '/3/trending/movie/week?page=1&watch_region=US',
   ]) {
     assert.equal((await run(path, env)).status, 400, path);
   }
@@ -203,4 +206,17 @@ test('other TVmaze paths and queries are refused without reaching TVmaze', async
     assert.equal((await run(path, env)).status, 400, path);
   }
   assert.equal(env.calls.length, 0);
+});
+
+test('weekly trending is read up to 25 pages deep and kept for three hours', async () => {
+  const env = makeEnv({upstream: () => new Response('{"page":1,"results":[]}', {status: 200})});
+  const response = await run('/3/trending/tv/week?page=25', env);
+  assert.equal(response.status, 200);
+  assert.equal(env.calls[0].url, 'https://api.themoviedb.org/3/trending/tv/week?page=25');
+  assert.match(response.headers.get('Cache-Control'), /max-age=10800/);
+  for (const path of ['/3/trending/tv/day?page=1', '/3/trending/all/week?page=1', '/3/trending/person/week?page=1']) {
+    assert.equal((await run(path, env)).status, 404, path);
+  }
+  // Other lists keep their own page limit.
+  assert.equal((await run(`/3/discover/tv?sort_by=popularity.desc&include_adult=false&page=${limits.maxPage + 1}`, env)).status, 400);
 });

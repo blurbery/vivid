@@ -97,6 +97,35 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertTrue(StudiosNetworksStore.pageRows(for: brand, result: result).isEmpty)
     }
 
+    func testTrendingTitlesLeadTheRowAndPopularFillsIt() throws {
+        let brand = StudiosNetworksStore.catalogue.first { $0.id == "netflix" }
+        var result = StudioNetworkResult()
+        result.recentSeries = try (0..<7).map { try item("new\($0)", "New \($0)", year: 2026, type: "series") }
+        result.trendingSeries = [try item("new3", "New 3", year: 2026, type: "series"), try item("t0", "Trending", year: 2026, type: "series")]
+        result.leftOutOfRows = ["new1"]
+        let ids = StudiosNetworksStore.pageRows(for: brand, result: result).first?.items.map(\.contentId)
+        XCTAssertEqual(ids, ["new3", "t0", "new0", "new2", "new4", "new5", "new6"])
+    }
+
+    func testPopularRowsLeaveOutTalkShowsAndAnimeUnlessTheBrandKeepsIt() throws {
+        func result(_ fields: String) throws -> TVTMDbStore.DiscoverPage.Result {
+            try JSONDecoder().decode(TVTMDbStore.DiscoverPage.Result.self, from: Data(#"{"id":1,\#(fields)}"#.utf8))
+        }
+        let talk = try result(#""genre_ids":[10767,35],"original_language":"en""#)
+        let anime = try result(#""genre_ids":[16,18],"original_language":"ja""#)
+        let madeInJapan = try result(#""genre_ids":[16,10759],"original_language":"en","origin_country":["JP","US"]"#)
+        let cartoon = try result(#""genre_ids":[16,35],"original_language":"en","origin_country":["US"]"#)
+        let drama = try result(#""genre_ids":[18],"original_language":"ja""#)
+        XCTAssertFalse(StudiosNetworksStore.showsInPopularRows(talk, keepsAnime: false))
+        XCTAssertFalse(StudiosNetworksStore.showsInPopularRows(talk, keepsAnime: true))
+        XCTAssertFalse(StudiosNetworksStore.showsInPopularRows(anime, keepsAnime: false))
+        XCTAssertTrue(StudiosNetworksStore.showsInPopularRows(anime, keepsAnime: true))
+        XCTAssertFalse(StudiosNetworksStore.showsInPopularRows(madeInJapan, keepsAnime: false))
+        XCTAssertTrue(StudiosNetworksStore.showsInPopularRows(cartoon, keepsAnime: false))
+        XCTAssertTrue(StudiosNetworksStore.showsInPopularRows(drama, keepsAnime: false))
+        XCTAssertEqual(StudiosNetworksStore.catalogue.filter(\.keepsAnime).map(\.id), ["ghibli"])
+    }
+
     func testAutomaticPicksRankByUncappedMatchCount() {
         let picks = StudiosNetworksStore.automaticPicks(counts: [
             "netflix": 163, "hbo": 165, "disneyplus": 164, "marvel": 115, "appletv": 150, "pixar": 68, "ghibli": 20,

@@ -24,6 +24,9 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     /// BritBox mostly streams BBC and ITV series, and TMDb credits it with
     /// only a handful of its own, so matching by network would leave it empty.
     var listsSeriesByWatchProvider = false
+    /// Keeps anime in the Popular rows, which leave it out for every other
+    /// brand. Studio Ghibli makes little else.
+    var keepsAnime = false
     /// Logos printed on a solid block (Marvel's box, the Warner Bros. shield)
     /// would render as a plain white shape, so their lettering is knocked out
     /// of the block instead.
@@ -50,7 +53,7 @@ struct StudioNetworkBrand: Identifiable, Equatable {
 }
 
 /// Matched library titles for one brand. The TMDb lists keep TMDb's
-/// popularity order.
+/// popularity order, and the trending lists TMDb's trending order.
 struct StudioNetworkResult: Codable, Equatable {
     var logoURL: URL?
     var movies: [BrowseItem] = []
@@ -59,6 +62,13 @@ struct StudioNetworkResult: Codable, Equatable {
     var recentSeries: [BrowseItem] = []
     /// Movies released in the past 12 months.
     var recentMovies: [BrowseItem] = []
+    /// The brand's series and movies in this week's TMDb trending list, which
+    /// lead its Popular rows. Nil in results saved before trending was read.
+    var trendingSeries: [BrowseItem]?
+    var trendingMovies: [BrowseItem]?
+    /// Titles the Popular rows leave out: talk shows, and anime unless the
+    /// brand keeps it. All in Your Library still lists them.
+    var leftOutOfRows: Set<String>?
     /// Every library title the server tags with the brand, plus every TMDb
     /// match, for the All in Your Library grid. It has no cap.
     var all: [BrowseItem] = []
@@ -67,7 +77,7 @@ struct StudioNetworkResult: Codable, Equatable {
     var count: Int { matchCount }
 
     /// Every title the page can show, for reading poster expiry.
-    var items: [BrowseItem] { movies + series + recentSeries + recentMovies + all }
+    var items: [BrowseItem] { movies + series + recentSeries + recentMovies + (trendingSeries ?? []) + (trendingMovies ?? []) + all }
 }
 
 /// How a brand page's All in Your Library grid is narrowed and ordered, from
@@ -431,9 +441,15 @@ final class StudiosNetworksStore {
     /// streaming service, so its TMDb list is the only way they reach All in
     /// Your Library, and it's read twice as deep. The relay allows 10.
     nonisolated static let networkMoviePages = 10
-    /// Bumped when matching or a brand's names change, so saved results are
-    /// matched again and the saved library index is tagged again.
-    nonisolated static let resultsRevision = 3
+    /// Bumped when matching changes, so saved results are matched again.
+    nonisolated static let resultsRevision = 4
+    /// Bumped when a brand's names change, so the saved library index is
+    /// tagged again. Reading the library is the slow part, so it's separate.
+    nonisolated static let indexRevision = 3
+    /// Pages read of each of TMDb's weekly trending lists (20 titles each).
+    /// They're shared by every brand, so they're read deeper than a brand's
+    /// own list. The relay allows 25.
+    nonisolated static let trendingPages = 25
     static let refreshInterval: TimeInterval = 24 * 60 * 60
     /// Silo signs artwork URLs for a few hours, far less than the daily
     /// refresh, so posters are re-read this long before the first one expires.
@@ -474,7 +490,7 @@ final class StudiosNetworksStore {
         .init(id: "dreamworks", name: "DreamWorks", kind: .studio, tmdbId: 521, labelIds: [7],
               libraryNames: ["DreamWorks", "DreamWorks Animation", "DreamWorks Animation Television", "DreamWorks Pictures",
                              "DreamWorks Television"]),
-        .init(id: "ghibli", name: "Studio Ghibli", kind: .studio, tmdbId: 10342, libraryNames: ["Studio Ghibli"]),
+        .init(id: "ghibli", name: "Studio Ghibli", kind: .studio, tmdbId: 10342, keepsAnime: true, libraryNames: ["Studio Ghibli"]),
         .init(id: "sony", name: "Sony Pictures", kind: .studio, tmdbId: 34, labelIds: [5, 2251, 559], stacksLogoWords: true,
               libraryNames: ["Sony Pictures", "Columbia Pictures", "Sony Pictures Animation", "TriStar Pictures"]),
         .init(id: "warnerbros", name: "Warner Bros.", kind: .studio, tmdbId: 174, labelIds: [2785, 1957], knocksOutLogoText: true,
@@ -635,20 +651,31 @@ final class StudiosNetworksStore {
         savePreferences()
     }
 
-    /// Rows for a brand page. Networks show the past 12 months, falling back
-    /// to all-time popular when the year is too thin to fill a row (Apple
-    /// releases few films); studios always use their all-time popular.
+    /// Rows for a brand page. This week's trending titles lead, and the
+    /// brand's popular titles fill the rest of the row. Networks fill from the
+    /// past 12 months, falling back to all-time popular when the year is too
+    /// thin to fill a row (Apple releases few films); studios fill from their
+    /// all-time popular. Talk shows, and anime unless the brand keeps it, are
+    /// left out.
     func pageRows(for id: String) -> [(title: String, items: [BrowseItem])] {
         Self.pageRows(for: brand(id), result: results[id] ?? StudioNetworkResult())
     }
 
     static func pageRows(for brand: StudioNetworkBrand?, result: StudioNetworkResult) -> [(title: String, items: [BrowseItem])] {
         let isStudio = brand?.kind == .studio
+        let leftOut = result.leftOutOfRows ?? []
+        func shown(_ items: [BrowseItem]) -> [BrowseItem] { items.filter { !leftOut.contains($0.contentId) } }
         func pick(recent: [BrowseItem], allTime: [BrowseItem]) -> [BrowseItem] {
-            isStudio || recent.count < minimumCount ? allTime : recent
+            isStudio || shown(recent).count < minimumCount ? allTime : recent
         }
-        let series = (title: String(localized: "Popular TV Shows"), items: pick(recent: result.recentSeries, allTime: result.series))
-        let movies = (title: String(localized: "Popular Movies"), items: pick(recent: result.recentMovies, allTime: result.movies))
+        func row(trending: [BrowseItem]?, popular: [BrowseItem]) -> [BrowseItem] {
+            var seen = Set<String>()
+            return shown((trending ?? []) + popular).filter { seen.insert($0.contentId).inserted }
+        }
+        let series = (title: String(localized: "Popular TV Shows"),
+                      items: row(trending: result.trendingSeries, popular: pick(recent: result.recentSeries, allTime: result.series)))
+        let movies = (title: String(localized: "Popular Movies"),
+                      items: row(trending: result.trendingMovies, popular: pick(recent: result.recentMovies, allTime: result.movies)))
         return (isStudio ? [movies, series] : [series, movies])
             .filter { $0.items.count >= minimumCount }
             .map { (title: $0.title, items: Array($0.items.prefix(rowLimit))) }
@@ -791,10 +818,12 @@ final class StudiosNetworksStore {
             // failure throws to the catch below, so a partial result never
             // replaces good saved results or resets the refresh timer.
             let brands = Self.catalogue
-            async let lists = Self.brandLists(brands) { [weak self] in self?.noteListsLoaded(scope) }
+            let gate = RequestGate(limit: Self.concurrentRequests)
+            async let lists = Self.brandLists(brands, gate: gate) { [weak self] in self?.noteListsLoaded(scope) }
+            async let trending = Self.trendingLists(gate: gate)
             let index: StudioNetworkIndexFile
             if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
-               cached.revision == Self.resultsRevision,
+               cached.revision == Self.indexRevision,
                Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval,
                await Self.hasCurrentArtwork(cached) {
                 index = cached
@@ -813,7 +842,7 @@ final class StudiosNetworksStore {
             if loadedScope == scope, !results.isEmpty, artworkHasLapsed {
                 await applyArtwork(from: index, scope)
             }
-            let loaded = await Self.matched(try await lists, index: index)
+            let loaded = await Self.matched(try await lists, trending: await trending, index: index)
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
             let savedAt = Date()
@@ -920,6 +949,8 @@ final class StudiosNetworksStore {
             result.series = refreshed(result.series)
             result.recentSeries = refreshed(result.recentSeries)
             result.recentMovies = refreshed(result.recentMovies)
+            result.trendingSeries = result.trendingSeries.map(refreshed)
+            result.trendingMovies = result.trendingMovies.map(refreshed)
             result.all = libraryTitles(tagged: tagged[id] ?? [], matched: result.movies + result.series)
             result.matchCount = result.all.count
             return (id, result)
@@ -978,7 +1009,7 @@ final class StudiosNetworksStore {
         let (movieIndex, seriesIndex) = try await (movies, series)
         let index = StudioNetworkIndexFile(
             savedAt: Date(), movies: movieIndex.index, series: seriesIndex.index,
-            tagged: movieIndex.tagged.merging(seriesIndex.tagged) { $0 + $1 }, revision: Self.resultsRevision
+            tagged: movieIndex.tagged.merging(seriesIndex.tagged) { $0 + $1 }, revision: Self.indexRevision
         )
         await Self.write(index, scope.cacheURL("library"))
         return index
@@ -1129,16 +1160,16 @@ final class StudiosNetworksStore {
         var recentMovies: [TVTMDbStore.DiscoverPage.Result] = []
     }
 
-    /// Every brand's lists at once. The request gate, not the brand count,
-    /// limits how much reaches TMDb.
+    /// Every brand's lists at once. The request gate, shared with the trending
+    /// lists, not the brand count, limits how much reaches TMDb.
     private nonisolated static func brandLists(
         _ brands: [StudioNetworkBrand],
+        gate: RequestGate,
         loaded: @escaping @MainActor () -> Void
     ) async throws -> [String: BrandLists] {
         let today = Date()
         let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
         let to = dayFormatter.string(from: today)
-        let gate = RequestGate(limit: concurrentRequests)
         return try await withThrowingTaskGroup(of: (String, BrandLists).self) { group in
             for brand in brands {
                 group.addTask { (brand.id, try await Self.lists(for: brand, from: from, to: to, gate: gate)) }
@@ -1172,29 +1203,92 @@ final class StudiosNetworksStore {
         brand.kind == .network ? networkMoviePages : pagesPerList
     }
 
+    /// This week's worldwide trending series and movies, read once for every
+    /// brand.
+    struct TrendingLists: Sendable {
+        var series: [TVTMDbStore.DiscoverPage.Result] = []
+        var movies: [TVTMDbStore.DiscoverPage.Result] = []
+    }
+
+    private nonisolated static func trendingLists(gate: RequestGate) async -> TrendingLists {
+        async let series = trendingResults("tv", gate: gate)
+        async let movies = trendingResults("movie", gate: gate)
+        return await TrendingLists(series: series, movies: movies)
+    }
+
+    /// The first `trendingPages` pages of one trending list, in trending order.
+    /// A page that fails is skipped, and without the first the Popular rows
+    /// keep the brand's popular order, so trending never fails a refresh.
+    private nonisolated static func trendingResults(
+        _ media: String, gate: RequestGate
+    ) async -> [TVTMDbStore.DiscoverPage.Result] {
+        @Sendable func page(_ number: Int) async -> TVTMDbStore.DiscoverPage? {
+            try? await Self.retryingOnce {
+                try await gate.run { try await TVTMDbStore.shared.trending(media: media, page: number) }
+            }
+        }
+        guard let first = await page(1) else { return [] }
+        let last = min(trendingPages, first.totalPages ?? 1)
+        guard last > 1 else { return first.results }
+        let rest = await withTaskGroup(of: (Int, [TVTMDbStore.DiscoverPage.Result]).self) { group in
+            for number in 2...last { group.addTask { (number, await page(number)?.results ?? []) } }
+            var pages: [Int: [TVTMDbStore.DiscoverPage.Result]] = [:]
+            for await (number, results) in group { pages[number] = results }
+            return (2...last).flatMap { pages[$0] ?? [] }
+        }
+        return first.results + rest
+    }
+
+    /// TMDb's Animation and Talk genres.
+    nonisolated static let animationGenre = 16
+    nonisolated static let talkGenre = 10767
+
+    /// Whether a title belongs in a Popular row. Talk shows never do, and
+    /// anime (Japanese animation, by language or country of origin) only on a
+    /// brand that keeps it.
+    nonisolated static func showsInPopularRows(_ result: TVTMDbStore.DiscoverPage.Result, keepsAnime: Bool) -> Bool {
+        let genres = result.genreIds ?? []
+        if genres.contains(talkGenre) { return false }
+        guard !keepsAnime, genres.contains(animationGenre) else { return true }
+        return result.originalLanguage != "ja" && !(result.originCountry ?? []).contains("JP")
+    }
+
     /// Matches every brand's lists with the library, off the main actor.
     private nonisolated static func matched(
-        _ lists: [String: BrandLists], index: StudioNetworkIndexFile
+        _ lists: [String: BrandLists], trending: TrendingLists, index: StudioNetworkIndexFile
     ) async -> [String: StudioNetworkResult] {
         await Task.detached(priority: .utility) {
             Dictionary(uniqueKeysWithValues: lists.map { id, brandLists in
-                (id, Self.result(for: brandLists, index: index, tagged: index.tagged?[id] ?? []))
+                let keepsAnime = catalogue.first { $0.id == id }?.keepsAnime ?? false
+                return (id, Self.result(for: brandLists, trending: trending, keepsAnime: keepsAnime,
+                                        index: index, tagged: index.tagged?[id] ?? []))
             })
         }.value
     }
 
     private nonisolated static func result(
-        for lists: BrandLists, index: StudioNetworkIndexFile, tagged: [BrowseItem]
+        for lists: BrandLists, trending: TrendingLists, keepsAnime: Bool, index: StudioNetworkIndexFile, tagged: [BrowseItem]
     ) -> StudioNetworkResult {
         let allSeries = matches(lists.series, index.series).map(\.item)
         let allMovies = matches(lists.movies, index.movies).map(\.item)
         let all = libraryTitles(tagged: tagged, matched: allMovies + allSeries)
+        let brandSeries = lists.series + lists.recentSeries
+        let brandMovies = lists.movies + lists.recentMovies
+        // The trending list has no brand filter, so a trending title is the
+        // brand's when one of its own lists has it.
+        let seriesIDs = Set(brandSeries.map(\.id))
+        let movieIDs = Set(brandMovies.map(\.id))
+        let leftOut = matches(brandSeries.filter { !showsInPopularRows($0, keepsAnime: keepsAnime) }, index.series)
+            + matches(brandMovies.filter { !showsInPopularRows($0, keepsAnime: keepsAnime) }, index.movies)
         return StudioNetworkResult(
             logoURL: lists.logoURL,
             movies: allMovies,
             series: allSeries,
             recentSeries: matches(lists.recentSeries, index.series).map(\.item),
             recentMovies: matches(lists.recentMovies, index.movies).map(\.item),
+            trendingSeries: matches(trending.series.filter { seriesIDs.contains($0.id) }, index.series).map(\.item),
+            trendingMovies: matches(trending.movies.filter { movieIDs.contains($0.id) }, index.movies).map(\.item),
+            leftOutOfRows: Set(leftOut.map(\.item.contentId)),
             all: all,
             matchCount: all.count
         )
