@@ -610,6 +610,9 @@ struct LibraryCollectionsView: View {
 private struct LibraryCollectionCard: View {
     let collection: LibraryCollection
     let cardWidthOverride: CGFloat?
+    /// For You's section headings already say whether a collection is a user
+    /// collection or the server's, so its cards leave the type out.
+    var showsType = true
     @State private var uiCustomization = UICustomizationPreferences.shared
 
     private var cardWidth: CGFloat {
@@ -646,7 +649,7 @@ private struct LibraryCollectionCard: View {
                     .lineLimit(2, reservesSpace: true)
             }
 
-            if uiCustomization.cardPresentation.caption.showsMetadata {
+            if showsType, uiCustomization.cardPresentation.caption.showsMetadata {
                 Text(typeLabel)
                     .font(.vividSmall)
                     .foregroundStyle(Color.vividSecondaryText)
@@ -1002,7 +1005,7 @@ struct MobileForYouCollections: View {
                         title: entry.collection.name,
                         kind: entry.collection.kind ?? section.kind
                     )) {
-                        LibraryCollectionCard(collection: entry.collection, cardWidthOverride: cardWidth)
+                        LibraryCollectionCard(collection: entry.collection, cardWidthOverride: cardWidth, showsType: false)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(libraryCollectionAccessibilityLabel(entry.collection))
