@@ -7,6 +7,10 @@ import SwiftUI
 /// without a password.
 struct LoginView: View {
     var router: AppRouter
+    /// The server being added from Settings, before Vivid saves it or
+    /// switches to it. This sign-in is then a page in Settings with a back
+    /// button, and the current profile stays in use until it works.
+    var adding: ServerProbe? = nil
     @State private var viewModel = LoginViewModel()
     @State private var codeSignIn = CodeSignIn()
     /// The code sign-in this server offers, once checked.
@@ -54,14 +58,21 @@ struct LoginView: View {
             .animation(.easeInOut(duration: 0.2), value: viewModel.error)
             .animation(.easeInOut(duration: 0.2), value: codeSignIn.phase)
         }
-        .navigationBarBackButtonHidden()
+        .navigationBarBackButtonHidden(adding == nil)
         .task {
-            guard let service = CodeSignIn.Service(MediaServerProvider.active),
-                  await CodeSignIn.isAvailable(service, serverURL: AuthService.shared.serverUrl) else { return }
+            guard let service = CodeSignIn.Service(adding?.provider ?? MediaServerProvider.active),
+                  await CodeSignIn.isAvailable(service, serverURL: serverURL) else { return }
             codeService = service
         }
-        .onDisappear { codeSignIn.cancel() }
+        .onAppear { viewModel.leftSignIn = false }
+        .onDisappear {
+            codeSignIn.cancel()
+            viewModel.leftSignIn = true
+        }
     }
+
+    /// The server this sign-in is for.
+    private var serverURL: String { adding?.url ?? AuthService.shared.serverUrl }
 
     @ViewBuilder
     private var passwordForm: some View {
@@ -109,10 +120,13 @@ struct LoginView: View {
                 .disabled(viewModel.isLoading)
         }
 
-        Button("Use a different server") { router.resetToServerSetup() }
-            .buttonStyle(AuroraGhostButtonStyle())
-            .frame(maxWidth: .infinity)
-        .disabled(viewModel.isLoading)
+        // Adding a server goes back to its address instead.
+        if adding == nil {
+            Button("Use a different server") { router.resetToServerSetup() }
+                .buttonStyle(AuroraGhostButtonStyle())
+                .frame(maxWidth: .infinity)
+            .disabled(viewModel.isLoading)
+        }
     }
 
     /// Quick Connect or Emby Connect: the code to approve somewhere else.
@@ -164,11 +178,19 @@ struct LoginView: View {
 
     private func signIn() {
         guard !viewModel.isLoading else { return }
-        Task { await viewModel.login(router: router) }
+        if let adding {
+            Task { await viewModel.signIn(adding: adding, router: router) }
+        } else {
+            Task { await viewModel.login(router: router) }
+        }
     }
 
     private func startCodeSignIn(_ service: CodeSignIn.Service) {
         viewModel.error = nil
+        if let adding {
+            startAddingCodeSignIn(service, server: adding)
+            return
+        }
         let serverURL = AuthService.shared.serverUrl
         switch service {
         case .jellyfinQuickConnect:
@@ -182,10 +204,34 @@ struct LoginView: View {
         }
     }
 
-    /// Host pulled out of the active server URL so the user sees which server
+    /// A code approved for a server being added saves it as a new profile, as
+    /// Add Profile in Settings does.
+    private func startAddingCodeSignIn(_ service: CodeSignIn.Service, server: ServerProbe) {
+        let store = TVSavedAccountStore.shared
+        let fallback = String(localized: "Couldn’t finish signing in with \(service.title). Please try again.")
+        let entry = ServerEntry(id: server.id, url: server.url, fetchedName: server.fetchedName, lastUsedAt: Date())
+        switch service {
+        case .jellyfinQuickConnect:
+            codeSignIn.startQuickConnect(serverURL: server.url) { login in
+                _ = ServerRegistry.shared.addOrUpdate(entry)
+                let success = await store.authenticate(id: nil, serverURL: server.url, username: login.username, password: "",
+                                                       router: router, provider: .jellyfin, quickConnect: login)
+                return success ? nil : store.error ?? fallback
+            }
+        case .embyConnect:
+            codeSignIn.startEmbyConnect(serverURL: server.url) { login in
+                _ = ServerRegistry.shared.addOrUpdate(entry)
+                let success = await store.authenticate(id: nil, serverURL: server.url, username: login.username, password: "",
+                                                       router: router, provider: .emby, embyConnect: login)
+                return success ? nil : store.error ?? fallback
+            }
+        }
+    }
+
+    /// Host pulled out of the server URL so the user sees which server
     /// they're signing into. Mirrors `TVLoginView.hostLabel`.
     private var hostLabel: String? {
-        let url = AuthService.shared.serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else { return nil }
         if let parsed = URL(string: url), let host = parsed.host, !host.isEmpty {
             return host

@@ -207,6 +207,46 @@ enum VividCloudDeletionPolicy {
     }
 }
 
+/// A sign-in its server has already accepted. Adding a server checks the
+/// password before Vivid starts switching to it, so a wrong one stays on the
+/// sign-in screen.
+enum VerifiedServerLogin {
+    case silo(LoginResponse)
+    case jellyfin(JellyfinLogin)
+    case emby(EmbyLogin)
+
+    /// Signs in at `serverURL` without saving anything or switching servers.
+    static func signIn(serverURL: String, provider: MediaServerProvider,
+                       username: String, password: String) async throws -> Self {
+        switch provider {
+        case .jellyfin:
+            let session = try await JellyfinConnection.login(serverURL: serverURL, username: username, password: password)
+            return .jellyfin(JellyfinLogin(token: session.token, userID: session.userID, username: username))
+        case .emby:
+            let session = try await EmbyConnection.login(serverURL: serverURL, username: username, password: password)
+            return .emby(EmbyLogin(token: session.token, userID: session.userID, username: username))
+        case .silo:
+            return .silo(try await HTTPClient.shared.loginSavedAccount(serverURL: serverURL, username: username, password: password))
+        }
+    }
+
+    /// The session to save, with the server's own user ID for Jellyfin and Emby.
+    var response: (login: LoginResponse, nativeUserID: String?) {
+        switch self {
+        case .silo(let login):
+            return (login, nil)
+        case .jellyfin(let result):
+            return (LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
+                user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil)),
+                    result.userID)
+        case .emby(let result):
+            return (LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
+                user:AuthUser(id:EmbyAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil)),
+                    result.userID)
+        }
+    }
+}
+
 enum VividCloudRestorePolicy {
     /// iCloud sync leaves the active server alone while the person is signing
     /// in to a server they chose, until a saved profile on it is active.
@@ -657,7 +697,7 @@ final class TVSavedAccountStore {
     ///     Connect, used the same way.
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter,
                       provider requestedProvider: MediaServerProvider? = nil, quickConnect: JellyfinLogin? = nil,
-                      embyConnect: EmbyLogin? = nil) async -> Bool {
+                      embyConnect: EmbyLogin? = nil, verified: VerifiedServerLogin? = nil) async -> Bool {
         guard !busy else { return false }
         guard id != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles. Delete a saved profile to add another."); return false }
         await captureCurrent(refreshMetadata: false)
@@ -671,34 +711,17 @@ final class TVSavedAccountStore {
             }
             let selected = id.flatMap { selectedID in accounts.first { $0.id == selectedID } }
             let provider = requestedProvider ?? MediaServerProvider.forServerID(selected?.serverID ?? ServerRegistry.shared.activeServerId)
-            let login: LoginResponse
-            let nativeUserID: String?
-            if provider == .jellyfin {
-                let result: JellyfinLogin
-                if let quickConnect {
-                    result = quickConnect
-                } else {
-                    let session = try await JellyfinConnection.login(serverURL: normalized, username: username, password: password)
-                    result = JellyfinLogin(token: session.token, userID: session.userID, username: username)
-                }
-                nativeUserID = result.userID
-                login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                    user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
-            } else if provider == .emby {
-                let result: EmbyLogin
-                if let embyConnect {
-                    result = embyConnect
-                } else {
-                    let session = try await EmbyConnection.login(serverURL: normalized, username: username, password: password)
-                    result = EmbyLogin(token: session.token, userID: session.userID, username: username)
-                }
-                nativeUserID = result.userID
-                login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                    user:AuthUser(id:EmbyAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
+            let checked: VerifiedServerLogin
+            if let verified {
+                checked = verified
+            } else if provider == .jellyfin, let quickConnect {
+                checked = .jellyfin(quickConnect)
+            } else if provider == .emby, let embyConnect {
+                checked = .emby(embyConnect)
             } else {
-                nativeUserID = nil
-                login = try await HTTPClient.shared.loginSavedAccount(serverURL: normalized, username: username, password: password)
+                checked = try await .signIn(serverURL: normalized, provider: provider, username: username, password: password)
             }
+            let (login, nativeUserID) = checked.response
             let serverID = (provider.usesNativeUser ? provider.rawValue + ":" : "") + ServerRegistry.serverId(for: normalized)
             let userID = String(login.user.id)
             let sameLogin = accounts.first { $0.serverID == serverID && $0.userID == userID }

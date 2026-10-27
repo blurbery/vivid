@@ -69,28 +69,37 @@ final class AuthService: @unchecked Sendable {
     /// succeeds. If both optional identity probes fail, the display name
     /// falls back to the URL.
     func checkServer(url: String, provider: MediaServerProvider = .silo) async throws -> SetupStatus {
+        let server = try await probeServer(url: url, provider: provider)
+        let entry = ServerEntry(id: server.id, url: server.url, fetchedName: server.fetchedName,
+                                profileId: nil, lastUsedAt: Date())
+        guard serverRegistry.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
+        // Jellyfin and Emby always switch, as before; Silo only when it isn't
+        // already the active server.
+        if provider.usesNativeUser || serverRegistry.activeServerId != server.id {
+            guard await serverRegistry.switchTo(serverId: server.id) else {
+                throw ServerRegistryError.persistenceFailed
+            }
+        }
+        return SetupStatus(needsSetup: server.needsSetup)
+    }
+
+    /// Finds the server at a candidate address without saving it or
+    /// switching to it. Adding a server from Settings uses this on its own,
+    /// so the current profile stays in use until the new sign-in works.
+    func probeServer(url: String, provider: MediaServerProvider = .silo) async throws -> ServerProbe {
+        let normalized = ServerRegistry.normalize(url: url)
         if provider == .jellyfin {
-            let normalized = ServerRegistry.normalize(url: url)
             let name = try await JellyfinConnection.probe(serverURL: normalized)
             try Task.checkCancellation()
-            let id = "jellyfin:" + ServerRegistry.serverId(for: normalized)
-            let entry = ServerEntry(id: id, url: normalized, fetchedName: name, lastUsedAt: Date())
-            guard serverRegistry.addOrUpdate(entry) != nil,
-                  await serverRegistry.switchTo(serverId: id) else { throw ServerRegistryError.persistenceFailed }
-            return SetupStatus(needsSetup: false)
+            return ServerProbe(provider: provider, url: normalized, id: "jellyfin:" + ServerRegistry.serverId(for: normalized),
+                               fetchedName: name, needsSetup: false)
         }
         if provider == .emby {
-            let normalized = ServerRegistry.normalize(url: url)
             let name = try await EmbyConnection.probe(serverURL: normalized)
             try Task.checkCancellation()
-            let id = "emby:" + ServerRegistry.serverId(for: normalized)
-            let entry = ServerEntry(id: id, url: normalized, fetchedName: name, lastUsedAt: Date())
-            guard serverRegistry.addOrUpdate(entry) != nil,
-                  await serverRegistry.switchTo(serverId: id) else { throw ServerRegistryError.persistenceFailed }
-            return SetupStatus(needsSetup: false)
+            return ServerProbe(provider: provider, url: normalized, id: "emby:" + ServerRegistry.serverId(for: normalized),
+                               fetchedName: name, needsSetup: false)
         }
-        let normalized = ServerRegistry.normalize(url: url)
-        let id = ServerRegistry.serverId(for: normalized)
 
         // Probe the candidate by explicit URL without touching the active
         // defaults or credential slot. This prevents candidate discovery from
@@ -98,31 +107,14 @@ final class AuthService: @unchecked Sendable {
         let fetchedName = await serverIdentityResolver.fetchServerName(serverURL: normalized)
         try Task.checkCancellation()
 
-        // Commit only after the candidate proves it can serve setup status.
+        // A candidate counts only once it can serve setup status.
         let status: SetupStatus = try await HTTPClient.shared.getUnauthenticated(
             serverURL: normalized,
             path: "/api/v1/auth/setup"
         )
         try Task.checkCancellation()
-
-        // Success: upsert the registry entry and make it active.
-        let entry = ServerEntry(
-            id: id,
-            url: normalized,
-            fetchedName: fetchedName,
-            profileId: nil,
-            lastUsedAt: Date()
-        )
-        guard ServerRegistry.shared.addOrUpdate(entry) != nil else {
-            throw ServerRegistryError.persistenceFailed
-        }
-        if ServerRegistry.shared.activeServerId != id {
-            guard await ServerRegistry.shared.switchTo(serverId: id) else {
-                throw ServerRegistryError.persistenceFailed
-            }
-        }
-
-        return status
+        return ServerProbe(provider: provider, url: normalized, id: ServerRegistry.serverId(for: normalized),
+                           fetchedName: fetchedName, needsSetup: status.needsSetup)
     }
 
     /// Refreshes the active registry entry from the server's native branding.

@@ -4,7 +4,12 @@ import SwiftUI
 struct ServerSetupView: View {
     var router: AppRouter
     var provider: MediaServerProvider = .silo
+    /// Adding a server from Settings: Connect only finds the server, then
+    /// opens its sign-in as the next page. Nothing is saved or switched until
+    /// that sign-in works.
+    var addsServer = false
     @State private var viewModel = ServerSetupViewModel()
+    @State private var reachedServer: ServerProbe?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable { case host, port }
@@ -65,12 +70,19 @@ struct ServerSetupView: View {
             .auroraGlass(cornerRadius: 24, emphasized: true)
             .animation(.easeInOut(duration: 0.2), value: viewModel.error)
         }
+        .navigationDestination(item: $reachedServer) { server in
+            LoginView(router: router, adding: server)
+        }
     }
 
     private func connect() {
         viewModel.provider = provider
         guard !viewModel.isLoading else { return }
-        Task { await viewModel.connect(router: router) }
+        if addsServer {
+            Task { reachedServer = await viewModel.probe() }
+        } else {
+            Task { await viewModel.connect(router: router) }
+        }
     }
 
     @ViewBuilder
@@ -128,6 +140,8 @@ struct ServerSetupView: View {
 struct PhoneProviderSelectionView: View {
     var router: AppRouter
     var onRestore: (() -> Void)? = nil
+    /// Opened from Manage Servers rather than first-run setup.
+    var addsServer = false
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -137,18 +151,18 @@ struct PhoneProviderSelectionView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.72))
                 NavigationLink {
-                    ServerSetupView(router: router, provider: .silo)
+                    ServerSetupView(router: router, provider: .silo, addsServer: addsServer)
                 } label: {
                     providerCard("Silo", image: "SiloWordmark", available: true)
                 }
                 .buttonStyle(.plain)
                 NavigationLink {
-                    ServerSetupView(router: router, provider: .emby)
+                    ServerSetupView(router: router, provider: .emby, addsServer: addsServer)
                 } label: {
                     providerCard("Emby", image: "EmbyLogo", available: true)
                 }.buttonStyle(.plain)
                 NavigationLink {
-                    ServerSetupView(router: router, provider: .jellyfin)
+                    ServerSetupView(router: router, provider: .jellyfin, addsServer: addsServer)
                 } label: {
                     providerCard("Jellyfin", image: "JellyfinLogo", available: true)
                 }.buttonStyle(.plain)

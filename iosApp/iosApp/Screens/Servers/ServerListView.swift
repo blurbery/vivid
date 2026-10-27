@@ -206,7 +206,7 @@ struct ServerListView: View {
             Section {
                 #if os(iOS)
                 NavigationLink {
-                    PhoneProviderSelectionView(router: router)
+                    PhoneProviderSelectionView(router: router, addsServer: true)
                         .navigationTitle("Add Server")
                         .vividNavigationTitleDisplayMode(.inline)
                 } label: {

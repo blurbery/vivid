@@ -43,9 +43,34 @@ class ServerSetupViewModel {
 
     /// Validate the server URL and determine whether setup or login is needed.
     func connect(router: AppRouter) async {
+        guard let status = await firstReachable({ try await auth.checkServer(url: $0, provider: provider) }) else { return }
+        // Keeps this sign-in when the person leaves Vivid to fetch a
+        // password: iCloud sync on return won't restore the saved
+        // profile they were using before.
+        await TVSavedAccountStore.shared.noteChosenServer()
+        router.resetToLogin()
+        if status.needsSetup {
+            router.navigate(to: .serverNeedsSetup)
+        }
+    }
+
+    /// Finds the server without saving it or switching to it, for adding a
+    /// server from Settings. The sign-in that follows saves it.
+    func probe() async -> ServerProbe? {
+        guard let server = await firstReachable({ try await auth.probeServer(url: $0, provider: provider) }) else { return nil }
+        guard !server.needsSetup else {
+            error = String(localized: "This server still needs administrator setup.")
+            return nil
+        }
+        return server
+    }
+
+    /// Tries each candidate address in turn and returns the first answer, or
+    /// sets `error` when none answers.
+    private func firstReachable<Result>(_ attempt: (String) async throws -> Result) async -> Result? {
         guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             error = String(localized: "Please enter a server host.")
-            return
+            return nil
         }
 
         let candidates: [String]
@@ -53,10 +78,10 @@ class ServerSetupViewModel {
             candidates = try buildCandidateURLs()
         } catch let validationError as ServerSetupValidationError {
             error = validationError.localizedDescription
-            return
+            return nil
         } catch {
             self.error = error.localizedDescription
-            return
+            return nil
         }
 
         isLoading = true
@@ -68,16 +93,7 @@ class ServerSetupViewModel {
         for candidate in candidates {
             attempted.append(candidate)
             do {
-                let status = try await auth.checkServer(url: candidate, provider: provider)
-                // Keeps this sign-in when the person leaves Vivid to fetch a
-                // password: iCloud sync on return won't restore the saved
-                // profile they were using before.
-                await TVSavedAccountStore.shared.noteChosenServer()
-                router.resetToLogin()
-                if status.needsSetup {
-                    router.navigate(to: .serverNeedsSetup)
-                }
-                return
+                return try await attempt(candidate)
             } catch let connectError {
                 lastError = connectError
             }
@@ -87,6 +103,7 @@ class ServerSetupViewModel {
             "Server autodiscovery failed candidates=\(attempted.joined(separator: ", "), privacy: .public) lastError=\(String(describing: lastError), privacy: .public)"
         )
         self.error = String(localized: "Could not reach a \(provider.name) server at that address.")
+        return nil
     }
 
     func buildCandidateURLs() throws -> [String] {

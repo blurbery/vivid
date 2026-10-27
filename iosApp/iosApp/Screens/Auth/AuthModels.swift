@@ -5,6 +5,17 @@ struct SetupStatus: Codable {
     let needsSetup: Bool
 }
 
+/// A server that answered at the address someone entered, before Vivid saves
+/// it or switches to it.
+struct ServerProbe: Hashable {
+    let provider: MediaServerProvider
+    /// The normalised address that answered.
+    let url: String
+    let id: String
+    let fetchedName: String?
+    let needsSetup: Bool
+}
+
 /// Liveness + identity probe from GET /api/v1/health.
 ///
 /// The server returns `{"status": "ok"}` always; `serverName` and
