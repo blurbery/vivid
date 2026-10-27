@@ -267,6 +267,9 @@ private struct StudioNetworkResultsFile: Codable, Sendable {
     /// How the results were matched. Results saved by an older version are
     /// matched again on the next load instead of waiting for the daily refresh.
     var revision: Int?
+    /// True when a trending list didn't load, so the next load an hour on
+    /// tries again instead of waiting for the daily refresh.
+    var missesTrending: Bool?
 }
 
 /// The library scan is the slow part, so it's cached on its own and the quick
@@ -455,6 +458,9 @@ final class StudiosNetworksStore {
     /// pages from TMDb, so only a few go at a time.
     nonisolated static let concurrentTrendingBlocks = 4
     static let refreshInterval: TimeInterval = 24 * 60 * 60
+    /// How long results saved without a trending list wait before the next
+    /// load reads again.
+    static let trendingRetryDelay: TimeInterval = 60 * 60
     /// Silo signs artwork URLs for a few hours, far less than the daily
     /// refresh, so posters are re-read this long before the first one expires.
     nonisolated static let artworkRefreshLead: TimeInterval = 15 * 60
@@ -532,6 +538,9 @@ final class StudiosNetworksStore {
     /// The matching revision of the shown results, kept by a poster refresh
     /// so older results are still matched again.
     private var resultsSavedRevision: Int?
+    /// Whether the shown results were matched without a trending list, kept
+    /// by a poster refresh so the trending retry still happens.
+    private var resultsMissTrending = false
     /// When the first signed poster URL in the results stops working. Nil
     /// when none carries an expiry, as with Emby and Jellyfin.
     private var artworkExpiresAt: Date?
@@ -729,6 +738,7 @@ final class StudiosNetworksStore {
             results = [:]
             resultsSavedAt = nil
             resultsSavedRevision = nil
+            resultsMissTrending = false
             artworkExpiresAt = nil
             artworkRefreshedAt = nil
             progressText = nil
@@ -791,6 +801,7 @@ final class StudiosNetworksStore {
             results = cached.results
             resultsSavedAt = cached.savedAt
             resultsSavedRevision = cached.revision
+            resultsMissTrending = cached.missesTrending ?? false
             status = .ready
             topUpForEditing()
             let expiry = await Self.artworkExpiry(in: cached.results)
@@ -801,7 +812,9 @@ final class StudiosNetworksStore {
             // do results matched the way an older version did.
             let missesBrands = Self.catalogue.contains { cached.results[$0.id] == nil }
             let isOutdated = cached.revision != Self.resultsRevision
-            guard missesBrands || isOutdated || Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else {
+            let age = Date().timeIntervalSince(cached.savedAt)
+            let retriesTrending = cached.missesTrending == true && age > Self.trendingRetryDelay
+            guard missesBrands || isOutdated || retriesTrending || age > Self.refreshInterval else {
                 Self.saveMissingMovieLookup(library: scope.cacheURL("library"), lookup: scope.cacheURL("movies"))
                 if artworkNeedsRefresh { await refreshArtwork(scope) }
                 return
@@ -845,17 +858,22 @@ final class StudiosNetworksStore {
             if loadedScope == scope, !results.isEmpty, artworkHasLapsed {
                 await applyArtwork(from: index, scope)
             }
-            let loaded = await Self.matched(try await lists, trending: await trending, index: index)
+            let brandLists = try await lists
+            let trendingLists = await trending
+            // A trending list that didn't load keeps each brand's last one.
+            let loaded = await Self.matched(brandLists, trending: trendingLists, previous: results, index: index)
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
             let savedAt = Date()
             results = loaded
             resultsSavedAt = savedAt
             resultsSavedRevision = Self.resultsRevision
+            resultsMissTrending = !trendingLists.isComplete
             status = .ready
             topUpForEditing()
             progressText = nil
-            await Self.write(StudioNetworkResultsFile(savedAt: savedAt, results: loaded, revision: Self.resultsRevision),
+            await Self.write(StudioNetworkResultsFile(savedAt: savedAt, results: loaded, revision: Self.resultsRevision,
+                                                      missesTrending: resultsMissTrending),
                              scope.cacheURL("results"))
             let expiry = await Self.artworkExpiry(in: loaded)
             if loadedScope == scope { artworkExpiresAt = expiry }
@@ -928,7 +946,7 @@ final class StudiosNetworksStore {
         results = refreshed
         artworkExpiresAt = expiry
         await Self.write(StudioNetworkResultsFile(savedAt: resultsSavedAt ?? Date(), results: refreshed,
-                                                  revision: resultsSavedRevision),
+                                                  revision: resultsSavedRevision, missesTrending: resultsMissTrending),
                          scope.cacheURL("results"))
     }
 
@@ -1207,10 +1225,11 @@ final class StudiosNetworksStore {
     }
 
     /// This week's worldwide trending series and movies, read once for every
-    /// brand.
+    /// brand. Nil when a list didn't load whole.
     struct TrendingLists: Sendable {
-        var series: [TVTMDbStore.DiscoverPage.Result] = []
-        var movies: [TVTMDbStore.DiscoverPage.Result] = []
+        var series: [TVTMDbStore.DiscoverPage.Result]?
+        var movies: [TVTMDbStore.DiscoverPage.Result]?
+        var isComplete: Bool { series != nil && movies != nil }
     }
 
     private nonisolated static func trendingLists() async -> TrendingLists {
@@ -1220,25 +1239,35 @@ final class StudiosNetworksStore {
         return await TrendingLists(series: series, movies: movies)
     }
 
-    /// One whole trending list, in trending order. A block that fails is
-    /// skipped, and without the first the Popular rows keep the brand's
-    /// popular order, so trending never fails a refresh.
+    /// One whole trending list, in trending order, or nil when a block fails:
+    /// a gap would move the titles after it up. A failed list never fails the
+    /// refresh. The rows keep each brand's previous trending titles, and the
+    /// next load an hour on tries again.
     private nonisolated static func trendingResults(
         _ media: String, gate: RequestGate
-    ) async -> [TVTMDbStore.DiscoverPage.Result] {
+    ) async -> [TVTMDbStore.DiscoverPage.Result]? {
         @Sendable func block(_ number: Int) async -> [TVTMDbStore.DiscoverPage.Result]? {
             try? await Self.retryingOnce {
                 try await gate.run { try await TVTMDbStore.shared.trendingBlock(media: media, block: number).results }
             }
         }
-        guard let first = await block(1) else { return [] }
-        let rest = await withTaskGroup(of: (Int, [TVTMDbStore.DiscoverPage.Result]).self) { group in
-            for number in 2...trendingBlocks { group.addTask { (number, await block(number) ?? []) } }
+        guard let first = await block(1) else { return nil }
+        let rest = await withTaskGroup(
+            of: (Int, [TVTMDbStore.DiscoverPage.Result]?).self, returning: [TVTMDbStore.DiscoverPage.Result]?.self
+        ) { group in
+            for number in 2...trendingBlocks { group.addTask { (number, await block(number)) } }
             var blocks: [Int: [TVTMDbStore.DiscoverPage.Result]] = [:]
-            for await (number, results) in group { blocks[number] = results }
+            for await (number, results) in group {
+                guard let results else {
+                    // The list is no use with a gap, so the other blocks stop.
+                    group.cancelAll()
+                    return nil
+                }
+                blocks[number] = results
+            }
             return (2...trendingBlocks).flatMap { blocks[$0] ?? [] }
         }
-        return first + rest
+        return rest.map { first + $0 }
     }
 
     /// TMDb's Animation and Talk genres.
@@ -1257,22 +1286,26 @@ final class StudiosNetworksStore {
 
     /// Matches every brand's lists with the library, off the main actor.
     private nonisolated static func matched(
-        _ lists: [String: BrandLists], trending: TrendingLists, index: StudioNetworkIndexFile
+        _ lists: [String: BrandLists], trending: TrendingLists, previous: [String: StudioNetworkResult],
+        index: StudioNetworkIndexFile
     ) async -> [String: StudioNetworkResult] {
         await Task.detached(priority: .utility) {
-            let trendingSeries = trendingMatches(trending.series, index.series)
-            let trendingMovies = trendingMatches(trending.movies, index.movies)
+            let trendingSeries = trending.series.map { trendingMatches($0, index.series) }
+            let trendingMovies = trending.movies.map { trendingMatches($0, index.movies) }
             return Dictionary(uniqueKeysWithValues: lists.map { id, brandLists in
                 let keepsAnime = catalogue.first { $0.id == id }?.keepsAnime ?? false
                 return (id, Self.result(for: brandLists, trendingSeries: trendingSeries, trendingMovies: trendingMovies,
-                                        keepsAnime: keepsAnime, index: index, tagged: index.tagged?[id] ?? []))
+                                        previous: previous[id], keepsAnime: keepsAnime, index: index,
+                                        tagged: index.tagged?[id] ?? []))
             })
         }.value
     }
 
+    /// One brand's matched lists. A trending list that didn't load keeps the
+    /// brand's trending titles from `previous`.
     private nonisolated static func result(
-        for lists: BrandLists, trendingSeries: [TrendingMatch], trendingMovies: [TrendingMatch], keepsAnime: Bool,
-        index: StudioNetworkIndexFile, tagged: [BrowseItem]
+        for lists: BrandLists, trendingSeries: [TrendingMatch]?, trendingMovies: [TrendingMatch]?,
+        previous: StudioNetworkResult?, keepsAnime: Bool, index: StudioNetworkIndexFile, tagged: [BrowseItem]
     ) -> StudioNetworkResult {
         let allSeries = matches(lists.series, index.series).map(\.item)
         let allMovies = matches(lists.movies, index.movies).map(\.item)
@@ -1288,8 +1321,10 @@ final class StudiosNetworksStore {
             series: allSeries,
             recentSeries: recentSeries,
             recentMovies: recentMovies,
-            trendingSeries: trendingTitles(trendingSeries, brandTitles: brandTitles, keepsAnime: keepsAnime),
-            trendingMovies: trendingTitles(trendingMovies, brandTitles: brandTitles, keepsAnime: keepsAnime),
+            trendingSeries: trendingSeries.map { trendingTitles($0, brandTitles: brandTitles, keepsAnime: keepsAnime) }
+                ?? previous?.trendingSeries,
+            trendingMovies: trendingMovies.map { trendingTitles($0, brandTitles: brandTitles, keepsAnime: keepsAnime) }
+                ?? previous?.trendingMovies,
             leftOutOfRows: Set(leftOut.map(\.item.contentId)),
             all: all,
             matchCount: all.count
