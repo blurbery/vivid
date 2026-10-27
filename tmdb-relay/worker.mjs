@@ -24,6 +24,18 @@ export const limits = Object.freeze({
   timeoutMs: 10_000,
 });
 
+// This week's worldwide trending titles lead Studios & Networks' Popular rows.
+// TMDb can't filter them by brand, so the app reads the whole list: 500 of
+// TMDb's pages for each of movies and series. The relay reads 25 at a time and
+// answers them as one block with only the fields the app matches on, so a
+// device reads the list in 20 requests instead of 500. TMDb updates it daily.
+export const trendingBlocks = Object.freeze({
+  pages: 25,
+  count: 20,
+  cacheSeconds: 6 * 60 * 60,
+  fields: ['id', 'title', 'name', 'release_date', 'first_air_date', 'genre_ids', 'original_language', 'origin_country'],
+});
+
 const id = '[1-9][0-9]{0,9}';
 const idList = new RegExp(`^${id}(\\|${id}){0,19}$`);
 const day = /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/;
@@ -63,15 +75,13 @@ const routes = [
     },
     required: ['sort_by', 'include_adult', 'page'],
   },
-  // This week's worldwide trending titles, which order Studios & Networks'
-  // Popular rows. It's one list for every brand, so it's read deeper than a
-  // brand's list, and kept for a few hours because TMDb updates it daily.
+  // Answered in blocks of TMDb's pages, as `trendingBlocks` describes.
   {
     path: /^trending\/(movie|tv)\/week$/,
-    query: {page: /^[1-9][0-9]?$/, language},
-    required: ['page'],
-    maxPage: 25,
-    cacheSeconds: 3 * 60 * 60,
+    query: {block: /^[1-9][0-9]?$/},
+    required: ['block'],
+    cacheSeconds: trendingBlocks.cacheSeconds,
+    block: true,
   },
 ];
 
@@ -114,7 +124,8 @@ export function checkedQuery(route, params) {
   }
   if ((route.required ?? []).some(name => !names.has(name))) return null;
   if (route.oneOf && route.oneOf.filter(name => names.has(name)).length !== 1) return null;
-  if (names.has('page') && Number(params.get('page')) > (route.maxPage ?? limits.maxPage)) return null;
+  if (names.has('page') && Number(params.get('page')) > limits.maxPage) return null;
+  if (names.has('block') && Number(params.get('block')) > trendingBlocks.count) return null;
   return entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join('&');
 }
@@ -127,6 +138,60 @@ const cacheable = (body, seconds) => new Response(body, {
     'X-Content-Type-Options': 'nosniff',
   },
 });
+
+/// The answer to send for an upstream response the app can't use, or null
+/// for a usable one.
+function failure(response, tmdb) {
+  if (response.status === 404) return json(404, {error: 'not_found'});
+  if (response.status === 429) {
+    const retry = /^[0-9]{1,4}$/.test(response.headers.get('Retry-After') ?? '') ? response.headers.get('Retry-After') : '10';
+    return json(429, {error: 'rate_limited'}, {'Retry-After': retry});
+  }
+  // A rejected token is the relay's problem, never the app's key.
+  if (tmdb && (response.status === 401 || response.status === 403)) {
+    console.error('upstream_auth', response.status);
+    return json(503, {error: 'unavailable'}, {'Retry-After': '300'});
+  }
+  if (response.status !== 200 || !response.body) return json(502, {error: 'upstream_error'}, {'Retry-After': '30'});
+  if (Number(response.headers.get('Content-Length')) > limits.maxBytes) return json(502, {error: 'too_large'});
+  return null;
+}
+
+/// One block of the weekly trending list: its TMDb pages read here, with each
+/// title cut down to the fields the app matches on. Each page's body is read
+/// as soon as it arrives, because a Worker keeps only six connections open at
+/// once. A block with a failed page is never cached, and an empty page ends
+/// the list.
+async function trendingBlock(path, block, headers, {fetcher, cache, cacheKey, ctx}) {
+  const first = (block - 1) * trendingBlocks.pages + 1;
+  let pages;
+  try {
+    pages = await Promise.all(Array.from({length: trendingBlocks.pages}, async (_, offset) => {
+      const response = await fetcher(`${upstream}${path}?page=${first + offset}`,
+        {headers, redirect: 'manual', signal: AbortSignal.timeout(limits.timeoutMs)});
+      const failed = failure(response, true);
+      if (failed) {
+        await response.body?.cancel();
+        return {failed};
+      }
+      return {results: (await response.json()).results};
+    }));
+  } catch {
+    return json(502, {error: 'upstream_unavailable'}, {'Retry-After': '30'});
+  }
+  const failed = pages.find(page => page.failed)?.failed;
+  if (failed) return failed;
+  const results = [];
+  for (const page of pages) {
+    if (!Array.isArray(page.results) || page.results.length === 0) break;
+    for (const title of page.results) {
+      results.push(Object.fromEntries(trendingBlocks.fields.filter(field => field in title).map(field => [field, title[field]])));
+    }
+  }
+  const answer = cacheable(JSON.stringify({results}), trendingBlocks.cacheSeconds);
+  if (cache) ctx.waitUntil(cache.put(cacheKey, answer.clone()).catch(() => {}));
+  return answer;
+}
 
 export async function handle(request, env, ctx, {fetcher = fetch, cache = globalThis.caches?.default} = {}) {
   const url = new URL(request.url);
@@ -155,6 +220,7 @@ export async function handle(request, env, ctx, {fetcher = fetch, cache = global
   const headers = service.tmdb
     ? {Authorization: `Bearer ${env.TMDB_READ_TOKEN}`, Accept: 'application/json'}
     : {Accept: 'application/json', 'User-Agent': 'Vivid relay (+https://vividapp.co)'};
+  if (route.block) return trendingBlock(path, Number(url.searchParams.get('block')), headers, {fetcher, cache, cacheKey, ctx});
   let response;
   try {
     response = await fetcher(target, {headers, redirect: 'manual', signal: AbortSignal.timeout(limits.timeoutMs)});
@@ -171,19 +237,8 @@ export async function handle(request, env, ctx, {fetcher = fetch, cache = global
     if (cache) ctx.waitUntil(cache.put(cacheKey, answer.clone()).catch(() => {}));
     return answer;
   }
-  if (response.status === 404) return json(404, {error: 'not_found'});
-  if (response.status === 429) {
-    const retry = /^[0-9]{1,4}$/.test(response.headers.get('Retry-After') ?? '') ? response.headers.get('Retry-After') : '10';
-    return json(429, {error: 'rate_limited'}, {'Retry-After': retry});
-  }
-  // A rejected token is the relay's problem, never the app's key.
-  if (service.tmdb && (response.status === 401 || response.status === 403)) {
-    console.error('upstream_auth', response.status);
-    return json(503, {error: 'unavailable'}, {'Retry-After': '300'});
-  }
-  if (response.status !== 200 || !response.body) return json(502, {error: 'upstream_error'}, {'Retry-After': '30'});
-  const length = Number(response.headers.get('Content-Length'));
-  if (length > limits.maxBytes) return json(502, {error: 'too_large'});
+  const failed = failure(response, service.tmdb);
+  if (failed) return failed;
 
   // The body streams through unparsed, which keeps CPU time tiny.
   const answer = cacheable(response.body, seconds);

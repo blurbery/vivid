@@ -107,6 +107,24 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertEqual(ids, ["new3", "t0", "new0", "new2", "new4", "new5", "new6"])
     }
 
+    func testTrendingTitlesAreTheBrandsOwnInTrendingOrder() throws {
+        func match(_ id: String, genres: String = "[18]", language: String = "en") throws -> StudiosNetworksStore.TrendingMatch {
+            let json = #"{"id":1,"genre_ids":\#(genres),"original_language":"\#(language)"}"#
+            let result = try JSONDecoder().decode(TVTMDbStore.DiscoverPage.Result.self, from: Data(json.utf8))
+            return StudiosNetworksStore.TrendingMatch(item: try item(id, id, year: 2026, type: "series"), result: result)
+        }
+        let matches = try [match("other"), match("talk", genres: "[10767]"), match("mine1"),
+                           match("anime", genres: "[16]", language: "ja"), match("mine2")]
+        let mine: Set<String> = ["talk", "mine1", "anime", "mine2"]
+        XCTAssertEqual(StudiosNetworksStore.trendingTitles(matches, brandTitles: mine, keepsAnime: false).map(\.contentId),
+                       ["mine1", "mine2"])
+        XCTAssertEqual(StudiosNetworksStore.trendingTitles(matches, brandTitles: mine, keepsAnime: true).map(\.contentId),
+                       ["mine1", "anime", "mine2"])
+        let many = try (0..<30).map { try match("m\($0)") }
+        let first = StudiosNetworksStore.trendingTitles(many, brandTitles: Set(many.map(\.item.contentId)), keepsAnime: false)
+        XCTAssertEqual(first.map(\.contentId), (0..<StudiosNetworksStore.rowLimit).map { "m\($0)" })
+    }
+
     func testPopularRowsLeaveOutTalkShowsAndAnimeUnlessTheBrandKeepsIt() throws {
         func result(_ fields: String) throws -> TVTMDbStore.DiscoverPage.Result {
             try JSONDecoder().decode(TVTMDbStore.DiscoverPage.Result.self, from: Data(#"{"id":1,\#(fields)}"#.utf8))

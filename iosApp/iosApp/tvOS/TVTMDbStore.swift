@@ -409,11 +409,13 @@ final class TVTMDbStore {
         return result
     }
 
-    /// One page of this week's worldwide trending titles, in English. It
-    /// has no filters, so Studios & Networks keeps each brand's own titles.
-    func trending(media: String, page: Int) async throws -> DiscoverPage {
+    /// One block of this week's worldwide trending titles, in English: 25 of
+    /// TMDb's pages that the relay reads and answers as one, with only the
+    /// fields Studios & Networks matches on. It has no filters, so Studios &
+    /// Networks keeps each brand's own titles.
+    func trendingBlock(media: String, block: Int) async throws -> DiscoverPage {
         guard isConfigured else { throw Failure.unavailable }
-        return try await request("trending/\(media)/week", query: ["page": String(page)])
+        return try await request("trending/\(media)/week", query: ["block": String(block)])
     }
 
     /// The logo for a TMDb company or network. `kind` is "company" or "network".

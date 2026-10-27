@@ -27,7 +27,7 @@ Only `GET /3/<path>` for the paths the app uses, each with only the query the ap
 | `company/{id}`, `network/{id}` | none | Studios & Networks logos |
 | `find/tt…` | `external_source=imdb_id` | TMDb IDs for Emby and Jellyfin titles that only have an IMDb ID |
 | `discover/movie`, `discover/tv` | `sort_by=popularity.desc`, `include_adult=false`, `page` (1 to 10), the studio, network, streaming provider, region and date filters Studios & Networks sends, the `primary_release_date` and `first_air_date` windows the Calendar sends, and an optional `language` | Studios & Networks lists, and the Calendar's Trending movies and series coming soon |
-| `trending/movie/week`, `trending/tv/week` | `page` (1 to 25) and an optional `language` | This week's worldwide trending titles, which lead Studios & Networks' Popular rows. Cached for three hours, because TMDb updates the list daily |
+| `trending/movie/week`, `trending/tv/week` | `block` (1 to 20) | This week's worldwide trending titles, which lead Studios & Networks' Popular rows. The relay answers a block itself: it reads 25 of TMDb's pages (500 titles), keeps only each title's ID, title, date, genres, original language and countries of origin, and caches the block for six hours, because TMDb updates the list daily. A block with a failed page isn't cached, and an empty page ends the list. The whole list is 20 blocks of each, so a device reads it in 40 requests instead of 1,000 |
 
 `language` is the app's language with its region, such as `fr-FR` or `zh-CN`, so TMDb answers with titles and overviews in that language. It's optional, so app versions that don't send it work unchanged, and it's refused on the video, logo and ID paths.
 
@@ -43,7 +43,7 @@ Nothing from the client's request reaches TMDb except the path and the checked q
 | `502` | TMDb couldn't be reached, answered with an error or sent something too large | Treats it as unavailable |
 | `503` | The token is missing or TMDb rejected it | Treats it as unavailable. It never reports a key problem, because there's no key in the app |
 
-Studios & Networks is the busiest caller: a full refresh reads up to five pages of four lists for each of 24 brands, ten of each network's film list and 25 pages of each weekly trending list, about 610 requests, once a day per device and profile. The app keeps at most 12 TMDb requests in flight, and the per-address limit leaves room for two devices refreshing at once.
+Studios & Networks is the busiest caller: a full refresh reads up to five pages of four lists for each of 24 brands, ten of each network's film list and the 20 blocks of each weekly trending list, about 600 requests, once a day per device and profile. The app keeps at most 12 TMDb requests and four trending blocks in flight, and the per-address limit leaves room for two devices refreshing at once. A trending block the relay hasn't cached makes 25 TMDb requests from the relay, which is why only four go at a time; once cached, every device in that region shares it.
 
 ## TVmaze
 
@@ -59,7 +59,7 @@ TVmaze answers a lookup with a redirect to the show. The relay never follows it:
 
 ## Privacy
 
-The client's address is used only as the rate-limit key. It isn't stored, logged or sent to TMDb. Workers observability is off, so request details aren't retained. TMDb answers are cached by Cloudflare for up to a day (the weekly trending lists for three hours) and TVmaze answers for the times in the [TVmaze](#tvmaze) table, keyed only by the path and query. TMDb's terms allow caching for up to six months.
+The client's address is used only as the rate-limit key. It isn't stored, logged or sent to TMDb. Workers observability is off, so request details aren't retained. TMDb answers are cached by Cloudflare for up to a day (the weekly trending blocks for six hours) and TVmaze answers for the times in the [TVmaze](#tvmaze) table, keyed only by the path and query. TMDb's terms allow caching for up to six months.
 
 The relay sees which TMDb, TVDB or IMDb IDs are looked up, which Studios & Networks lists are read, which TVmaze shows the Calendar asks for, and Vivid's language when it isn't English (for example `fr-FR`). TVmaze never receives the client's address. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
 
@@ -90,7 +90,7 @@ To change the token, run `npx wrangler secret put TMDB_READ_TOKEN` again with th
 
 ### Plan limits
 
-The Workers free plan allows 100,000 requests a day, resetting at midnight UTC. Past that, Cloudflare answers `1027` errors until the reset, and TMDb features show nothing. Each device's Studios & Networks refresh uses about 610 requests a day, plus a few for each movie or series page opened, so the free plan suits about 160 active devices a day. Workers Paid includes 10 million requests a month.
+The Workers free plan allows 100,000 requests a day, resetting at midnight UTC. Past that, Cloudflare answers `1027` errors until the reset, and TMDb features show nothing. Each device's Studios & Networks refresh uses about 600 requests a day, plus a few for each movie or series page opened, so the free plan suits about 160 active devices a day. Workers Paid includes 10 million requests a month.
 
 ## Tests
 
