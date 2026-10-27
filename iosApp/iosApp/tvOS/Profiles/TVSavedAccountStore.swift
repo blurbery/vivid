@@ -344,7 +344,10 @@ final class TVSavedAccountStore {
 
     /// The person chose the registry's active server, to sign in to or to use.
     func noteChosenServer() {
-        chosenServerID = ServerRegistry.shared.activeServerId
+        let server = ServerRegistry.shared.activeServerId
+        // The active saved profile is already on it, so there's nothing for
+        // sync to keep, and a note left set would outlive a later sign-out.
+        chosenServerID = activeAccount?.serverID == server ? nil : server
     }
 
     private var keepsChosenServer: Bool {
@@ -741,7 +744,7 @@ final class TVSavedAccountStore {
                 let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
                                                  profile: nil, profileToken: nil, nativeUserID: nativeUserID)
                 let entry = ServerEntry(id: serverID, url: normalized,
-                                        fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName ?? serverName, lastUsedAt: Date())
+                                        fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
                 guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
                 try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
                 if let identity = await TokenStore.shared.refreshAccountIdentity() {
@@ -771,7 +774,7 @@ final class TVSavedAccountStore {
                                              profile: pairing, profileToken: nil, nativeUserID: nativeUserID)
             try saveSession(saved, id: accountID)
             let entry = ServerEntry(id: serverID, url: normalized,
-                                    fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName ?? serverName, lastUsedAt: Date())
+                                    fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
             guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
             try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
             if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
@@ -788,6 +791,13 @@ final class TVSavedAccountStore {
                 : String(localized: "Couldn’t sign in. Check the server address, username and password, then try again.")
             return false
         }
+    }
+
+    /// The name the server just gave wins over a saved one, so a renamed
+    /// server shows its new name. Without one, the saved name stays.
+    private func fetchedName(_ serverName: String?, serverID: String) -> String? {
+        if let serverName, !serverName.isEmpty { return serverName }
+        return ServerRegistry.shared.entry(with: serverID)?.fetchedName
     }
 
     private func finishLogin(router: AppRouter, prepareHome: Bool = false) async {
