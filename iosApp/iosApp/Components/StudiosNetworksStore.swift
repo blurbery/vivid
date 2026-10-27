@@ -882,6 +882,8 @@ final class StudiosNetworksStore {
             resultsSavedAt = savedAt
             resultsSavedRevision = Self.resultsRevision
             resultsMissTrending = !trendingLists.isComplete
+            // A retry is timed from these results, not an earlier retry.
+            trendingRetriedAt = nil
             status = .ready
             topUpForEditing()
             progressText = nil
