@@ -780,20 +780,25 @@ final class StudiosNetworksStore {
             // A load that failed keeps the saved results, whose posters may
             // still need fresh links. A failed library read has already
             // started the cooldown, so it's tried again on a later visit.
-            guard self.loadTask == nil, status == .ready, artworkNeedsRefresh else { return }
+            guard self.loadTask == nil, status == .ready, artworkNeedsRefresh || trendingNeedsRetry else { return }
         }
         guard let scope = loadedScope else { return }
         // Ready results only need fresh posters, for an app left open past
-        // their expiry.
+        // their expiry, or a trending list that didn't load.
         let isReady = status == .ready
-        if isReady, !artworkNeedsRefresh { return }
+        if isReady, !artworkNeedsRefresh, !trendingNeedsRetry { return }
         // A retry shows as loading straight away, so nothing waiting on it
         // mistakes the last attempt's failure for this one's.
         if status == .failed || status == .needsAccount { status = .loading }
         // One task covers the cache read and any load, so Home and Settings
         // asking at the same time share a single load.
         let task = Task { [weak self] in
-            if isReady { await self?.refreshArtwork(scope) } else { await self?.prepare(scope) }
+            if isReady {
+                if self?.artworkNeedsRefresh == true { await self?.refreshArtwork(scope) }
+                if self?.trendingNeedsRetry == true { await self?.retryTrending(scope) }
+            } else {
+                await self?.prepare(scope)
+            }
             if self?.loadedScope == scope { self?.loadTask = nil }
         }
         loadTask = task
@@ -922,13 +927,9 @@ final class StudiosNetworksStore {
         return expiresAt.timeIntervalSince(now) < artworkRefreshLead
     }
 
-    /// Swaps fresh poster URLs into the shown results by re-reading the
-    /// library, without matching with TMDb again. Results are kept for a day,
-    /// but Silo's signed artwork URLs stop working after a few hours and every
-    /// poster would be left on its blurred placeholder. Status and progress
-    /// stay as they are, so this runs unseen behind the current results.
     /// Results saved without a trending list read it again an hour after
-    /// they were matched, then at most once an hour.
+    /// they were matched, then at most once an hour, whenever Home or a brand
+    /// page asks for the results.
     private var trendingNeedsRetry: Bool {
         guard resultsMissTrending, let since = trendingRetriedAt ?? resultsSavedAt else { return false }
         return Date().timeIntervalSince(since) > Self.trendingRetryDelay
@@ -953,6 +954,11 @@ final class StudiosNetworksStore {
                          scope.cacheURL("results"))
     }
 
+    /// Swaps fresh poster URLs into the shown results by re-reading the
+    /// library, without matching with TMDb again. Results are kept for a day,
+    /// but Silo's signed artwork URLs stop working after a few hours and every
+    /// poster would be left on its blurred placeholder. Status and progress
+    /// stay as they are, so this runs unseen behind the current results.
     private func refreshArtwork(_ scope: Scope) async {
         artworkRefreshedAt = Date()
         do {
