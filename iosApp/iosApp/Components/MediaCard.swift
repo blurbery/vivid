@@ -77,6 +77,10 @@ struct MediaCard: View {
     /// collection thumbnails) leave this off.
     var overlayData: OverlayData? = nil
     var titleFont: Font = .vividSubheadline
+    /// Draws the title and the year in Home's poster caption style. Watchlist
+    /// and Favourites on iPhone and iPad use it, in For You and on their own
+    /// pages.
+    var usesHomeCaption = false
     let action: () -> Void
     /// tvOS-only shortcut invoked by the remote's Play/Pause button while
     /// this card owns focus. Select continues to invoke `action`.
@@ -419,7 +423,22 @@ struct MediaCard: View {
         )
     }
 
+    @ViewBuilder
     private var titleText: some View {
+        #if !os(tvOS)
+        if usesHomeCaption {
+            Text(title)
+                .homePosterTitleStyle()
+                .frame(width: cardWidth, alignment: .leading)
+        } else {
+            cardTitleText
+        }
+        #else
+        cardTitleText
+        #endif
+    }
+
+    private var cardTitleText: some View {
         Text(title)
             .font(titleFont)
             .foregroundColor(.vividOnSurface)
@@ -431,15 +450,29 @@ struct MediaCard: View {
     @ViewBuilder
     private var yearText: some View {
         if let secondLine = subtitle ?? year.map(String.init) {
-            Text(secondLine)
-                .font(.vividCaption)
-                .foregroundColor(.vividSecondaryText)
-                // One line, tail-truncated: an episode title must never wrap
-                // and push the row below it.
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: cardWidth, alignment: .leading)
+            #if !os(tvOS)
+            if usesHomeCaption {
+                Text(secondLine)
+                    .homePosterSecondLineStyle()
+                    .frame(width: cardWidth, alignment: .leading)
+            } else {
+                cardSecondLine(secondLine)
+            }
+            #else
+            cardSecondLine(secondLine)
+            #endif
         }
+    }
+
+    private func cardSecondLine(_ secondLine: String) -> some View {
+        Text(secondLine)
+            .font(.vividCaption)
+            .foregroundColor(.vividSecondaryText)
+            // One line, tail-truncated: an episode title must never wrap
+            // and push the row below it.
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: cardWidth, alignment: .leading)
     }
 
     // MARK: - Metric helpers

@@ -39,6 +39,7 @@ struct IOSPersonalMediaPosterLayout: View {
                     year: item.year,
                     userState: item.userState,
                     overlayData: OverlayData.from(item),
+                    usesHomeCaption: true,
                     action: {
                         router.navigate(to: .itemDetail(contentId: item.contentId))
                     },

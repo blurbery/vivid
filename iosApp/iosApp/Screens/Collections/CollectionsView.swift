@@ -610,6 +610,11 @@ struct LibraryCollectionsView: View {
 private struct LibraryCollectionCard: View {
     let collection: LibraryCollection
     let cardWidthOverride: CGFloat?
+    /// For You's section headings already say whether a collection is a user
+    /// collection or the server's, so its cards leave the type out.
+    var showsType = true
+    /// For You styles the name like a movie or series name on Home.
+    var usesHomeTitle = false
     @State private var uiCustomization = UICustomizationPreferences.shared
 
     private var cardWidth: CGFloat {
@@ -640,13 +645,10 @@ private struct LibraryCollectionCard: View {
             .clipShape(RoundedRectangle(cornerRadius: VividTheme.smallCornerRadius))
 
             if uiCustomization.cardPresentation.caption.showsTitle {
-                Text(collection.name)
-                    .font(.vividCaption)
-                    .foregroundStyle(Color.vividOnSurface)
-                    .lineLimit(2, reservesSpace: true)
+                title
             }
 
-            if uiCustomization.cardPresentation.caption.showsMetadata {
+            if showsType, uiCustomization.cardPresentation.caption.showsMetadata {
                 Text(typeLabel)
                     .font(.vividSmall)
                     .foregroundStyle(Color.vividSecondaryText)
@@ -654,6 +656,27 @@ private struct LibraryCollectionCard: View {
             }
         }
         .frame(width: cardWidth, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var title: some View {
+        #if !os(tvOS)
+        if usesHomeTitle {
+            Text(collection.name)
+                .homePosterTitleStyle()
+        } else {
+            libraryTitle
+        }
+        #else
+        libraryTitle
+        #endif
+    }
+
+    private var libraryTitle: some View {
+        Text(collection.name)
+            .font(.vividCaption)
+            .foregroundStyle(Color.vividOnSurface)
+            .lineLimit(2, reservesSpace: true)
     }
 
     @ViewBuilder
@@ -1002,7 +1025,8 @@ struct MobileForYouCollections: View {
                         title: entry.collection.name,
                         kind: entry.collection.kind ?? section.kind
                     )) {
-                        LibraryCollectionCard(collection: entry.collection, cardWidthOverride: cardWidth)
+                        LibraryCollectionCard(collection: entry.collection, cardWidthOverride: cardWidth,
+                                              showsType: false, usesHomeTitle: true)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(libraryCollectionAccessibilityLabel(entry.collection))

@@ -304,6 +304,31 @@ private struct HomeWatchedCheck: View {
 
 // MARK: - Poster card
 
+extension View {
+    /// Home's poster title. For You's collection cards use it too, so their
+    /// names look the same as a movie or series name on Home.
+    func homePosterTitleStyle() -> some View {
+        font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color.vividOnSurface)
+            // One line, always. Reserving two lines (as the shipping card
+            // does) makes every row 17pt taller than it needs to be; letting
+            // it wrap makes row baselines ragged. Truncation is the honest
+            // answer: the poster already carries the identity.
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    /// The line under Home's poster title, such as the year. For You's
+    /// Watchlist and Favourites cards use it too.
+    func homePosterSecondLineStyle() -> some View {
+        font(.system(size: 11, weight: .regular))
+            .foregroundStyle(Color.vividOnSurface.opacity(0.5))
+            .monospacedDigit()
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+}
+
 /// Poster card with the shipping card's flaws corrected: true 2:3 artwork,
 /// a single-line title and the year folded onto the caption line instead of
 /// occupying its own. Card overlays remain shared with the rest of the app.
@@ -408,22 +433,11 @@ struct HomePosterCard: View {
     private var caption: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(HomeFeedMeta.cardTitle(for: item))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.vividOnSurface)
-                // One line, always. Reserving two lines (as the shipping card
-                // does) makes every row 17pt taller than it needs to be; letting
-                // it wrap makes row baselines ragged. Truncation is the honest
-                // answer — the poster already carries the identity.
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .homePosterTitleStyle()
 
             if showsMetadata, let secondLine = HomeFeedMeta.cardSecondLine(for: item) {
                 Text(secondLine)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.5))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .homePosterSecondLineStyle()
             }
         }
         .frame(width: width, alignment: .leading)
