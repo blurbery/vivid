@@ -821,6 +821,7 @@ private struct PhoneTabletDetailBackdrop: View {
     let thumbhash: String?
     let heroSize: CGSize
     let viewportSize: CGSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     /// The blur's soft top edge starts behind the controls and eases in
     /// until it's opaque just below the season line.
@@ -850,15 +851,25 @@ private struct PhoneTabletDetailBackdrop: View {
             PhoneFullScreenHeroShade(heroHeight: heroSize.height, tail: featherLead)
                 .frame(width: heroSize.width, height: heroSize.height + featherLead)
 
-            // A blurred copy of the same fixed artwork, darkened to the shade's
-            // strength at the hero's foot, so only sharpness changes across
-            // the edge and no brighter band shows. Its window rides up with
-            // the page while the image inside stays put, then pins once its
-            // soft edge has gone above the screen, so the blur covers it all.
-            artwork
+            // A blurred copy of the same fixed artwork, darkened like the shade
+            // at the hero's foot (including its darker left side), so only
+            // sharpness changes across the edge and no brighter band shows.
+            // Reduce Transparency swaps it for a solid dark fill. Its window
+            // rides up with the page while the image inside stays put, then
+            // pins once its soft edge has gone above the screen, so the blur
+            // covers it all.
+            Group {
+                if reduceTransparency {
+                    Color(white: 0.06)
+                } else {
+                    artwork
+                        .frame(width: screen.width, height: screen.height)
+                        .blur(radius: 40, opaque: true)
+                }
+            }
                 .frame(width: screen.width, height: screen.height)
-                .blur(radius: 40, opaque: true)
                 .overlay(Color.black.opacity(0.45))
+                .overlay(PhoneFullScreenHeroShade.sideShade)
                 .clipped()
                 .visualEffect { [feather] content, proxy in
                     let minY = proxy.frame(in: .scrollView(axis: .vertical)).minY
@@ -905,19 +916,23 @@ private struct PhoneFullScreenHeroShade: View {
     let heroHeight: CGFloat
     let tail: CGFloat
 
+    /// Darkens the left side, behind the title and controls. The blur below
+    /// carries the same gradient so its left side matches across the edge.
+    static let sideShade = LinearGradient(
+        stops: [
+            .init(color: .black.opacity(0.55), location: 0),
+            .init(color: .black.opacity(0.25), location: 0.38),
+            .init(color: .clear, location: 0.65),
+        ],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+
     var body: some View {
         let total = max(heroHeight + tail, 1)
         let foot = heroHeight / total
         ZStack {
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.55), location: 0),
-                    .init(color: .black.opacity(0.25), location: 0.38),
-                    .init(color: .clear, location: 0.65),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
+            Self.sideShade
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.35 * foot),
