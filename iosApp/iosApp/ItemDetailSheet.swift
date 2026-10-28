@@ -31,6 +31,9 @@ struct ItemDetailPresentationModifier: ViewModifier {
 private struct ItemDetailSheet: View {
     let presentation: AppRouter.ItemDetailPresentation
     @Bindable var router: AppRouter
+    /// Pushed pages read the screen size from here; the root page gets it
+    /// in its first layout pass so it never opens in the wrong layout.
+    @State private var viewportSize: CGSize = .zero
 
     var body: some View {
         detailNavigation
@@ -50,12 +53,17 @@ private struct ItemDetailSheet: View {
                     width: geometry.size.width,
                     height: geometry.size.height + geometry.safeAreaInsets.bottom
                 )
+                .environment(\.detailViewportSize, Self.screenSize(geometry))
+                .onChange(of: Self.screenSize(geometry), initial: true) { _, size in
+                    viewportSize = size
+                }
             }
                 .navigationDestination(for: Route.self) { route in
                     destination(for: route)
                         .environment(\.detailPullBackAction, {
                             withAnimation { router.goBackInItemDetail() }
                         })
+                        .environment(\.detailViewportSize, viewportSize)
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
@@ -63,6 +71,14 @@ private struct ItemDetailSheet: View {
         // existing X/Back chrome; each detail scroll surface extends its own
         // artwork above it. Content already owns its bottom breathing room.
         .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private static func screenSize(_ geometry: GeometryProxy) -> CGSize {
+        let insets = geometry.safeAreaInsets
+        return CGSize(
+            width: geometry.size.width + insets.leading + insets.trailing,
+            height: geometry.size.height + insets.top + insets.bottom
+        )
     }
 
     private var currentContentID: String {

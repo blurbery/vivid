@@ -35,8 +35,16 @@ struct PhonePlaybackSelectorSkeleton: View {
     static let standardHeight: CGFloat = 52
 
     private let kinds: [PhonePlaybackSelectorKind] = [.version, .audio, .subtitles]
+    @Environment(\.phoneDetailUsesTVStyle) private var usesTVStyle
 
     var body: some View {
+        // The iPad's Apple TV-style row shows nothing until the circles load.
+        if !usesTVStyle {
+            card
+        }
+    }
+
+    private var card: some View {
         HStack(spacing: 6) {
             ForEach(kinds) { kind in
                 VStack(spacing: 5) {
@@ -63,6 +71,7 @@ struct PhonePlaybackSelectorRow: View {
     let onSelectVersion: (Int?) -> Void
     let onSelectAudioTrack: (Int?) -> Void
     let onSelectSubtitleTrack: (Int?) -> Void
+    @Environment(\.phoneDetailUsesTVStyle) private var usesTVStyle
 
     private var editions: [PlaybackEditions.Edition] {
         PlaybackEditions.editions(from: versions)
@@ -70,7 +79,9 @@ struct PhonePlaybackSelectorRow: View {
 
     var body: some View {
         if currentVersion != nil, !selectorKinds.isEmpty {
-            selectorCard
+            Group {
+                if usesTVStyle { tvCircles } else { selectorCard }
+            }
                 .task { await ProfilePrefsStore.shared.hydrateIfNeeded() }
                 // Silo's stored subtitles join the menu and the Auto preview.
                 .task(id: currentVersion?.fileId) { await SiloStoredSubtitles.shared.load(fileID: currentVersion?.fileId) }
@@ -128,6 +139,19 @@ struct PhonePlaybackSelectorRow: View {
             }
         }
     }
+    /// Apple TV's icon-only circles for the iPad's action row: Audio and
+    /// Subtitles, plus Edition or Version when there's another to pick. The
+    /// quality badges above the row already name the file.
+    private var tvCircles: some View {
+        HStack(spacing: 14) {
+            ForEach(selectorKinds.filter { ($0 != .edition && $0 != .version) || isInteractive($0) }) { kind in
+                selectorButton(kind) {
+                    PhoneTVCircleLabel(icon: kind.icon)
+                }
+            }
+        }
+    }
+
     /// Wraps a layout's row/column in a button when that selector can
     /// actually be changed, and leaves it inert when it cannot.
     @ViewBuilder

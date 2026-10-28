@@ -14,6 +14,7 @@ struct PhonePrimaryPillButton: View {
     let action: () -> Void
     var fullWidth: Bool = false
     var resumeProgress: ResumePresentation? = nil
+    @Environment(\.phoneDetailUsesTVStyle) private var usesTVStyle
 
     var body: some View {
         Button {
@@ -22,7 +23,7 @@ struct PhonePrimaryPillButton: View {
             #endif
             action()
         } label: {
-            HStack(spacing: 10) {
+            let content = HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 17, weight: .bold))
                 if let resumeProgress {
@@ -32,12 +33,23 @@ struct PhonePrimaryPillButton: View {
                     Text(title).font(.system(size: 17, weight: .semibold)).lineLimit(1)
                 }
             }
-            .foregroundColor(.white)
-            .frame(maxWidth: fullWidth ? .infinity : nil)
-            .padding(.horizontal, fullWidth ? 24 : 24)
-            .frame(height: 52)
-            .vividGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), tint: .black.opacity(0.26), interactive: true)
-            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1) }
+            if usesTVStyle {
+                // Apple TV's solid white Play, at its natural width.
+                content
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 26)
+                    .frame(height: 52)
+                    .background(Capsule().fill(.white))
+                    .contentShape(Capsule())
+            } else {
+                content
+                    .foregroundColor(.white)
+                    .frame(maxWidth: fullWidth ? .infinity : nil)
+                    .padding(.horizontal, fullWidth ? 24 : 24)
+                    .frame(height: 52)
+                    .vividGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), tint: .black.opacity(0.26), interactive: true)
+                    .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1) }
+            }
         }
         .buttonStyle(.plain)
     }

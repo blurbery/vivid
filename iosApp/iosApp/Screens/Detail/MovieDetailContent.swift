@@ -128,12 +128,20 @@ struct MovieDetailContent<BelowOverview: View>: View {
             overlayData: OverlayData.from(detail),
             enablesArtworkParallax: VividMediaType.isMovieLibrary(detail.type),
             tmdbRating: tmdbRating?.value(for: detail.contentId),
+            headingTokens: detail.type == "episode" ? [] : [String(localized: "Movie")],
+            releaseFacts: PhoneHeroMetadata.releaseFacts(year: detail.year, runtime: detail.runtime),
+            qualityBadges: PhoneHeroMetadata.sourceBadges(
+                effectiveVersion,
+                summary: selectedVersionFileId == nil ? detail.overlaySummary : nil
+            ),
             actions: { actionStack },
             belowOverview: {
                 VStack(spacing: 14) {
                     belowOverview()
-                    if let effectiveVersion {
-                        playbackSelectors(for: effectiveVersion)
+                    PhoneDetailSelectorsPlacement {
+                        if let effectiveVersion {
+                            playbackSelectors(for: effectiveVersion)
+                        }
                     }
                 }
             }
@@ -189,6 +197,12 @@ struct MovieDetailContent<BelowOverview: View>: View {
                     fullWidth: true,
                     resumeProgress: ResumePresentation(position: resumePositionSeconds, duration: detail.userData?.durationSeconds)
                 )
+            } selectors: {
+                PhoneDetailSelectorsPlacement {
+                    if let effectiveVersion {
+                        playbackSelectors(for: effectiveVersion)
+                    }
+                }
             } actions: {
                 PhoneLabeledActionRow {
                     PhoneLabeledAction(
@@ -200,6 +214,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
                             ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                         action: onToggleFavorite
                     )
+                    .movesToMoreInTVStyle()
                     PhoneLabeledAction(
                         icon: "bookmark",
                         iconActive: "bookmark.fill",
@@ -211,14 +226,9 @@ struct MovieDetailContent<BelowOverview: View>: View {
                     )
                     if detail.type == "episode" {
                         PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
-                            Button(isWatched ? "Mark Episode as Unwatched" : "Mark Episode as Watched", action: onToggleWatched)
-                            if let selectedSeason {
-                                Button(selectedSeason.userData?.played == true
-                                    ? String(localized: "Mark \(selectedSeason.downloadDisplayName) as Unwatched")
-                                    : String(localized: "Mark \(selectedSeason.downloadDisplayName) as Watched"), action: onToggleSeasonWatched)
-                            }
-                            Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
+                            watchedMenuButtons
                         }
+                        .movesToMoreInTVStyle()
                     } else {
                         PhoneLabeledAction(
                             icon: "checkmark.circle", iconActive: "checkmark.circle.fill",
@@ -226,6 +236,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
                             accessibilityLabelOverride: isWatched ? watchedLabelUnmark : watchedLabelMark,
                             action: onToggleWatched
                         )
+                        .movesToMoreInTVStyle()
                     }
                     if showsDownloadButton {
                         if detail.type == "episode", detail.seriesId != nil {
@@ -244,6 +255,24 @@ struct MovieDetailContent<BelowOverview: View>: View {
                             )
                         }
                     }
+                    PhoneTVMoreMenu {
+                        if hasResumeProgress {
+                            Button { onPlay(true) } label: {
+                                Label("Start Over", systemImage: "backward.end.fill")
+                            }
+                        }
+                        Button(action: onToggleFavorite) {
+                            Label(
+                                isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
+                                systemImage: isFavorite ? "heart.fill" : "heart"
+                            )
+                        }
+                        if detail.type == "episode" {
+                            watchedMenuButtons
+                        } else {
+                            Button(isWatched ? watchedLabelUnmark : watchedLabelMark, action: onToggleWatched)
+                        }
+                    }
 
                 }
             }
@@ -259,6 +288,17 @@ struct MovieDetailContent<BelowOverview: View>: View {
         }
         .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.18), value: trailerStatusMessage)
+    }
+
+    @ViewBuilder
+    private var watchedMenuButtons: some View {
+        Button(isWatched ? "Mark Episode as Unwatched" : "Mark Episode as Watched", action: onToggleWatched)
+        if let selectedSeason {
+            Button(selectedSeason.userData?.played == true
+                ? String(localized: "Mark \(selectedSeason.downloadDisplayName) as Unwatched")
+                : String(localized: "Mark \(selectedSeason.downloadDisplayName) as Watched"), action: onToggleSeasonWatched)
+        }
+        Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
     }
 
     private func playbackSelectors(for version: FileVersion) -> some View {

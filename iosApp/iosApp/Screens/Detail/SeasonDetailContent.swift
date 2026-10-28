@@ -95,6 +95,7 @@ struct SeasonDetailContent<BelowOverview: View>: View {
             overview: detail.overview,
             factsLine: [],
             overlayData: OverlayData.from(detail),
+            qualityBadges: PhoneHeroMetadata.sourceBadges(effectiveNextUpVersion),
             actions: { actionStack },
             belowOverview: belowOverview
         )
@@ -111,23 +112,30 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                     fullWidth: true,
                     resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { String(localized: "S\(String($0.seasonNumber)) E\(String($0.episodeNumber))", comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02") })
                 )
+            } selectors: {
+                PhoneDetailSelectorsPlacement { nextUpSelectors }
             } actions: {
                 labeledActionRow
             }
-            if nextUpEpisode != nil, let effectiveNextUpVersion {
-                PhonePlaybackSelectorRow(
-                    versions: nextUpVersions,
-                    currentVersion: effectiveNextUpVersion,
-                    selectedVersionFileId: selectedNextUpFileId,
-                    selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
-                    selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
-                    onSelectVersion: onSelectNextUpVersion,
-                    onSelectAudioTrack: onSelectNextUpAudioTrack,
-                    onSelectSubtitleTrack: onSelectNextUpSubtitleTrack
-                )
-            }
+            PhoneDetailSelectorsPlacement { nextUpSelectors }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var nextUpSelectors: some View {
+        if nextUpEpisode != nil, let effectiveNextUpVersion {
+            PhonePlaybackSelectorRow(
+                versions: nextUpVersions,
+                currentVersion: effectiveNextUpVersion,
+                selectedVersionFileId: selectedNextUpFileId,
+                selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
+                selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
+                onSelectVersion: onSelectNextUpVersion,
+                onSelectAudioTrack: onSelectNextUpAudioTrack,
+                onSelectSubtitleTrack: onSelectNextUpSubtitleTrack
+            )
+        }
     }
 
     private func handlePlayTap(for episode: EpisodeListItem) {
@@ -156,6 +164,7 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                 accessibilityLabelOverride: isFavorite ? String(localized: "Remove from favorites") : String(localized: "Add to favorites"),
                 action: onToggleFavorite
             )
+            .movesToMoreInTVStyle()
 
             PhoneLabeledAction(
                 icon: "bookmark",
@@ -167,11 +176,9 @@ struct SeasonDetailContent<BelowOverview: View>: View {
             )
 
             PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
-                Button(isWatched ? "Mark Season as Unwatched" : "Mark Season as Watched", action: onToggleWatched)
-                if detail.seriesId != nil {
-                    Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
-                }
+                watchedMenuButtons
             }
+            .movesToMoreInTVStyle()
 
             SeriesDownloadMenuButton(
                 detail: detail,
@@ -182,7 +189,23 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                 style: .labeled
             )
 
+            PhoneTVMoreMenu {
+                Button(action: onToggleFavorite) {
+                    Label(
+                        isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
+                        systemImage: isFavorite ? "heart.fill" : "heart"
+                    )
+                }
+                watchedMenuButtons
+            }
+        }
+    }
 
+    @ViewBuilder
+    private var watchedMenuButtons: some View {
+        Button(isWatched ? "Mark Season as Unwatched" : "Mark Season as Watched", action: onToggleWatched)
+        if detail.seriesId != nil {
+            Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
         }
     }
 

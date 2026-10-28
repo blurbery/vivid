@@ -34,6 +34,12 @@ enum PhoneDetailScrollCoordinateSpace {
     static let name = "phone-detail-scroll"
 }
 
+extension EnvironmentValues {
+    /// The detail presentation's full screen size, safe areas included, or
+    /// zero outside one. iPad landscape heroes fill this height.
+    @Entry var detailViewportSize: CGSize = .zero
+}
+
 /// Artwork-matched surface shared by mobile video-detail pages. Compact iPhone
 /// movie/series cards keep a saturated, heavily softened copy of the hero fixed
 /// behind the ScrollView. It supplies the colour field that remains visible as
@@ -298,11 +304,18 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     /// TMDb's user score, shown last in the metadata line when the viewer has
     /// a personal TMDb connection.
     var tmdbRating: Double? = nil
+    /// The iPad's Apple TV-style heading leads with these ("Movie", or
+    /// "Series" and the season count), then the genres and age rating.
+    var headingTokens: [String] = []
+    /// Year and runtime, then `qualityBadges`, in the iPad technical row.
+    var releaseFacts: [String] = []
+    var qualityBadges: [String] = []
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let belowOverview: () -> BelowOverview
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.detailViewportSize) private var viewportSize
     @State private var availableWidth: CGFloat = 0
     @State private var showFullOverview = false
 
@@ -312,6 +325,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         Group {
             if usesExpandedLayout {
                 expandedHeader
+            } else if usesFullScreenArtwork {
+                fullScreenHeader
             } else {
                 compactHeader
             }
@@ -383,6 +398,62 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     /// full-width stack, so the copy and controls share one centred column.
     private var usesDuoColumn: Bool {
         PhoneDuo.usesWideDetailLayout(horizontalSizeClass)
+    }
+
+    // MARK: - Full-screen iPad landscape layout
+
+    /// iPad copies Apple TV in both orientations: sharp artwork fills the
+    /// screen behind the hero, and only gives way to the artwork glass where
+    /// the seasons or supporting rows begin.
+    private var usesFullScreenArtwork: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
+    /// The title, copy and controls sit together at the bottom left, as on
+    /// Apple TV: heading, synopsis, credit and technical row, then Play and
+    /// icon-only circles in one row.
+    private var fullScreenHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            titleBlock(textAlignment: .leading, logoHeight: 122)
+                .padding(.bottom, 2)
+            PhoneTVHeading(tokens: headingTokens, genres: headingGenres, rating: ratingChip)
+            overviewBlock
+            belowOverview()
+            creditBlock(alignment: .leading)
+            PhoneTVTechnicalRow(facts: releaseFacts, badges: qualityBadges, tmdbRating: tmdbRating)
+            actions()
+                .padding(.top, 8)
+        }
+        .frame(maxWidth: 600, alignment: .leading)
+        .padding(.horizontal, 44)
+        .padding(.bottom, 36)
+        .frame(maxWidth: .infinity, minHeight: viewportSize.height, alignment: .bottomLeading)
+        .background(alignment: .top) {
+            GeometryReader { geometry in
+                // The artwork and its shade fade out over the hero's last
+                // 140 points, so the glass starts at the season line.
+                let fadeStart = max(0, 1 - 140 / max(geometry.size.height, 1))
+                ZStack {
+                    PhoneDetailParallaxArtwork(
+                        url: resolvedArtworkURL,
+                        thumbhash: resolvedArtworkThumbhash,
+                        height: geometry.size.height,
+                        isEnabled: enablesArtworkParallax,
+                        fadeStart: fadeStart,
+                        smoothFade: true,
+                        keepsTopAttached: true,
+                        topShadeOpacity: 0.34
+                    )
+                    PhoneFullScreenHeroShade(fadeStart: fadeStart)
+                }
+            }
+        }
+        .environment(\.phoneDetailUsesTVStyle, true)
+        .accessibilityElement(children: .contain)
     }
 
     private var compactArtworkHeight: CGFloat {
@@ -627,8 +698,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .foregroundStyle(Color.vividOnSurface.opacity(0.80))
                 .lineSpacing(3)
                 .lineLimit(3)
-                .multilineTextAlignment(usesDuoColumn ? .center : .leading)
-                .frame(maxWidth: .infinity, alignment: usesDuoColumn ? .center : .leading)
+                .multilineTextAlignment(centresOverview ? .center : .leading)
+                .frame(maxWidth: .infinity, alignment: centresOverview ? .center : .leading)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     showFullOverview = true
@@ -646,6 +717,14 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         }
     }
 
+    private var headingGenres: [String] {
+        sourceTokens.flatMap { $0.components(separatedBy: ", ") }
+    }
+
+    private var centresOverview: Bool {
+        usesDuoColumn && !usesFullScreenArtwork
+    }
+
     @ViewBuilder
     private func creditBlock(alignment: Alignment) -> some View {
         if let creditText, !creditText.isEmpty {
@@ -658,6 +737,123 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         }
     }
 
+}
+
+/// Apple TV's heading: the first token bright, the rest and the genres
+/// muted, dot-separated, then the outlined age rating.
+private struct PhoneTVHeading: View {
+    let tokens: [String]
+    let genres: [String]
+    let rating: String?
+
+    var body: some View {
+        let parts = tokens + genres
+        if !parts.isEmpty || rating?.isEmpty == false {
+            HStack(spacing: 8) {
+                if let first = parts.first {
+                    (Text(first).foregroundColor(.white.opacity(0.92))
+                     + Text(parts.count > 1 ? " · " + parts.dropFirst().joined(separator: " · ") : "")
+                        .foregroundColor(.white.opacity(0.70)))
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                if let rating, !rating.isEmpty {
+                    PhoneTVTextBadge(text: rating)
+                }
+            }
+        }
+    }
+}
+
+/// Apple TV's technical row: year and runtime, quality badges with the
+/// resolution filled, then the TMDb score.
+private struct PhoneTVTechnicalRow: View {
+    let facts: [String]
+    let badges: [String]
+    let tmdbRating: Double?
+
+    var body: some View {
+        if !facts.isEmpty || !badges.isEmpty || tmdbRating != nil {
+            HStack(spacing: 8) {
+                if !facts.isEmpty {
+                    Text(facts.joined(separator: " · "))
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.84))
+                }
+                ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                    PhoneTVTextBadge(text: badge, filled: PhoneHeroMetadata.isResolutionBadge(badge))
+                }
+                if let tmdbRating {
+                    TMDbRatingBadge(rating: tmdbRating, logoHeight: 15,
+                                    font: .system(size: 15, weight: .semibold), color: .white.opacity(0.92))
+                        .padding(.leading, 2)
+                }
+            }
+            .lineLimit(1)
+        }
+    }
+}
+
+private struct PhoneTVTextBadge: View {
+    let text: String
+    var filled = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(filled ? Color.black : Color.white)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(filled ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 3))
+            .overlay {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(.white.opacity(0.85), lineWidth: filled ? 0 : 1)
+            }
+            .fixedSize()
+    }
+}
+
+/// Apple TV's contrast behind the bottom-left title and controls. It clears
+/// with the artwork at the hero's foot, so no band shows over the glass.
+private struct PhoneFullScreenHeroShade: View {
+    let fadeStart: CGFloat
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0.55), location: 0),
+                    .init(color: .black.opacity(0.25), location: 0.38),
+                    .init(color: .clear, location: 0.65),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.35),
+                    .init(color: .black.opacity(0.45), location: 0.85),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .mask {
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: fadeStart),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 // MARK: - Titles
