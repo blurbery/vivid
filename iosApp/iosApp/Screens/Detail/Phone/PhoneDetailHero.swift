@@ -854,7 +854,8 @@ private struct PhoneTabletDetailBackdrop: View {
             // A blurred copy of the same fixed artwork, darkened like the shade
             // at the hero's foot (including its darker left side), so only
             // sharpness changes across the edge and no brighter band shows.
-            // Reduce Transparency swaps it for a solid dark fill. Its window
+            // Reduce Transparency swaps it for a solid dark fill, which also
+            // darkens the edge since it can't match the artwork. Its window
             // rides up with the page while the image inside stays put, then
             // pins once its soft edge has gone above the screen, so the blur
             // covers it all.
