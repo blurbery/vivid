@@ -850,11 +850,22 @@ private struct PhoneTabletDetailBackdrop: View {
             PhoneFullScreenHeroShade(heroHeight: heroSize.height, tail: featherLead)
                 .frame(width: heroSize.width, height: heroSize.height + featherLead)
 
-            Rectangle()
-                .fill(.regularMaterial)
-                .overlay(Color.black.opacity(0.3))
-                .environment(\.colorScheme, .dark)
-                .frame(width: screen.width, height: screen.height + feather)
+            // A blurred copy of the same fixed artwork, darkened to the shade's
+            // strength at the hero's foot, so only sharpness changes across
+            // the edge and no brighter band shows. Its window rides up with
+            // the page while the image inside stays put, then the window pins
+            // to the top once it fills the screen.
+            artwork
+                .frame(width: screen.width, height: screen.height)
+                .blur(radius: 40, opaque: true)
+                .overlay(Color.black.opacity(0.45))
+                .clipped()
+                .visualEffect { content, proxy in
+                    let minY = proxy.frame(in: .scrollView(axis: .vertical)).minY
+                    return content.offset(y: -minY - max(0, -minY))
+                }
+                .frame(width: screen.width, height: screen.height + feather, alignment: .top)
+                .clipped()
                 .mask {
                     let edge = feather / (screen.height + feather)
                     LinearGradient(
