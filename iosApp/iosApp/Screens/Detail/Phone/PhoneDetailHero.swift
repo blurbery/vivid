@@ -431,25 +431,15 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         .frame(maxWidth: 600, alignment: .leading)
         .padding(.horizontal, 44)
         .padding(.bottom, 36)
-        .frame(maxWidth: .infinity, minHeight: viewportSize.height, alignment: .bottomLeading)
+        .frame(maxWidth: .infinity, minHeight: fullScreenHeroHeight, alignment: .bottomLeading)
         .background(alignment: .top) {
             GeometryReader { geometry in
-                // The artwork and its shade fade out over the hero's last
-                // 140 points, so the glass starts at the season line.
-                let fadeStart = max(0, 1 - 140 / max(geometry.size.height, 1))
-                ZStack {
-                    PhoneDetailParallaxArtwork(
-                        url: resolvedArtworkURL,
-                        thumbhash: resolvedArtworkThumbhash,
-                        height: geometry.size.height,
-                        isEnabled: enablesArtworkParallax,
-                        fadeStart: fadeStart,
-                        smoothFade: true,
-                        keepsTopAttached: true,
-                        topShadeOpacity: 0.34
-                    )
-                    PhoneFullScreenHeroShade(fadeStart: fadeStart)
-                }
+                PhoneTabletDetailBackdrop(
+                    url: resolvedArtworkURL,
+                    thumbhash: resolvedArtworkThumbhash,
+                    heroSize: geometry.size,
+                    viewportSize: viewportSize
+                )
             }
         }
         .environment(\.phoneDetailUsesTVStyle, true)
@@ -717,6 +707,12 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         }
     }
 
+    /// Landscape fills the screen, as on Apple TV. Portrait ends the hero
+    /// about three quarters down, so the seasons and the first row show.
+    private var fullScreenHeroHeight: CGFloat {
+        viewportSize.width > viewportSize.height ? viewportSize.height : viewportSize.height * 0.73
+    }
+
     private var headingGenres: [String] {
         sourceTokens.flatMap { $0.components(separatedBy: ", ") }
     }
@@ -817,10 +813,89 @@ private struct PhoneTVTextBadge: View {
 
 /// Apple TV's contrast behind the bottom-left title and controls. It clears
 /// with the artwork at the hero's foot, so no band shows over the glass.
-private struct PhoneFullScreenHeroShade: View {
-    let fadeStart: CGFloat
+/// iPad detail backdrop, as on Apple TV. The artwork stays fixed on screen
+/// while the page scrolls over it, and an opaque blur rises from the season
+/// line, sliding over the artwork until it fills the screen.
+private struct PhoneTabletDetailBackdrop: View {
+    let url: String?
+    let thumbhash: String?
+    let heroSize: CGSize
+    let viewportSize: CGSize
+
+    /// The blur's soft top edge starts behind the controls and eases in
+    /// until it's opaque just below the season line.
+    private let feather: CGFloat = 220
+    private let featherLead: CGFloat = 150
+
+    /// Smoothstep alpha, so the edge has no visible start or end.
+    private static let featherStops: [Double] = (0...16).map { step in
+        let t = Double(step) / 16
+        return t * t * (3 - 2 * t)
+    }
 
     var body: some View {
+        let screen = viewportSize == .zero ? heroSize : viewportSize
+        ZStack(alignment: .topLeading) {
+            artwork
+                .frame(width: screen.width, height: screen.height)
+                .clipped()
+                .overlay {
+                    // Keeps the status bar and X legible over bright artwork.
+                    LinearGradient(colors: [.black.opacity(0.34), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))
+                }
+                .visualEffect { content, proxy in
+                    content.offset(y: -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                }
+
+            PhoneFullScreenHeroShade(heroHeight: heroSize.height, tail: featherLead)
+                .frame(width: heroSize.width, height: heroSize.height + featherLead)
+
+            Rectangle()
+                .fill(.regularMaterial)
+                .overlay(Color.black.opacity(0.3))
+                .environment(\.colorScheme, .dark)
+                .frame(width: screen.width, height: screen.height + feather)
+                .mask {
+                    let edge = feather / (screen.height + feather)
+                    LinearGradient(
+                        stops: Self.featherStops.enumerated().map { index, alpha in
+                            .init(color: .black.opacity(alpha), location: edge * Double(index) / 16)
+                        },
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .visualEffect { content, proxy in
+                    // Rides up with the page, then stays pinned to the top.
+                    content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY))
+                }
+                .padding(.top, max(0, heroSize.height - featherLead))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let url, !url.isEmpty {
+            AsyncImageView(url: url, thumbhash: thumbhash, contentMode: .fill)
+        } else {
+            Color.vividSurface
+        }
+    }
+}
+
+/// Apple TV's contrast behind the bottom-left title and controls. It scrolls
+/// with the hero and holds its strength to the hero's foot, then fades out
+/// over `tail` points under the thickening blur, so no bright band shows
+/// between them.
+private struct PhoneFullScreenHeroShade: View {
+    let heroHeight: CGFloat
+    let tail: CGFloat
+
+    var body: some View {
+        let total = max(heroHeight + tail, 1)
+        let foot = heroHeight / total
         ZStack {
             LinearGradient(
                 stops: [
@@ -833,8 +908,8 @@ private struct PhoneFullScreenHeroShade: View {
             )
             LinearGradient(
                 stops: [
-                    .init(color: .clear, location: 0.35),
-                    .init(color: .black.opacity(0.45), location: 0.85),
+                    .init(color: .clear, location: 0.35 * foot),
+                    .init(color: .black.opacity(0.45), location: 0.78 * foot),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -844,7 +919,7 @@ private struct PhoneFullScreenHeroShade: View {
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black, location: fadeStart),
+                    .init(color: .black, location: foot),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .top,

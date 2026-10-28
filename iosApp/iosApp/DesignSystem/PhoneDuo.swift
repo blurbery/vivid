@@ -50,10 +50,10 @@ enum PhoneDuo {
         horizontalSizeClass != .regular || usesDuoDetailDesign
     }
 
-    /// iPad detail pages share the inner screen's detail design (parallax,
-    /// artwork glass, centred season chips), though their hero copies Apple
-    /// TV. Detail code checks this rather than `isDuo`, so the Duo's tab bar,
-    /// status strip and other pages stay Duo-only.
+    /// iPad detail pages share the inner screen's detail switches, though
+    /// their hero copies Apple TV. Detail code checks this rather than
+    /// `isDuo`, so the Duo's tab bar, status strip and other pages stay
+    /// Duo-only.
     @MainActor
     static var usesDuoDetailDesign: Bool {
         #if os(iOS)
