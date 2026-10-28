@@ -146,6 +146,9 @@ struct CalendarView: View {
             $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
                 .frame(maxWidth: .infinity)
         }
+        // iPad caps the tabs' width, so centre them in the page column as
+        // For You does.
+        .frame(maxWidth: isPad ? .infinity : nil)
     }
 
     /// Upcoming's month marks days with new episodes; Trending's marks

@@ -119,7 +119,7 @@ struct PhoneLabeledActionRow<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        let sharesRow = PhoneDuo.usesWideLayout(horizontalSizeClass)
+        let sharesRow = PhoneDuo.usesWideDetailLayout(horizontalSizeClass)
         VStack(spacing: 12) {
             HStack(alignment: .top, spacing: sharesRow ? PhoneLabeledActionMetrics.rowSpacing : 0) {
                 content()
@@ -128,7 +128,7 @@ struct PhoneLabeledActionRow<Content: View>: View {
 
             // Beside Play on the Duo, `PhoneDetailPrimaryActions` draws the
             // rule under the whole row instead.
-            if !PhoneDuo.usesWideLayout(horizontalSizeClass) {
+            if !PhoneDuo.usesWideDetailLayout(horizontalSizeClass) {
                 PhoneDetailActionRule()
             }
         }
@@ -146,7 +146,7 @@ struct PhoneDetailPrimaryActions<Play: View, Actions: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        let sharesRow = PhoneDuo.usesWideLayout(horizontalSizeClass)
+        let sharesRow = PhoneDuo.usesWideDetailLayout(horizontalSizeClass)
         // Top alignment lines Play up with the circles; captions hang below.
         // Play takes the rest of the row, so the row spans the same width as
         // the playback selectors under it.

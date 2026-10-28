@@ -44,9 +44,28 @@ enum PhoneDuo {
 
     /// Detail pages and Home's spotlight keep the iPhone portrait design,
     /// with its parallax and artwork glass, at any width on the Duo, though
-    /// its inner screen has a regular width like iPad.
+    /// its inner screen has a regular width like iPad. iPad copies it.
+    @MainActor
     static func usesPhoneDetailLayout(_ horizontalSizeClass: UserInterfaceSizeClass?) -> Bool {
-        horizontalSizeClass != .regular || isDuo
+        horizontalSizeClass != .regular || usesDuoDetailDesign
+    }
+
+    /// iPad detail pages copy the inner screen's detail design in both
+    /// orientations. Detail code checks this rather than `isDuo`, so the
+    /// Duo's tab bar, status strip and other pages stay Duo-only.
+    @MainActor
+    static var usesDuoDetailDesign: Bool {
+        #if os(iOS)
+        isDuo || UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
+    /// The inner screen's centred detail column, also used on iPad.
+    @MainActor
+    static func usesWideDetailLayout(_ horizontalSizeClass: UserInterfaceSizeClass?) -> Bool {
+        usesDuoDetailDesign && horizontalSizeClass == .regular
     }
 
     /// `GeometryProxy.size` excludes the safe area, so measure the window.
@@ -138,6 +157,17 @@ extension View {
     @ViewBuilder
     func onDuo(@ViewBuilder _ transform: (Self) -> some View) -> some View {
         if PhoneDuo.isDuo {
+            transform(self)
+        } else {
+            self
+        }
+    }
+
+    /// Applies `transform` wherever detail pages use the Duo's design: on
+    /// the Duo and on iPad. Neither changes while the app runs.
+    @MainActor @ViewBuilder
+    func onDuoDetail(@ViewBuilder _ transform: (Self) -> some View) -> some View {
+        if PhoneDuo.usesDuoDetailDesign {
             transform(self)
         } else {
             self

@@ -27,11 +27,11 @@ struct PhoneSeasonChips: View {
                 .padding(.vertical, 4)
                 // On the iPhone Duo's inner screen the chips sit centred under
                 // the title while they fit, and scroll as usual when they don't.
-                .onDuo {
-                    $0.frame(minWidth: PhoneDuo.usesWideLayout(horizontalSizeClass) ? rowWidth : nil)
+                .onDuoDetail {
+                    $0.frame(minWidth: PhoneDuo.usesWideDetailLayout(horizontalSizeClass) ? rowWidth : nil)
                 }
             }
-            .onDuo {
+            .onDuoDetail {
                 $0.onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.width
                 } action: { width in

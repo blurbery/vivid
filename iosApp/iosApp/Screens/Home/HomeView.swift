@@ -628,6 +628,8 @@ private struct PhoneDiscoverySpotlight: View {
                 // The Duo's vertical status bar insets one side; keep the
                 // artwork under it like the rows below. The text stays inset.
                 .onDuo { $0.ignoresSafeArea(.container, edges: .horizontal) }
+                // Likewise under the iPad's vertical tab bar in landscape.
+                .ignoresSafeArea(.container, edges: UIDevice.current.userInterfaceIdiom == .pad ? .horizontal : [])
             }
             .animation(.easeInOut(duration: 0.4), value: selection)
             .padding(.bottom, -56)
