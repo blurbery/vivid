@@ -207,6 +207,59 @@ enum VividCloudDeletionPolicy {
     }
 }
 
+/// A sign-in its server has already accepted. Adding a server checks the
+/// password before Vivid starts switching to it, so a wrong one stays on the
+/// sign-in screen.
+enum VerifiedServerLogin {
+    case silo(LoginResponse)
+    case jellyfin(JellyfinLogin)
+    case emby(EmbyLogin)
+
+    /// Signs in at `serverURL` without saving anything or switching servers.
+    static func signIn(serverURL: String, provider: MediaServerProvider,
+                       username: String, password: String) async throws -> Self {
+        switch provider {
+        case .jellyfin:
+            let session = try await JellyfinConnection.login(serverURL: serverURL, username: username, password: password)
+            return .jellyfin(JellyfinLogin(token: session.token, userID: session.userID, username: username))
+        case .emby:
+            let session = try await EmbyConnection.login(serverURL: serverURL, username: username, password: password)
+            return .emby(EmbyLogin(token: session.token, userID: session.userID, username: username))
+        case .silo:
+            return .silo(try await HTTPClient.shared.loginSavedAccount(serverURL: serverURL, username: username, password: password))
+        }
+    }
+
+    /// The session to save, with the server's own user ID for Jellyfin and Emby.
+    var response: (login: LoginResponse, nativeUserID: String?) {
+        switch self {
+        case .silo(let login):
+            return (login, nil)
+        case .jellyfin(let result):
+            return (LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
+                user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil)),
+                    result.userID)
+        case .emby(let result):
+            return (LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
+                user:AuthUser(id:EmbyAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil)),
+                    result.userID)
+        }
+    }
+}
+
+enum VividCloudRestorePolicy {
+    /// iCloud sync leaves the active server alone while the person is signing
+    /// in to a server they chose, until a saved profile on it is active.
+    /// Restoring another saved profile would switch servers under them and
+    /// rebuild the sign-in screen, losing what they typed, for example after
+    /// leaving Vivid to copy a password.
+    static func keepsChosenServer(chosenServerID: String?, activeServerID: String?,
+                                  activeAccountServerID: String?) -> Bool {
+        guard let chosenServerID, chosenServerID == activeServerID else { return false }
+        return activeAccountServerID != chosenServerID
+    }
+}
+
 enum TVAccountRoute: Hashable {
     case editor(String?)
 }
@@ -237,11 +290,22 @@ struct PendingSiloProfileChoice: Equatable {
 final class TVSavedAccountStore {
     static let shared = TVSavedAccountStore()
     private(set) var accounts: [TVSavedAccount] = []
-    private(set) var activeID: String?
+    private(set) var activeID: String? {
+        didSet {
+            // A saved profile on the chosen server is in use, so the note has
+            // done its job. Later sign-outs and deletions sync as before.
+            if let chosenServerID, activeAccount?.serverID == chosenServerID { self.chosenServerID = nil }
+        }
+    }
     var showsSelector = false
     var showsAnimation = false
     private(set) var busy = false
     private(set) var pendingProfileChoice: PendingSiloProfileChoice?
+    /// The server the person last chose from server setup or the server list
+    /// (see ``VividCloudRestorePolicy``), until a saved profile on it is
+    /// active. Never saved, so a relaunch restores the active saved profile as
+    /// before.
+    private var chosenServerID: String?
     private(set) var contentRevision = UUID()
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     /// Saved profiles per device, or per native Apple TV user.
@@ -277,6 +341,20 @@ final class TVSavedAccountStore {
     }
 
     var activeAccount: TVSavedAccount? { accounts.first { $0.id == activeID } }
+
+    /// The person chose the registry's active server, to sign in to or to use.
+    func noteChosenServer() {
+        let server = ServerRegistry.shared.activeServerId
+        // The active saved profile is already on it, so there's nothing for
+        // sync to keep, and a note left set would outlive a later sign-out.
+        chosenServerID = activeAccount?.serverID == server ? nil : server
+    }
+
+    private var keepsChosenServer: Bool {
+        VividCloudRestorePolicy.keepsChosenServer(chosenServerID: chosenServerID,
+                                                  activeServerID: ServerRegistry.shared.activeServerId,
+                                                  activeAccountServerID: activeAccount?.serverID)
+    }
 
     private func sessionKey(_ id: String) -> String { "vivid.account.\(id).session.v1" }
 
@@ -629,7 +707,8 @@ final class TVSavedAccountStore {
     ///     Connect, used the same way.
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter,
                       provider requestedProvider: MediaServerProvider? = nil, quickConnect: JellyfinLogin? = nil,
-                      embyConnect: EmbyLogin? = nil) async -> Bool {
+                      embyConnect: EmbyLogin? = nil, verified: VerifiedServerLogin? = nil,
+                      serverName: String? = nil) async -> Bool {
         guard !busy else { return false }
         guard id != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles. Delete a saved profile to add another."); return false }
         await captureCurrent(refreshMetadata: false)
@@ -643,34 +722,17 @@ final class TVSavedAccountStore {
             }
             let selected = id.flatMap { selectedID in accounts.first { $0.id == selectedID } }
             let provider = requestedProvider ?? MediaServerProvider.forServerID(selected?.serverID ?? ServerRegistry.shared.activeServerId)
-            let login: LoginResponse
-            let nativeUserID: String?
-            if provider == .jellyfin {
-                let result: JellyfinLogin
-                if let quickConnect {
-                    result = quickConnect
-                } else {
-                    let session = try await JellyfinConnection.login(serverURL: normalized, username: username, password: password)
-                    result = JellyfinLogin(token: session.token, userID: session.userID, username: username)
-                }
-                nativeUserID = result.userID
-                login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                    user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
-            } else if provider == .emby {
-                let result: EmbyLogin
-                if let embyConnect {
-                    result = embyConnect
-                } else {
-                    let session = try await EmbyConnection.login(serverURL: normalized, username: username, password: password)
-                    result = EmbyLogin(token: session.token, userID: session.userID, username: username)
-                }
-                nativeUserID = result.userID
-                login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                    user:AuthUser(id:EmbyAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
+            let checked: VerifiedServerLogin
+            if let verified {
+                checked = verified
+            } else if provider == .jellyfin, let quickConnect {
+                checked = .jellyfin(quickConnect)
+            } else if provider == .emby, let embyConnect {
+                checked = .emby(embyConnect)
             } else {
-                nativeUserID = nil
-                login = try await HTTPClient.shared.loginSavedAccount(serverURL: normalized, username: username, password: password)
+                checked = try await .signIn(serverURL: normalized, provider: provider, username: username, password: password)
             }
+            let (login, nativeUserID) = checked.response
             let serverID = (provider.usesNativeUser ? provider.rawValue + ":" : "") + ServerRegistry.serverId(for: normalized)
             let userID = String(login.user.id)
             let sameLogin = accounts.first { $0.serverID == serverID && $0.userID == userID }
@@ -682,7 +744,7 @@ final class TVSavedAccountStore {
                 let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
                                                  profile: nil, profileToken: nil, nativeUserID: nativeUserID)
                 let entry = ServerEntry(id: serverID, url: normalized,
-                                        fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName, lastUsedAt: Date())
+                                        fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
                 guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
                 try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
                 if let identity = await TokenStore.shared.refreshAccountIdentity() {
@@ -712,7 +774,7 @@ final class TVSavedAccountStore {
                                              profile: pairing, profileToken: nil, nativeUserID: nativeUserID)
             try saveSession(saved, id: accountID)
             let entry = ServerEntry(id: serverID, url: normalized,
-                                    fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName, lastUsedAt: Date())
+                                    fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
             guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
             try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
             if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
@@ -729,6 +791,13 @@ final class TVSavedAccountStore {
                 : String(localized: "Couldn’t sign in. Check the server address, username and password, then try again.")
             return false
         }
+    }
+
+    /// The name the server just gave wins over a saved one, so a renamed
+    /// server shows its new name. Without one, the saved name stays.
+    private func fetchedName(_ serverName: String?, serverID: String) -> String? {
+        if let serverName, !serverName.isEmpty { return serverName }
+        return ServerRegistry.shared.entry(with: serverID)?.fetchedName
     }
 
     private func finishLogin(router: AppRouter, prepareHome: Bool = false) async {
@@ -1051,7 +1120,7 @@ final class TVSavedAccountStore {
         if let activeID, !accounts.contains(where: { $0.id == activeID }) {
             self.activeID = nil
         }
-        if activeID == nil, pendingProfileChoice == nil {
+        if activeID == nil, pendingProfileChoice == nil, !keepsChosenServer {
             activeID = accounts
                 .filter { !$0.requiresLogin && session($0.id) != nil }
                 .max { (modificationDates[$0.id] ?? .distantPast) < (modificationDates[$1.id] ?? .distantPast) }?
@@ -1084,6 +1153,7 @@ final class TVSavedAccountStore {
            ServerRegistry.shared.activeServerId == account.serverID {
             return true
         }
+        guard !keepsChosenServer else { return false }
         do {
             try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             return true
