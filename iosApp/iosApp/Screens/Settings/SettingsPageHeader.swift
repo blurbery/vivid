@@ -115,12 +115,18 @@ extension View {
 
 #if os(iOS)
 private struct TabletSettingsWidth: ViewModifier {
+    /// Padding the safe area keeps the 760-point column while each page's own
+    /// backdrop still fills the screen. Narrowing the frame drew that backdrop
+    /// in the column only, a second tone beside the full-width one behind it.
+    @State private var width: CGFloat = 0
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if UIDevice.current.userInterfaceIdiom == .pad {
             content
-                .frame(maxWidth: 760)
+                .safeAreaPadding(.horizontal, max(0, (width - 760) / 2))
                 .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 .background(VividAppBackdrop())
         } else {
             content

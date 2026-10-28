@@ -84,6 +84,7 @@ struct DownloadActionButton: View {
     @Binding private var showOptions: Bool
     @State private var showCompactOptions = false
     @Environment(\.phoneDetailActionsShareRow) private var sharesActionRow
+    @Environment(\.phoneDetailUsesTVStyle) private var usesTVStyle
     private var optionsPresented: Binding<Bool> { style == .compact ? $showCompactOptions : $showOptions }
 
     private var manager: DownloadManager { DownloadManager.shared }
@@ -494,22 +495,24 @@ struct DownloadActionButton: View {
         active: Bool,
         @ViewBuilder glyph: () -> Glyph
     ) -> some View {
-        let metrics = PhoneLabeledActionMetrics(sharesRow: sharesActionRow)
+        let metrics = PhoneLabeledActionMetrics(sharesRow: sharesActionRow, tvStyle: usesTVStyle)
         return VStack(spacing: 6) {
             glyph()
                 .frame(width: metrics.circle, height: metrics.circle)
                 .background(
                     Circle().fill(Color.white.opacity(active ? 0.18 : 0.10))
                 )
-            Text(captionText)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(captionTint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .fixedSize(horizontal: sharesActionRow, vertical: false)
+            if metrics.showsCaption {
+                Text(captionText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(captionTint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: sharesActionRow, vertical: false)
+            }
         }
         .frame(width: metrics.slotWidth)
-        .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: 58)
+        .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: metrics.minHeight)
         .contentShape(Rectangle())
     }
 

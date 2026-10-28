@@ -146,6 +146,13 @@ struct SeriesDetailContent<BelowOverview: View>: View {
             overlayData: OverlayData.from(detail),
             enablesArtworkParallax: true,
             tmdbRating: tmdbRating?.value(for: detail.contentId),
+            headingTokens: [String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")]
+                + (detail.seasonCount.map { $0 > 0 ? [String(localized: "\($0) Seasons")] : [] } ?? []),
+            releaseFacts: PhoneHeroMetadata.releaseFacts(year: detail.year, runtime: nextUpEpisode?.runtime ?? detail.runtime),
+            qualityBadges: PhoneHeroMetadata.sourceBadges(
+                effectiveNextUpVersion,
+                summary: selectedNextUpFileId == nil ? detail.overlaySummary : nil
+            ),
             actions: { actionStack },
             // Match MovieDetailContent exactly through the playback controls:
             // Play/actions, show overview and credits, translation affordance,
@@ -154,8 +161,10 @@ struct SeriesDetailContent<BelowOverview: View>: View {
             belowOverview: {
                 VStack(spacing: 14) {
                     belowOverview()
-                    if nextUpEpisode != nil {
-                        playbackSelectorSlot
+                    PhoneDetailSelectorsPlacement {
+                        if nextUpEpisode != nil {
+                            playbackSelectorSlot
+                        }
                     }
                 }
             }
@@ -179,6 +188,12 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                     fullWidth: true,
                     resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { String(localized: "S\(String($0.seasonNumber)) E\(String($0.episodeNumber))", comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02") })
                 )
+            } selectors: {
+                PhoneDetailSelectorsPlacement {
+                    if nextUpEpisode != nil {
+                        playbackSelectorSlot
+                    }
+                }
             } actions: {
                 PhoneLabeledActionRow {
                     PhoneLabeledAction(
@@ -190,6 +205,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                             ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                         action: onToggleFavorite
                     )
+                    .movesToMoreInTVStyle()
                     PhoneLabeledAction(
                         icon: "bookmark",
                         iconActive: "bookmark.fill",
@@ -200,18 +216,9 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                         action: onToggleWatchlist
                     )
                     PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
-                        if let episode = nextUpEpisode {
-                            Button(episode.userData?.played == true ? "Mark Episode as Unwatched" : "Mark Episode as Watched") {
-                                Task { _ = await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
-                            }
-                        }
-                        if let selectedSeason {
-                            Button(selectedSeason.userData?.played == true
-                                ? String(localized: "Mark \(selectedSeason.downloadDisplayName) as Unwatched")
-                                : String(localized: "Mark \(selectedSeason.downloadDisplayName) as Watched"), action: onToggleSeasonWatched)
-                        }
-                        Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
+                        watchedMenuButtons
                     }
+                    .movesToMoreInTVStyle()
                     SeriesDownloadMenuButton(
                         detail: detail,
                         seasons: seasons,
@@ -220,6 +227,15 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                         episodesBySeason: episodesBySeason,
                         style: .labeled
                     )
+                    PhoneTVMoreMenu {
+                        Button(action: onToggleFavorite) {
+                            Label(
+                                isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
+                                systemImage: isFavorite ? "heart.fill" : "heart"
+                            )
+                        }
+                        watchedMenuButtons
+                    }
 
                 }
             }
@@ -235,6 +251,21 @@ struct SeriesDetailContent<BelowOverview: View>: View {
         }
         .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.18), value: trailerStatusMessage)
+    }
+
+    @ViewBuilder
+    private var watchedMenuButtons: some View {
+        if let episode = nextUpEpisode {
+            Button(episode.userData?.played == true ? "Mark Episode as Unwatched" : "Mark Episode as Watched") {
+                Task { _ = await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
+            }
+        }
+        if let selectedSeason {
+            Button(selectedSeason.userData?.played == true
+                ? String(localized: "Mark \(selectedSeason.downloadDisplayName) as Unwatched")
+                : String(localized: "Mark \(selectedSeason.downloadDisplayName) as Watched"), action: onToggleSeasonWatched)
+        }
+        Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
     }
 
     /// A fixed-height selector slot is the anchor that keeps the whole page

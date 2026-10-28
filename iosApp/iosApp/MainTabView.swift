@@ -194,6 +194,8 @@ struct MainTabView: View {
     @State private var duoSideStrip: PhoneDuo.SideStrip?
     @State private var duoControlCorner: PhoneDuo.ControlCorner?
     private var duoSideBarEdge: HorizontalEdge? { duoSideStrip?.edge }
+    /// iPad in landscape stands the bar up on the right, centred.
+    @State private var usesTabletSideTabBar = false
     @Bindable var router: AppRouter
     @State private var selectedDestinationID: MainTabDestinationID = .app(.home)
     @State private var uiCustomization = UICustomizationPreferences.shared
@@ -243,6 +245,9 @@ struct MainTabView: View {
                 .environment(\.usesDuoSideTabBar, duoSideBarEdge != nil)
                 .environment(\.duoSideStrip, duoSideStrip)
                 .environment(\.duoControlCorner, duoControlCorner)
+                .onChange(of: Self.usesTabletSideTabBar(geometry), initial: true) { _, sideBar in
+                    usesTabletSideTabBar = sideBar
+                }
                 .onDuo {
                     // Folding the iPhone Duo moves the app between its screens.
                     $0.onChange(of: PhoneDuo.isInnerScreen(geometry)) { _, isInnerScreen in
@@ -266,23 +271,6 @@ struct MainTabView: View {
             #endif
         }
         .tint(.vividOnSurface)
-        #if os(iOS)
-        .overlay {
-            if UIDevice.current.userInterfaceIdiom == .pad, router.presentedItemDetail != nil {
-                // Native sheets intentionally leave a narrow safe-area strip
-                // above their largest detent. Mask the live tab content there
-                // with dense glass so no logo, row or poster leaks around the
-                // rounded detail card while it is open.
-                Rectangle()
-                    .fill(.ultraThickMaterial)
-                    .overlay(Color.vividGlassStrong.opacity(0.92))
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.14), value: router.presentedItemDetail != nil)
-        #endif
         .task(id: currentLibraryAuthority) {
             await loadVisibleLibraries(for: currentLibraryAuthority)
         }
@@ -483,7 +471,7 @@ struct MainTabView: View {
             #if os(iOS)
             .toolbar(.hidden, for: .tabBar)
             .safeAreaInset(edge: .bottom, spacing: duoSideBarEdge == nil ? 2 : 0) {
-                if router.path.isEmpty, duoSideBarEdge == nil {
+                if router.path.isEmpty, duoSideBarEdge == nil, !usesTabletSideTabBar {
                     mobileGlassTabBar()
                         .offset(y: tabBarScroll.isHidden ? 90 : 0)
                         .opacity(tabBarScroll.isHidden ? 0 : 1)
@@ -492,6 +480,13 @@ struct MainTabView: View {
                         .animation(.easeInOut(duration: 0.22), value: tabBarScroll.isHidden)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 0)
+                }
+            }
+            .safeAreaInset(edge: .trailing, spacing: 2) {
+                if router.path.isEmpty, usesTabletSideTabBar {
+                    mobileGlassTabBar(isVertical: true)
+                        .frame(maxHeight: .infinity)
+                        .padding(.trailing, 16)
                 }
             }
             #endif
@@ -537,6 +532,14 @@ struct MainTabView: View {
             .padding(.bottom, endsAtPageTabs ? PhoneDuo.pageTabsBottomPadding + PhoneDuo.pageTabsRowHeight : 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: endsAtPageTabs ? bottomSide : side)
             .offset(x: edge == .trailing ? column : -column)
+    }
+
+    /// iPad windows wider than they are tall use the vertical bar.
+    private static func usesTabletSideTabBar(_ geometry: GeometryProxy) -> Bool {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { return false }
+        let insets = geometry.safeAreaInsets
+        return geometry.size.width + insets.leading + insets.trailing
+            > geometry.size.height + insets.top + insets.bottom
     }
 
     private func presentSearchPage() {

@@ -34,6 +34,12 @@ enum PhoneDetailScrollCoordinateSpace {
     static let name = "phone-detail-scroll"
 }
 
+extension EnvironmentValues {
+    /// The detail presentation's full screen size, safe areas included, or
+    /// zero outside one. The iPad hero sizes itself from this height.
+    @Entry var detailViewportSize: CGSize = .zero
+}
+
 /// Artwork-matched surface shared by mobile video-detail pages. Compact iPhone
 /// movie/series cards keep a saturated, heavily softened copy of the hero fixed
 /// behind the ScrollView. It supplies the colour field that remains visible as
@@ -98,8 +104,7 @@ struct PhoneDetailPageSurface<Content: View>: View {
     private var usesArtworkGlass: Bool {
         guard enablesArtworkGlass, !reduceTransparency else { return false }
         #if os(iOS)
-        return UIDevice.current.userInterfaceIdiom == .phone
-            && PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
+        return PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
         #else
         return false
         #endif
@@ -248,8 +253,7 @@ struct PhoneDetailParallaxArtwork: View {
     private var usesParallax: Bool {
         guard isEnabled, !reduceMotion else { return false }
         #if os(iOS)
-        return UIDevice.current.userInterfaceIdiom == .phone
-            && PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
+        return PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
         #else
         return false
         #endif
@@ -300,11 +304,18 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     /// TMDb's user score, shown last in the metadata line when the viewer has
     /// a personal TMDb connection.
     var tmdbRating: Double? = nil
+    /// The iPad's Apple TV-style heading leads with these ("Movie", or
+    /// "Series" and the season count), then the genres and age rating.
+    var headingTokens: [String] = []
+    /// Year and runtime, then `qualityBadges`, in the iPad technical row.
+    var releaseFacts: [String] = []
+    var qualityBadges: [String] = []
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let belowOverview: () -> BelowOverview
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.detailViewportSize) private var viewportSize
     @State private var availableWidth: CGFloat = 0
     @State private var showFullOverview = false
 
@@ -314,6 +325,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         Group {
             if usesExpandedLayout {
                 expandedHeader
+            } else if usesFullScreenArtwork {
+                fullScreenHeader
             } else {
                 compactHeader
             }
@@ -327,7 +340,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     }
 
     private var usesExpandedLayout: Bool {
-        if PhoneDuo.isDuo { return false }
+        if PhoneDuo.usesDuoDetailDesign { return false }
         if horizontalSizeClass == .compact, verticalSizeClass == .regular {
             return false
         }
@@ -353,7 +366,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 creditBlock(alignment: usesDuoColumn ? .center : .leading)
                 belowOverview()
             }
-            .onDuo { $0.frame(maxWidth: usesDuoColumn ? PhoneDuo.detailColumnWidth : .infinity) }
+            .onDuoDetail { $0.frame(maxWidth: usesDuoColumn ? PhoneDuo.detailColumnWidth : .infinity) }
             .padding(.horizontal, VividTheme.safePadding)
             .padding(.top, 8)
             .padding(.bottom, 12)
@@ -381,10 +394,57 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The iPhone Duo's inner screen is too wide for the phone's full-width
-    /// stack, so the copy and controls share one centred column.
+    /// The iPhone Duo's inner screen and iPad are too wide for the phone's
+    /// full-width stack, so the copy and controls share one centred column.
     private var usesDuoColumn: Bool {
-        PhoneDuo.usesWideLayout(horizontalSizeClass)
+        PhoneDuo.usesWideDetailLayout(horizontalSizeClass)
+    }
+
+    // MARK: - Full-screen iPad layout
+
+    /// iPad copies Apple TV in both orientations: sharp artwork stays fixed
+    /// behind the page and the blur slides over it from the seasons. Narrow
+    /// iPad windows (Slide Over, a one-third Split View) keep the iPhone
+    /// layout, since the Apple TV action row needs a regular width.
+    private var usesFullScreenArtwork: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+        #else
+        false
+        #endif
+    }
+
+    /// The title, copy and controls sit together at the bottom left, as on
+    /// Apple TV: heading, synopsis, credit and technical row, then Play and
+    /// icon-only circles in one row.
+    private var fullScreenHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            titleBlock(textAlignment: .leading, logoHeight: 122)
+                .padding(.bottom, 2)
+            PhoneTVHeading(tokens: headingTokens, genres: headingGenres, rating: ratingChip)
+            overviewBlock
+            belowOverview()
+            creditBlock(alignment: .leading)
+            PhoneTVTechnicalRow(facts: releaseFacts, badges: qualityBadges, tmdbRating: tmdbRating)
+            actions()
+                .padding(.top, 8)
+        }
+        .frame(maxWidth: 600, alignment: .leading)
+        .padding(.horizontal, 44)
+        .padding(.bottom, 36)
+        .frame(maxWidth: .infinity, minHeight: fullScreenHeroHeight, alignment: .bottomLeading)
+        .background(alignment: .top) {
+            GeometryReader { geometry in
+                PhoneTabletDetailBackdrop(
+                    url: resolvedArtworkURL,
+                    thumbhash: resolvedArtworkThumbhash,
+                    heroSize: geometry.size,
+                    viewportSize: viewportSize
+                )
+            }
+        }
+        .environment(\.phoneDetailUsesTVStyle, true)
+        .accessibilityElement(children: .contain)
     }
 
     private var compactArtworkHeight: CGFloat {
@@ -629,8 +689,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .foregroundStyle(Color.vividOnSurface.opacity(0.80))
                 .lineSpacing(3)
                 .lineLimit(3)
-                .multilineTextAlignment(usesDuoColumn ? .center : .leading)
-                .frame(maxWidth: .infinity, alignment: usesDuoColumn ? .center : .leading)
+                .multilineTextAlignment(centresOverview ? .center : .leading)
+                .frame(maxWidth: .infinity, alignment: centresOverview ? .center : .leading)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     showFullOverview = true
@@ -648,6 +708,20 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         }
     }
 
+    /// Landscape fills the screen, as on Apple TV. Portrait ends the hero
+    /// about three quarters down, so the seasons and the first row show.
+    private var fullScreenHeroHeight: CGFloat {
+        viewportSize.width > viewportSize.height ? viewportSize.height : viewportSize.height * 0.73
+    }
+
+    private var headingGenres: [String] {
+        sourceTokens.flatMap { $0.components(separatedBy: ", ") }
+    }
+
+    private var centresOverview: Bool {
+        usesDuoColumn && !usesFullScreenArtwork
+    }
+
     @ViewBuilder
     private func creditBlock(alignment: Alignment) -> some View {
         if let creditText, !creditText.isEmpty {
@@ -655,11 +729,234 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.vividOnSurface.opacity(0.58))
                 .lineLimit(2)
-                .onDuo { $0.multilineTextAlignment(alignment == .center ? .center : .leading) }
+                .onDuoDetail { $0.multilineTextAlignment(alignment == .center ? .center : .leading) }
                 .frame(maxWidth: .infinity, alignment: alignment)
         }
     }
 
+}
+
+/// Apple TV's heading: the first token bright, the rest and the genres
+/// muted, dot-separated, then the outlined age rating.
+private struct PhoneTVHeading: View {
+    let tokens: [String]
+    let genres: [String]
+    let rating: String?
+
+    var body: some View {
+        let parts = tokens + genres
+        if !parts.isEmpty || rating?.isEmpty == false {
+            HStack(spacing: 8) {
+                if let first = parts.first {
+                    (Text(first).foregroundColor(.white.opacity(0.92))
+                     + Text(parts.count > 1 ? " · " + parts.dropFirst().joined(separator: " · ") : "")
+                        .foregroundColor(.white.opacity(0.70)))
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                if let rating, !rating.isEmpty {
+                    PhoneTVTextBadge(text: rating)
+                }
+            }
+        }
+    }
+}
+
+/// Apple TV's technical row: year and runtime, quality badges with the
+/// resolution filled, then the TMDb score.
+private struct PhoneTVTechnicalRow: View {
+    let facts: [String]
+    let badges: [String]
+    let tmdbRating: Double?
+
+    var body: some View {
+        if !facts.isEmpty || !badges.isEmpty || tmdbRating != nil {
+            HStack(spacing: 8) {
+                if !facts.isEmpty {
+                    Text(facts.joined(separator: " · "))
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.84))
+                }
+                ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                    PhoneTVTextBadge(text: badge, filled: PhoneHeroMetadata.isResolutionBadge(badge))
+                }
+                if let tmdbRating {
+                    TMDbRatingBadge(rating: tmdbRating, logoHeight: 15,
+                                    font: .system(size: 15, weight: .semibold), color: .white.opacity(0.92))
+                        .padding(.leading, 2)
+                }
+            }
+            .lineLimit(1)
+        }
+    }
+}
+
+private struct PhoneTVTextBadge: View {
+    let text: String
+    var filled = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(filled ? Color.black : Color.white)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(filled ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 3))
+            .overlay {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(.white.opacity(0.85), lineWidth: filled ? 0 : 1)
+            }
+            .fixedSize()
+    }
+}
+
+/// iPad detail backdrop, as on Apple TV. The artwork stays fixed on screen
+/// while the page scrolls over it. A blurred copy eases in just above the
+/// season line, is opaque just below it, and slides over the artwork as the
+/// page scrolls until it covers the screen.
+private struct PhoneTabletDetailBackdrop: View {
+    let url: String?
+    let thumbhash: String?
+    let heroSize: CGSize
+    let viewportSize: CGSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// The blur's soft top edge starts behind the controls and eases in
+    /// until it's opaque just below the season line.
+    private let feather: CGFloat = 220
+    private let featherLead: CGFloat = 150
+
+    /// Smoothstep alpha, so the edge has no visible start or end.
+    private static let featherStops: [Double] = (0...16).map { step in
+        let t = Double(step) / 16
+        return t * t * (3 - 2 * t)
+    }
+
+    var body: some View {
+        let screen = viewportSize == .zero ? heroSize : viewportSize
+        ZStack(alignment: .topLeading) {
+            artwork
+                .frame(width: screen.width, height: screen.height)
+                .clipped()
+                .overlay {
+                    // Keeps the status bar and X legible over bright artwork.
+                    LinearGradient(colors: [.black.opacity(0.34), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))
+                }
+                .visualEffect { content, proxy in
+                    content.offset(y: -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                }
+
+            PhoneFullScreenHeroShade(heroHeight: heroSize.height, tail: featherLead)
+                .frame(width: heroSize.width, height: heroSize.height + featherLead)
+
+            // A blurred copy of the same fixed artwork, darkened like the shade
+            // at the hero's foot (including its darker left side), so only
+            // sharpness changes across the edge and no brighter band shows.
+            // Reduce Transparency swaps it for a solid dark fill, which also
+            // darkens the edge since it can't match the artwork. Its window
+            // rides up with the page while the image inside stays put, then
+            // pins once its soft edge has gone above the screen, so the blur
+            // covers it all.
+            Group {
+                if reduceTransparency {
+                    Color(white: 0.06)
+                } else {
+                    artwork
+                        .frame(width: screen.width, height: screen.height)
+                        .blur(radius: 40, opaque: true)
+                }
+            }
+                .frame(width: screen.width, height: screen.height)
+                .overlay(Color.black.opacity(0.45))
+                .overlay(PhoneFullScreenHeroShade.sideShade)
+                .clipped()
+                .visualEffect { [feather] content, proxy in
+                    let minY = proxy.frame(in: .scrollView(axis: .vertical)).minY
+                    return content.offset(y: -minY - max(0, -minY - feather))
+                }
+                .frame(width: screen.width, height: screen.height + feather, alignment: .top)
+                .clipped()
+                .mask {
+                    let edge = feather / (screen.height + feather)
+                    LinearGradient(
+                        stops: Self.featherStops.enumerated().map { index, alpha in
+                            .init(color: .black.opacity(alpha), location: edge * Double(index) / 16)
+                        },
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .visualEffect { [feather] content, proxy in
+                    // Rides up with the page, then pins with its soft edge just
+                    // above the screen.
+                    content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY - feather))
+                }
+                .padding(.top, max(0, heroSize.height - featherLead))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let url, !url.isEmpty {
+            AsyncImageView(url: url, thumbhash: thumbhash, contentMode: .fill)
+        } else {
+            Color.vividSurface
+        }
+    }
+}
+
+/// Apple TV's contrast behind the bottom-left title and controls. It scrolls
+/// with the hero and holds its strength to the hero's foot, then fades out
+/// over `tail` points under the thickening blur, so no bright band shows
+/// between them.
+private struct PhoneFullScreenHeroShade: View {
+    let heroHeight: CGFloat
+    let tail: CGFloat
+
+    /// Darkens the left side, behind the title and controls. The blur below
+    /// carries the same gradient so its left side matches across the edge.
+    static let sideShade = LinearGradient(
+        stops: [
+            .init(color: .black.opacity(0.55), location: 0),
+            .init(color: .black.opacity(0.25), location: 0.38),
+            .init(color: .clear, location: 0.65),
+        ],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+
+    var body: some View {
+        let total = max(heroHeight + tail, 1)
+        let foot = heroHeight / total
+        ZStack {
+            Self.sideShade
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.35 * foot),
+                    .init(color: .black.opacity(0.45), location: 0.78 * foot),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .mask {
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: foot),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 // MARK: - Titles

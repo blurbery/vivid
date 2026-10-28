@@ -57,6 +57,87 @@ enum PhoneHeroMetadata {
         return rating
     }
 
+    // MARK: - iPad technical row
+
+    /// Year and runtime for the iPad technical row, as Apple TV shows them.
+    static func releaseFacts(year: Int?, runtime: Int?) -> [String] {
+        var facts: [String] = []
+        if let year, year > 0 { facts.append(String(year)) }
+        if let runtime, runtime > 0 {
+            facts.append(runtime >= 60 ? String(localized: "\(runtime / 60)h \(runtime % 60)m") : String(localized: "\(runtime)m"))
+        }
+        return facts
+    }
+
+    static func isResolutionBadge(_ badge: String) -> Bool {
+        if ["4K", "8K", "UHD", "FHD", "HD", "SD"].contains(badge) { return true }
+        let digits = badge.hasSuffix("P") ? String(badge.dropLast()) : badge
+        return !digits.isEmpty && digits.allSatisfy(\.isNumber)
+    }
+
+    /// Quality badges for the iPad technical row, the same as Apple TV's
+    /// (`TVHeroMetadata.sourceBadges`): resolution, dynamic range or codec,
+    /// Atmos and CC.
+    static func sourceBadges(_ version: FileVersion?, summary: OverlaySummary? = nil) -> [String] {
+        var badges: [String] = []
+        let resolution = version.flatMap(sourceResolutionLabel) ?? summary?.resolution?.uppercased()
+        if let resolution, !resolution.isEmpty {
+            badges.append(["2160", "2160P", "4K", "UHD"].contains(resolution) ? "4K"
+                : ["4320", "4320P", "8K"].contains(resolution) ? "8K" : resolution)
+        }
+        // The file's own label stays one badge ("DV P8.1"); summary text is split.
+        if let version, version.videoTracks?.isEmpty == false {
+            if let video = sourceVideoLabel(version) { badges.append(video.uppercased()) }
+        } else if let video = summary?.hdr ?? version.flatMap(sourceVideoLabel) ?? summary?.videoCodec {
+            badges.append(contentsOf: video.uppercased().split(separator: " ").map(String.init))
+        }
+        let tracks = version?.audioTracks ?? []
+        let audio = tracks.first(where: { $0.isDefault == true }) ?? tracks.first
+        let audioMetadata = [audio?.codec, audio?.channelLayout, audio?.title, audio?.embeddedTitle]
+            .compactMap { $0 }.joined(separator: " ").lowercased()
+        if audioMetadata.contains("atmos") || (tracks.isEmpty && summary?.audio?.lowercased().contains("atmos") == true) {
+            badges.append("ATMOS")
+        }
+        if version?.subtitleTracks?.isEmpty == false || (version?.subtitleTracks == nil && summary?.multiSub == true) {
+            badges.append("CC")
+        }
+        return badges
+    }
+
+    /// The file's dynamic range as one label ("DV P8.1", "HDR10"), or its
+    /// video codec for SDR.
+    private static func sourceVideoLabel(_ version: FileVersion) -> String? {
+        PlayerStreamBadges.dynamicRange(version) ?? DetailPlaybackFormatting.normalizedVideoCodec(version.codecVideo)
+    }
+
+    private static func sourceResolutionLabel(_ version: FileVersion) -> String? {
+        let raw = version.resolution?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.contains("8k") { return "4320P" }
+        if raw.contains("4k") || raw.contains("uhd") { return "2160P" }
+        // Prefer the file's named tier, which survives cinematic letterbox cropping.
+        for tier in [4320, 2160, 1440, 1080, 720, 576, 480] {
+            if raw == "\(tier)" || raw == "\(tier)p" { return "\(tier)P" }
+        }
+        if raw == "fhd" { return "1080P" }
+        let dimensions = raw.replacingOccurrences(of: "×", with: "x").split(separator: "x")
+        let rawWidth = dimensions.first.flatMap { Int($0) }
+        let rawHeight = dimensions.count == 2 ? Int(dimensions[1]) : nil
+        let track = version.videoTracks?.first
+        let width = track?.width ?? rawWidth ?? 0
+        let height = track?.height ?? rawHeight ?? 0
+        // Width identifies the standard tier for cropped sources such as 3840×1920.
+        let tier: Int?
+        if width >= 7680 || height >= 4320 { tier = 4320 }
+        else if width >= 3840 || height >= 2160 { tier = 2160 }
+        else if width >= 2560 || height >= 1440 { tier = 1440 }
+        else if width >= 1920 || height >= 1080 { tier = 1080 }
+        else if width >= 1280 || height >= 720 { tier = 720 }
+        else if height >= 576 { tier = 576 }
+        else if height > 0 { tier = 480 }
+        else { tier = nil }
+        return tier.map { "\($0)P" }
+    }
+
     // MARK: - Facts row
 
     static func movieFactsLine(from detail: ItemDetail, version selectedVersion: FileVersion? = nil) -> [PhoneHeroFactToken] {
