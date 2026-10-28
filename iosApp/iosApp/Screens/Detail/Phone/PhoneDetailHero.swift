@@ -36,7 +36,7 @@ enum PhoneDetailScrollCoordinateSpace {
 
 extension EnvironmentValues {
     /// The detail presentation's full screen size, safe areas included, or
-    /// zero outside one. iPad landscape heroes fill this height.
+    /// zero outside one. The iPad hero sizes itself from this height.
     @Entry var detailViewportSize: CGSize = .zero
 }
 
@@ -400,14 +400,15 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         PhoneDuo.usesWideDetailLayout(horizontalSizeClass)
     }
 
-    // MARK: - Full-screen iPad landscape layout
+    // MARK: - Full-screen iPad layout
 
-    /// iPad copies Apple TV in both orientations: sharp artwork fills the
-    /// screen behind the hero, and only gives way to the artwork glass where
-    /// the seasons or supporting rows begin.
+    /// iPad copies Apple TV in both orientations: sharp artwork stays fixed
+    /// behind the page and the blur slides over it from the seasons. Narrow
+    /// iPad windows (Slide Over, a one-third Split View) keep the iPhone
+    /// layout, since the Apple TV action row needs a regular width.
     private var usesFullScreenArtwork: Bool {
         #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .pad
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
         #else
         false
         #endif
@@ -811,11 +812,10 @@ private struct PhoneTVTextBadge: View {
     }
 }
 
-/// Apple TV's contrast behind the bottom-left title and controls. It clears
-/// with the artwork at the hero's foot, so no band shows over the glass.
 /// iPad detail backdrop, as on Apple TV. The artwork stays fixed on screen
-/// while the page scrolls over it, and an opaque blur rises from the season
-/// line, sliding over the artwork until it fills the screen.
+/// while the page scrolls over it. A blurred copy eases in just above the
+/// season line, is opaque just below it, and slides over the artwork as the
+/// page scrolls until it covers the screen.
 private struct PhoneTabletDetailBackdrop: View {
     let url: String?
     let thumbhash: String?
@@ -853,16 +853,16 @@ private struct PhoneTabletDetailBackdrop: View {
             // A blurred copy of the same fixed artwork, darkened to the shade's
             // strength at the hero's foot, so only sharpness changes across
             // the edge and no brighter band shows. Its window rides up with
-            // the page while the image inside stays put, then the window pins
-            // to the top once it fills the screen.
+            // the page while the image inside stays put, then pins once its
+            // soft edge has gone above the screen, so the blur covers it all.
             artwork
                 .frame(width: screen.width, height: screen.height)
                 .blur(radius: 40, opaque: true)
                 .overlay(Color.black.opacity(0.45))
                 .clipped()
-                .visualEffect { content, proxy in
+                .visualEffect { [feather] content, proxy in
                     let minY = proxy.frame(in: .scrollView(axis: .vertical)).minY
-                    return content.offset(y: -minY - max(0, -minY))
+                    return content.offset(y: -minY - max(0, -minY - feather))
                 }
                 .frame(width: screen.width, height: screen.height + feather, alignment: .top)
                 .clipped()
@@ -876,9 +876,10 @@ private struct PhoneTabletDetailBackdrop: View {
                         endPoint: .bottom
                     )
                 }
-                .visualEffect { content, proxy in
-                    // Rides up with the page, then stays pinned to the top.
-                    content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY))
+                .visualEffect { [feather] content, proxy in
+                    // Rides up with the page, then pins with its soft edge just
+                    // above the screen.
+                    content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY - feather))
                 }
                 .padding(.top, max(0, heroSize.height - featherLead))
         }

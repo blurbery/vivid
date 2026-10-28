@@ -448,9 +448,10 @@ class AppRouter {
     }
 
     /// Open an item from an ordered card source. Existing callers can keep
-    /// using `navigate(to: .itemDetail(...))`; rows and grids that provide a
-    /// browse source opt into sideways paging without changing deep links or
-    /// nested recommendations reached from inside an already-open detail.
+    /// using `navigate(to: .itemDetail(...))`. Rows and grids still record
+    /// their browse source on the presentation, but details no longer page
+    /// sideways between titles on iPhone or iPad: each stays on the title
+    /// that was opened.
     func presentItemDetail(
         contentId: String,
         browseSource: ItemDetailBrowseSource? = nil,
@@ -491,20 +492,6 @@ class AppRouter {
         // Movies, audio and incomplete legacy episode payloads retain their
         // existing destination; a missing parent must not make a card inert.
         presentItemDetail(contentId: item.contentId, browseSource: browseSource)
-    }
-
-    /// Select a sibling while the iOS detail card stays presented. Keeping the
-    /// presentation UUID stable prevents SwiftUI from dismissing/reopening the
-    /// sheet; only the card contents animate to the new title.
-    func selectPresentedItemDetail(contentId: String) {
-        #if os(iOS)
-        guard var presentation = presentedItemDetail,
-              presentation.contentId != contentId,
-              presentation.browseSource?.contentIDs.contains(contentId) == true
-        else { return }
-        presentation.contentId = contentId
-        presentedItemDetail = presentation
-        #endif
     }
 
     /// Close the complete bottom-presented detail flow and discard any nested

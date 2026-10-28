@@ -6,8 +6,8 @@ import SwiftUI
 extension EnvironmentValues {
     /// True while the named actions share Play's row on the iPhone Duo.
     @Entry var phoneDetailActionsShareRow = false
-    /// True in the iPad landscape hero, where the actions copy Apple TV: a
-    /// solid white Play beside icon-only circles.
+    /// True in the iPad hero, where the actions copy Apple TV: a solid white
+    /// Play beside icon-only circles.
     @Entry var phoneDetailUsesTVStyle = false
     /// True for the playback selectors placed in the Apple TV-style row.
     @Entry var phoneDetailSelectorsInActionRow = false
@@ -78,7 +78,7 @@ struct PhoneTVCircleLabel: View {
 /// in the row is the same; captions may run a little wider than their slot.
 struct PhoneLabeledActionMetrics {
     let sharesRow: Bool
-    /// Apple TV's icon-only circles in the iPad landscape hero.
+    /// Apple TV's icon-only circles in the iPad hero.
     var tvStyle = false
     var circle: CGFloat { sharesRow || tvStyle ? 52 : 42 }
     var iconSize: CGFloat { sharesRow || tvStyle ? 21 : 19 }

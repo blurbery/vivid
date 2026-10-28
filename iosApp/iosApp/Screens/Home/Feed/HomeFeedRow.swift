@@ -15,7 +15,6 @@ struct HomeFeedRow: View {
     var onSetWatched: ((SectionItem, Bool) async -> Bool)? = nil
     @State private var homeCards = TVHomeCardPreferences.shared
     @State private var visibleItemId: String?
-    @Environment(AppRouter.self) private var router
 
     private var isResume: Bool { HomeFeed.isResume(section) }
 
@@ -62,22 +61,6 @@ struct HomeFeedRow: View {
                     : newIds.first
                 visibleItemId = preferred
             }
-            #if os(iOS)
-            .onChange(of: router.presentedItemDetail) { _, presentation in
-                // Only iPad's horizontally paged detail deck drives its source
-                // row. An iPhone detail opens in place; scrolling the row while
-                // its zoom transition is restoring it creates a visible drift.
-                guard !HorizontalMediaRailLayout.isPhone,
-                      presentation?.browseSource?.originID == detailBrowseSource.originID,
-                      let contentID = presentation?.contentId,
-                      section.items.contains(where: { $0.contentId == contentID })
-                else { return }
-
-                withAnimation(.easeInOut(duration: 0.28)) {
-                    visibleItemId = contentID
-                }
-            }
-            #endif
     }
 
     private var cardsScroll: some View {
