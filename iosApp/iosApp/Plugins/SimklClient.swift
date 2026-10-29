@@ -3,7 +3,7 @@ import Foundation
 /// Vivid's Simkl app registration. The device sign-in has no client secret,
 /// so the ID is public. While it's empty the plugin stays hidden.
 enum SimklApp {
-    static let clientID = ""
+    static let clientID = "92173761926c2dc0b4a308fa2d6e5e06f675160c24f39165e3a990fc21d66237"
     static var isAvailable: Bool { !clientID.isEmpty }
     static let name = "vivid"
     static var version: String {
