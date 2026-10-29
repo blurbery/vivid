@@ -298,6 +298,10 @@ final class VividCloudPreferences {
             guard keychain.delete(key) else { throw ServerRegistryError.persistenceFailed }
         }
         for key in defaults { SharedDefaults.shared.removeObject(forKey: key) }
+        // Simkl's sign-in is per device and never in the vault, so it's removed here.
+        if !profile.isEmpty {
+            SimklSyncStore.forget(scope: Self.pluginScope(server: account.serverID, user: account.userID, profile: profile))
+        }
         if !profile.isEmpty { StudiosNetworksStore.removeCache(server: account.serverID, profile: profile) }
         if !profile.isEmpty { HomeCollectionsStore.removeCache(server: account.serverID, profile: profile) }
         TVHomeCardPreferences.shared.cloudPreferencesChanged()

@@ -13,6 +13,11 @@ struct PluginsSettingsView: View {
             NavigationLink { MDBListSettingsView() } label: {
                 TVSettingsRowLabel(title: "MDBList", detail: "Sync watch history and watchlists.")
             }.buttonStyle(TVSettingsPaneRowStyle())
+            if SimklApp.isAvailable {
+                NavigationLink { SimklSettingsView() } label: {
+                    TVSettingsRowLabel(title: "Simkl", detail: "Track what you watch and sync Plan to Watch.")
+                }.buttonStyle(TVSettingsPaneRowStyle())
+            }
         }
         #else
         List {
@@ -22,6 +27,9 @@ struct PluginsSettingsView: View {
                 NavigationLink("TMDb") { PhoneTMDbSettingsView() }
                 NavigationLink("OpenSubtitles") { OpenSubtitlesSettingsView() }
                 NavigationLink("MDBList") { MDBListSettingsView() }
+                if SimklApp.isAvailable {
+                    NavigationLink("Simkl") { SimklSettingsView() }
+                }
             }
         }.settingsListChrome().navigationTitle("")
         #endif

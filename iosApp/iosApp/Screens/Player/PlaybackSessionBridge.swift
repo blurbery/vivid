@@ -2121,6 +2121,7 @@ actor PlaybackSessionBridge {
                         "/Users/\(EmbyConnection.id(userID))/PlayedItems/\(EmbyConnection.id(contentId))")
                 }
                 await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
+                await SimklSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
             } else {
                 try await VividAPI.shared.setWatched(contentId: contentId, played: true)
             }
@@ -2147,6 +2148,7 @@ actor PlaybackSessionBridge {
                         "/UserPlayedItems/\(JellyfinConnection.id(contentId))")
                 }
                 await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
+                await SimklSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
             } else {
                 try await VividAPI.shared.setWatched(contentId: contentId, played: true)
             }

@@ -202,6 +202,10 @@ struct ContentView: View {
             guard scenePhase == .active, router.authState == .authenticated else { return }
             await MDBListSyncStore.shared.run()
         }
+        .task(id: SimklSyncStore.shared.contextKey + String(describing: scenePhase) + String(describing: router.authState)) {
+            guard SimklApp.isAvailable, scenePhase == .active, router.authState == .authenticated else { return }
+            await SimklSyncStore.shared.run()
+        }
         #endif
         .task(id: router.authState) {
             #if os(tvOS) || os(iOS)
