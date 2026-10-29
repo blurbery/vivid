@@ -29,7 +29,7 @@ final class SimklSyncStore {
     private(set) var watchlistRevision = 0
 
     private let keychain = SharedKeychain(audience: .currentUser)
-    private let client = SimklClient()
+    private let client: SimklClient
     private var loadedScope: String?
     private var tokens: SimklTokens?
     private var revision = UUID()
@@ -85,6 +85,12 @@ final class SimklSyncStore {
     private struct Target {
         let kind: SimklKind
         let ids: SimklIDs
+    }
+
+    /// The simulation in `scripts/ci/check-simkl-sync.sh` passes a client
+    /// pointed at a fake Simkl.
+    init(client: SimklClient = SimklClient()) {
+        self.client = client
     }
 
     var contextKey: String { scope ?? "signed-out" }

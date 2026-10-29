@@ -23,6 +23,7 @@ on:
       - 'scripts/tests/mpv-track-tests.py'
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
+      - 'scripts/ci/check-simkl-sync.sh'
       - 'scripts/ci/check-engine-package-pin.py'
       - 'scripts/ci/check-no-previous-player-code.py'
       - '.github/workflows/player-regression.yml'
@@ -121,7 +122,8 @@ jobs:
               scripts/tests/native-profile-restoration-tests.py|\
               scripts/tests/jellyfin-replacement-tests.py|scripts/tests/topshelf-native-tests.py|\
               scripts/tests/mpv-track-tests.py|scripts/ci/check-introdb-client.sh|\
-              scripts/ci/check-mdblist-sync.sh|scripts/ci/check-engine-package-pin.py|\
+              scripts/ci/check-mdblist-sync.sh|scripts/ci/check-simkl-sync.sh|\
+              scripts/ci/check-engine-package-pin.py|\
               scripts/ci/check-no-previous-player-code.py|.github/workflows/player-regression.yml)
                 echo "App change: $file"
                 app=true
@@ -268,6 +270,7 @@ jobs:
           python3 scripts/tests/playback-auth-refresh-tests.py
           bash scripts/ci/check-introdb-client.sh
           bash scripts/ci/check-mdblist-sync.sh
+          bash scripts/ci/check-simkl-sync.sh
       - name: Prepare iOS simulator
         if: matrix.action == 'test'
         timeout-minutes: 10
