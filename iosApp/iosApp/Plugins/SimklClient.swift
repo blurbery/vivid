@@ -715,6 +715,18 @@ enum SimklWatchlistPolicy {
     }
 }
 
+/// Removals only show up as missing IDs. A reply missing most of a library
+/// type is more likely a bad answer than a mass deletion, and trusting it
+/// would take those titles off the watchlist too.
+enum SimklRemovalCheck {
+    /// The Simkl IDs to drop, or nil to read the type again in full instead.
+    static func removals(cached: [Int], present: Set<Int>) -> Set<Int>? {
+        let gone = Set(cached).subtracting(present)
+        guard gone.isEmpty || !present.isEmpty, gone.count <= max(5, cached.count / 4) else { return nil }
+        return gone
+    }
+}
+
 struct SimklSyncProgress: Equatable, Sendable {
     let step: Int
     let label: String

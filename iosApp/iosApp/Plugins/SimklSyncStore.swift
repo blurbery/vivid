@@ -421,8 +421,14 @@ final class SimklSyncStore {
             if current.removalsMoved(domain, since: saved.activities) {
                 let present = try await authorised(scope) { try await self.client.libraryIDs(type, token: $0) }
                 try await validate(scope: scope, revision: generation, auth: auth)
-                for item in items.values where item.type == type && !present.contains(item.simkl) {
-                    items.removeValue(forKey: item.simkl)
+                let cached = items.values.filter { $0.type == type }.map(\.simkl)
+                if let gone = SimklRemovalCheck.removals(cached: cached, present: present) {
+                    for simkl in gone { items.removeValue(forKey: simkl) }
+                } else {
+                    let full = try await authorised(scope) { try await self.client.library(type, dateFrom: nil, token: $0) }
+                    try await validate(scope: scope, revision: generation, auth: auth)
+                    for simkl in cached { items.removeValue(forKey: simkl) }
+                    for item in full { items[item.simkl] = item }
                 }
             }
         }

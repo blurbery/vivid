@@ -128,6 +128,17 @@ final class SimklClientTests: XCTestCase {
         XCTAssertEqual(P.action(local: true, remote: row(.plantowatch), mapped: true, previousLocal: false, previousRemote: false), .none)
     }
 
+    func testRemovalDiffNeverTrustsAReplyMissingMostOfTheLibrary() {
+        let cached = Array(1...100)
+        XCTAssertEqual(SimklRemovalCheck.removals(cached: cached, present: Set(3...100)), [1, 2])
+        XCTAssertNil(SimklRemovalCheck.removals(cached: cached, present: []), "An empty reply is read again in full")
+        XCTAssertNil(SimklRemovalCheck.removals(cached: cached, present: Set(1...50)))
+        XCTAssertNil(SimklRemovalCheck.removals(cached: [1, 2], present: []))
+        XCTAssertEqual(SimklRemovalCheck.removals(cached: [1, 2, 3], present: [1, 2]), [3])
+        XCTAssertEqual(SimklRemovalCheck.removals(cached: [], present: []), [])
+        XCTAssertEqual(SimklRemovalCheck.removals(cached: [1], present: [1, 2]), [])
+    }
+
     func testActivitiesNoticeMovedStatusesAndRemovalsPerType() throws {
         let old = try SimklActivities(json: ["all": "2026-10-01T00:00:00Z",
             "movies": ["all": "x", "plantowatch": "2026-10-01T00:00:00Z", "removed_from_list": "2026-09-01T00:00:00Z"],
