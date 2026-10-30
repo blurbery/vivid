@@ -3,7 +3,7 @@
 //  Vivid (iOS + tvOS)
 //
 //  Cached card-overlay configuration for the signed-in profile.
-//  Resolves it from one of two
+//  Resolves the raw overlay settings document from one of two
 //  sources, in this priority:
 //    1. The user's saved prefs — the contract key `ui.card_overlays`
 //       at profile scope, read through the canonical
@@ -79,13 +79,12 @@ final class OverlayPrefsStore: ObservableObject {
     }
 
     /// Re-fetch both the admin config and the user setting from the
-    /// server, then recompute `prefs`. Called after every save so
+    /// server. Called after every save so
     /// local state matches what the server just stored.
     ///
     /// Failure semantics:
     /// - "No value stored yet" (a contract default answer, or a legacy
-    ///   404) is success — `userRaw` stays nil and we render from
-    ///   admin defaults or registry defaults.
+    ///   404) is success: `userRaw` stays nil.
     /// - Any other transport error (on either endpoint) leaves
     ///   `hasHydrated` false so the next `hydrateIfNeeded()` retries.
     ///   This matters most for the admin kill switch: if
@@ -95,9 +94,6 @@ final class OverlayPrefsStore: ObservableObject {
     ///   view appearance would not retry — the admin's "disable
     ///   overlays globally" toggle would be silently ignored for the
     ///   rest of the session.
-    /// - We still update `prefs` and `enabled` with what we know so
-    ///   cards render *something* (registry defaults at worst) rather
-    ///   than blocking the UI on the retry.
     func refresh() async {
         guard Self.supportsServerOverlays else { return }
         refreshGeneration &+= 1
