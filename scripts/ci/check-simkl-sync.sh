@@ -629,7 +629,7 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
 
         step("\n9b. Simkl's ID lookup fails for a new watchlist title")
         server.watchlist.append("m-up")
-        fake.lock.withLock { fake.lookupFailures = [408, 503] }
+        fake.lock.withLock { fake.lookupFailures = [408, 503, 429] }
         await store.watchlistChanged(expected: auth)
         store = try relaunch(client)
         await store.sync()
@@ -642,7 +642,11 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
         check(since().contains("GET /redirect") && !fake.planAdds.contains("Up"), "tries again on the next check, and leaves it alone when Simkl is down")
         store = try relaunch(client)
         await store.sync()
-        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch once the lookup works")
+        check(store.status == "Simkl is busy. Sync will try again shortly." && !fake.planAdds.contains("Up"),
+              "a throttled lookup pauses the check for a few minutes: \(store.status)")
+        store = try relaunch(client)
+        await store.sync()
+        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch once the lookup works, without waiting for the daily reset")
 
         step("\n9c. A sync fails, then Vivid is opened again")
         fake.lock.withLock { fake.failedActivities = 1 }

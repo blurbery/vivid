@@ -345,8 +345,10 @@ final class SimklClient: @unchecked Sendable {
             // Simkl answers with a redirect even when it has no match, so any
             // other reply is a failure to retry, not a title it doesn't know.
             if status == 404 { return nil }
-            throw Self.failure(status: status, json: json,
-                               retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
+            // Lookups don't use the daily allowance, so a 429 here is a short
+            // throttle, never the daily limit.
+            if status == 429 { throw SimklFailure.rateLimited }
+            throw Self.failure(status: status, json: json, retryAfter: nil)
         }
         return Self.parseRedirect(http.value(forHTTPHeaderField: "Location"), kind: kind)
     }
