@@ -35,9 +35,9 @@ extension TVMainTabView {
 
         /// Asks the focus engine to pick a focused item again, at once.
         static func reResolveFocus() {
-            guard let window = activeKeyWindow(), let system = UIFocusSystem.focusSystem(for: window) else { return }
-            system.requestFocusUpdate(to: window)
-            system.updateFocusIfNeeded()
+            guard let window = activeKeyWindow() else { return }
+            window.setNeedsFocusUpdate()
+            window.updateFocusIfNeeded()
         }
     }
 
