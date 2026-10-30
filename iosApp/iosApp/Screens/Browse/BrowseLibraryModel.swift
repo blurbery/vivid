@@ -55,9 +55,12 @@ extension BrowseView {
         }
 
         func load(reset: Bool) async {
+            // The paging of the titles on screen, put back when a refetch fails.
+            var shown: (nextPage: Int, hasMore: Bool)?
             if reset {
                 pageGeneration += 1
                 showCachedFirstPage()
+                shown = (nextPage, hasMore)
                 nextPage = 0
                 hasMore = true
             } else if isLoading {
@@ -96,8 +99,14 @@ extension BrowseView {
                 hasMore = response.hasMore ?? false
                 nextPage += 1
             } catch {
-                if generation == pageGeneration, items.isEmpty {
-                    self.error = ErrorState(error)
+                if generation == pageGeneration {
+                    if items.isEmpty {
+                        self.error = ErrorState(error)
+                    } else if let shown {
+                        // Keep paging on from what's still shown, not page 1.
+                        nextPage = shown.nextPage
+                        hasMore = shown.hasMore
+                    }
                 }
             }
             finishLoad(generation)
@@ -182,6 +191,7 @@ extension BrowseView {
             guard items.isEmpty,
                   let cached = ResponseCache.shared.get(firstPageKey, as: CatalogResponse.self) else { return }
             items = cached.items
+            nextPage = 1
             hasMore = cached.hasMore ?? false
             adoptMediaType(from: cached)
         }
