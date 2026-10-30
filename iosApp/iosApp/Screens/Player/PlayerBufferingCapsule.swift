@@ -13,28 +13,6 @@ struct PlayerBufferingCapsule: View {
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        #else
-        HStack(spacing: spacing) {
-            ProgressView()
-                .tint(.white)
-                .progressViewStyle(.circular)
-                .scaleEffect(spinnerScale)
-
-            Text(label)
-                .font(.vividSmall.weight(.medium))
-                .foregroundStyle(.white.opacity(0.82))
-        }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, 6)
-        .vividPlayerGlass(in: Capsule())
-        .shadow(color: .black.opacity(0.45), radius: 18, y: 7)
-        .padding(.top, topPadding)
-        .padding(.trailing, trailingPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .allowsHitTesting(false)
-        .transition(.opacity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(label)
         #endif
     }
 
@@ -65,8 +43,6 @@ struct PlayerBufferingCapsule: View {
     private var topPadding: CGFloat {
         #if os(tvOS)
         64
-        #elseif os(macOS)
-        88
         #else
         68
         #endif
@@ -75,8 +51,6 @@ struct PlayerBufferingCapsule: View {
     private var trailingPadding: CGFloat {
         #if os(tvOS)
         80
-        #elseif os(macOS)
-        20
         #else
         16
         #endif

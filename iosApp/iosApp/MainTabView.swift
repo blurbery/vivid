@@ -1,8 +1,6 @@
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#elseif os(macOS)
-import AppKit
 #endif
 
 // MARK: - Main Tab View
@@ -211,9 +209,7 @@ struct MainTabView: View {
     /// detail destination resolve the same identity.
     @Namespace private var zoomNamespace
     @Environment(\.scenePhase) private var scenePhase
-    #if !os(macOS)
     @Environment(\.horizontalSizeClass) private var hSize
-    #endif
 
     var body: some View {
         Group {
@@ -336,7 +332,6 @@ struct MainTabView: View {
             else { return }
             librarySnapshot = .init(authority: authority, libraries: response.libraries)
         }
-        #if !os(macOS)
         #if os(iOS)
         .modifier(PlayerPresentationModifier(router: router))
         #else
@@ -358,18 +353,13 @@ struct MainTabView: View {
         #if os(iOS)
         .modifier(ItemDetailPresentationModifier(router: router, zoomNamespace: zoomNamespace))
         #endif
-        #endif
         // Outside the presentation modifiers so the video player inherits
         // the router — ErrorView requires it and traps when it's absent.
         .environment(router)
     }
 
     private var prefersSidebarLayout: Bool {
-        #if os(macOS)
-        true
-        #else
         hSize == .regular
-        #endif
     }
 
     /// Visible tabs, plus a Downloads tab when the server advertises the
@@ -447,16 +437,6 @@ struct MainTabView: View {
                     destinationContent(for: destination)
                         .tabItem { Text(destination.title) }
                         .tag(destination.id)
-                    #else
-                    Tab(
-                        destination.title,
-                        systemImage: selectedDestinationID == destination.id
-                            ? destination.selectedIcon
-                            : destination.icon,
-                        value: destination.id
-                    ) {
-                        destinationContent(for: destination)
-                    }
                     #endif
                 }
             }
@@ -873,19 +853,10 @@ struct MainTabView: View {
             PhoneStudioNetworkPage(brandId: brandId)
         #endif
         case .player(let contentId, let startFromBeginning, let resumePosition, let prefersLastUsedVersion):
-            #if os(macOS)
-            PlayerView(
-                contentId: contentId,
-                startFromBeginning: startFromBeginning,
-                resumePositionOverride: resumePosition,
-                prefersLastUsedVersion: prefersLastUsedVersion
-            )
-            #else
             // Player is presented as a full-screen cover (see MainTabView)
             // so it isn't boxed into the iPad detail pane. This route arm
             // exists only so switch exhaustiveness holds.
             EmptyView()
-            #endif
         case .playerWithFile(
             let contentId,
             let fileId,
@@ -894,18 +865,7 @@ struct MainTabView: View {
             let startFromBeginning,
             let resumePosition
         ):
-            #if os(macOS)
-            PlayerView(
-                contentId: contentId,
-                preferredFileId: fileId,
-                preferredAudioTrackIndex: audioTrackIndex,
-                preferredSubtitleTrackIndex: subtitleTrackIndex,
-                startFromBeginning: startFromBeginning,
-                resumePositionOverride: resumePosition
-            )
-            #else
             EmptyView()
-            #endif
         case .favorites:
             FavoritesView()
         case .watchlist:
@@ -940,18 +900,9 @@ struct MainTabView: View {
             DownloadsView()
             #endif
         case .offlinePlayer(let downloadId, let contentId, let startFromBeginning, let resumePosition):
-            #if os(macOS)
-            PlayerView(
-                contentId: contentId,
-                startFromBeginning: startFromBeginning,
-                resumePositionOverride: resumePosition,
-                offlineDownloadId: downloadId
-            )
-            #else
             // Presented as a full-screen cover (see MainTabView). This arm
             // exists only for switch exhaustiveness.
             EmptyView()
-            #endif
         case .offlineSeriesBrowse(let seriesId):
             #if os(tvOS)
             EmptyStateView(icon: "questionmark.circle", title: "Unknown", subtitle: nil)

@@ -44,8 +44,6 @@ final class OverlayPrefsStore: ObservableObject {
     private static var supportsServerOverlays: Bool {
         #if os(tvOS) || os(iOS)
         false
-        #else
-        true
         #endif
     }
 

@@ -47,13 +47,6 @@ struct RecommendationsView: View {
             .task {
                 await viewModel.loadRecommendations()
             }
-        #if !os(tvOS)
-            .refreshable {
-                async let overlayRefresh: Void = OverlayPrefsStore.shared.refresh()
-                await viewModel.refresh()
-                await overlayRefresh
-            }
-        #endif
         #endif
     }
 

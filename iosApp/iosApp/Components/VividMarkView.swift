@@ -8,12 +8,6 @@ struct VividMarkView: View {
         VStack(spacing: 8) {
             #if os(iOS) || os(tvOS)
             VividLogoView(size: width)
-            #else
-            Image("VividMarkSilver")
-                .resizable()
-                .scaledToFit()
-                .frame(width: width)
-                .accessibilityLabel("Vivid")
             #endif
 
             if let subtitle {

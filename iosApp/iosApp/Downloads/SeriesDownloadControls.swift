@@ -603,8 +603,6 @@ private struct SeriesDownloadOptionsSheet: View {
             .vividScrollContentBackgroundHidden()
             #if os(iOS)
             .background(Color.clear)
-            #else
-            .vividPageBackground()
             #endif
             .toolbar {
                 VividSheetCloseItem { dismiss() }
@@ -888,8 +886,6 @@ private struct SeriesSeasonDownloadPicker: View {
         .vividScrollContentBackgroundHidden()
         #if os(iOS)
         .background(Color.clear)
-        #else
-        .vividPageBackground()
         #endif
     }
 }
@@ -1038,8 +1034,6 @@ private struct SeriesEpisodeDownloadPicker: View {
         }
         #if os(iOS)
         .background(Color.clear)
-        #else
-        .vividPageBackground()
         #endif
         .navigationTitle(season.downloadDisplayName)
         #if os(iOS)

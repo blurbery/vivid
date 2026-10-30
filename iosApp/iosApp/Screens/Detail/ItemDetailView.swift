@@ -359,8 +359,6 @@ private struct ItemDetailPhoneContent: View {
             viewModel.initialResumeSeasonNumber = resumeContext?.seasonNumber
             viewModel.jellyfinResumeEpisode = MediaServerProvider.active == .jellyfin
                 ? resumeContext.map { ($0.episodeContentId, $0.seasonNumber) } : nil
-            #else
-            selectedSeriesEpisodeId = nil
             #endif
             refreshOnPlayerDismiss = false
             detailScrollState.prepare(for: contentId)

@@ -11,9 +11,6 @@ extension Color {
     #if os(tvOS) || os(iOS)
     static let auroraAccent = Color(white: 0.88)
     static let auroraGlowSecondary = Color(white: 0.11)
-    #else
-    static let auroraAccent = Color.vividBrandOrange
-    static let auroraGlowSecondary = Color(hex: "#18212A")
     #endif
     static let auroraNightTop = Color(hex: "#081117")
     static let auroraNightMid = Color(hex: "#030608")

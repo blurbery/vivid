@@ -123,12 +123,10 @@ struct AuroraTextField<F: Hashable>: View {
                         .tint(isFocused ? AuroraControl.activeInk : Color.auroraAccent)
                         .submitLabel(submitLabel)
                         .onSubmit(onSubmit)
-                        #if !os(macOS)
                         .textContentType(uiContentType)
                         .keyboardType(uiKeyboard)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        #endif
                 }
                 if showsRevealToggle {
                     Button {
@@ -168,7 +166,6 @@ struct AuroraTextField<F: Hashable>: View {
         }
     }
 
-    #if !os(macOS)
     private var uiContentType: UITextContentType? {
         switch contentType {
         case .username: .username
@@ -187,7 +184,6 @@ struct AuroraTextField<F: Hashable>: View {
         case .number: .numberPad
         }
     }
-    #endif
 }
 
 // MARK: - Screen scaffold

@@ -100,8 +100,6 @@ struct HomeView: View {
         ZStack(alignment: .top) {
             #if os(iOS)
             VividAppBackdrop()
-            #else
-            homeFeedBackground.ignoresSafeArea()
             #endif
 
             Group {
@@ -128,53 +126,10 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            #if !os(iOS)
-            HStack(alignment: .center, spacing: 12) {
-                #if !os(iOS)
-                SidebarToggleButton()
-                #endif
-                // The wordmark is pinned with the utilities so it stays put
-                // over the glass strip instead of scrolling away with the feed.
-                // It occupies the same 44pt row as the icon buttons so its
-                // centre lines up with theirs.
-                VividMarkView(width: 72)
-                    .frame(height: VividTheme.topBarIconHitSize)
-                Spacer(minLength: 8)
-
-                // Trailing action cluster shared by every root page.
-                TabTopBarActions(
-                    onSearch: { router.navigate(to: .search) },
-                    onOpenSettings: { router.navigate(to: .settings) },
-                    onOpenRequests: { router.navigate(to: .requestsHub) },
-                    onSwitchProfile: {
-                        router.switchProfile()
-                    },
-                    onSwitchServer: { router.navigate(to: .serverList) },
-                    onSignOut: { router.signOutAndReset() }
-                )
-            }
-            .padding(.horizontal, VividTheme.padding)
-            #if os(iOS)
-            .padding(.top, headerTopInset)
-            #endif
-            .padding(.bottom, VividTheme.smallPadding)
-            // Same scroll-driven glass as the Detail page chrome so the
-            // utilities stay legible over bright artwork once rows scroll
-            // underneath.
-            .background {
-                PageChromeGlass(scrollState: chromeScrollState)
-            }
-
-            #endif
 
             if isRefreshing {
                 #if os(iOS)
                 RefreshStatusPill(compactGlass: true)
-                    .padding(.top, 64)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(2)
-                #else
-                RefreshStatusPill()
                     .padding(.top, 64)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(2)
@@ -191,9 +146,7 @@ struct HomeView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: isRefreshing)
         .animation(.easeInOut(duration: 0.18), value: ConnectionMonitor.shared.isOffline)
-        #if !os(macOS)
         .toolbar(.hidden, for: .navigationBar)
-        #endif
         .task {
             homeSectionPreferences.refresh()
             #if os(iOS)
@@ -204,11 +157,6 @@ struct HomeView: View {
             TVHomeSpotlightPreferences.shared.initializeIfNeeded(from: viewModel.sections)
             #endif
         }
-        #if !os(iOS)
-        .refreshable {
-            await refreshHome()
-        }
-        #endif
         #endif
         }
         #if os(iOS) || os(tvOS)
@@ -293,8 +241,6 @@ struct HomeView: View {
     private var hasVisibleHomeContent: Bool {
         #if os(iOS)
         !displayedSections.isEmpty || !TVHomeSpotlightPreferences.shared.slides(from: displayedSections).isEmpty
-        #else
-        !displayedSections.isEmpty
         #endif
     }
 
@@ -304,14 +250,6 @@ struct HomeView: View {
                 // Keep the spotlight's overflowing artwork alive until it has
                 // scrolled away. Only the poster rows need lazy materialisation.
                 VStack(alignment: .leading, spacing: HomeFeedMetrics.sectionSpacing) {
-                    // Clear runway under the pinned header so the first row
-                    // starts below the wordmark and utilities.
-                    #if !os(iOS)
-                    Color.clear
-                        .frame(height: topRunwaySpacing(topSafeAreaInset: runwaySafeAreaInset(geometry)))
-                        .id(HomeFocusTarget.topSpacer)
-                    #endif
-
                     #if os(iOS)
                     if displayedSections.isEmpty || TVHomeSpotlightPreferences.shared.slides(from: viewModel.regularSections).isEmpty {
                         Color.clear.frame(height: geometry.safeAreaInsets.top + 16)
@@ -375,9 +313,6 @@ struct HomeView: View {
             .coordinateSpace(name: "phone-home-spotlight-scroll")
             .ignoresSafeArea(.container, edges: .top)
             #endif
-            #if os(macOS)
-            .vividScrollEdgeEffect()
-            #endif
         }
         #if os(iOS)
         .coordinateSpace(name: "phone-home-fixed-viewport")
@@ -397,8 +332,6 @@ struct HomeView: View {
         // Apply visibility and ordering before layout. Hidden sections occupy
         // no space; each visible row keeps its own poster or landscape height.
         return homeSectionPreferences.arrangedSections(viewModel.regularSections)
-        #else
-        return viewModel.regularSections
         #endif
     }
 
@@ -493,8 +426,6 @@ struct HomeView: View {
     private func runwaySafeAreaInset(_ geometry: GeometryProxy) -> CGFloat {
         #if os(iOS)
         return 0
-        #else
-        return geometry.safeAreaInsets.top
         #endif
     }
 
@@ -504,14 +435,6 @@ struct HomeView: View {
         // remaining row gap; don't double-count it here.
         #if os(iOS)
         return 8
-        #else
-        var runway = topSafeAreaInset + VividTheme.topBarIconHitSize + VividTheme.smallPadding
-        #if os(iOS)
-        runway += headerTopInset + headerToContentGap
-        #else
-        runway += VividTheme.largePadding + VividTheme.smallPadding
-        #endif
-        return runway
         #endif
     }
     #endif

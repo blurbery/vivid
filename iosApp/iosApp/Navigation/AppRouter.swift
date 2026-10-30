@@ -308,25 +308,6 @@ class AppRouter {
             attrs: ["target": .string("player"), "action": .string("present")]
         )
         #endif
-        #if os(macOS)
-        if let fileId {
-            navigate(to: .playerWithFile(
-                contentId: contentId,
-                fileId: fileId,
-                audioTrackIndex: audioTrackIndex,
-                subtitleTrackIndex: subtitleTrackIndex,
-                startFromBeginning: startFromBeginning,
-                resumePosition: resumePosition
-            ))
-        } else {
-            navigate(to: .player(
-                contentId: contentId,
-                startFromBeginning: startFromBeginning,
-                resumePosition: resumePosition,
-                prefersLastUsedVersion: prefersLastUsedVersion
-            ))
-        }
-        #else
         var presentation = PlayerPresentation(
             contentId: contentId,
             fileId: fileId,
@@ -343,7 +324,6 @@ class AppRouter {
         presentation.detailPresentationID = presentedItemDetail?.id
         #endif
         presentedPlayer = presentation
-        #endif
     }
 
     /// Present offline playback of a completed download. iOS/iPadOS use a
@@ -363,14 +343,6 @@ class AppRouter {
             attrs: ["target": .string("offlinePlayer"), "action": .string("present")]
         )
         #endif
-        #if os(macOS)
-        navigate(to: .offlinePlayer(
-            downloadId: downloadId,
-            contentId: contentId,
-            startFromBeginning: startFromBeginning,
-            resumePosition: resumePosition
-        ))
-        #else
         var presentation = PlayerPresentation(
             contentId: contentId,
             fileId: nil,
@@ -388,7 +360,6 @@ class AppRouter {
         presentation.detailPresentationID = presentedItemDetail?.id
         #endif
         presentedPlayer = presentation
-        #endif
     }
 
     // MARK: - Actions

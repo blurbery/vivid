@@ -385,8 +385,6 @@ struct PersonDetailView: View {
         // On iOS this pull means Back, including actor pages opened from
         // outside a title's detail sheet. Do not start a metadata refresh too.
         PhonePersonDetailContent(person: person, viewModel: viewModel)
-        #else
-        refreshablePersonContent(person: person)
         #endif
         #endif
     }

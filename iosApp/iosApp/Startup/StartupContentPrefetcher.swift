@@ -170,10 +170,6 @@ enum StartupContentPrefetcher {
                 .filter { HomeSeriesBackdrops.applies(toSectionType: $0.sectionType) }.flatMap(\.items))
             prefetchHomeArtwork(for: SectionsResponse(sections: HomeSectionPreferences.shared.arrangedSections(home.sections)))
             return home
-            #else
-            ResponseCache.shared.set(response, for: CacheKey.homeSections)
-            prefetchHomeArtwork(for: response)
-            return response
             #endif
         } catch {
             if profileScopedGeneration == profileGeneration,

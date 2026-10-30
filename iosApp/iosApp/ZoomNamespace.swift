@@ -1,8 +1,6 @@
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#elseif os(macOS)
-import AppKit
 #endif
 
 // MARK: - Zoom transition namespace

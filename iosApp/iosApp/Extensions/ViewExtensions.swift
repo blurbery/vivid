@@ -13,11 +13,6 @@ struct VividPageBackdrop: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-        #else
-        Color.vividBackground
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
         #endif
     }
 }
@@ -71,7 +66,7 @@ extension View {
 
     @ViewBuilder
     func vividNavigationTitleDisplayMode(_ mode: VividNavigationTitleDisplayMode) -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         switch mode {
@@ -107,8 +102,6 @@ extension View {
         } else {
             self
         }
-        #else
-        self.scrollEdgeEffectStyle(.soft, for: .top)
         #endif
     }
 
@@ -145,7 +138,7 @@ extension View {
 
     @ViewBuilder
     func vividStatusBarHidden() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self.statusBarHidden()
@@ -154,7 +147,7 @@ extension View {
 
     @ViewBuilder
     func vividToolbarColorSchemeDark() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self.toolbarColorScheme(.dark, for: .navigationBar)
@@ -163,7 +156,7 @@ extension View {
 
     @ViewBuilder
     func vividNavigationBarSurfaceBackground() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self
@@ -174,7 +167,7 @@ extension View {
 
     @ViewBuilder
     func vividNavigationBarBackgroundHidden() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self.toolbarBackground(.hidden, for: .navigationBar)
@@ -184,8 +177,6 @@ extension View {
     @ViewBuilder
     func vividSearchable(text: Binding<String>, prompt: String) -> some View {
         #if os(tvOS)
-        self.searchable(text: text, prompt: prompt)
-        #elseif os(macOS)
         self.searchable(text: text, prompt: prompt)
         #else
         // Keep the navigation bar's back button and title visible while the
@@ -205,8 +196,6 @@ extension View {
     func vividGroupedListStyle() -> some View {
         #if os(tvOS)
         self.listStyle(.plain)
-        #elseif os(macOS)
-        self.listStyle(.inset)
         #else
         self.listStyle(.insetGrouped)
         #endif
@@ -457,8 +446,6 @@ extension View {
         } else {
             self.buttonStyle(VividPrimaryButtonStyle(isLoading: isLoading))
         }
-        #else
-        modernVividPrimaryButton(isLoading: isLoading)
         #endif
     }
 
@@ -474,8 +461,6 @@ extension View {
         } else {
             self.buttonStyle(VividSecondaryButtonStyle())
         }
-        #else
-        self.buttonStyle(.glass)
         #endif
     }
 
@@ -491,8 +476,6 @@ extension View {
         } else {
             self.buttonStyle(VividTextButtonStyle())
         }
-        #else
-        self.buttonStyle(.glass)
         #endif
     }
 

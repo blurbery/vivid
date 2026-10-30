@@ -112,35 +112,6 @@ struct WatchlistView: View {
             .padding(VividTheme.padding)
         }
         .reportsPageChromeScroll()
-        #else
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(items) { item in
-                    MediaCard(
-                        title: item.title,
-                        posterUrl: item.posterUrl ?? "",
-                        thumbhash: item.posterThumbhash,
-                        year: item.year,
-                        userState: item.userState,
-                        overlayData: OverlayData.from(item),
-                        action: {
-                            router.navigate(to: .itemDetail(browseItem: item))
-                        },
-                        playAction: playAction(for: item),
-                        contentId: item.contentId,
-                        onUserStateChanged: { state in
-                            guard !state.inWatchlist else { return }
-                            withAnimation {
-                                items.removeAll { $0.contentId == item.contentId }
-                            }
-                        }
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(VividTheme.padding)
-        }
-        .reportsPageChromeScroll()
         #endif
     }
 
@@ -231,8 +202,6 @@ struct WatchlistView: View {
     private var watchlistRevision: Int {
         #if os(iOS) || os(tvOS)
         MDBListSyncStore.shared.watchlistRevision + SimklSyncStore.shared.watchlistRevision
-        #else
-        0
         #endif
     }
 

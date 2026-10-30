@@ -362,16 +362,7 @@ final class VividPlaybackController {
     /// The process-wide Now Playing centers are a fallback only for video
     /// routes for which Vivid has no `MPNowPlayingSession`.
     var shouldUseSharedVideoNowPlayingFallback: Bool {
-        #if os(macOS)
-        switch engine.videoRoute {
-        case .remoteBypass, .loopback, .sampleBuffer:
-            return true
-        case .none, .audio:
-            return false
-        }
-        #else
         return engine.videoRoute == .sampleBuffer
-        #endif
     }
 
     private(set) var supportsExternalPlayback = false
@@ -753,8 +744,6 @@ final class VividPlaybackController {
         AVAudioSession.sharedInstance().currentRoute.outputs.contains {
             $0.portType == .airPlay || $0.portType == .HDMI
         }
-        #else
-        false
         #endif
     }
 }

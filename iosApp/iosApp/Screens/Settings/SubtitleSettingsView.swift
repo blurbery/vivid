@@ -43,11 +43,7 @@ struct SubtitleSettingsView: View {
                 }
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
             .pickerStyle(.navigationLink)
-            #endif
 
             Picker("Backup Language", selection: $viewModel.editorSubtitleBackupLanguage) {
                 Text("None").tag(PlaybackPrefSentinel.none)
@@ -56,11 +52,7 @@ struct SubtitleSettingsView: View {
                 }
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
             .pickerStyle(.navigationLink)
-            #endif
             .disabled(!viewModel.subtitleBackupLanguageApplies)
 
             Picker("Behavior", selection: $viewModel.editorSubtitleMode) {
@@ -69,11 +61,7 @@ struct SubtitleSettingsView: View {
                 }
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
             .pickerStyle(.navigationLink)
-            #endif
 
             Toggle(
                 "Show Forced Subtitles",
@@ -170,11 +158,7 @@ struct SubtitleSettingsView: View {
                 }
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
             .pickerStyle(.navigationLink)
-            #endif
 
             ColorChoicePicker(
                 title: "Font Color",
@@ -197,11 +181,7 @@ struct SubtitleSettingsView: View {
                 }
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
             .pickerStyle(.navigationLink)
-            #endif
 
             opacityRow
                 .disabled(viewModel.subtitleAppearance.backgroundStyle != .box)
@@ -229,11 +209,7 @@ struct SubtitleSettingsView: View {
                 }
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
             .pickerStyle(.navigationLink)
-            #endif
         } header: {
             Text("Layout")
                 .foregroundStyle(Color.vividSecondaryText)
@@ -350,11 +326,7 @@ private struct ColorChoicePicker: View {
             title
                 .foregroundStyle(Color.vividOnSurface)
         }
-        #if os(macOS)
-        .pickerStyle(.menu)
-        #else
         .pickerStyle(.navigationLink)
-        #endif
     }
 
     /// Stored hex values may differ in case from the option list.

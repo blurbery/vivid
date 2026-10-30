@@ -5,8 +5,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 extension PlayerViewModel {

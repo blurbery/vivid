@@ -182,26 +182,6 @@ final class VividVideoNowPlayingCoordinator {
         registerRemoteCommands()
         publishNowPlayingInfo()
     }
-    #else
-    /// macOS has no Vivid video `MPNowPlayingSession`; bind its active video
-    /// route to the process-wide centers and remain detached while idle.
-    func attach(useSharedFallback: Bool, handlers: Handlers) {
-        let nextDestination: Destination = useSharedFallback ? .shared : .none
-        self.handlers = handlers
-        guard destination != nextDestination else {
-            updateCommandAvailability()
-            publishNowPlayingInfo()
-            return
-        }
-
-        unbindCurrentDestination()
-        destination = nextDestination
-        if useSharedFallback {
-            bindSharedCenters()
-            registerRemoteCommands()
-            publishNowPlayingInfo()
-        }
-    }
     #endif
 
     func detach() {
@@ -298,8 +278,6 @@ final class VividVideoNowPlayingCoordinator {
                 boundsSize: image.size
             ) { _ in image }
             publishNowPlayingInfo()
-            #else
-            _ = data
             #endif
         } catch is CancellationError {
             return

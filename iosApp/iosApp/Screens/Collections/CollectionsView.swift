@@ -67,24 +67,6 @@ struct CollectionsView: View {
         .navigationTitle("Collections")
         .vividNavigationTitleDisplayMode(.large)
         .toolbar {
-            #if os(macOS)
-            ToolbarItem {
-                Button {
-                    viewModel.pendingGroupAction = .create
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                        .foregroundColor(.vividPrimary)
-                }
-            }
-            ToolbarItem {
-                Button {
-                    viewModel.showCreateSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundColor(.vividPrimary)
-                }
-            }
-            #else
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     viewModel.pendingGroupAction = .create
@@ -101,7 +83,6 @@ struct CollectionsView: View {
                         .foregroundColor(.vividPrimary)
                 }
             }
-            #endif
         }
         .sheet(isPresented: $viewModel.showCreateSheet) {
             createSheet
@@ -154,7 +135,7 @@ struct CollectionsView: View {
                 }
             }
         }
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         .listStyle(.plain)
         #else
         .listStyle(.insetGrouped)
@@ -343,7 +324,7 @@ private struct GroupActionSheet: View {
                         }
                     }
                 }
-                #if os(tvOS) || os(macOS)
+                #if os(tvOS)
                 .listStyle(.plain)
                 #else
                 .listStyle(.insetGrouped)

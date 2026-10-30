@@ -5,8 +5,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 extension PlayerViewModel {
@@ -376,8 +374,6 @@ extension PlayerViewModel {
             #if os(iOS) || os(tvOS)
             let appTrackID = vividPlaybackController.appSubtitleID(forVividID: track.id)
             return !track.isExternal || openSubtitleIDs.contains(appTrackID) || SubtitleTrackIdSpace.isSidecar(appTrackID)
-            #else
-            return !track.isExternal
             #endif
         }.map { track in
             if !track.isExternal { return LucidSubtitleInventory.playerTrack(track, selectedID: engine.activeSubtitleTrackIndex) }

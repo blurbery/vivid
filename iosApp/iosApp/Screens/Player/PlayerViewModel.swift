@@ -6,8 +6,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 /// Chapters read from the media by Lucid Engine.
@@ -1126,7 +1124,6 @@ class PlayerViewModel {
             Task { @MainActor [weak self] in self?.systemCaptionSettingsDidChange() }
         }
         #endif
-        #if !os(macOS)
         outputRouteObserverToken = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: nil,
@@ -1155,11 +1152,8 @@ class PlayerViewModel {
                 )
             }
         }
-        #endif
         #if os(iOS) || os(tvOS)
         let foregroundExitNotification = UIApplication.didEnterBackgroundNotification
-        #else
-        let foregroundExitNotification = NSApplication.willTerminateNotification
         #endif
         foregroundExitObserverToken = NotificationCenter.default.addObserver(
             forName: foregroundExitNotification,

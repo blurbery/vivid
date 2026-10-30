@@ -484,8 +484,6 @@ struct HomeStillCard: View {
     private var showsEpisodeRuntimeStatus: Bool {
         #if os(iOS)
         MediaRuntimeStatusOverlay.applies(toType: item.type, inContinueWatching: isIOSResumeCard)
-        #else
-        false
         #endif
     }
 
@@ -494,8 +492,6 @@ struct HomeStillCard: View {
     private var isIOSResumeCard: Bool {
         #if os(iOS)
         onRemoveFromContinueWatching != nil
-        #else
-        false
         #endif
     }
 

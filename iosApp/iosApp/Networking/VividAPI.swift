@@ -761,9 +761,6 @@ actor VividAPI {
             await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
             await SimklSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
         }
-        #else
-        if played { try await http.postVoid("/api/v1/watched/\(contentId)") }
-        else { try await http.delete("/api/v1/watched/\(contentId)") }
         #endif
     }
 

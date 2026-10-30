@@ -5,8 +5,6 @@ import AVKit
 
 #if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
 #endif
 
 enum VividDisplayContext {
@@ -49,11 +47,6 @@ enum VividDisplayContext {
         #if canImport(UIKit)
         guard let screen = activeWindowScene?.screen else { return false }
         return screen.currentEDRHeadroom > hdrHeadroomFloor
-        #elseif canImport(AppKit)
-        guard let screen = NSScreen.main else { return false }
-        return screen.maximumExtendedDynamicRangeColorComponentValue > hdrHeadroomFloor
-        #else
-        return false
         #endif
     }
 

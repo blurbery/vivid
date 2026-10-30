@@ -50,14 +50,6 @@ enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
         case .xlarge: return 74
         case .xxlarge: return 88
         }
-        #else
-        switch self {
-        case .small: return 62
-        case .medium: return 79
-        case .large: return 96
-        case .xlarge: return 116
-        case .xxlarge: return 136
-        }
         #endif
     }
 
