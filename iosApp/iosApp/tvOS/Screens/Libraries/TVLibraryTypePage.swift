@@ -217,7 +217,8 @@ extension TVMainTabView {
         let model: TVLibraryGridViewModel
         @Binding var lastControl: LibraryControl
 
-        /// Read from the library when the row first appears.
+        /// Read from the library when the row appears and whenever the shown
+        /// library changes, since switching sub-tabs keeps this row.
         @State private var preserves = false
         @FocusState private var focused: LibraryControl?
 
@@ -240,7 +241,7 @@ extension TVMainTabView {
             .onChange(of: focused) {
                 if let focused { lastControl = focused }
             }
-            .onAppear { preserves = model.preserveEnabled }
+            .onChange(of: model.libraryId, initial: true) { preserves = model.preserveEnabled }
         }
 
         // MARK: Sort
