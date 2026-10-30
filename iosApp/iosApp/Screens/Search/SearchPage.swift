@@ -84,7 +84,8 @@ struct SearchView: View {
     private var content: some View {
         if model.isSearching && model.results.isEmpty {
             Color.clear
-        } else if let error = model.error {
+        } else if let error = model.error, model.results.isEmpty {
+            // A failed next page keeps the results already on screen.
             ErrorView(state: error, onRetry: { Task { await model.search(reset: true) } })
         } else if model.hasSearched && model.results.isEmpty {
             emptyState(title: "No results", subtitle: "Try a different search term")
