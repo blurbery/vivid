@@ -23,8 +23,8 @@ final class TVLibraryGridViewModel {
     private(set) var facetFailureReason: String?
 
     /// Whether queries name the media type (Movies and Series pages do).
-    @ObservationIgnored private let sendsMediaType: Bool
-    @ObservationIgnored private let requestCatalog: ([String: String]) async throws -> CatalogResponse
+    private let sendsMediaType: Bool
+    private let requestCatalog: ([String: String]) async throws -> CatalogResponse
     @ObservationIgnored private var nextOffset = 0
     @ObservationIgnored private var snapshot: String?
     @ObservationIgnored private var hasLoadedLaterPage = false
@@ -124,7 +124,7 @@ final class TVLibraryGridViewModel {
         do {
             facets = try await FacetLoader.shared.facets(libraryId: libraryId)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
             facetsFailed = true
             if MediaServerProvider.active == .emby {
                 facetFailureReason = Self.failureReason(error)

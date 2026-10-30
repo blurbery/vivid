@@ -18,10 +18,16 @@ extension TVMainTabView {
         @State private var lastFocusedKey: String?
         @State private var measuredWidth: CGFloat?
         @State private var artwork = TVPosterArtworkWindow()
+        @State private var retryCount = 0
         @FocusState private var emptyFocused: Bool
         @Namespace private var scope
         @Environment(\.displayScale) private var displayScale
         @Environment(AppRouter.self) private var router
+
+        /// Reloads when the libraries change or Retry is chosen, cancelling any load still running.
+        private var loadKey: String {
+            libraries.map { "\($0.id)" }.joined(separator: ",") + "#\(retryCount)"
+        }
 
         private static let columns = 7
         private static let columnSpacing = VividTheme.Skyline.collectionGridColumnSpacing
@@ -39,7 +45,7 @@ extension TVMainTabView {
             .padding(.bottom, VividTheme.largePadding)
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { measuredWidth = $0 }
-            .task(id: libraries.map(\.id)) { await load() }
+            .task(id: loadKey) { await load() }
             .onChange(of: artworkEntries(displayed)) { _, entries in artwork.update(entries) }
             .onAppear { artwork.update(artworkEntries(displayed)) }
             .onDisappear {
@@ -134,7 +140,7 @@ extension TVMainTabView {
                 if isLoading {
                     Color.clear
                 } else if let error {
-                    ErrorView(state: error, onRetry: { Task { await load() } })
+                    ErrorView(state: error, onRetry: { retryCount += 1 })
                 } else {
                     EmptyStateView(
                         icon: filterActive ? "line.3.horizontal.decrease" : "square.stack",
