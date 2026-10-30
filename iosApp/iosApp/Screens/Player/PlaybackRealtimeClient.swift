@@ -21,8 +21,7 @@ actor PlaybackRealtimeClient {
         5_000_000_000,
     ]
     /// After this many consecutive connection failures, stop reconnecting and
-    /// flip `isRealtimeUnavailable` so consumers can surface a non-fatal
-    /// "realtime control unavailable" notice. Local playback continues; only
+    /// flip `isRealtimeUnavailable`. Local playback continues; only
     /// remote command/event delivery is degraded.
     private static let consecutiveFailureCircuitBreakerThreshold = 8
 
