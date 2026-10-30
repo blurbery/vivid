@@ -54,6 +54,9 @@ final class PersonPageModel {
     private var nextOffset = 0
     private var snapshot: String?
     private var filmographyGeneration = 0
+    /// Only a reload advances this, so choosing a filter while the Movies and
+    /// Series checks are out doesn't throw their answer away.
+    private var offeredFiltersGeneration = 0
     private var pageRequestGeneration: Int?
     private var metadataGeneration = 0
     private var metadataPoll: Task<Void, Never>?
@@ -160,11 +163,12 @@ final class PersonPageModel {
     /// Offers Movies and Series only when the person has some. A failed probe
     /// keeps its filter offered.
     private func refreshOfferedFilters() async {
-        let generation = filmographyGeneration
+        offeredFiltersGeneration += 1
+        let generation = offeredFiltersGeneration
         async let movies = hasTitles(ofType: "movie")
         async let series = hasTitles(ofType: "series")
         let (hasMovies, hasSeries) = await (movies, series)
-        guard generation == filmographyGeneration else { return }
+        guard generation == offeredFiltersGeneration else { return }
         var offered: [PersonMediaFilter] = [.all]
         if hasMovies != false { offered.append(.movies) }
         if hasSeries != false { offered.append(.series) }

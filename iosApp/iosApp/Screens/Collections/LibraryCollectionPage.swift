@@ -116,22 +116,23 @@ struct LibraryCollectionDetailView: View {
         guard !isLoading else { return }
         let itemsKey = CacheKey.collectionItems(collectionId)
         if reset {
+            // A cached first page is only painted while the first page is
+            // fetched again; paging always restarts from the top.
             if items.isEmpty, MediaServerProvider.active == .silo,
                let cached = ResponseCache.shared.get(itemsKey, as: CatalogResponse.self) {
                 items = cached.items
                 hasMore = cached.hasMore ?? false
                 total = cached.totalExact == false ? nil : cached.total
-                nextOffset = cached.items.count
-                snapshot = cached.snapshot
             } else {
                 items = []
                 hasMore = true
                 total = nil
-                nextOffset = 0
-                snapshot = nil
             }
+            nextOffset = 0
+            snapshot = nil
+        } else {
+            guard hasMore else { return }
         }
-        guard hasMore else { return }
 
         isLoading = true
         error = nil
