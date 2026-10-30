@@ -389,55 +389,6 @@ extension PlayerViewModel {
         )
     }
 
-    func cycleAudioTrack() {
-        guard !audioTracks.isEmpty else { return }
-        let nextIndex: Int
-        if let selectedAudioId,
-           let currentIndex = audioTracks.firstIndex(where: { $0.trackId == selectedAudioId }) {
-            nextIndex = audioTracks.index(after: currentIndex) % audioTracks.count
-        } else {
-            nextIndex = 0
-        }
-        selectAudio(audioTracks[nextIndex])
-    }
-
-    /// Cycling and toggling skip burn-in rows: each of those restarts the
-    /// server's transcode.
-    private var quickSwitchSubtitleTracks: [PlayerTrack] {
-        subtitleTracks.filter { !isServerBurnInRow($0.trackId) }
-    }
-
-    func cycleSubtitleTrack() {
-        let tracks = quickSwitchSubtitleTracks
-        guard !tracks.isEmpty else { return }
-
-        if selectedSubtitleId == nil {
-            selectSubtitle(tracks[0])
-            return
-        }
-
-        guard let selectedSubtitleId,
-              let currentIndex = tracks.firstIndex(where: { $0.trackId == selectedSubtitleId }) else {
-            disableSubtitles()
-            return
-        }
-
-        let nextIndex = tracks.index(after: currentIndex)
-        if nextIndex < tracks.count {
-            selectSubtitle(tracks[nextIndex])
-        } else {
-            disableSubtitles()
-        }
-    }
-
-    func toggleSubtitles() {
-        if selectedSubtitleId != nil {
-            disableSubtitles()
-        } else if let first = quickSwitchSubtitleTracks.first {
-            selectSubtitle(first)
-        }
-    }
-
     func audioSelectionIndex(for track: PlayerTrack) -> Int? {
         track.srcId ?? track.ffIndex
     }

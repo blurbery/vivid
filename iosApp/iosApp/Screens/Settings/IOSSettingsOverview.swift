@@ -5,7 +5,6 @@ struct IOSSettingsOverview: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var uiCustomization: UICustomizationPreferences
     @Binding var showSignOutConfirm: Bool
-    @Environment(AppRouter.self) private var router
     @State private var profileEditorRoute: PhoneProfileEditorRoute?
     @State private var unsentDiagnostics = 0
     @Environment(\.duoSideStrip) private var duoSideStrip
@@ -135,7 +134,6 @@ struct IOSSettingsOverview: View {
 struct PhoneServerSettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Binding var showSignOutConfirm: Bool
-    @Environment(AppRouter.self) private var router
     @State private var store = TVSavedAccountStore.shared
     @State private var renaming = false
     @State private var serverName = ""
@@ -287,7 +285,6 @@ private enum PhoneProfileGridEntry: Identifiable {
 struct PhoneSavedAccountCards: View {
     let isSettings: Bool
     @State private var store = TVSavedAccountStore.shared
-    @State private var registry = ServerRegistry.shared
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
     @Binding var editorRoute: PhoneProfileEditorRoute?

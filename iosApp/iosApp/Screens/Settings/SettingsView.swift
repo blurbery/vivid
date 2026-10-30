@@ -10,7 +10,6 @@ import SwiftUI
 struct SettingsView: View {
     @State private var viewModel = SettingsViewModel()
     @State private var uiCustomization = UICustomizationPreferences.shared
-    @State private var launchPreferences = ProfileLaunchPreferences.shared
     @Environment(AppRouter.self) private var router
     @State private var showSignOutConfirm = false
 

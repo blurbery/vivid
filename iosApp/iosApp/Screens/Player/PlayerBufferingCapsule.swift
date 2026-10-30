@@ -4,8 +4,6 @@ import SwiftUI
 struct PlayerBufferingCapsule: View {
     var label: LocalizedStringKey = "Loading…"
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         #if os(tvOS) || os(iOS)
         VividLoadingDots()
@@ -13,46 +11,6 @@ struct PlayerBufferingCapsule: View {
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        #endif
-    }
-
-    private var spacing: CGFloat {
-        #if os(tvOS)
-        8
-        #else
-        7
-        #endif
-    }
-
-    private var spinnerScale: CGFloat {
-        #if os(tvOS)
-        0.9
-        #else
-        0.8
-        #endif
-    }
-
-    private var horizontalPadding: CGFloat {
-        #if os(tvOS)
-        12
-        #else
-        10
-        #endif
-    }
-
-    private var topPadding: CGFloat {
-        #if os(tvOS)
-        64
-        #else
-        68
-        #endif
-    }
-
-    private var trailingPadding: CGFloat {
-        #if os(tvOS)
-        80
-        #else
-        16
         #endif
     }
 }

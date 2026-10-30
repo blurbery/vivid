@@ -404,12 +404,6 @@ enum StartupContentPrefetcher {
         }
     }
 
-    static func prefetchUserLibraries() {
-        Task {
-            _ = try? await fetchUserLibraries()
-        }
-    }
-
     static func fetchUserLibraries() async throws -> LibrariesResponse {
         let generation = profileScopedGeneration
         #if os(iOS) || os(tvOS)
@@ -451,12 +445,6 @@ enum StartupContentPrefetcher {
             probe.finish(error: error)
             #endif
             throw error
-        }
-    }
-
-    static func prefetchBrowseFirstPage(libraryId: Int?, state: CatalogFilterState = .none) {
-        Task {
-            _ = try? await fetchBrowseFirstPage(libraryId: libraryId, state: state)
         }
     }
 

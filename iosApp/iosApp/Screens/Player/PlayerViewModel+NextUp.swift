@@ -482,27 +482,6 @@ extension PlayerViewModel {
         )
     }
 
-    func playOnDeckItemNow(_ item: PlayerOnDeckItem) {
-        // Another title rather than the next episode: Settings > Subtitles
-        // and Audio Language apply again.
-        viewingSubtitlePrefs = nil
-        viewingAudioLanguage = nil
-        viewingAudioSeedOrdinal = nil
-        let request = LoadRequest(
-            contentId: item.contentId,
-            preferredFileId: nil,
-            preferredAudioTrackIndex: nil,
-            preferredSubtitleTrackIndex: nil,
-            preferredSidecarSubtitleTrackId: nil,
-            startFromBeginning: false
-        )
-        beginFreshLoad(
-            request: request,
-            progressPosition: completionProgressPositionForCurrentItem(),
-            finalizeCurrentSession: true
-        )
-    }
-
     func completionProgressPositionForCurrentItem() -> Double {
         currentTime.isFinite ? max(0, currentTime) : 0
     }

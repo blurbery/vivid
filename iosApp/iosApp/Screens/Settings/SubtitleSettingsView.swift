@@ -300,13 +300,6 @@ private struct ColorChoicePicker: View {
         self._selection = selection
     }
 
-    @_disfavoredOverload
-    init<S: StringProtocol>(title: S, colors: [(hex: String, label: String)], selection: Binding<String>) {
-        self.title = Text(title)
-        self.colors = colors
-        self._selection = selection
-    }
-
     var body: some View {
         Picker(selection: normalizedSelection) {
             ForEach(colors, id: \.hex) { color in

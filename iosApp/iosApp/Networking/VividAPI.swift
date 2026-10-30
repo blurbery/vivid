@@ -388,10 +388,6 @@ actor VividAPI {
         )
     }
 
-    func setDeviceSetting(key: String, value: String) async throws {
-        try await http.putVoid("/api/v1/settings/device/\(key)", body: SetSettingBody(value: value))
-    }
-
     func setSetting(key: String, value: String) async throws {
         try await http.putVoid("/api/v1/settings/\(key)", body: SetSettingBody(value: value))
     }
@@ -885,13 +881,6 @@ actor VividAPI {
             )
         )
         return profile.asUserProfile
-    }
-
-    /// Patch a profile. Send only the fields you want to change — the
-    /// server treats absent fields as untouched. Used by Settings to
-    /// persist subtitle prefs.
-    func updateProfile(profileId: String, body: UpdateProfileBody) async throws {
-        try await http.putVoid("/api/v1/profiles/\(profileId)", body: body)
     }
 
     // --- Playback ---

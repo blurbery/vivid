@@ -436,15 +436,6 @@ struct ContentView: View {
         }
     }
 
-    /// macOS does not reliably publish a background scene phase before Cmd-Q.
-    /// Termination always ends active playback, so it starts an away interval
-    /// even when media was still playing at the time of the notification.
-    private func markProfileAwayStartForTermination(at date: Date = .now) {
-        guard AuthService.shared.isLoggedIn,
-              AuthService.shared.profileId != nil else { return }
-        launchPreferences.markBackgrounded(at: date)
-    }
-
     /// If PiP starts, stop the away clock. If it later stops while Vivid is
     /// still hidden, begin a fresh interval at that point.
     private func updateProfileAwayStartForBackgroundPlayback() {

@@ -108,33 +108,6 @@ struct PlayerOnDeckItem: Identifiable, Hashable {
         return title
     }
 
-    var secondaryTitle: String? {
-        guard let seasonNumber, let episodeNumber else { return nil }
-        let episodeLabel = String(localized: "S\(String(seasonNumber)):E\(String(episodeNumber))", comment: "Season and episode number, for example S1:E3")
-        if seriesTitle?.isEmpty == false, !title.isEmpty {
-            return "\(episodeLabel) · \(title)"
-        }
-        return episodeLabel
-    }
-
-    var progressFraction: Double {
-        guard let positionSeconds,
-              let durationSeconds,
-              durationSeconds > 0 else {
-            return 0
-        }
-        return min(max(positionSeconds / durationSeconds, 0), 1)
-    }
-
-    var minutesRemaining: Int? {
-        guard let positionSeconds,
-              let durationSeconds,
-              durationSeconds > positionSeconds else {
-            return nil
-        }
-        return max(1, Int(((durationSeconds - positionSeconds) / 60).rounded()))
-    }
-
     init(
         item: SectionItem,
         artworkUrl preferredArtworkUrl: String? = nil,
@@ -587,7 +560,6 @@ class PlayerViewModel {
     var routeWarnings: [String] {
         activePreparedProtocolV3?.plan.degradationWarnings.map(\.message) ?? []
     }
-    var hasTrackSelectionOptions: Bool { !audioTracks.isEmpty || !subtitleTracks.isEmpty }
     var supportsSecondarySubtitles: Bool { backendCapabilities.supportsSecondarySubtitles }
     /// `subtitleTracks` grouped by language and sorted by preferred format
     /// for display. The stored array stays in source/append order (the
@@ -991,7 +963,6 @@ class PlayerViewModel {
     static let nextUpCountdownDefaultSeconds = 10
     static let nextUpHUDCountdownThresholdSeconds: Double = 100
     static let introAutoSkipCountdownDefaultSeconds = 5
-    static var nextUpCountdownTotal: Int { nextUpCountdownDefaultSeconds }
     var nextUpAutoplayCancelled = false
     /// Set when the user taps Keep Watching; suppresses re-presenting the
     /// pre-end Next Up prompt while the playhead stays inside the prompt

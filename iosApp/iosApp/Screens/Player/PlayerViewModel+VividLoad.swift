@@ -537,18 +537,6 @@ extension PlayerViewModel {
         vividPlaybackController.engine.videoGravity = settings.videoGravity.avGravity
     }
 
-    func applyUserVolume(_ volume: Float) {
-        userVolume = min(max(volume, 0), 1)
-        if userVolume > 0 { userMuted = false }
-        vividPlaybackController.setMuted(userMuted)
-        vividPlaybackController.setVolume(userVolume)
-    }
-
-    func applyUserMuted(_ muted: Bool) {
-        userMuted = muted
-        vividPlaybackController.setMuted(muted)
-    }
-
     func movieTime(for session: PlaybackSessionResponse) -> Double {
         let playerTime = session.position.isFinite ? session.position : 0
         let offset = session.timelineOffsetSeconds.isFinite ? session.timelineOffsetSeconds : 0

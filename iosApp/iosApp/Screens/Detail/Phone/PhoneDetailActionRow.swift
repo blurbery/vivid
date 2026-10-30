@@ -277,16 +277,6 @@ struct PhoneDetailPrimaryActions<Play: View, Selectors: View, Actions: View>: Vi
     }
 }
 
-extension PhoneDetailPrimaryActions where Selectors == EmptyView {
-    init(
-        stackedSpacing: CGFloat = 14,
-        @ViewBuilder play: @escaping () -> Play,
-        @ViewBuilder actions: @escaping () -> Actions
-    ) {
-        self.init(stackedSpacing: stackedSpacing, play: play, selectors: { EmptyView() }, actions: actions)
-    }
-}
-
 private struct PhoneDetailActionRule: View {
     var body: some View {
         Rectangle()

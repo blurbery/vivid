@@ -122,11 +122,6 @@ extension PlayerViewModel {
         openHUD()
     }
 
-    func openPlaybackHUD() {
-        requestedTVHUDEntryPoint = .playback
-        openHUD()
-    }
-
     func consumeTVHUDEntryRequest() {
         requestedTVHUDEntryPoint = nil
     }

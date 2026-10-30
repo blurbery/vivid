@@ -143,42 +143,6 @@ actor PlaybackRealtimeClient {
         }
     }
 
-    /// Subscribe to changes in `isRealtimeUnavailable`. The handler runs on
-    /// the main actor — consumers (PlayerViewModel) can mutate
-    /// `@Observable` state directly. Returns the current value once at
-    /// subscription time so observers don't need a separate read. The
-    /// returned token must be passed to `removeUnavailabilityObserver`
-    /// to avoid leaking observers across binds.
-    @discardableResult
-    func observeUnavailability(_ handler: @escaping @MainActor (Bool) -> Void) async -> UUID {
-        let id = UUID()
-        unavailabilityListeners.append(UnavailabilityObserver(id: id, handler: handler))
-        let snapshot = isRealtimeUnavailable
-        await MainActor.run { handler(snapshot) }
-        return id
-    }
-
-    /// Subscribe to changes in websocket readiness. This is stricter than
-    /// `isRealtimeUnavailable`: it is false before the session websocket has
-    /// connected and sent hello, during reconnect gaps, and after unbind.
-    @discardableResult
-    func observeConnectivity(_ handler: @escaping @MainActor (Bool) -> Void) async -> UUID {
-        let id = UUID()
-        let observer = ConnectivityObserver(id: id, handler: handler)
-        connectivityListeners.append(observer)
-        let snapshot = isRealtimeConnected
-        notifyConnectivity(snapshot, listeners: [observer])
-        return id
-    }
-
-    func removeUnavailabilityObserver(_ id: UUID) {
-        unavailabilityListeners.removeAll { $0.id == id }
-    }
-
-    func removeConnectivityObserver(_ id: UUID) {
-        connectivityListeners.removeAll { $0.id == id }
-    }
-
     private func setRealtimeConnected(_ value: Bool) {
         guard isRealtimeConnected != value else { return }
         isRealtimeConnected = value

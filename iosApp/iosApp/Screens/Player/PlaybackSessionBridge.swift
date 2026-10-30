@@ -183,17 +183,6 @@ enum PlaybackDeliveryStrategy {
     case remux
     case transcode
 
-    init(playMethod: String) {
-        switch playMethod.lowercased() {
-        case "remux":
-            self = .remux
-        case "transcode":
-            self = .transcode
-        default:
-            self = .direct
-        }
-    }
-
     var name: String {
         switch self {
         case .direct:

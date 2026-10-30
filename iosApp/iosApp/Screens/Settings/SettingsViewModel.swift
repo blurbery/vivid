@@ -210,12 +210,6 @@ class SettingsViewModel {
     }
 
     @MainActor
-    func setBufferAhead(_ mode: BufferAheadMode) async {
-        PlayerSettings.shared.setBufferAhead(mode)
-        bufferAhead = PlayerSettings.shared.bufferAhead
-    }
-
-    @MainActor
     func setVolumeBoostEnabled(_ enabled: Bool) async {
         PlayerSettings.shared.setVolumeBoostEnabled(enabled)
         volumeBoostEnabled = PlayerSettings.shared.volumeBoostEnabled

@@ -67,19 +67,6 @@ extension PlayerViewModel {
     }
 
     @MainActor
-    func setSubtitlePosition(_ position: SubtitlePositionPreset) {
-        var next = settings.subtitleAppearance
-        guard next.position != position else { return }
-        next.position = position
-        settings.subtitleAppearance = next.sanitized()
-        settings.subtitleUsesDeviceAppearanceOverride = true
-        applySubtitleAppearanceToPlayer()
-        Task { [settings] in
-            await settings.setSubtitleAppearance(next)
-        }
-    }
-
-    @MainActor
     func setSubtitleDeviceOverrideEnabled(_ enabled: Bool) async {
         await settings.setSubtitleDeviceOverrideEnabled(enabled)
         applySubtitleAppearanceToPlayer()

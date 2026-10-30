@@ -21,8 +21,4 @@ extension PlatformImage {
         return PlatformImage(cgImage: cgImage)
         #endif
     }
-
-    static func vividImage(data: Data) -> PlatformImage? {
-        PlatformImage(data: data)
-    }
 }

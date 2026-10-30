@@ -1142,28 +1142,6 @@ struct PlayerNextUpScreen: View {
         #endif
     }
 
-    private var onDeckSection: some View {
-        MediaRow(
-            title: String(localized: "On Deck"),
-            items: viewModel.nextUpCarouselItems.map(\.sectionItem),
-            onItemTap: playOnDeckItem(contentId:),
-            showProgress: true,
-            icon: "play.circle.fill",
-            layout: .thumbnail,
-            usesProvidedThumbnailTapAction: onDeckUsesProvidedThumbnailTapAction,
-            focusRequest: onDeckFocusRequest,
-            onMoveUp: focusAboveOnDeck
-        )
-    }
-
-    private var onDeckUsesProvidedThumbnailTapAction: Bool {
-        #if os(iOS)
-        return true
-        #else
-        return false
-        #endif
-    }
-
     private var statusLabel: String {
         if viewModel.nextUpEpisode == nil && !viewModel.isLoadingNextUpEpisode {
             return viewModel.nextUpScreenVideoEnded
@@ -1199,14 +1177,6 @@ struct PlayerNextUpScreen: View {
         focusFirstOnDeckItem()
     }
 
-    private func focusAboveOnDeck() {
-        if viewModel.nextUpEpisode != nil {
-            focusedTarget = .autoPlay
-            return
-        }
-        focusPreferredAction()
-    }
-
     private func focusFirstOnDeckItem() {
         #if os(tvOS)
         return
@@ -1235,13 +1205,6 @@ struct PlayerNextUpScreen: View {
             return .keepWatching
         }
         return .back
-    }
-
-    private func playOnDeckItem(contentId: String) {
-        guard let item = viewModel.nextUpCarouselItems.first(where: { $0.contentId == contentId }) else {
-            return
-        }
-        viewModel.playOnDeckItemNow(item)
     }
 
     private var backgroundArtwork: (url: String, thumbhash: String?)? {
@@ -1283,9 +1246,6 @@ struct PlayerNextUpScreen: View {
         false
         #endif
     }
-    private var horizontalPadding: CGFloat { isTV ? 80 : 24 }
-    private var verticalPadding: CGFloat { isTV ? 58 : 24 }
-    private var sectionSpacing: CGFloat { isTV ? 34 : 22 }
     private var eyebrowSize: CGFloat { isTV ? 18 : 12 }
     private var seriesTitleSize: CGFloat { isTV ? 34 : 22 }
     private var subtitleSize: CGFloat { isTV ? 25 : 17 }

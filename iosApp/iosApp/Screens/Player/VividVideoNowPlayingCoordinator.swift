@@ -194,24 +194,6 @@ final class VividVideoNowPlayingCoordinator {
         nowPlayingInfo = [:]
     }
 
-    func setPreferredSkipInterval(_ seconds: TimeInterval) {
-        setPreferredSkipIntervals(backward: seconds, forward: seconds)
-    }
-
-    func setPreferredSkipIntervals(backward: TimeInterval, forward: TimeInterval) {
-        preferredSkipIntervals = SkipIntervals(
-            backward: max(1, backward),
-            forward: max(1, forward)
-        )
-        guard let center = commandCenter else { return }
-        center.skipForwardCommand.preferredIntervals = [
-            NSNumber(value: preferredSkipIntervals.forward),
-        ]
-        center.skipBackwardCommand.preferredIntervals = [
-            NSNumber(value: preferredSkipIntervals.backward),
-        ]
-    }
-
     /// Publishes the source-media timeline. `position` and `duration` must be
     /// in the same coordinate space because the system returns scrub targets
     /// in the coordinate space represented by this dictionary.

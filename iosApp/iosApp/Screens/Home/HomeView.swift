@@ -35,14 +35,6 @@ struct HomeView: View {
     @State private var pullRefreshArmed = false
     @State private var pullRefreshRequest = 0
     @State private var homeScrollPhase: ScrollPhase = .idle
-    /// Breathing room between the status-bar safe area and the floating
-    /// header. Uses the same value as the Libraries and For You top chrome so
-    /// the shared action cluster sits at one height on every root page.
-    private let headerTopInset: CGFloat = VividTheme.smallPadding
-    /// The LazyVStack already contributes its normal section spacing after the
-    /// header runway. Adding a second large header gap pushed the first
-    /// visible row far down the screen whenever an earlier Home row was hidden.
-    private let headerToContentGap: CGFloat = 0
     #endif
     #endif
     @Environment(AppRouter.self) private var router
@@ -346,10 +338,6 @@ struct HomeView: View {
     }
 
     #if !os(tvOS)
-    /// Home uses the same fixed canvas as the rest of the signed-in app.
-    private var homeFeedBackground: some View {
-        VividPageBackdrop()
-    }
 
     private func refreshHome() async {
         await MainActor.run {
@@ -415,29 +403,6 @@ struct HomeView: View {
     private func setWatched(_ item: SectionItem, played: Bool) async -> Bool {
         await viewModel.setWatched(item, played: played)
     }
-
-    #if !os(tvOS)
-    private var sectionSpacing: CGFloat {
-        VividTheme.largePadding
-    }
-
-    /// On iOS the ScrollView already starts inside the safe area, so the
-    /// runway must not count the status-bar inset a second time.
-    private func runwaySafeAreaInset(_ geometry: GeometryProxy) -> CGFloat {
-        #if os(iOS)
-        return 0
-        #endif
-    }
-
-    private func topRunwaySpacing(topSafeAreaInset: CGFloat) -> CGFloat {
-        // Mirror the floating header's vertical footprint (icon-frame height +
-        // bottom padding) so the first row clears it. LazyVStack supplies the
-        // remaining row gap; don't double-count it here.
-        #if os(iOS)
-        return 8
-        #endif
-    }
-    #endif
 }
 
 #if os(iOS)
