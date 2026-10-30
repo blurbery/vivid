@@ -152,11 +152,13 @@ struct TVHomeDiscoveryFeed: View {
             }
         }
         .modifier(TVHomeArtworkWarmupModifier(sections: sections,
-            presentation: homeCards.presentation, focus: rowFocusOwnership, memory: rowFocusMemory))
+            presentation: homeCards.presentation, focus: rowFocusOwnership, memory: rowFocusMemory,
+            seriesBackdrops: showsCollections))
         .background {
             TVHomeTopMenuBoundary(focus: rowFocusOwnership, hasSpotlight: !slides.isEmpty)
         }
         .environment(\.homeCardPresentation, homeCards.presentation)
+        .environment(\.showsHomeSeriesBackdrops, showsCollections)
         .environment(\.tvHomeFocusOwnership, rowFocusOwnership)
         .environment(\.tvHomeScrollDiagnostics, scrollDiagnostics.enabled ? scrollDiagnostics : nil)
         .onDisappear { rowArtworkWindow.stopPendingPreparation() }
@@ -619,6 +621,8 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
     let presentation: CardPresentationPreference
     let focus: TVHomeFocusOwnership
     let memory: TVHomeRowFocusMemory
+    /// Home's Continue Watching and Next Up show series backgrounds; warm those.
+    var seriesBackdrops = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var artworkWarmup = TVHomeArtworkWarmup()
 
@@ -667,8 +671,10 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
             // screenful, instead of decoding card 1 again for a row at card 20.
             let start = min(max(0, focusedIndex - 1), max(0, section.items.count - visibleCount))
             let end = min(section.items.count, start + visibleCount)
+            let seriesArt = wide && seriesBackdrops && HomeSeriesBackdrops.applies(toSectionType: section.sectionType)
             let rowRequests: [VividImageRequest] = section.items[start..<end].compactMap { item in
-                let value = wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl
+                let value = seriesArt ? HomeSeriesBackdrops.shared.art(for: item).url
+                    : wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl
                 guard let value, let url = URL(string: value),
                       ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
                 return PosterImageCache.displayRequest(url: url, pixelSize: size, priority: .low)

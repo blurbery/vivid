@@ -300,6 +300,7 @@ final class VividCloudPreferences {
         for key in defaults { SharedDefaults.shared.removeObject(forKey: key) }
         if !profile.isEmpty { StudiosNetworksStore.removeCache(server: account.serverID, profile: profile) }
         if !profile.isEmpty { HomeCollectionsStore.removeCache(server: account.serverID, profile: profile) }
+        if !profile.isEmpty { HomeSeriesBackdrops.removeCache(server: account.serverID, profile: profile) }
         TVHomeCardPreferences.shared.cloudPreferencesChanged()
         try persist()
     }

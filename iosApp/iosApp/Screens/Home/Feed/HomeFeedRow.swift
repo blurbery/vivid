@@ -31,6 +31,10 @@ struct HomeFeedRow: View {
         return section.sectionType.lowercased().contains("next") && hasEpisodes
     }
 
+    private var usesSeriesBackdrops: Bool {
+        usesStills && HomeSeriesBackdrops.applies(toSectionType: section.sectionType)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: HomeFeedMetrics.headerGap) {
             HomeSectionHeader(
@@ -40,6 +44,9 @@ struct HomeFeedRow: View {
             )
 
             rowScroller
+        }
+        .task(id: section.items.map(\.contentId)) {
+            if usesSeriesBackdrops { await HomeSeriesBackdrops.shared.keepPrepared(section.items) }
         }
     }
 
@@ -78,6 +85,7 @@ struct HomeFeedRow: View {
                                 showsEpisodeDetails: MediaServerProvider.active.usesNativeUser
                                     && section.sectionType.lowercased().contains("next"),
                                 opensResumeContext: isResume || (MediaServerProvider.active.usesNativeUser && section.sectionType.lowercased().contains("next")),
+                                usesSeriesBackdrop: usesSeriesBackdrops,
                                 onRemoveFromContinueWatching: removalAction(for: item),
                                 onSetWatched: watchedAction(for: item)
                             )

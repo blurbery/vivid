@@ -178,6 +178,11 @@ struct SectionItem: Codable, Identifiable, Hashable {
     let logoUrl: String?
     let userState: MediaItemUserState?
     let overlaySummary: OverlaySummary?
+    /// An episode's series background, when the row sends it apart from
+    /// the episode still in `backdropUrl`. Home's Continue Watching and
+    /// Next Up cards use it (see `HomeSeriesBackdrops`).
+    var seriesBackdropUrl: String? = nil
+    var seriesBackdropThumbhash: String? = nil
     var id: String { contentId }
 
     init(from decoder: Decoder) throws {
@@ -214,6 +219,8 @@ struct SectionItem: Codable, Identifiable, Hashable {
         logoUrl = try c.decodeIfPresent(String.self, forKey: .logoUrl)
         userState = try c.decodeIfPresent(MediaItemUserState.self, forKey: .userState)
         overlaySummary = try c.decodeIfPresent(OverlaySummary.self, forKey: .overlaySummary)
+        seriesBackdropUrl = try c.decodeIfPresent(String.self, forKey: .seriesBackdropUrl)
+        seriesBackdropThumbhash = try c.decodeIfPresent(String.self, forKey: .seriesBackdropThumbhash)
     }
 }
 

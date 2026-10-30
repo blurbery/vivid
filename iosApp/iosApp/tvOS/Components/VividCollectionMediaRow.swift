@@ -45,6 +45,7 @@ struct VividCollectionMediaRow: View, Equatable {
     @Environment(\.tvHomeRowArtworkGate) private var artworkGate
     @Environment(\.tvHomeFocusOwnership) private var ownership
     @Environment(\.tvHomeScrollDiagnostics) private var diagnostics
+    @Environment(\.showsHomeSeriesBackdrops) private var showsHomeSeriesBackdrops
     @StateObject private var proxy = CollectionHStackProxy()
     @StateObject private var focus = CollectionRowFocus()
     @State private var appliedEntry = 0
@@ -101,10 +102,19 @@ struct VividCollectionMediaRow: View, Equatable {
             restore(newIDs[min(index, newIDs.count - 1)])
         }
         .modifier(CollectionRowUpperBoundary(onMoveUp: onMoveUp))
+        .task(id: section.items.map(\.contentId)) {
+            if usesSeriesBackdrops { await HomeSeriesBackdrops.shared.keepPrepared(section.items) }
+        }
         .onDisappear {
             focus.cancelRequest()
             ownership?.unregisterCancellation(for: section.id)
         }
+    }
+
+    /// Only Home's Continue Watching and Next Up, not the same rows in For You.
+    private var usesSeriesBackdrops: Bool {
+        showsHomeSeriesBackdrops && section.tvHomeUsesLandscapeArtwork
+            && HomeSeriesBackdrops.applies(toSectionType: section.sectionType)
     }
 
     @ViewBuilder
@@ -129,7 +139,8 @@ struct VividCollectionMediaRow: View, Equatable {
                 initialIsFavorite: item.userState?.isFavorite == true,
                 usesRuntimeStatus: MediaRuntimeStatusOverlay.applies(
                     toType: item.type, inContinueWatching: section.isContinueWatchingSection
-                )
+                ),
+                usesSeriesBackdrop: usesSeriesBackdrops
             )
         } else {
             MediaCard(

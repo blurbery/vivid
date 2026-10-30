@@ -469,6 +469,8 @@ struct HomeStillCard: View {
     var showsMetadata: Bool = true
     var showsEpisodeDetails = false
     var opensResumeContext = false
+    /// Continue Watching and Next Up show an episode's series background.
+    var usesSeriesBackdrop = false
     var onRemoveFromContinueWatching: (() -> Void)? = nil
     var onSetWatched: ((Bool) async -> Bool)? = nil
 
@@ -515,6 +517,7 @@ struct HomeStillCard: View {
     /// kept in lockstep so the blur placeholder previews the image that
     /// will actually load.
     private var art: (url: String, thumbhash: String?) {
+        if usesSeriesBackdrop { return HomeSeriesBackdrops.shared.art(for: item) }
         if let backdrop = item.backdropUrl, !backdrop.isEmpty {
             return (backdrop, item.backdropThumbhash)
         }

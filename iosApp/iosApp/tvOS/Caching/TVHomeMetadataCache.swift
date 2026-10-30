@@ -354,8 +354,12 @@ final class TVHomeMetadataCache {
     private func artworkURLs(in value: Snapshot) -> Set<URL> {
         var strings: [String] = []
         for row in value.rows {
-            let wide = ["continue_watching", "next_up"].contains(row.section.sectionType.lowercased())
-            strings += row.section.items.compactMap { wide ? ($0.backdropUrl ?? $0.posterUrl) : $0.posterUrl }
+            if HomeSeriesBackdrops.applies(toSectionType: row.section.sectionType) {
+                // The artwork Home's cards show, series backgrounds included.
+                strings += row.section.items.map { HomeSeriesBackdrops.shared.art(for: $0).url }
+                continue
+            }
+            strings += row.section.items.compactMap { $0.posterUrl }
         }
         for slide in value.spotlight {
             strings += [slide.item.backdropUrl, slide.item.posterUrl, slide.item.logoUrl].compactMap { $0 }
