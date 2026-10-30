@@ -20,8 +20,8 @@ actor PlaybackRealtimeClient {
         2_000_000_000,
         5_000_000_000,
     ]
-    /// After this many consecutive connection failures, stop reconnecting and
-    /// flip `isRealtimeUnavailable`. Local playback continues; only
+    /// After this many consecutive connection failures, stop reconnecting.
+    /// Local playback continues; only
     /// remote command/event delivery is degraded.
     private static let consecutiveFailureCircuitBreakerThreshold = 8
 
@@ -30,8 +30,6 @@ actor PlaybackRealtimeClient {
     private var socket: URLSessionWebSocketTask?
     private var runTask: Task<Void, Never>?
     private var seenCommandIds = Set<String>()
-    private(set) var isRealtimeConnected = false
-    private(set) var isRealtimeUnavailable = false
 
     init(
         session: URLSession = .shared,
@@ -51,9 +49,6 @@ actor PlaybackRealtimeClient {
         generation += 1
         boundSessionId = normalized
         seenCommandIds.removeAll()
-        // Reset the circuit breaker — a new session deserves fresh
-        // reconnect budget independent of the previous session's history.
-        setRealtimeUnavailable(false)
         closeSocket()
         runTask?.cancel()
 
@@ -89,8 +84,6 @@ actor PlaybackRealtimeClient {
                 try await send(makePlaybackRealtimeHello(sessionId: sessionId), on: socket)
                 attempt = 0
                 consecutiveFailures = 0
-                setRealtimeConnected(true)
-                setRealtimeUnavailable(false)
                 try await receiveLoop(on: socket, sessionId: sessionId, generation: generation)
             } catch is CancellationError {
                 break
@@ -111,7 +104,6 @@ actor PlaybackRealtimeClient {
                 Self.logger.error(
                     "Realtime websocket circuit breaker tripped after \(consecutiveFailures) consecutive failures for session \(sessionId, privacy: .public); pausing reconnect attempts"
                 )
-                setRealtimeUnavailable(true)
                 break
             }
 
@@ -119,16 +111,6 @@ actor PlaybackRealtimeClient {
             attempt += 1
             try? await Task.sleep(nanoseconds: delay)
         }
-    }
-
-    private func setRealtimeConnected(_ value: Bool) {
-        guard isRealtimeConnected != value else { return }
-        isRealtimeConnected = value
-    }
-
-    private func setRealtimeUnavailable(_ value: Bool) {
-        guard isRealtimeUnavailable != value else { return }
-        isRealtimeUnavailable = value
     }
 
     private func receiveLoop(
@@ -276,7 +258,6 @@ actor PlaybackRealtimeClient {
     }
 
     private func closeSocket() {
-        setRealtimeConnected(false)
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
     }
