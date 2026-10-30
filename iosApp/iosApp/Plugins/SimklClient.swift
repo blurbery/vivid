@@ -414,7 +414,7 @@ final class SimklClient: @unchecked Sendable {
                 lastPost = next
                 return next.timeIntervalSinceNow
             }
-            if wait > 0 { try await Task.sleep(for: .milliseconds(Int(wait * 1000))) }
+            if wait > 0 { try await Task.sleep(for: .seconds(wait)) }
         }
         // The next write waits from when this one finished, so a write that
         // started late can't bring the next one closer than Simkl allows.

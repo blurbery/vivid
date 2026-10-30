@@ -137,7 +137,8 @@ final class FakeSimkl: @unchecked Sendable {
     var removals: [String] = []
     var revoked: [String] = []
     var problems: [String] = []
-    var lastPost: Date?
+    /// When the last write was answered, before Vivid could read the reply.
+    var lastPostAnswered: Date?
     var shortestPostGap = Double.infinity
     var inFlight = 0
     var mostInFlight = 0
@@ -201,8 +202,7 @@ final class FakeSimkl: @unchecked Sendable {
         }
         if request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("Vivid/") != true { problems.append("\(summary) had no User-Agent") }
         if method == "POST" {
-            if let lastPost { shortestPostGap = min(shortestPostGap, Date().timeIntervalSince(lastPost)) }
-            lastPost = Date()
+            if let lastPostAnswered { shortestPostGap = min(shortestPostGap, Date().timeIntervalSince(lastPostAnswered)) }
         }
 
         switch (method, path) {
@@ -414,7 +414,10 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
         fake.lock.withLock { fake.inFlight += 1; fake.mostInFlight = max(fake.mostInFlight, fake.inFlight) }
         usleep(20_000)
         let (status, headers, json) = fake.lock.withLock { fake.handle(request, body: body) }
-        fake.lock.withLock { fake.inFlight -= 1 }
+        fake.lock.withLock {
+            fake.inFlight -= 1
+            if request.httpMethod == "POST" { fake.lastPostAnswered = Date() }
+        }
         let data = json.flatMap { try? JSONSerialization.data(withJSONObject: $0) } ?? Data()
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
             headerFields: headers.merging(["Content-Type": "application/json"]) { current, _ in current })!, cacheStoragePolicy: .notAllowed)
@@ -718,7 +721,7 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
         print("\nAcross the whole run")
         let summary = fake.lock.withLock { (fake.problems, fake.shortestPostGap, fake.mostInFlight, fake.requests.count) }
         check(summary.0.isEmpty, "nothing Simkl asks apps not to do: \(summary.0.isEmpty ? "none" : summary.0.joined(separator: "; "))")
-        check(summary.1 >= 1.0, String(format: "at least a second between writes (shortest %.1f s)", summary.1))
+        check(summary.1 >= 1.1, String(format: "each write starts 1.1 s or more after the last one was answered (shortest %.2f s)", summary.1))
         check(summary.2 == 1, "one request at a time")
         print("  \(summary.3) Simkl requests in total")
     }
