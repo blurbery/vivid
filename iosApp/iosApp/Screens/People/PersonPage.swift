@@ -103,7 +103,7 @@ struct PersonDetailView: View {
         .sheet(isPresented: $showsBiography) {
             NavigationStack {
                 ScrollView {
-                    Text(person.bio ?? "")
+                    Text(Self.biography(of: person) ?? "")
                         .font(.body)
                         .lineSpacing(5)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,7 +134,7 @@ struct PersonDetailView: View {
                         MetadataRefreshIndicator()
                     }
                 }
-                if let bio = person.bio, !bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if let bio = Self.biography(of: person) {
                     Text(bio)
                         .font(.vividBody)
                         .foregroundStyle(Color.vividSecondaryText)
@@ -203,7 +203,7 @@ struct PersonDetailView: View {
         }
         .vividPageBackground()
         .fullScreenCover(isPresented: $showsFullBiography) {
-            TVFullSynopsis(overview: person.bio ?? "", title: String(localized: "Biography"))
+            TVFullSynopsis(overview: Self.biography(of: person) ?? "", title: String(localized: "Biography"))
                 .presentationBackground(.clear)
         }
     }
@@ -224,7 +224,7 @@ struct PersonDetailView: View {
                         MetadataRefreshIndicator()
                     }
                 }
-                if let bio = person.bio, !bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if let bio = Self.biography(of: person) {
                     Button { showsFullBiography = true } label: {
                         Text(bio)
                             .font(.vividBody)
@@ -315,6 +315,13 @@ struct PersonDetailView: View {
         let loaded = model.items.count
         if loaded == 0 { return nil }
         return model.hasMore ? String(localized: "\(loaded)+ titles") : String(localized: "\(loaded) titles")
+    }
+
+    /// The biography without the blank lines servers often wrap it in, or
+    /// nil when there is none.
+    private static func biography(of person: Person) -> String? {
+        guard let bio = person.bio?.trimmingCharacters(in: .whitespacesAndNewlines), !bio.isEmpty else { return nil }
+        return bio
     }
 
     /// Born, then Died or the current age, then the birthplace.
