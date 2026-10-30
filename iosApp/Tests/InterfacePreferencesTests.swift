@@ -558,6 +558,22 @@ final class InterfacePreferencesTests: XCTestCase {
             XCTAssertTrue(transport.reads.isEmpty)
         }
 
+        // A server that answers but can't batch reads or take idempotent
+        // writes is treated the same as one that can't be reached.
+        let limited = [
+            SettingsContractCapabilities(apiVersion: 1, revision: SettingKey.revision, contractEtag: "test", definitionCount: 3, scopes: ["profile_client"], supportsBatchedEffective: false, supportsIdempotentWrites: true, supportsAtomicShortcuts: true),
+            SettingsContractCapabilities(apiVersion: 1, revision: SettingKey.revision, contractEtag: "test", definitionCount: 3, scopes: ["profile_client"], supportsBatchedEffective: true, supportsIdempotentWrites: false, supportsAtomicShortcuts: true),
+        ]
+        for capabilities in limited {
+            transport.capabilities = .available(capabilities)
+            await second.refresh()
+            XCTAssertEqual(second.capabilityState, .unavailable)
+            XCTAssertFalse(second.allowsEditing)
+            XCTAssertEqual(second.cardPresentation, Self.artwork)
+            XCTAssertEqual(transport.puts.count, 2)
+            XCTAssertTrue(transport.reads.isEmpty)
+        }
+
         // A server an older build recorded as unable to sync shows the
         // defaults until a refresh finds it can.
         let remembered = freshStorage()
