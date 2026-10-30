@@ -1,4 +1,3 @@
-import SwiftUI
 import UIKit
 
 /// Request shapes, warming and decoded-memory budgets for artwork. Every

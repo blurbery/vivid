@@ -90,15 +90,14 @@ struct CachedAsyncImage: View {
     }
 
     private func makeSource() -> Source {
-        var allowed = isArtworkResident
-        var inHomeRow = false
-        var loadingSwitch = true
         #if os(tvOS)
-        if let rowGate {
-            inHomeRow = true
-            allowed = allowed && rowGate.enabled
-        }
-        loadingSwitch = loadingEnabled
+        let inHomeRow = rowGate != nil
+        let allowed = isArtworkResident && (rowGate?.enabled ?? true)
+        let loadingSwitch = loadingEnabled
+        #else
+        let inHomeRow = false
+        let allowed = isArtworkResident
+        let loadingSwitch = true
         #endif
         let scope = cacheScope ?? VividCacheScope.artwork
         let resolved = allowed ? resolvedURL : nil
