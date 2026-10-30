@@ -7,8 +7,7 @@ import Foundation
 /// forced trio go through ``PlayerSettings``, saved on this device for the
 /// current profile. The subtitle trio is the only input to automatic subtitle
 /// choice on every server; no server-side subtitle setting is read or written.
-/// The metadata language is the *profile's* choice and goes through
-/// ``ProfileSettingsWriter`` at `profile`. The tvOS screen is the twin of this
+/// The tvOS screen is the twin of this
 /// one.
 @Observable
 class SettingsViewModel {
@@ -64,13 +63,6 @@ class SettingsViewModel {
         PlayerSettings.shared.effectiveSubtitleAppearance
     }
 
-    /// Profile-scoped preferences, written at `scope=profile` through the
-    /// canonical settings API. Shared with the tvOS screen so the two cannot
-    /// drift; the properties below forward to it so this type's existing API
-    /// is unchanged for its views.
-    let prefs = ProfilePrefsEditor()
-
-
     var editorSubtitleLanguage: String {
         get { PlayerSettings.shared.preferredSubtitleLanguage }
         set {
@@ -98,20 +90,6 @@ class SettingsViewModel {
         get { PlayerSettings.shared.showForcedSubtitles ? "on" : "off" }
         set { PlayerSettings.shared.showForcedSubtitles = newValue == "on" }
     }
-
-    /// Preferred metadata language. `PlaybackPrefSentinel.none` is the
-    /// contract's null ("inherit the library default") on the wire.
-    /// Gated on `AICapabilities.shared.metadataEnabled` at the row.
-    var editorPreferredMetadataLanguage: String {
-        get { prefs.preferredMetadataLanguage }
-        set { prefs.preferredMetadataLanguage = newValue }
-    }
-
-    /// Surfaces the most recent server save state. The subtitle screen
-    /// shows a transient message when this is non-nil.
-
-    /// True when the connected server has no canonical settings API, so the
-    /// server-backed controls cannot work and the screens say why.
 
     var audioLanguageOptions: [PlaybackLanguageOption] {
         PlaybackLanguageOption.options(
@@ -145,20 +123,11 @@ class SettingsViewModel {
             && editorSubtitleMode != SubtitleMode.off.rawValue
     }
 
-    var metadataLanguageOptions: [PlaybackLanguageOption] {
-        PlaybackLanguageOption.options(
-            for: .catalogMetadataLanguage,
-            currentValue: editorPreferredMetadataLanguage,
-            runtimeValues: prefs.metadataLanguageSuggestions
-        )
-    }
-
     /// Main-actor isolated: it publishes into observable state the settings
     /// views are already rendering, and seeds the profile editor, which is
     /// itself main-actor bound.
     @MainActor
     func loadSettings() async {
-        prefs.bindProfile(id: AuthService.shared.profileId)
         await PlayerSettings.shared.reloadForCurrentProfile()
         adoptQualityFromPlayerSettings()
         preferredAudioLanguage = PlayerSettings.shared.audioLanguage
@@ -185,13 +154,6 @@ class SettingsViewModel {
         } else {
             activeProfile = nil
         }
-
-        // Paint the profile's own values first, then let the batched effective
-        // read replace them: it is the only source that accounts for a library,
-        // series or device override winning over the profile row.
-        prefs.bindProfile(id: activeProfileId)
-        prefs.seed(from: activeProfile)
-
     }
 
 
@@ -317,13 +279,5 @@ class SettingsViewModel {
     func setSubtitleMatchesSystemAppearance(_ enabled: Bool) async {
         PlayerSettings.shared.setSubtitleMatchesSystemAppearance(enabled)
         subtitleMatchesSystemAppearance = PlayerSettings.shared.subtitleMatchesSystemAppearance
-    }
-
-
-    /// Persist the preferred metadata language at `profile` scope.
-    /// Triggered from the settings screen's `onChange` handler.
-    @MainActor
-    func saveMetadataLanguage() async {
-        await prefs.saveMetadataLanguage()
     }
 }

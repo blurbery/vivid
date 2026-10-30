@@ -284,25 +284,6 @@ struct SearchView: View {
         .padding(.vertical, 20)
         #endif
     }
-
-    private var mediaTypePicker: some View {
-        Picker("Media Type", selection: $viewModel.selectedMediaType) {
-            ForEach(viewModel.availableMediaTypes) { mediaType in
-                Text(mediaType.title)
-                    .tag(mediaType)
-            }
-        }
-        .pickerStyle(.segmented)
-#if os(tvOS)
-        .vividFormWidth(tvFilterWidth)
-#endif
-    }
-
-#if os(tvOS)
-    /// Narrower than the results column so the segmented control reads as a
-    /// centered pill rather than stretching across the whole search page.
-    private var tvFilterWidth: CGFloat { 760 }
-#endif
 }
 
 #if os(tvOS)

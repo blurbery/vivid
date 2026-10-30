@@ -779,7 +779,6 @@ final class UICustomizationPreferences {
         return items.count == 1 && items[0].isHome ? appleDefaultPrimaryMenuItems() : items
     }
 
-    var hasExplicitPrimaryMenu: Bool { primaryMenu != nil }
     var primaryMenuUsesDeviceOverride: Bool {
         primaryMenuSource == .scope(.profileDevice)
     }

@@ -10,11 +10,7 @@ extension Color {
     static let auroraInk = Color.vividOnSurface
     #if os(tvOS) || os(iOS)
     static let auroraAccent = Color(white: 0.88)
-    static let auroraGlowSecondary = Color(white: 0.11)
     #endif
-    static let auroraNightTop = Color(hex: "#081117")
-    static let auroraNightMid = Color(hex: "#030608")
-    static let auroraNightBottom = Color.vividBackground
     static let auroraGlassTint = Color.vividSurfaceVariant
 
     static var auroraInkSecondary: Color { auroraInk.opacity(0.62) }
@@ -28,13 +24,6 @@ struct AuroraEyebrow: View {
     var centered: Bool = false
 
     init(text: LocalizedStringKey, centered: Bool = false) {
-        self.text = Text(text)
-        self.centered = centered
-    }
-
-    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
-    @_disfavoredOverload
-    init<S: StringProtocol>(text: S, centered: Bool = false) {
         self.text = Text(text)
         self.centered = centered
     }
@@ -224,26 +213,6 @@ private struct AuroraGhostBody: View {
 }
 
 // MARK: - Numbered "how-to" step row
-
-struct AuroraStepRow: View {
-    let number: Int
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 18) {
-            Text("\(number)")
-                .font(.system(size: 21, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.auroraAccent)
-                .frame(width: 46, height: 46)
-                .background(Circle().fill(Color.auroraAccent.opacity(0.12)))
-                .overlay(Circle().stroke(Color.auroraAccent.opacity(0.44), lineWidth: 1))
-            Text(text)
-                .font(.system(size: 23, weight: .regular))
-                .foregroundStyle(Color.auroraInkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
 
 // MARK: - Shared control metrics
 

@@ -50,14 +50,6 @@ extension Notification.Name {
 @Observable
 class AppRouter {
 
-    /// Outcomes on the post-erasure sign-out paths can only go here: the
-    /// diagnostics binding is purged before control returns, so a breadcrumb
-    /// would be dropped. See `signOutAndReset`.
-    @ObservationIgnored private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
-        category: "AppRouter"
-    )
-
     // MARK: - Auth State Machine
 
     enum AuthState: Equatable {
@@ -590,54 +582,6 @@ class AppRouter {
                     self.resetToLogin()
                 } else {
                     self.resetToServerSetup()
-                }
-            }
-        }
-    }
-
-    /// Sign out and forget the active server entirely. If another saved
-    /// server becomes active, re-enter its existing auth state; otherwise
-    /// return to server setup.
-    ///
-    /// Breadcrumbed exactly like `signOutAndReset`, for the same reason and
-    /// with one addition. Past the sign-out guard the binding purge has already
-    /// run, so neither the `removeFailed` half-state nor the success can be
-    /// recorded. The removal that follows then crosses an identity boundary of
-    /// its own — `ServerRegistry.remove` closes the capture gate for an active
-    /// server and reopens it only asynchronously — so a line here would be
-    /// blocked twice over even if the purge had not already erased the context.
-    func signOutRemoveServerAndReset() {
-        Task {
-            let serverId = ServerRegistry.shared.activeServerId
-            guard await completeRequestedSignOut() else {
-                Self.recordAuthActionBreadcrumb(reason: "signOutRemoveServer", outcome: "refused")
-                return
-            }
-            if let serverId {
-                let removed = await ServerRegistry.shared.remove(
-                    serverId: serverId,
-                    resolveFallbackProfile: true
-                )
-                guard removed else {
-                    // Signed out but the entry survived: the user lands back at
-                    // login for a server they asked to forget. The two halves
-                    // disagreeing is the actual bug, and it is visible only in
-                    // OSLog — see this function's doc comment.
-                    Self.logger.error("signOutRemoveServer signed out but the entry survived")
-                    await MainActor.run { self.resetToLogin() }
-                    return
-                }
-            }
-            await MainActor.run {
-                let auth = AuthService.shared
-                if !auth.hasServer {
-                    self.resetToServerSetup()
-                } else if !auth.isLoggedIn {
-                    self.resetToLogin()
-                } else if !auth.hasProfile {
-                    self.showProfileSelection()
-                } else {
-                    self.resetToHome()
                 }
             }
         }

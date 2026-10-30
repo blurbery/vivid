@@ -23,11 +23,6 @@ struct ErrorState: Equatable {
         return statusCode >= 500 || statusCode == 408 || statusCode == 429
     }
 
-    init(statusCode: Int?, message: String) {
-        self.statusCode = statusCode
-        self.message = message
-    }
-
     init(_ error: Error) {
         if let httpError = error as? HTTPError {
             self.statusCode = httpError.statusCode

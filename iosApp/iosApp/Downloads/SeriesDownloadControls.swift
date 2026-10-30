@@ -808,14 +808,6 @@ struct DownloadOptionRow: View {
         self.icon = icon
     }
 
-    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
-    @_disfavoredOverload
-    init<T: StringProtocol, D: StringProtocol>(title: T, detail: D, icon: String) {
-        self.title = Text(title)
-        self.detail = String(detail)
-        self.icon = icon
-    }
-
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)

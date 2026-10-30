@@ -25,12 +25,6 @@ import Foundation
 final class ImageSizeCapability: @unchecked Sendable {
     static let shared = ImageSizeCapability()
 
-    /// The query parameter name and size token this client asks for.
-    /// `large` is a deliberate stop short of `original`: TV posters and
-    /// stills render at w780 without paying for full-size art on every
-    /// card in a shelf.
-    static let requestedSize = ImageSizeSelection.requestedSize
-
     /// Whether this platform wants larger images at all. tvOS renders
     /// full-screen shelves and detail art on a 4K panel; iOS and macOS
     /// keep the server's default sizes, so their requests are unchanged.
@@ -92,9 +86,6 @@ final class ImageSizeCapability: @unchecked Sendable {
     var capability: ImageSizeCapabilityResponse? {
         lock.withLock { storedCapability }
     }
-
-    /// Whether this client will actually send a size on this platform.
-    var isAvailable: Bool { !requestQuery.isEmpty }
 
     /// Query entries for the current platform and probe state. `[:]`
     /// when the probe hasn't landed, the server doesn't support the

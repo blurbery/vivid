@@ -14,7 +14,6 @@ enum AuroraFieldKeyboard { case `default`, url, email, number }
 struct AuroraFieldLabel: View {
     private let text: Text
     init(_ text: LocalizedStringKey) { self.text = Text(text) }
-    @_disfavoredOverload init<S: StringProtocol>(_ text: S) { self.text = Text(text) }
     init(_ text: Text) { self.text = text }
     var body: some View {
         text
