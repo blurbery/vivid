@@ -21,13 +21,6 @@
 //  back to the legacy `card_overlays` user setting, which those
 //  servers still accept.
 //
-//  This is winner-take-all, not layered merging — `setPrefs(_:)`
-//  always saves a full document (not a diff), and the matching
-//  behavior in the web's `useOverlayPrefs.ts` hook keeps the wire
-//  format compatible across clients. Hydrated lazily on first read
-//  and refreshed after every save so card views always see the shape
-//  they just persisted.
-//
 //  Uses a `@MainActor` observable singleton, idempotent hydration, and a `clear()` hook
 //  for sign-out so the next user doesn't briefly see the previous
 //  user's badge layout.
@@ -72,24 +65,6 @@ final class OverlayPrefsStore: ObservableObject {
     /// Invalidates an older refresh when the active server changes or a newer
     /// refresh starts, preventing late responses from repopulating stale prefs.
     private var refreshGeneration: UInt = 0
-
-    /// In-flight write task, if any. While non-nil, additional
-    /// `setPrefs(_:)` calls just replace `pendingSnapshot` instead of
-    /// issuing a parallel HTTP request — see `flushPendingWrites()` for
-    /// the drain logic.
-    private var pendingWrite: Task<Void, Never>?
-    /// Most recent snapshot the user wants persisted. Cleared by the
-    /// drain task right before it serializes; replaced by any new
-    /// `setPrefs` that arrives during the PUT.
-    private var pendingSnapshot: CardOverlayPrefs?
-    /// Monotonically-increasing token associated with the current
-    /// `pendingWrite`. When `clear()` or `resetToDefaults()` cancels
-    /// the in-flight task and a new `setPrefs` immediately starts a
-    /// fresh one, this lets the *old* task's `defer` recognize it's
-    /// no longer the current drain and skip clobbering
-    /// `pendingWrite` — without it, the stale defer could nil out
-    /// the new task and allow parallel drains to start.
-    private var pendingWriteGeneration: UInt = 0
 
     /// Idempotent first-load. Safe to call from `.task {}` on every
     /// view that wants overlays — subsequent invocations are no-ops
@@ -222,24 +197,11 @@ final class OverlayPrefsStore: ObservableObject {
 
     /// Wipe local state on sign-out. The next user gets a clean
     /// hydration cycle when they open a card or the settings screen.
-    ///
-    /// Cancels any in-flight `setPrefs` so a queued PUT for the
-    /// previous user can't land after the session boundary. The
-    /// network task may already be on the wire; URLSession will
-    /// complete it but the catch block in `flushPendingWrites`
-    /// checks `Task.isCancelled` before touching state.
     func clear() {
         // Let a new server start hydrating immediately while any old network
         // request winds down; its generation guard prevents stale application.
         refreshGeneration &+= 1
         isLoading = false
-        pendingWrite?.cancel()
-        pendingWrite = nil
-        pendingSnapshot = nil
-        // Invalidate any generation token captured by an in-flight
-        // drain so its deferred cleanup can't nil out a new task
-        // started by a post-`clear()` `setPrefs`.
-        pendingWriteGeneration &+= 1
         enabled = Self.supportsServerOverlays
         prefs = OverlaySchema.buildDefaults()
         adminDefaultsRaw = nil

@@ -618,9 +618,8 @@ struct MainTabView: View {
             PhoneStudioNetworkPage(brandId: brandId)
         #endif
         case .player(let contentId, let startFromBeginning, let resumePosition, let prefersLastUsedVersion):
-            // Player is presented as a full-screen cover (see MainTabView)
-            // so it isn't boxed into the iPad detail pane. This route arm
-            // exists only so switch exhaustiveness holds.
+            // Player is presented as a full-screen cover (see MainTabView).
+            // This route arm exists only so switch exhaustiveness holds.
             EmptyView()
         case .playerWithFile(
             let contentId,

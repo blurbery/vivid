@@ -51,8 +51,6 @@ class SettingsViewModel {
     var volumeBoostPercent: Int = PlayerSettings.shared.volumeBoostPercent
     var enhancedDialogueEnabled: Bool = PlayerSettings.shared.enhancedDialogueEnabled
 
-    // Subtitle styling (local — applies to renderer overrides, not the
-    // language/behavior selection that lives server-side).
     var subtitleAppearance: SubtitleAppearance = PlayerSettings.shared.subtitleAppearance
     var subtitleUsesDeviceAppearanceOverride: Bool = PlayerSettings.shared.subtitleUsesDeviceAppearanceOverride
     var subtitleMatchesSystemAppearance: Bool = PlayerSettings.shared.subtitleMatchesSystemAppearance
@@ -124,8 +122,7 @@ class SettingsViewModel {
     }
 
     /// Main-actor isolated: it publishes into observable state the settings
-    /// views are already rendering, and seeds the profile editor, which is
-    /// itself main-actor bound.
+    /// views are already rendering.
     @MainActor
     func loadSettings() async {
         await PlayerSettings.shared.reloadForCurrentProfile()
