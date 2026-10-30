@@ -335,6 +335,8 @@ final class UICustomizationPreferences {
     /// Drops this device's own choices so it follows the profile's.
     func useFamilySettings() {
         guard let context = editingContext() else { return }
+        // A refresh already under way must not bring the device rows back.
+        editCount += 1
         if primaryMenuUsesDeviceOverride { deleteRow(.navPrimaryMenu, scope: .profileDevice, context: context) }
         if cardPresentationUsesDeviceOverride { deleteRow(.uiCardPresentation, scope: .profileDevice, context: context) }
         let queued = queueTail
