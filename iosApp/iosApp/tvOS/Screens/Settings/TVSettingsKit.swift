@@ -586,7 +586,7 @@ extension TVSettingsView {
 
     /// The label of the option with `id`, or a dash when there's none.
     static func optionLabel(_ options: [MenuOption], _ id: String) -> String {
-        options.first { $0.id == id }?.label ?? "—"
+        options.first { $0.id == id }?.label ?? "\u{2014}"
     }
 
     /// A row that opens a system menu of options, with a check on the

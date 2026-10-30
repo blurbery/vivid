@@ -465,7 +465,7 @@ extension TVSettingsView {
                             spotlightRow(id: section.id, title: section.title)
                         }
                         ForEach(missingIDs(sources), id: \.self) { id in
-                            spotlightRow(id: id, title: String(localized: "Unavailable Home row — remove from spotlight"))
+                            spotlightRow(id: id, title: String(localized: "Unavailable Home row \u{2014} remove from spotlight"))
                         }
                     }
                     TVSettingsFooter(sources.isEmpty

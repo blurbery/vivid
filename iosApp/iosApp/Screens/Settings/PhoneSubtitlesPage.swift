@@ -27,7 +27,7 @@ extension SettingsView {
                     PhoneSettingsSectionHeader("Appearance")
                 } footer: {
                     if editsAppearance && appearance.isLowLegibilityRisk {
-                        Text("Low contrast — dark text without a box or outline can be hard to read.")
+                        Text("Low contrast \u{2014} dark text without a box or outline can be hard to read.")
                             .foregroundStyle(Color.vividError)
                     }
                 }

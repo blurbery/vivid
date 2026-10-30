@@ -188,7 +188,7 @@ extension TVSettingsView {
                 TVSettingsSectionHeader("APPEARANCE")
                 appearanceGroup
                 if editsAppearance && appearance.isLowLegibilityRisk {
-                    TVSettingsFooter("Low contrast — dark text without a box or outline can be hard to read.")
+                    TVSettingsFooter("Low contrast \u{2014} dark text without a box or outline can be hard to read.")
                 }
                 TVSettingsFooter("\(appearanceSource) Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
             }
@@ -291,7 +291,7 @@ extension TVSettingsView {
             .disabled(!editsAppearance)
             .focused(focus, equals: .backgroundStyle)
             OptionMenu(title: "Background Opacity",
-                       value: usesBox ? String(localized: "\(appearance.backgroundOpacity)%") : "—",
+                       value: usesBox ? String(localized: "\(appearance.backgroundOpacity)%") : "\u{2014}",
                        options: Self.opacityOptions, selection: String(appearance.backgroundOpacity)) { id in
                 guard let opacity = Int(id) else { return }
                 save {
@@ -302,7 +302,7 @@ extension TVSettingsView {
             .disabled(!editsAppearance)
             .focused(focus, equals: .backgroundOpacity)
             OptionMenu(title: "Background Color",
-                       value: usesBox ? TVSettingsView.optionLabel(Self.backgroundColorOptions, appearance.backgroundColor.lowercased()) : "—",
+                       value: usesBox ? TVSettingsView.optionLabel(Self.backgroundColorOptions, appearance.backgroundColor.lowercased()) : "\u{2014}",
                        options: Self.backgroundColorOptions, selection: appearance.backgroundColor.lowercased()) { hex in
                 save {
                     $0.backgroundColor = hex
