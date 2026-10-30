@@ -1,8 +1,6 @@
 import Foundation
 import CoreText
 
-let subtitleAppearanceSettingKey = "subtitle_appearance"
-
 enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
     case small
     case medium
@@ -50,19 +48,7 @@ enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
         case .xlarge: return 74
         case .xxlarge: return 88
         }
-        #else
-        switch self {
-        case .small: return 62
-        case .medium: return 79
-        case .large: return 96
-        case .xlarge: return 116
-        case .xxlarge: return 136
-        }
         #endif
-    }
-
-    static func nearest(to points: Double) -> SubtitleFontSizePreset {
-        allCases.min(by: { abs($0.pointSize - points) < abs($1.pointSize - points) }) ?? .large
     }
 }
 

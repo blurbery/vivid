@@ -267,13 +267,6 @@ class ItemDetailViewModel {
                     coalescesMetadataRequests: coalescesMetadataRequests
                 )
             }
-            #else
-            await loadRelatedStructure(
-                for: enriched,
-                contentId: contentId,
-                preserveSeasonSelection: preserveSeasonSelection,
-                coalescesMetadataRequests: coalescesMetadataRequests
-            )
             #endif
 
             let (favorite, watchlist) = await (favoriteResult, watchlistResult)
@@ -953,13 +946,6 @@ class ItemDetailViewModel {
                 #if os(iOS)
                 initialResumeSeasonNumber = nil
                 #endif
-                #if !os(tvOS) && !os(iOS)
-                startEpisodePagePrefetch(
-                    seriesId: seriesId,
-                    seasons: seasons,
-                    selectedSeason: target
-                )
-                #endif
                 await selectSeason(
                     target,
                     forceRefresh: true,
@@ -1246,8 +1232,6 @@ class ItemDetailViewModel {
                 for: loadedEpisodes,
                 episodeLoadGeneration: generation
             )
-            #else
-            await refreshEpisodeFavoriteStates(for: loadedEpisodes)
             #endif
         }
         #endif

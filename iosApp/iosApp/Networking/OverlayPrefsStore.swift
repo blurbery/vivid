@@ -21,13 +21,6 @@
 //  back to the legacy `card_overlays` user setting, which those
 //  servers still accept.
 //
-//  This is winner-take-all, not layered merging — `setPrefs(_:)`
-//  always saves a full document (not a diff), and the matching
-//  behavior in the web's `useOverlayPrefs.ts` hook keeps the wire
-//  format compatible across clients. Hydrated lazily on first read
-//  and refreshed after every save so card views always see the shape
-//  they just persisted.
-//
 //  Uses a `@MainActor` observable singleton, idempotent hydration, and a `clear()` hook
 //  for sign-out so the next user doesn't briefly see the previous
 //  user's badge layout.
@@ -44,8 +37,6 @@ final class OverlayPrefsStore: ObservableObject {
     private static var supportsServerOverlays: Bool {
         #if os(tvOS) || os(iOS)
         false
-        #else
-        true
         #endif
     }
 
@@ -74,24 +65,6 @@ final class OverlayPrefsStore: ObservableObject {
     /// Invalidates an older refresh when the active server changes or a newer
     /// refresh starts, preventing late responses from repopulating stale prefs.
     private var refreshGeneration: UInt = 0
-
-    /// In-flight write task, if any. While non-nil, additional
-    /// `setPrefs(_:)` calls just replace `pendingSnapshot` instead of
-    /// issuing a parallel HTTP request — see `flushPendingWrites()` for
-    /// the drain logic.
-    private var pendingWrite: Task<Void, Never>?
-    /// Most recent snapshot the user wants persisted. Cleared by the
-    /// drain task right before it serializes; replaced by any new
-    /// `setPrefs` that arrives during the PUT.
-    private var pendingSnapshot: CardOverlayPrefs?
-    /// Monotonically-increasing token associated with the current
-    /// `pendingWrite`. When `clear()` or `resetToDefaults()` cancels
-    /// the in-flight task and a new `setPrefs` immediately starts a
-    /// fresh one, this lets the *old* task's `defer` recognize it's
-    /// no longer the current drain and skip clobbering
-    /// `pendingWrite` — without it, the stale defer could nil out
-    /// the new task and allow parallel drains to start.
-    private var pendingWriteGeneration: UInt = 0
 
     /// Idempotent first-load. Safe to call from `.task {}` on every
     /// view that wants overlays — subsequent invocations are no-ops
@@ -222,158 +195,13 @@ final class OverlayPrefsStore: ObservableObject {
         }
     }
 
-    /// Optimistically update local state, then persist. Writes are
-    /// serialized and coalesced: if the user makes several rapid
-    /// changes (e.g. flipping through presets), only one PUT runs at
-    /// a time and intermediate snapshots are dropped. This prevents
-    /// the stale-overwrite race where a slower earlier PUT lands
-    /// after a faster later one and reverts the user's most recent
-    /// choice — raised by Codex on #41.
-    ///
-    /// The method stays `async` for source compatibility with existing
-    /// `Task { await store.setPrefs(next) }` call sites, but in practice
-    /// returns as soon as the snapshot is queued.
-    func setPrefs(_ next: CardOverlayPrefs) async {
-        guard Self.supportsServerOverlays else { return }
-        prefs = next
-        hasUserOverride = true
-        pendingSnapshot = next
-
-        if pendingWrite == nil {
-            pendingWriteGeneration &+= 1
-            let myGeneration = pendingWriteGeneration
-            pendingWrite = Task { [weak self] in
-                await self?.flushPendingWrites(generation: myGeneration)
-            }
-        }
-    }
-
-    /// Drain `pendingSnapshot` to the server. Loops so a snapshot
-    /// updated while an earlier PUT was in flight is picked up without
-    /// spinning up a new task. Exits cleanly when the queue is empty;
-    /// `pendingWrite = nil` is the signal that future `setPrefs` calls
-    /// must launch a fresh task.
-    ///
-    /// The `generation` parameter guards the cleanup against a race:
-    /// `clear()` / `resetToDefaults()` can cancel us and a follow-up
-    /// `setPrefs` can start a new drain before this one finishes
-    /// unwinding. The new drain bumps `pendingWriteGeneration`, and
-    /// we only nil out `pendingWrite` if it's still ours.
-    private func flushPendingWrites(generation: UInt) async {
-        defer {
-            if pendingWriteGeneration == generation {
-                pendingWrite = nil
-            }
-        }
-        while let snapshot = pendingSnapshot {
-            if Task.isCancelled { return }
-            pendingSnapshot = nil
-            do {
-                try await persist(snapshot)
-            } catch {
-                // `clear()` was called mid-write (e.g. sign-out). Bail
-                // before touching state that no longer belongs to this
-                // session.
-                if Task.isCancelled { return }
-                lastError = (error as? LocalizedError)?.errorDescription
-                    ?? String(describing: error)
-                await refresh()
-                // refresh() may have raced with another `setPrefs`; the
-                // next loop iteration handles a queued snapshot, or
-                // exits if pendingSnapshot is still nil.
-            }
-        }
-    }
-
-    /// One full-document write, routed to whichever settings API this
-    /// server speaks. A canonical attempt that discovers a legacy
-    /// server mid-session (`serverUpgradeRequired`) retries the legacy
-    /// endpoint once rather than surfacing an error for a save the old
-    /// API can still honor.
-    private func persist(_ snapshot: CardOverlayPrefs) async throws {
-        let json = OverlaySchema.serialize(snapshot)
-        if usesLegacyAPI {
-            try await VividAPI.shared.setSetting(key: Self.legacySettingKey, value: json)
-            return
-        }
-        guard let value = Self.jsonValue(from: json) else {
-            throw SettingsAPIError.invalidValue(message: String(localized: "Overlay prefs did not serialize to JSON."))
-        }
-        do {
-            try await VividAPI.shared.putValue(
-                key: .uiCardOverlays,
-                scope: .profile,
-                value: value,
-                mutationId: newSettingMutationId()
-            )
-        } catch SettingsAPIError.serverUpgradeRequired {
-            usesLegacyAPI = true
-            try await VividAPI.shared.setSetting(key: Self.legacySettingKey, value: json)
-        }
-    }
-
-    /// Drop the user's override and fall back to the admin baseline.
-    /// Equivalent to "reset to defaults" in the settings UI.
-    ///
-    /// Cancels and awaits any in-flight `setPrefs` PUT before issuing
-    /// the DELETE. Without that sequencing, a slower earlier PUT can
-    /// land server-side AFTER the DELETE and recreate the override
-    /// document the user just asked us to drop. Awaiting the cancelled
-    /// task lets URLSession either complete its in-flight request or
-    /// cancel the data task before we move on.
-    func resetToDefaults() async {
-        guard Self.supportsServerOverlays else { return }
-        if let task = pendingWrite {
-            pendingSnapshot = nil
-            task.cancel()
-            await task.value
-            // Bump the generation so the cancelled task's deferred
-            // cleanup doesn't clobber any drain that future setPrefs
-            // calls might spin up.
-            pendingWrite = nil
-            pendingWriteGeneration &+= 1
-        }
-
-        do {
-            if usesLegacyAPI {
-                try await VividAPI.shared.deleteSetting(key: Self.legacySettingKey)
-            } else {
-                try await VividAPI.shared.deleteValue(key: .uiCardOverlays, scope: .profile)
-            }
-            hasUserOverride = false
-        } catch SettingsAPIError.noValueAtScope {
-            // Already gone.
-            hasUserOverride = false
-        } catch HTTPError.http(let code, _) where code == 404 {
-            // Already gone (legacy endpoint).
-            hasUserOverride = false
-        } catch {
-            lastError = (error as? LocalizedError)?.errorDescription
-                ?? String(describing: error)
-        }
-        await refresh()
-    }
-
     /// Wipe local state on sign-out. The next user gets a clean
     /// hydration cycle when they open a card or the settings screen.
-    ///
-    /// Cancels any in-flight `setPrefs` so a queued PUT for the
-    /// previous user can't land after the session boundary. The
-    /// network task may already be on the wire; URLSession will
-    /// complete it but the catch block in `flushPendingWrites`
-    /// checks `Task.isCancelled` before touching state.
     func clear() {
         // Let a new server start hydrating immediately while any old network
         // request winds down; its generation guard prevents stale application.
         refreshGeneration &+= 1
         isLoading = false
-        pendingWrite?.cancel()
-        pendingWrite = nil
-        pendingSnapshot = nil
-        // Invalidate any generation token captured by an in-flight
-        // drain so its deferred cleanup can't nil out a new task
-        // started by a post-`clear()` `setPrefs`.
-        pendingWriteGeneration &+= 1
         enabled = Self.supportsServerOverlays
         prefs = OverlaySchema.buildDefaults()
         adminDefaultsRaw = nil
@@ -393,11 +221,6 @@ final class OverlayPrefsStore: ObservableObject {
     private static func jsonString(from value: SettingJSONValue) -> String? {
         guard let data = try? SettingsWireCoding.makeEncoder().encode(value) else { return nil }
         return String(data: data, encoding: .utf8)
-    }
-
-    private static func jsonValue(from raw: String) -> SettingJSONValue? {
-        guard let data = raw.data(using: .utf8) else { return nil }
-        return try? SettingsWireCoding.makeDecoder().decode(SettingJSONValue.self, from: data)
     }
 
     /// The pre-contract account-scoped user-setting key. Only used

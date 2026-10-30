@@ -59,24 +59,6 @@ struct Profile: Codable {
     }
 }
 
-/// PUT body for `/api/v1/profiles/{id}`. All fields are optional so the
-/// caller can patch one or many at a time. Wire format mirrors the
-/// server's `updateProfileRequest`.
-struct UpdateProfileBody: Encodable {
-    /// Streaming quality ceiling preset ("auto", "1080p", "4k"). Encodes as
-    /// `quality_preference`.
-    var qualityPreference: String?
-    var subtitleLanguage: String?
-    var subtitleMode: String?
-    var showForcedSubtitles: Bool?
-    /// Preferred metadata language (ISO 639-1; `""` = inherit the library
-    /// default). Encodes as `preferred_metadata_language`.
-    var preferredMetadataLanguage: String?
-    var autoSkipIntro: Bool?
-    var autoSkipCredits: Bool?
-    var autoSkipRecap: Bool?
-}
-
 struct ProfilesResponse: Codable {
     let profiles: [Profile]
 }

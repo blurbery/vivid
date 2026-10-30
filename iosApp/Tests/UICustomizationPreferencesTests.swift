@@ -1009,7 +1009,6 @@ final class UICustomizationPreferencesTests: XCTestCase {
         XCTAssertFalse(unavailable.allowsEditing)
         XCTAssertEqual(unavailable.cardPresentation, .standard)
         XCTAssertNil(unavailable.primaryMenu)
-        XCTAssertFalse(unavailable.hasExplicitPrimaryMenu)
         XCTAssertEqual(
             snapshot.putAttempts,
             2,

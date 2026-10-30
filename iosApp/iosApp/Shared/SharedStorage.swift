@@ -483,10 +483,6 @@ struct SharedKeychain {
 
     // MARK: - Private
 
-    private func read(account: String, accessGroup: String?) -> String? {
-        readResult(account: account, accessGroup: accessGroup).value
-    }
-
     private func readResult(account: String, accessGroup: String?) -> (status: OSStatus, value: String?) {
         var query = baseQuery(account: account, accessGroup: accessGroup)
         query[kSecReturnData as String] = true
@@ -533,10 +529,6 @@ struct SharedKeychain {
     private func deleteLegacy(account: String, accessGroup: String?) {
         let query = baseQuery(account: account, accessGroup: accessGroup)
         SecItemDelete(query as CFDictionary)
-    }
-
-    private func baseQuery(account: String) -> [String: Any] {
-        baseQuery(account: account, accessGroup: accessGroup)
     }
 
     private func baseQuery(account: String, accessGroup: String?) -> [String: Any] {

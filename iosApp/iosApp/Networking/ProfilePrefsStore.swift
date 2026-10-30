@@ -83,15 +83,6 @@ final class ProfilePrefsStore: ObservableObject {
         await task.value
     }
 
-    /// Push a known value without a round-trip. Settings calls this after
-    /// successfully saving a new subtitle-language preference so the
-    /// detail ordering reflects the change immediately.
-    func setPreferredSubtitleLanguage(_ language: String?) {
-        let trimmed = language?.trimmingCharacters(in: .whitespacesAndNewlines)
-        preferredSubtitleLanguage = (trimmed?.isEmpty ?? true) ? nil : trimmed
-        hasHydrated = true
-    }
-
     /// Wipe local state on sign-out / profile switch so the next profile
     /// gets a clean hydration cycle.
     func clear() {

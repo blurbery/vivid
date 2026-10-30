@@ -5,8 +5,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 extension PlayerViewModel {
@@ -65,19 +63,6 @@ extension PlayerViewModel {
         // goes back to Settings > Subtitles with it.
         if followedDeviceSettings, !settings.subtitleMatchesSystemAppearance {
             subtitleSettingsSourceDidChange()
-        }
-    }
-
-    @MainActor
-    func setSubtitlePosition(_ position: SubtitlePositionPreset) {
-        var next = settings.subtitleAppearance
-        guard next.position != position else { return }
-        next.position = position
-        settings.subtitleAppearance = next.sanitized()
-        settings.subtitleUsesDeviceAppearanceOverride = true
-        applySubtitleAppearanceToPlayer()
-        Task { [settings] in
-            await settings.setSubtitleAppearance(next)
         }
     }
 

@@ -407,10 +407,6 @@ struct InterfaceCustomizationView: View {
         preferences.setPrimaryMenuItems(destinations)
     }
 
-    private func librarySort(_ lhs: Library, _ rhs: Library) -> Bool {
-        (lhs.sortOrder ?? Int.max, lhs.id) < (rhs.sortOrder ?? Int.max, rhs.id)
-    }
-
     /// Inserted into "These choices sync with other %@ devices on this profile."
     private var familyLabel: String {
         switch AppleDeviceIdentity.current.clientFamily {

@@ -56,11 +56,6 @@ enum HeroBackdropPalette {
     private static func sampleTint(from image: PlatformImage) -> Color? {
         #if canImport(UIKit)
         guard let ciImage = CIImage(image: image) else { return nil }
-        #elseif canImport(AppKit)
-        guard let data = image.tiffRepresentation,
-              let ciImage = CIImage(data: data) else {
-            return nil
-        }
         #endif
 
         let extent = ciImage.extent

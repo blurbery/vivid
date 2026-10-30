@@ -603,8 +603,6 @@ final class ServerRegistry {
 
     /// Registry key for a URL. The exact normalized spelling is deliberately
     /// preserved because this value already scopes credentials and local data.
-    /// User-facing server comparisons must use ``serverIdsMatch(_:_:)`` so
-    /// harmless URL spelling differences do not split one server in two.
     static func serverId(for url: String) -> String {
         let normalized = normalize(url: url)
         let data = Data(normalized.utf8)
@@ -651,47 +649,6 @@ final class ServerRegistry {
         var s = url.trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }
         return s
-    }
-
-    /// Reverses the legacy URL-derived registry key. This is intentionally
-    /// narrow: the decoded value must be a plausible HTTP(S) server URL and
-    /// must round-trip to the exact supplied ID. Unknown future ID formats are
-    /// therefore never mistaken for a URL.
-    static func url(forServerId serverId: String) -> String? {
-        guard !serverId.isEmpty else { return nil }
-        var base64 = serverId
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        let padding = base64.count % 4
-        if padding != 0 {
-            base64.append(String(repeating: "=", count: 4 - padding))
-        }
-        guard let data = Data(base64Encoded: base64),
-              let decoded = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        let normalized = normalize(url: decoded)
-        guard canonicalComparisonURL(for: normalized) != nil,
-              self.serverId(for: normalized) == serverId else {
-            return nil
-        }
-        return normalized
-    }
-
-    /// Compares local registry IDs as server origins without changing either
-    /// device's persisted key. URL schemes and hosts are case-insensitive and
-    /// default ports are equivalent; credentials, paths, queries, and
-    /// fragments retain their ordinary case-sensitive semantics.
-    static func serverIdsMatch(_ lhs: String?, _ rhs: String?) -> Bool {
-        guard let lhs, let rhs, !lhs.isEmpty, !rhs.isEmpty else { return false }
-        if lhs == rhs { return true }
-        guard let lhsURL = url(forServerId: lhs),
-              let rhsURL = url(forServerId: rhs),
-              let lhsCanonical = canonicalComparisonURL(for: lhsURL),
-              let rhsCanonical = canonicalComparisonURL(for: rhsURL) else {
-            return false
-        }
-        return lhsCanonical == rhsCanonical
     }
 
     private static func canonicalComparisonURL(for url: String) -> String? {

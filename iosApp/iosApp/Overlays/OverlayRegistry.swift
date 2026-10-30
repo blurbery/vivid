@@ -12,18 +12,6 @@ enum OverlayRegistry {
 
     static let all: [OverlayDef] = tech + ratings + metadata + ribbons
 
-    private static let byId: [OverlayId: OverlayDef] = {
-        var map: [OverlayId: OverlayDef] = [:]
-        for def in all { map[def.id] = def }
-        return map
-    }()
-
-    static func def(for id: OverlayId) -> OverlayDef? { byId[id] }
-
-    static func defs(in category: OverlayCategory) -> [OverlayDef] {
-        all.filter { $0.category == category }
-    }
-
     /// Whether `id` should be hidden because another enabled overlay
     /// already displays the same information. The combined
     /// `resolution_hdr` badge subsumes the standalone `resolution` and

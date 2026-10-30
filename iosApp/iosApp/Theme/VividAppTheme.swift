@@ -34,9 +34,6 @@ struct VividAppBackdrop: View {
             case .native:
                 #if os(iOS) || os(tvOS)
                 nativeTVAppearance
-                #else
-                // Preserve the system hosting background on other platforms.
-                Color.clear
                 #endif
             }
         }

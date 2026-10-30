@@ -30,14 +30,6 @@ extension VividAPI {
         return response.sections
     }
 
-    func requestsDetail(mediaType: RequestMediaType, tmdbId: Int) async throws -> RequestMediaDetail {
-        try await http.get("/api/v1/requests/detail/\(mediaType.rawValue)/\(tmdbId)")
-    }
-
-    func createRequest(_ input: CreateRequestInput) async throws -> MediaRequest {
-        try await http.post("/api/v1/requests/", body: input)
-    }
-
     func myRequests(limit: Int = 200, offset: Int = 0) async throws -> [MediaRequest] {
         let response: MediaRequestsResponse = try await http.get("/api/v1/requests/mine", query: [
             "limit": String(limit),

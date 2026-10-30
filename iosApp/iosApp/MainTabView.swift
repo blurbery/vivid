@@ -1,8 +1,6 @@
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#elseif os(macOS)
-import AppKit
 #endif
 
 // MARK: - Main Tab View
@@ -204,16 +202,11 @@ struct MainTabView: View {
     /// profile transition fails direct roots closed immediately, even before
     /// its cache invalidation and network refresh finish.
     @State private var librarySnapshot = MainTabLibrarySnapshot.cachedForCurrentAuthority()
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var iPadColumnVisibility: NavigationSplitViewVisibility = .detailOnly
     /// Shared namespace for the poster → detail zoom transition. Injected into
     /// the environment (`\.zoomNamespace`) so both the cards and the central
     /// detail destination resolve the same identity.
     @Namespace private var zoomNamespace
     @Environment(\.scenePhase) private var scenePhase
-    #if !os(macOS)
-    @Environment(\.horizontalSizeClass) private var hSize
-    #endif
 
     var body: some View {
         Group {
@@ -266,8 +259,6 @@ struct MainTabView: View {
             .readsDuoStatusArea()
             // A keyboard inside the player must not lift the underlying Home tab bar.
             .ignoresSafeArea(.keyboard, edges: showsMobileUtilityPage ? [] : .bottom)
-            #else
-            if prefersSidebarLayout { sidebarLayout } else { tabLayout }
             #endif
         }
         .tint(.vividOnSurface)
@@ -336,40 +327,15 @@ struct MainTabView: View {
             else { return }
             librarySnapshot = .init(authority: authority, libraries: response.libraries)
         }
-        #if !os(macOS)
         #if os(iOS)
         .modifier(PlayerPresentationModifier(router: router))
-        #else
-        .fullScreenCover(item: $router.presentedPlayer) { payload in
-            PlayerView(
-                contentId: payload.contentId,
-                preferredFileId: payload.fileId,
-                preferredAudioTrackIndex: payload.audioTrackIndex,
-                preferredSubtitleTrackIndex: payload.subtitleTrackIndex,
-                startFromBeginning: payload.startFromBeginning,
-                resumePositionOverride: payload.resumePosition,
-                prefersLastUsedVersion: payload.prefersLastUsedVersion,
-                offlineDownloadId: payload.offlineDownloadId,
-                posterURLHint: payload.posterURL,
-                backdropURLHint: payload.backdropURL
-            )
-        }
         #endif
         #if os(iOS)
         .modifier(ItemDetailPresentationModifier(router: router, zoomNamespace: zoomNamespace))
         #endif
-        #endif
         // Outside the presentation modifiers so the video player inherits
         // the router — ErrorView requires it and traps when it's absent.
         .environment(router)
-    }
-
-    private var prefersSidebarLayout: Bool {
-        #if os(macOS)
-        true
-        #else
-        hSize == .regular
-        #endif
     }
 
     /// Visible tabs, plus a Downloads tab when the server advertises the
@@ -425,10 +391,6 @@ struct MainTabView: View {
             ?? .app(.home)
     }
 
-    private var sidebarTitle: String {
-        serverRegistry.activeServer?.displayName ?? String(localized: "Media Server")
-    }
-
     /// iPhone + iPad compact width: bottom tab bar, single navigation stack.
     private var tabLayout: some View {
         NavigationStack(path: $router.path) {
@@ -436,30 +398,6 @@ struct MainTabView: View {
                 #if os(iOS)
                 destinationContent(for: selectedDestination)
                     .id(selectedDestinationID)
-                #else
-            TabView(selection: $selectedDestinationID) {
-                ForEach(visibleDestinations) { destination in
-                    #if os(tvOS)
-                    // Text-only tabs on tvOS keep the top bar compact — adding an
-                    // icon blows up each tab's focus pill. The value-based `Tab`
-                    // initializer requires an image on tvOS, so this arm stays on
-                    // the `.tabItem { Text }` form to preserve the text-only look.
-                    destinationContent(for: destination)
-                        .tabItem { Text(destination.title) }
-                        .tag(destination.id)
-                    #else
-                    Tab(
-                        destination.title,
-                        systemImage: selectedDestinationID == destination.id
-                            ? destination.selectedIcon
-                            : destination.icon,
-                        value: destination.id
-                    ) {
-                        destinationContent(for: destination)
-                    }
-                    #endif
-                }
-            }
                 #endif
             }
             .navigationDestination(for: Route.self) { route in
@@ -585,199 +523,6 @@ struct MainTabView: View {
     }
     #endif
 
-    /// iPad regular width: the native sidebar overlays the detail pane without
-    /// changing its original system material or row-selection appearance.
-    /// macOS keeps the standard side-by-side split-view layout.
-    ///
-    /// Home / Libraries / Recommendations hide the nav bar (so SwiftUI's
-    /// default sidebar toggle isn't visible on those screens). We inject a
-    /// toggle closure through `\.sidebarToggle` instead — each custom header
-    /// renders a `SidebarToggleButton` on its leading edge while the overlay is
-    /// closed. Video playback doesn't overlap the sidebar because the player is
-    /// presented via `fullScreenCover` on `router.presentedPlayer` rather than
-    /// pushed into the detail pane.
-    private var sidebarLayout: some View {
-        Group {
-            #if os(iOS)
-            iPadSidebarLayout
-                .environment(
-                    \.sidebarToggle,
-                    iPadColumnVisibility == .detailOnly ? toggleSidebar : nil
-                )
-                .environment(\.reservesSidebarToggleSpace, true)
-            #else
-            macSidebarLayout
-                .environment(\.sidebarToggle, toggleSidebar)
-            #endif
-        }
-        .environment(\.zoomNamespace, zoomNamespace)
-    }
-
-    #if os(iOS)
-    private let iPadSidebarWidth: CGFloat = 320
-
-    private var iPadSidebarLayout: some View {
-        NavigationSplitView(columnVisibility: $iPadColumnVisibility) {
-            sidebarList(
-                dismissAfterSelection: true
-            )
-                .background {
-                    FixedPrimarySplitViewWidth(
-                        width: iPadSidebarWidth,
-                        sidebarIsHidden: iPadColumnVisibility == .detailOnly,
-                        onSwipeLeft: finishInteractiveSidebarDismissal
-                    )
-                        .frame(width: 0, height: 0)
-                }
-                .navigationSplitViewColumnWidth(
-                    min: iPadSidebarWidth,
-                    ideal: iPadSidebarWidth,
-                    max: iPadSidebarWidth
-                )
-                .toolbar(removing: .sidebarToggle)
-                .toolbar(.hidden, for: .navigationBar)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    iPadSidebarHeader
-                }
-        } detail: {
-            sidebarDetailContent
-                .toolbar(removing: .sidebarToggle)
-        }
-        .navigationSplitViewStyle(.prominentDetail)
-    }
-
-    /// Custom sidebar header replacing the navigation bar so the server name
-    /// and close button can sit lower than the system bar allows.
-    private var iPadSidebarHeader: some View {
-        HStack(spacing: 0) {
-            Color.clear
-                .frame(
-                    width: VividTheme.topBarIconHitSize,
-                    height: VividTheme.topBarIconHitSize
-                )
-                .accessibilityHidden(true)
-
-            Text(sidebarTitle)
-                .font(.headline)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            Button(action: dismissSidebar) {
-                Image(systemName: "arrow.left")
-                    .font(.body.weight(.semibold))
-                    .frame(
-                        width: VividTheme.topBarIconHitSize,
-                        height: VividTheme.topBarIconHitSize
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close sidebar")
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .padding(.bottom, 12)
-    }
-
-    #else
-    private var macSidebarLayout: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebarList(
-                dismissAfterSelection: false
-            )
-                .navigationTitle(sidebarTitle)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 280)
-        } detail: {
-            sidebarDetailContent
-        }
-    }
-    #endif
-
-    private var sidebarDetailContent: some View {
-        NavigationStack(path: $router.path) {
-            destinationContent(for: selectedDestination)
-                .id(selectedDestination.id)
-                .navigationDestination(for: Route.self) { route in
-                    routeContent(for: route)
-                        #if os(iOS)
-                        .toolbar {
-                            if routeNeedsSidebarToggle(route) {
-                                ToolbarItem(placement: .topBarLeading) {
-                                    SidebarToggleButton()
-                                }
-                            }
-                        }
-                        #endif
-                }
-        }
-    }
-
-    private func sidebarList(
-        dismissAfterSelection: Bool
-    ) -> some View {
-        List(selection: Binding<MainTabDestinationID?>(
-            get: { selectedDestinationID },
-            set: { value in
-                guard let value else { return }
-                selectSidebarDestination(value)
-                if dismissAfterSelection {
-                    dismissSidebar()
-                }
-            }
-        )) {
-            ForEach(visibleDestinations) { destination in
-                Label(
-                    destination.title,
-                    systemImage: selectedDestinationID == destination.id
-                        ? destination.selectedIcon
-                        : destination.icon
-                )
-                .tag(destination.id)
-            }
-        }
-        // The sidebar's few rows rarely overflow; without this the list
-        // still rubber-bands on drag, visually dragging the whole bar.
-        .scrollBounceBehavior(.basedOnSize)
-    }
-
-    /// Collapses or re-expands the sidebar without moving the detail content.
-    private func toggleSidebar() {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            #if os(iOS)
-            iPadColumnVisibility = iPadColumnVisibility == .detailOnly ? .all : .detailOnly
-            #else
-            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-            #endif
-        }
-    }
-
-    /// Sidebar rows are root destinations, even when the same row is already
-    /// selected beneath a pushed screen. Clear the detail stack first so, for
-    /// example, tapping Home while Search is open actually returns to Home.
-    private func selectSidebarDestination(_ destinationID: MainTabDestinationID) {
-        router.popToRoot()
-        selectedDestinationID = destinationID
-    }
-
-    private func dismissSidebar() {
-        #if os(iOS)
-        guard iPadColumnVisibility != .detailOnly else { return }
-        withAnimation(.easeInOut(duration: 0.25)) {
-            iPadColumnVisibility = .detailOnly
-        }
-        #endif
-    }
-
-    #if os(iOS)
-    private func finishInteractiveSidebarDismissal() {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            iPadColumnVisibility = .detailOnly
-        }
-    }
-    #endif
-
     @ViewBuilder
     private func destinationContent(for destination: MainTabDestination) -> some View {
         switch destination.id {
@@ -873,19 +618,9 @@ struct MainTabView: View {
             PhoneStudioNetworkPage(brandId: brandId)
         #endif
         case .player(let contentId, let startFromBeginning, let resumePosition, let prefersLastUsedVersion):
-            #if os(macOS)
-            PlayerView(
-                contentId: contentId,
-                startFromBeginning: startFromBeginning,
-                resumePositionOverride: resumePosition,
-                prefersLastUsedVersion: prefersLastUsedVersion
-            )
-            #else
-            // Player is presented as a full-screen cover (see MainTabView)
-            // so it isn't boxed into the iPad detail pane. This route arm
-            // exists only so switch exhaustiveness holds.
+            // Player is presented as a full-screen cover (see MainTabView).
+            // This route arm exists only so switch exhaustiveness holds.
             EmptyView()
-            #endif
         case .playerWithFile(
             let contentId,
             let fileId,
@@ -894,18 +629,7 @@ struct MainTabView: View {
             let startFromBeginning,
             let resumePosition
         ):
-            #if os(macOS)
-            PlayerView(
-                contentId: contentId,
-                preferredFileId: fileId,
-                preferredAudioTrackIndex: audioTrackIndex,
-                preferredSubtitleTrackIndex: subtitleTrackIndex,
-                startFromBeginning: startFromBeginning,
-                resumePositionOverride: resumePosition
-            )
-            #else
             EmptyView()
-            #endif
         case .favorites:
             FavoritesView()
         case .watchlist:
@@ -940,18 +664,9 @@ struct MainTabView: View {
             DownloadsView()
             #endif
         case .offlinePlayer(let downloadId, let contentId, let startFromBeginning, let resumePosition):
-            #if os(macOS)
-            PlayerView(
-                contentId: contentId,
-                startFromBeginning: startFromBeginning,
-                resumePositionOverride: resumePosition,
-                offlineDownloadId: downloadId
-            )
-            #else
             // Presented as a full-screen cover (see MainTabView). This arm
             // exists only for switch exhaustiveness.
             EmptyView()
-            #endif
         case .offlineSeriesBrowse(let seriesId):
             #if os(tvOS)
             EmptyStateView(icon: "questionmark.circle", title: "Unknown", subtitle: nil)
@@ -971,15 +686,4 @@ struct MainTabView: View {
                 .vividPageBackground()
         }
     }
-
-    #if os(iOS)
-    private func routeNeedsSidebarToggle(_ route: Route) -> Bool {
-        switch route {
-        case .downloads, .recommendations:
-            false
-        default:
-            true
-        }
-    }
-    #endif
 }

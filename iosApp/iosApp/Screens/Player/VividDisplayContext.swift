@@ -5,8 +5,6 @@ import AVKit
 
 #if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
 #endif
 
 enum VividDisplayContext {
@@ -49,11 +47,6 @@ enum VividDisplayContext {
         #if canImport(UIKit)
         guard let screen = activeWindowScene?.screen else { return false }
         return screen.currentEDRHeadroom > hdrHeadroomFloor
-        #elseif canImport(AppKit)
-        guard let screen = NSScreen.main else { return false }
-        return screen.maximumExtendedDynamicRangeColorComponentValue > hdrHeadroomFloor
-        #else
-        return false
         #endif
     }
 
@@ -70,46 +63,3 @@ enum VividDisplayContext {
     }
     #endif
 }
-
-#if os(tvOS)
-/// Owns the display request for one TV player, using its actual output format.
-@MainActor
-final class TVPlaybackDisplayCriteria {
-    private weak var manager: AVDisplayManager?
-    private var requestedCriteria: AVDisplayCriteria?
-    private var format: CMVideoFormatDescription?
-    private var frameRate: Float?
-
-    func apply(formatDescription: CMVideoFormatDescription, frameRate: Float) {
-        guard frameRate.isFinite, frameRate > 0 else { return }
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive }
-            ?? scenes.first { $0.activationState == .foregroundInactive }
-        guard let window = scene?.windows.first(where: \.isKeyWindow)
-            ?? scene?.windows.first,
-              window.responds(to: #selector(getter: UIWindow.avDisplayManager)) else { return }
-        let nextManager = window.avDisplayManager
-        guard nextManager.isDisplayCriteriaMatchingEnabled else { return }
-        if manager === nextManager, self.frameRate == frameRate,
-           let format, CFEqual(format, formatDescription) { return }
-        if manager !== nextManager { reset() }
-        let criteria = AVDisplayCriteria(refreshRate: frameRate, formatDescription: formatDescription)
-        manager = nextManager
-        format = formatDescription
-        self.frameRate = frameRate
-        requestedCriteria = criteria
-        nextManager.preferredDisplayCriteria = criteria
-    }
-
-    func reset() {
-        if let manager, let requestedCriteria,
-           manager.preferredDisplayCriteria?.isEqual(requestedCriteria) == true {
-            manager.preferredDisplayCriteria = nil
-        }
-        manager = nil
-        requestedCriteria = nil
-        format = nil
-        frameRate = nil
-    }
-}
-#endif

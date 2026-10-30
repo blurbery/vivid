@@ -477,22 +477,6 @@ struct MediaCard: View {
 
     // MARK: - Metric helpers
 
-    private var checkBadgeSize: CGFloat {
-        #if os(tvOS)
-        return 40
-        #else
-        return 20
-        #endif
-    }
-
-    private var checkIconSize: CGFloat {
-        #if os(tvOS)
-        return 20
-        #else
-        return 10
-        #endif
-    }
-
     private var checkBadgePadding: CGFloat {
         #if os(tvOS)
         return 10

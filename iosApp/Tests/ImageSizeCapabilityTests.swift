@@ -172,7 +172,6 @@ final class ImageSizeCapabilityTests: XCTestCase {
         capability.reset()
         XCTAssertNil(capability.capability)
         XCTAssertTrue(capability.requestQuery.isEmpty)
-        XCTAssertFalse(capability.isAvailable)
     }
 
     func testSuccessfulRefreshIsCachedForSession() async throws {

@@ -97,8 +97,6 @@ struct AboutSettingsView: View {
                 NavigationLink("Acknowledgements") { ServiceAcknowledgementsView() }
                 #if os(iOS)
                 NavigationLink("Privacy Policy") { PhoneVividPrivacyView() }
-                #else
-                Link("Privacy Policy", destination: VividAbout.website.appendingPathComponent("privacy"))
                 #endif
                 NavigationLink("Contact") { VividContactSettingsView() }
                 Link(destination: VividAbout.website) {

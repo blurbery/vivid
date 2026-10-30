@@ -53,12 +53,6 @@ final class PlaybackTrialTrace {
         event("seek_picture_ready", fields: "seek=\(seekID) elapsed_ms=\(Int((CACurrentMediaTime() - start) * 1000))")
     }
 
-    func endSeek(_ outcome: String) {
-        guard seekStarted != nil else { return }
-        seekStarted = nil
-        event(outcome, fields: "seek=\(seekID)")
-    }
-
     func event(_ name: String, fields: String = "") {
         let fields = "since_start_ms=\(Int((CACurrentMediaTime() - started) * 1000)) " + fields
         Self.log.info("trial session=\(self.id, privacy: .public) event=\(name, privacy: .public) \(fields, privacy: .public)")
