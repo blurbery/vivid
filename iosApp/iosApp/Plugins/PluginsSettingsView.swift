@@ -3,16 +3,26 @@ import SwiftUI
 struct PluginsSettingsView: View {
     var body: some View {
         #if os(tvOS)
-        TVSettingsGroup {
-            NavigationLink { TVTMDbSettingsView() } label: {
-                TVSettingsRowLabel(title: "TMDb", detail: "Trailers, ratings and collections from TMDb. Connected through Vivid.")
-            }.buttonStyle(TVSettingsPaneRowStyle())
-            NavigationLink { OpenSubtitlesSettingsView() } label: {
-                TVSettingsRowLabel(title: "OpenSubtitles", detail: "Find subtitles while watching.")
-            }.buttonStyle(TVSettingsPaneRowStyle())
-            NavigationLink { MDBListSettingsView() } label: {
-                TVSettingsRowLabel(title: "MDBList", detail: "Sync watch history and watchlists.")
-            }.buttonStyle(TVSettingsPaneRowStyle())
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(18)) {
+            TVSettingsGroup {
+                NavigationLink { TVTMDbSettingsView() } label: {
+                    TVSettingsRowLabel(title: "TMDb", detail: "Trailers, ratings and collections from TMDb. Connected through Vivid.")
+                }.buttonStyle(TVSettingsPaneRowStyle())
+                NavigationLink { OpenSubtitlesSettingsView() } label: {
+                    TVSettingsRowLabel(title: "OpenSubtitles", detail: "Find subtitles while watching.")
+                }.buttonStyle(TVSettingsPaneRowStyle())
+            }
+            TVSettingsSectionHeader("WATCHLISTS")
+            TVSettingsGroup {
+                NavigationLink { MDBListSettingsView() } label: {
+                    TVSettingsRowLabel(title: "MDBList", detail: "Sync watch history and watchlists.")
+                }.buttonStyle(TVSettingsPaneRowStyle())
+                if SimklApp.isAvailable {
+                    NavigationLink { SimklSettingsView() } label: {
+                        TVSettingsRowLabel(title: "Simkl", detail: "Track what you watch and sync Plan to Watch.")
+                    }.buttonStyle(TVSettingsPaneRowStyle())
+                }
+            }
         }
         #else
         List {
@@ -21,8 +31,13 @@ struct PluginsSettingsView: View {
             Section {
                 NavigationLink("TMDb") { PhoneTMDbSettingsView() }
                 NavigationLink("OpenSubtitles") { OpenSubtitlesSettingsView() }
-                NavigationLink("MDBList") { MDBListSettingsView() }
             }
+            Section {
+                NavigationLink("MDBList") { MDBListSettingsView() }
+                if SimklApp.isAvailable {
+                    NavigationLink("Simkl") { SimklSettingsView() }
+                }
+            } header: { PhoneSettingsSectionHeader("Watchlists") }
         }.settingsListChrome().navigationTitle("")
         #endif
     }

@@ -743,6 +743,7 @@ actor VividAPI {
         }
         #if os(iOS) || os(tvOS)
         await MDBListSyncStore.shared.watchlistChanged(expected: auth)
+        await SimklSyncStore.shared.watchlistChanged(expected: auth)
         #endif
     }
 
@@ -756,7 +757,10 @@ actor VividAPI {
             profileId: profile, clientFamily: "apple", credentialGenerationID: auth.account.credentialGenerationID)
         _ = try await http.requestData(method: played ? "POST" : "DELETE",
             path: "/api/v1/watched/\(contentId)", requestIdentity: identity)
-        if played { await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: auth) }
+        if played {
+            await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
+            await SimklSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
+        }
         #else
         if played { try await http.postVoid("/api/v1/watched/\(contentId)") }
         else { try await http.delete("/api/v1/watched/\(contentId)") }

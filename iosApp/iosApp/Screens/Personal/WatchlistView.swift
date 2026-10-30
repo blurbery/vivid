@@ -230,7 +230,7 @@ struct WatchlistView: View {
 
     private var watchlistRevision: Int {
         #if os(iOS) || os(tvOS)
-        MDBListSyncStore.shared.watchlistRevision
+        MDBListSyncStore.shared.watchlistRevision + SimklSyncStore.shared.watchlistRevision
         #else
         0
         #endif

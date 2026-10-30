@@ -47,7 +47,7 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList and Simkl sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. Simkl sign-ins stay on each device rather than syncing through iCloud. It does not import either service’s existing watched history or replace server resume positions.
 
 ## Apple TV
 
@@ -83,7 +83,7 @@ Vivid follows your device's language, or you can pick one for Vivid in Settings 
 
 ## Plugins
 
-TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up. Optional plugins add more on top of your server, using your own free keys. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
+TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up. Optional plugins add more on top of your server, using your own free keys. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. Simkl does the same with your Simkl account, keeping your watchlist in step with Simkl's Plan to Watch. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
 
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.
