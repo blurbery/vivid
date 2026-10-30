@@ -113,7 +113,7 @@ enum PlaybackFailureText {
     static func localized(_ message: String) -> String {
         if let exact = exact(message) { return exact }
         for template in templates where template.matches(message) {
-            return template.shown()
+            return template.shown(template.value(in: message))
         }
         return message
     }
@@ -204,34 +204,53 @@ enum PlaybackFailureText {
 
     /// An English message with one inserted value, such as an error code.
     /// The value is a technical detail for diagnostics, so what's shown
-    /// leaves it out.
+    /// leaves it out, though it can pick which message is shown.
     private struct Template: Sendable {
         let prefix: String
         let suffix: String
-        let shown: @Sendable () -> String
+        let shown: @Sendable (String) -> String
 
         func matches(_ message: String) -> Bool {
             message.count > prefix.count + suffix.count
                 && message.hasPrefix(prefix) && message.hasSuffix(suffix)
         }
+
+        func value(in message: String) -> String {
+            String(message.dropFirst(prefix.count).dropLast(suffix.count))
+        }
+    }
+
+    /// What a status the server returned while renewing playback means for
+    /// the person: sign in again, wait, or try again or choose another way.
+    private static func renewalFailure(status: String) -> String {
+        switch Int(status) {
+        case 401, 403:
+            return String(localized: "This server signed you out, or your sign-in timed out. Sign in again to continue.")
+        case 429:
+            return String(localized: "Too many requests. Please wait a moment and try again.")
+        case .some(500...599):
+            return String(localized: "The server ran into a problem. Try again in a moment.")
+        default:
+            return couldNotPlay
+        }
     }
 
     private static let templates: [Template] = [
-        Template(prefix: "Lucid playback failed (", suffix: ").") { couldNotPlay },
-        Template(prefix: "The server returned HTTP ", suffix: " while renewing playback.") {
-            String(localized: "The server ran into a problem. Try again in a moment.")
+        Template(prefix: "Lucid playback failed (", suffix: ").") { _ in couldNotPlay },
+        Template(prefix: "The server returned HTTP ", suffix: " while renewing playback.") { status in
+            renewalFailure(status: status)
         },
-        Template(prefix: "The server selected an unsupported V3 delivery: ", suffix: ".") { serverCouldNotPrepare },
-        Template(prefix: "The V3 playback transport is invalid: ", suffix: ".") { serverCouldNotPrepare },
-        Template(prefix: "The V3 plan requires an unsupported client transformation: ", suffix: ".") { serverCouldNotPrepare },
-        Template(prefix: "The V3 client transformation cannot be executed as planned: ", suffix: ".") { serverCouldNotPrepare },
-        Template(prefix: "The embedded subtitle selection is invalid: ", suffix: ".") { subtitlesUnavailable },
-        Template(prefix: "The V3 plan requires an unsupported runtime correction: ", suffix: ".") { serverCouldNotPrepare },
+        Template(prefix: "The server selected an unsupported V3 delivery: ", suffix: ".") { _ in serverCouldNotPrepare },
+        Template(prefix: "The V3 playback transport is invalid: ", suffix: ".") { _ in serverCouldNotPrepare },
+        Template(prefix: "The V3 plan requires an unsupported client transformation: ", suffix: ".") { _ in serverCouldNotPrepare },
+        Template(prefix: "The V3 client transformation cannot be executed as planned: ", suffix: ".") { _ in serverCouldNotPrepare },
+        Template(prefix: "The embedded subtitle selection is invalid: ", suffix: ".") { _ in subtitlesUnavailable },
+        Template(prefix: "The V3 plan requires an unsupported runtime correction: ", suffix: ".") { _ in serverCouldNotPrepare },
         // Replan reasons, shown when a track or quality change can't start.
-        Template(prefix: "User selected audio track ", suffix: ".") {
+        Template(prefix: "User selected audio track ", suffix: ".") { _ in
             String(localized: "The audio track couldn't be switched. Try again.")
         },
-        Template(prefix: "User selected playback quality ", suffix: ".") {
+        Template(prefix: "User selected playback quality ", suffix: ".") { _ in
             String(localized: "Couldn't change quality right now. Try again.")
         },
     ]

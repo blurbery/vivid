@@ -866,7 +866,8 @@ struct ContentView: View {
             if needsCloudBootstrap {
                 #if os(iOS)
                 // iCloud can be slow or blocked on a new device, so the splash
-                // waits about five seconds at most. A restore that lands later
+                // stops waiting after about five seconds (a session restore already
+                // under way may finish first). A restore that lands later
                 // keeps its saved profiles for Restore from iCloud and the next
                 // launch, without moving the person off the setup screen.
                 _ = await VividCloudAccountSync.shared.synchronizeForFirstLaunch(router: router, limit: .seconds(5))
