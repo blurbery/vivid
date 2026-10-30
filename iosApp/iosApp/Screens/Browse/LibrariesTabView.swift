@@ -438,14 +438,6 @@ private struct LibrariesTopBar: View {
 
             Spacer(minLength: 8)
 
-            TabTopBarActions(
-                onSearch: onSearch,
-                onOpenSettings: onOpenSettings,
-                onOpenRequests: onOpenRequests,
-                onSwitchProfile: onSwitchProfile,
-                onSwitchServer: onSwitchServer,
-                onSignOut: onSignOut
-            )
         }
     }
 }

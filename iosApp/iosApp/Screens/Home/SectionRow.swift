@@ -95,11 +95,6 @@ struct SectionRow: View {
         #endif
     }
 
-    private var layout: MediaRowLayout {
-        if isEpisodeRow { return .thumbnail }
-        return .poster
-    }
-
     private var showProgress: Bool {
         isContinueWatching || isEpisodeRow
     }
@@ -126,54 +121,7 @@ struct SectionRow: View {
                 isSpotlightHandoffPending: isSpotlightHandoffPending
             )
             .equatable()
-        } else {
-            mediaRow
         }
-        #else
-        mediaRow
-        #endif
-    }
-
-    private var mediaRow: some View {
-        MediaRow(
-            title: section.title,
-            items: section.items,
-            onItemTap: selectItem,
-            onItemPlay: playItem,
-            onSeeAll: onSeeAll,
-            showProgress: showProgress,
-            usesRuntimeStatus: true,
-            icon: showsHeadingIcon && isContinueWatching ? "play.circle.fill" : nil,
-            layout: layout,
-            showsEpisodeDetails: MediaServerProvider.active.usesNativeUser
-                && section.sectionType.lowercased().contains("next"),
-            prefersDefaultFocusOnFirstItem: prefersDefaultFocusOnFirstItem,
-            defaultFocusPriority: defaultFocusPriority,
-            focusRequest: focusRequest,
-            defaultFocusItemId: defaultFocusItemId,
-            focusRequestItemId: focusRequestItemId,
-            detailReturnFocusRequest: detailReturnFocusRequest,
-            onRemoveFromContinueWatching: isContinueWatching ? onRemoveFromContinueWatching : nil,
-            onOpenContextDetail: nil,
-            showsPlayInContextMenu: isContinueWatching,
-            onSetWatched: { item, played in
-                await setWatched(item, played: played)
-            },
-            onMoveUp: onMoveUp,
-            onItemFocus: onItemFocus,
-            cardWidth: cardWidth,
-            cardVerticalPadding: cardVerticalPadding,
-            onMoveDown: onMoveDown,
-            focusRestorationOwner: focusRestorationOwner
-        )
-        #if !os(tvOS)
-        .environment(
-            \.itemDetailBrowseSource,
-            ItemDetailBrowseSource(
-                originID: detailBrowseOriginID,
-                contentIDs: section.items.map(\.contentId)
-            )
-        )
         #endif
     }
 

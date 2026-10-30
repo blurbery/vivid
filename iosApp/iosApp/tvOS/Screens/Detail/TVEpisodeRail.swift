@@ -63,84 +63,7 @@ struct TVEpisodeRail: View {
 
     @ViewBuilder
     var body: some View {
-        if anchorsFocusedCard {
-            homeStyleRail
-        } else {
             legacyRail
-        }
-    }
-
-    /// Series uses the same component and card path as Home's Continue
-    /// Watching row. The season tabs and their page transition stay outside
-    /// this view and are unchanged.
-    private var homeStyleRail: some View {
-        MediaRow(
-            title: String(localized: "Episodes"),
-            items: homeStyleItems,
-            onItemTap: onSelect,
-            showsHeader: false,
-            usesLazyCardLayout: false,
-            onItemPlay: homeStylePlayAction,
-            showProgress: true,
-            layout: .thumbnail,
-            usesProvidedThumbnailTapAction: true,
-            usesEpisodeCaption: true,
-            defersOffscreenArtwork: true,
-            prefersDefaultFocusOnFirstItem: true,
-            focusRequest: focusRequest,
-            defaultFocusItemId: currentContentId,
-            focusRequestItemId: currentContentId,
-            showsPlayInContextMenu: onPlay != nil,
-            onSetWatched: homeStyleWatchedAction,
-            onSetFavorite: homeStyleFavoriteAction,
-            onMoveUp: onMoveUp,
-            onItemFocus: { item in
-                onFocusedEpisodeChange?(item.contentId)
-            },
-            cardVerticalPadding: 12,
-            horizontalContentMargin: 0,
-            trailingContentMargin: 32,
-            onMoveDown: onMoveDown
-        )
-        // The enclosing season pager is deliberately scroll-disabled so its
-        // tabs can change pages without the remote dragging that outer rail.
-        // Re-enable scrolling for the nested Home carousel itself.
-        .environment(\.isScrollEnabled, true)
-        .frame(height: anchoredRailHeight, alignment: .topLeading)
-        .onDisappear {
-            onFocusedEpisodeChange?(nil)
-        }
-    }
-
-    private var homeStyleItems: [SectionItem] {
-        episodes.map { episode in
-            SectionItem(
-                episode: episode,
-                seriesId: seriesId,
-                seriesTitle: seriesTitle,
-                isFavorite: favoriteStates[episode.contentId]
-                    ?? (currentContentId == episode.contentId && currentContentIsFavorite)
-            )
-        }
-    }
-
-    private var homeStylePlayAction: ((SectionItem) -> Void)? {
-        guard let onPlay else { return nil }
-        return { item in onPlay(item.contentId) }
-    }
-
-    private var homeStyleWatchedAction: ((SectionItem, Bool) async -> Bool)? {
-        guard let onSetWatched else { return nil }
-        return { item, played in
-            await onSetWatched(item.contentId, played)
-        }
-    }
-
-    private var homeStyleFavoriteAction: ((SectionItem, Bool) async -> Bool)? {
-        guard let onSetFavorite else { return nil }
-        return { item, isFavorite in
-            await onSetFavorite(item.contentId, isFavorite)
-        }
     }
 
     private var legacyRail: some View {
@@ -193,61 +116,6 @@ struct TVEpisodeRail: View {
                 }
             }
         }
-    }
-
-    private var anchoredRailHeight: CGFloat {
-        let width = baseCardWidth * uiCustomization.cardPresentation.posterSize.scale
-        return width * cardHeightRatio
-            + (uiCustomization.cardPresentation.caption.showsTitle ? 46 : 0)
-            + 24
-    }
-}
-
-private extension SectionItem {
-    /// Adapts a season episode to the same model consumed by Home's
-    /// Continue Watching carousel. This is data mapping only; the Home row
-    /// remains the sole owner of horizontal scrolling and focus behavior.
-    init(
-        episode: EpisodeListItem,
-        seriesId: String?,
-        seriesTitle: String?,
-        isFavorite: Bool
-    ) {
-        contentId = episode.contentId
-        type = "episode"
-        title = episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
-        self.seriesId = seriesId
-        self.seriesTitle = seriesTitle
-        seasonNumber = episode.seasonNumber
-        episodeNumber = episode.episodeNumber
-        year = nil
-        genres = nil
-        status = nil
-        ratingImdb = nil
-        ratingTmdb = nil
-        ratingRtCritic = nil
-        ratingRtAudience = nil
-        contentRating = nil
-        runtime = episode.runtime
-        originalLanguage = nil
-        studios = nil
-        networks = nil
-        showStatus = nil
-        overview = episode.overview
-        itemSource = nil
-        positionSeconds = episode.userData?.positionSeconds
-        durationSeconds = episode.userData?.durationSeconds
-        progressUpdatedAt = nil
-        posterUrl = episode.stillUrl
-        posterThumbhash = episode.stillThumbhash
-        backdropUrl = episode.stillUrl
-        backdropThumbhash = episode.stillThumbhash
-        logoUrl = nil
-        userState = MediaItemUserState(
-            played: episode.userData?.played ?? false,
-            isFavorite: isFavorite
-        )
-        overlaySummary = nil
     }
 }
 
