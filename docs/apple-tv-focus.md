@@ -237,8 +237,8 @@ connection-slot wait; DNS and connection durations are reported separately.
 are attributed when a stage or transport task completes, not a full per-request
 trace, and cannot establish which operation caused an individual frame delay.
 
-Leaf-body counts cover CollectionMediaCell, CachedAsyncImage, TVEpisodeArtwork,
-VividLazyImage and ThumbhashImage. Lazy/episode task starts and cancellations,
+Leaf-body counts cover CollectionMediaCell, CachedAsyncImage,
+VividLazyImage and ThumbhashImage. Lazy task starts and cancellations,
 cell appearance/disappearance, artwork-gate changes and actual memory-warning
 notifications are counted separately. Their correlation distinguishes possible
 causes without labelling every cancellation as recycling; it is not a guaranteed
