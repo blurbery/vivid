@@ -630,16 +630,6 @@ struct MainTabView: View {
             let resumePosition
         ):
             EmptyView()
-        case .favorites:
-            FavoritesView()
-        case .watchlist:
-            WatchlistView()
-        case .history:
-            HistoryView()
-        case .collections:
-            CollectionsView()
-        case .collectionDetail(let id):
-            CollectionDetailView(collectionId: id)
         case .browse(let libraryId):
             BrowseView(libraryId: libraryId)
         case .requestsHub:
@@ -652,8 +642,6 @@ struct MainTabView: View {
             SearchView()
         case .settings:
             SettingsView()
-        case .recommendations:
-            RecommendationsView()
         case .serverList:
             ServerListView()
         case .downloads:
