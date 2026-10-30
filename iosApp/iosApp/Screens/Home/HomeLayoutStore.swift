@@ -182,10 +182,16 @@ final class HomeSectionPreferences {
         }
 
         enforceVisibleRowLimit(in: rememberedRows)
+        // Only visible rows count towards the limit; rows already hidden stay as they are.
         var hidden = hiddenSectionIds
-        for (index, section) in arrangedSections(rememberedRows, includingHidden: true).enumerated()
-        where index >= Self.maximumVisibleRows {
-            hidden.insert(section.id)
+        var visibleCount = 0
+        for section in arrangedSections(rememberedRows, includingHidden: true)
+        where !hiddenSectionIds.contains(section.id) {
+            if visibleCount >= Self.maximumVisibleRows {
+                hidden.insert(section.id)
+            } else {
+                visibleCount += 1
+            }
         }
         if hidden != hiddenSectionIds {
             hiddenSectionIds = hidden
