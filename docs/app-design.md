@@ -24,11 +24,11 @@ Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership). Refer
     <tr><th align="left">Area</th><th align="left" width="10000">Current implementation</th></tr>
   </thead>
   <tbody>
-    <tr><td>Colours</td><td><a href="../iosApp/iosApp/Theme/Colors.swift">Colors.swift</a></td></tr>
-    <tr><td>Layout and motion tokens</td><td><a href="../iosApp/iosApp/Theme/VividTheme.swift">VividTheme.swift</a></td></tr>
-    <tr><td>Type</td><td><a href="../iosApp/iosApp/Theme/Typography.swift">Typography.swift</a></td></tr>
-    <tr><td>Button styles</td><td><a href="../iosApp/iosApp/Theme/VividButtonStyles.swift">VividButtonStyles.swift</a></td></tr>
-    <tr><td>First-run components</td><td><a href="../iosApp/iosApp/DesignSystem/Aurora/AuroraStyle.swift">AuroraStyle.swift</a></td></tr>
+    <tr><td>Colours</td><td><a href="../iosApp/iosApp/DesignSystem/Tokens/VividColours.swift">VividColours.swift</a></td></tr>
+    <tr><td>Layout and motion tokens</td><td><a href="../iosApp/iosApp/DesignSystem/Tokens/VividLayoutTokens.swift">VividLayoutTokens.swift</a></td></tr>
+    <tr><td>Type</td><td><a href="../iosApp/iosApp/DesignSystem/Tokens/VividFonts.swift">VividFonts.swift</a></td></tr>
+    <tr><td>Button styles</td><td><a href="../iosApp/iosApp/DesignSystem/Controls/VividButtonStyling.swift">VividButtonStyling.swift</a></td></tr>
+    <tr><td>First-run components</td><td><a href="../iosApp/iosApp/DesignSystem/FirstRun/FirstRunControls.swift">FirstRunControls.swift</a></td></tr>
     <tr><td>Vivid identity</td><td><a href="branding/README.md">Branding guide</a></td></tr>
   </tbody>
 </table>
