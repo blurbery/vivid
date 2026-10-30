@@ -70,7 +70,7 @@ class ItemDetailViewModel {
 
     /// Bumped by every writer of `detail` + `CacheKey.itemDetail`, so a load
     /// that started earlier but finishes later cannot publish over a newer
-    /// payload. Same idiom as `BrowseViewModel` / `TVLibraryGridViewModel`.
+    /// payload. Same idiom as `BrowseView.Model` / `TVLibraryGridViewModel`.
     ///
     /// The race this closes: an entry `loadDetail` on a cache hit fetches the
     /// pre-refresh catalog payload and then suspends inside
