@@ -51,7 +51,8 @@ struct ThumbhashImage: View {
 }
 
 /// Decoded placeholders, kept off the main actor. A hash that fails to decode
-/// is remembered as a failure so it is never decoded twice.
+/// is remembered as a failure, so it isn't decoded again while its entry stays
+/// in the cache.
 private actor ThumbhashImageStore {
     static let shared = ThumbhashImageStore()
 
