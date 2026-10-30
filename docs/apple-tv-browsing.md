@@ -144,8 +144,8 @@ More Like This is independent of TMDb. Emby and Jellyfin use their native simila
     <tr><td>Studios &amp; Networks</td><td><a href="../iosApp/iosApp/Components/StudiosNetworksStore.swift">StudiosNetworksStore</a>, <a href="../iosApp/iosApp/tvOS/Components/TVStudiosNetworks.swift">Apple TV row, pages and settings</a></td></tr>
     <tr><td>Collections row</td><td><a href="../iosApp/iosApp/Components/HomeCollectionsStore.swift">HomeCollectionsStore</a>, <a href="../iosApp/iosApp/tvOS/Components/TVHomeCollections.swift">Apple TV row and settings</a></td></tr>
     <tr><td>Local metadata</td><td><a href="../iosApp/iosApp/tvOS/Caching/TVHomeMetadataCache.swift">TVHomeMetadataCache</a></td></tr>
-    <tr><td>Catalogue grids</td><td><a href="../iosApp/iosApp/tvOS/Screens/Components/TVCatalogGrid.swift">TVCatalogGrid and artwork window</a>, <a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryGridViewModel.swift">Library paging</a></td></tr>
-    <tr><td>Navigation and Settings</td><td><a href="../iosApp/iosApp/tvOS/Navigation/TVMainTabView.swift">TVMainTabView</a>, <a href="../iosApp/iosApp/tvOS/Screens/Settings/TVGeneralSettingsView.swift">General</a></td></tr>
+    <tr><td>Catalogue grids</td><td><a href="../iosApp/iosApp/tvOS/Screens/Catalogue/TVPosterGrid.swift">TVCatalogGrid</a>, <a href="../iosApp/iosApp/tvOS/Screens/Catalogue/TVPosterArtworkPrefetch.swift">artwork window</a>, <a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryPagingModel.swift">Library paging</a></td></tr>
+    <tr><td>Navigation and Settings</td><td><a href="../iosApp/iosApp/tvOS/Shell/AppleTVShell.swift">TVMainTabView</a>, <a href="../iosApp/iosApp/tvOS/Screens/Settings/TVGeneralSettingsView.swift">General</a></td></tr>
     <tr><td>Siri search</td><td><a href="../iosApp/iosApp/tvOS/Siri/TVSiriSearch.swift">SearchVividIntent and search link</a>, <a href="../iosApp/iosApp/Screens/Search/SearchView.swift">SearchView</a></td></tr>
     <tr><td>Startup</td><td><a href="../iosApp/iosApp/tvOS/Components/VividStartupView.swift">VividStartupView</a>, <a href="../iosApp/iosApp/Startup/StartupContentPrefetcher.swift">StartupContentPrefetcher</a></td></tr>
   </tbody>
