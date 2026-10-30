@@ -56,6 +56,8 @@ final class SimklSyncStore {
         var unmatched: [Int: Date] = [:]
         /// Watchlist entries that aren't a movie or series, or can't be read.
         var skipped: Set<String> = []
+        /// Watchlist titles not matched to a Simkl title yet.
+        var unmapped: Set<String> = []
         var retryAfter: Date?
         var lastAttempt: Date?
         var lastSync: Date?
@@ -297,6 +299,8 @@ final class SimklSyncStore {
 
     func run() async {
         reload()
+        // Coming back to Vivid checks again once 15 minutes have passed.
+        nextSync = min(nextSync, (state.lastAttempt ?? .distantPast).addingTimeInterval(Self.foregroundInterval))
         while !Task.isCancelled {
             await sync()
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -351,7 +355,12 @@ final class SimklSyncStore {
                 status = moreWatchlistWork ? String(localized: "This batch is synced. More watchlist changes remain for the next check.") : String(localized: "Watched history and watchlist are synced.")
             }
         } catch is CancellationError {
-            if revision == generation { try? save(); status = String(localized: "Connected. Sync paused.") }
+            if revision == generation {
+                try? save()
+                status = String(localized: "Connected. Sync paused.")
+                // Leaving Vivid stopped it part-way. The next check finishes it.
+                if Task.isCancelled { nextSync = .distantPast }
+            }
         } catch {
             guard revision == generation else { return }
             handle(error, scope: scope)
@@ -499,7 +508,7 @@ final class SimklSyncStore {
         let confirmedLocal = Set(state.watchlist.filter { $0.value.local }.keys)
         let fullCheckDue = now >= (state.lastFullWatchlistCheck ?? .distantPast).addingTimeInterval(24 * 3600)
         // Nothing moved on either side: no server lookups and no writes.
-        guard changed || local.subtracting(state.skipped) != confirmedLocal || fullCheckDue else { return }
+        guard changed || local.subtracting(state.skipped).subtracting(state.unmapped) != confirmedLocal || fullCheckDue else { return }
         syncProgress = SimklSyncProgress(step: 2, label: String(localized: "Checking watchlist matches"))
 
         // Match each watchlist title with its Simkl ID. A title found more
@@ -526,7 +535,11 @@ final class SimklSyncStore {
             lookups += 1
             // Not in the library under these IDs. Simkl's own lookup tells a
             // title it doesn't track apart from one it lists under other IDs.
-            let resolved = try? await client.resolve(found.ids, kind: found.kind)
+            let resolved: Int?
+            do { resolved = try await client.resolve(found.ids, kind: found.kind) }
+            catch is CancellationError { throw CancellationError() }
+            // A lookup that failed isn't recorded, so a later check tries it again.
+            catch { continue }
             try await validateContext()
             lookedUp[id] = now
             if let resolved { mapped[id] = resolved }
@@ -576,6 +589,7 @@ final class SimklSyncStore {
         var mutations = 0
         var localRemovals = 0
         let mappedCounts = Dictionary(mapped.values.map { ($0, 1) }, uniquingKeysWith: +)
+        var unmapped = Set<String>()
         for (index, entry) in targets.sorted(by: { $0.key < $1.key }).enumerated() {
             let (id, found) = entry
             syncProgress = SimklSyncProgress(step: 2, label: String(localized: "Syncing watchlist changes"),
@@ -586,6 +600,16 @@ final class SimklSyncStore {
             let remote = simkl.flatMap { library[$0] }
             let previous = state.watchlist[id]
             let isLocal = local.contains(id)
+            // Not matched to Simkl yet. The old baseline stays, so the title
+            // is offered once a later check matches it.
+            guard simkl != nil else {
+                if isLocal { unmapped.insert(id) }
+                if let looked = lookedUp[id] {
+                    state.watchlist[id] = WatchlistEntry(kind: found.kind, ids: found.ids, local: previous?.local ?? false,
+                                                         remote: previous?.remote ?? false, lookedUpAt: looked)
+                }
+                continue
+            }
             let action = SimklWatchlistPolicy.action(local: isLocal, remote: remote, mapped: simkl != nil,
                 previousLocal: previous?.local, previousRemote: previous?.remote)
             if action != .none {
@@ -651,7 +675,11 @@ final class SimklSyncStore {
                 state.watchlist[id] = updated
             }
         }
-        state.watchlist = state.watchlist.filter { $0.value.local || $0.value.remote }
+        // Keep when an unmatched title was last looked up while it's still on the watchlist.
+        state.watchlist = state.watchlist.filter { id, entry in
+            entry.local || entry.remote || (entry.lookedUpAt != nil && local.contains(id))
+        }
+        state.unmapped = unmapped
         if !moreWatchlistWork { state.lastFullWatchlistCheck = now }
         try save()
     }

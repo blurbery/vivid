@@ -126,6 +126,7 @@ final class FakeSimkl: @unchecked Sendable {
     var polls = 0
     var remaining = 450
     var brokenIDsReply = false
+    var failedLookups = 0
 
     var requests: [String] = []
     var lastHistoryBody: [String: Any] = [:]
@@ -228,6 +229,10 @@ final class FakeSimkl: @unchecked Sendable {
             return (200, [:], [String: Any]())
         case ("GET", "/redirect"):
             if request.value(forHTTPHeaderField: "Authorization") != nil { problems.append("the ID lookup sent the sign-in token") }
+            if failedLookups > 0 {
+                failedLookups -= 1
+                return (503, [:], ["error": "unavailable"])
+            }
             let movie = query["type"] == "movie"
             let found = titles.values.first { title in
                 (title.type == "movies") == movie && ["tmdb", "imdb", "tvdb"].contains { query[$0] != nil && Self.string(title.ids[$0]) == query[$0] }
@@ -480,6 +485,7 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
             "m-heat": movie("m-heat", "Heat", tmdb: "949"),
             "m-tenet": movie("m-tenet", "Tenet", tmdb: "577922"),
             "m-dune": movie("m-dune", "Dune", tmdb: "693134"),
+            "m-up": movie("m-up", "Up", tmdb: "14160"),
             "s-bebop": ItemDetail(contentId: "s-bebop", type: "series", title: "Cowboy Bebop", tmdbId: "30991"),
             "s-bb": ItemDetail(contentId: "s-bb", type: "series", title: "Breaking Bad", tmdbId: "1396", imdbId: "tt0903747", tvdbId: "81189"),
             "e-bb-101": ItemDetail(contentId: "e-bb-101", type: "episode", title: "Pilot", seriesId: "s-bb",
@@ -499,6 +505,7 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
             title(500, "movies", "Heat", ["tmdb": "949"])
             title(600, "movies", "Arrival", ["tmdb": "329865"])
             title(700, "movies", "Tenet", ["tmdb": "577922"])
+            title(800, "movies", "Up", ["tmdb": "14160"])
             title(11121, "shows", "Breaking Bad", ["tmdb": "1396", "tvdb": "81189", "imdb": "tt0903747"])
             // Simkl often lists anime under anime IDs only.
             title(37089, "anime", "Cowboy Bebop", ["tmdb": "30991", "mal": "1"], listed: ["mal": "1"], anime: "tv")
@@ -615,6 +622,18 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
               "doesn't trust it, and reads the movies again in full")
         check(server.watchlist.contains("m-arrival"), "Arrival stays on the server watchlist")
 
+        step("\n9b. Simkl's ID lookup fails for a new watchlist title")
+        server.watchlist.append("m-up")
+        fake.lock.withLock { fake.failedLookups = 1 }
+        await store.watchlistChanged(expected: auth)
+        store = try relaunch(client)
+        await store.sync()
+        check(since().contains("GET /redirect") && !fake.planAdds.contains("Up"), "leaves Up alone while it can't be matched")
+        fake.lock.withLock { fake.put(11121, "watching", watched: 5) }
+        store = try relaunch(client)
+        await store.sync()
+        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch on a later check, once the lookup works")
+
         step("\n10. The access token expires")
         fake.lock.withLock { fake.expireAccessToken() }
         store = try relaunch(client)
@@ -643,7 +662,7 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
         let again = since()
         check(!again.contains { $0.hasPrefix("GET /sync/all-items/") && !$0.contains("since last sync") && !$0.contains("IDs only") },
               "carries on from the saved library instead of reading it all again")
-        check(fake.planAdds == ["Arrival"] && fake.removals == ["Inception"], "and changes nothing on either list")
+        check(fake.planAdds == ["Arrival", "Up"] && fake.removals == ["Inception"], "and changes nothing on either list")
 
         step("\n13. Simkl's daily allowance runs low")
         fake.lock.withLock {

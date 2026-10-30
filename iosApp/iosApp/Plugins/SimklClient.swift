@@ -476,7 +476,7 @@ final class SimklClient: @unchecked Sendable {
         return SimklDeviceAuthorization(deviceCode: deviceCode, userCode: userCode, verificationURL: verification,
             completeURL: complete?.scheme == "https" ? complete : nil,
             expiresAt: now.addingTimeInterval(TimeInterval(min(expiresIn, 1800))),
-            interval: TimeInterval(min(max(int(object["interval"]) ?? 5, 5), 60)))
+            interval: TimeInterval(max(int(object["interval"]) ?? 5, 5)))
     }
 
     static func parsePoll(status: Int, json: Any?, now: Date) throws -> SimklTokenPoll {

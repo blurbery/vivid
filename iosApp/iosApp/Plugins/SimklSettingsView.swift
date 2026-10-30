@@ -3,9 +3,6 @@ import SwiftUI
 struct SimklSettingsView: View {
     @State private var store = SimklSyncStore.shared
     @State private var message: String?
-    #if os(iOS)
-    @Environment(\.openURL) private var openURL
-    #endif
 
     var body: some View {
         #if os(tvOS)
@@ -51,8 +48,14 @@ struct SimklSettingsView: View {
                 if store.isConnected && store.isSyncing { syncProgress.padding(.vertical, 6) }
                 if let prompt = store.signIn {
                     signInCode(prompt).padding(.vertical, 6)
-                    Link("Open Simkl", destination: prompt.approvalURL)
-                    Button("Cancel", role: .cancel) { store.cancelSignIn() }
+                    Link(destination: prompt.approvalURL) {
+                        Text("Open Simkl").frame(maxWidth: .infinity, alignment: .center)
+                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                    }
+                    Button(role: .cancel) { store.cancelSignIn() } label: {
+                        Text("Cancel").frame(maxWidth: .infinity, alignment: .center)
+                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                    }
                 } else if !store.isConnected {
                     Button("Sign in with Simkl") { store.beginSignIn() }
                 } else {
@@ -63,10 +66,6 @@ struct SimklSettingsView: View {
                 if let notice = message ?? store.signInMessage { Text(notice).font(.footnote).foregroundStyle(.secondary) }
             } footer: { Text(privacy) }
         }.settingsListChrome().listSectionSpacing(8).navigationTitle("").task { store.reload() }
-            // The code is ready: take the person straight to Simkl to approve it.
-            .onChange(of: store.signIn?.userCode) { _, code in
-                if code != nil, let url = store.signIn?.approvalURL { openURL(url) }
-            }
         #endif
     }
 
@@ -105,7 +104,7 @@ struct SimklSettingsView: View {
             }
         }
         #else
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 8) {
             Text("Approve Vivid on Simkl. If Simkl asks for a code, enter:")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -118,6 +117,9 @@ struct SimklSettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
         #endif
     }
 

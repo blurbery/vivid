@@ -32,13 +32,15 @@ To find the plugins:
 - **iPhone and iPad:** tap your profile picture in the tab bar to open Settings, then choose **Plugins**.
 - **Apple TV:** select your profile picture in the top bar to open Settings, then choose **Plugins**.
 
+TMDb and OpenSubtitles come first, then MDBList and Simkl under **Watchlists**.
+
 <table width="100%">
   <thead>
     <tr><th align="center">iPhone</th><th align="center">Apple TV</th></tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center" valign="middle"><img src="images/plugins/plugins-list.jpg" width="260" alt="The Plugins page on iPhone, listing TMDb, OpenSubtitles and MDBList"></td>
+      <td align="center" valign="middle"><img src="images/plugins/plugins-list.jpg" width="260" alt="The Plugins page on iPhone, listing TMDb and OpenSubtitles, then MDBList and Simkl under Watchlists"></td>
       <td align="center" valign="middle"><img src="images/plugins/tv-plugins-list.jpg" width="460" alt="The Plugins page on Apple TV, listing TMDb, OpenSubtitles and MDBList"></td>
     </tr>
   </tbody>
@@ -176,7 +178,7 @@ Simkl tracks the movies, shows and anime you watch, and keeps a Plan to Watch li
 1. Create a free account at [simkl.com](https://simkl.com) if you don't have one.
 2. In Vivid, open **Settings > Plugins > Simkl** and choose **Sign in with Simkl**.
 3. Approve Vivid on Simkl:
-   - **iPhone and iPad:** Simkl opens in your browser with the code already filled in. Sign in, allow Vivid, then come back to Vivid. If the browser doesn't open, choose **Open Simkl**.
+   - **iPhone and iPad:** Vivid shows your code. Choose **Open Simkl** to approve it in your browser, where the code is already filled in, or go to [simkl.com/pin](https://simkl.com/pin) on another device and enter it. Sign in, allow Vivid, then come back to Vivid.
    - **Apple TV:** scan the QR code with your phone, or go to [simkl.com/pin](https://simkl.com/pin) on any device and enter the code shown.
 4. Status shows **Connected** with a green dot, and the first sync starts straight away.
 
