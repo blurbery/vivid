@@ -115,6 +115,7 @@ struct LibraryCollectionDetailView: View {
     private func load(reset: Bool) async {
         guard !isLoading else { return }
         let itemsKey = CacheKey.collectionItems(collectionId)
+        var paintedPage: CatalogResponse?
         if reset {
             // A cached first page is only painted while the first page is
             // fetched again; paging always restarts from the top.
@@ -123,6 +124,7 @@ struct LibraryCollectionDetailView: View {
                 items = cached.items
                 hasMore = cached.hasMore ?? false
                 total = cached.totalExact == false ? nil : cached.total
+                paintedPage = cached
             } else {
                 items = []
                 hasMore = true
@@ -160,7 +162,13 @@ struct LibraryCollectionDetailView: View {
             nextOffset += page.items.count
             if snapshot == nil { snapshot = page.snapshot }
         } catch {
-            if items.isEmpty { self.error = ErrorState(error) }
+            if items.isEmpty {
+                self.error = ErrorState(error)
+            } else if let paintedPage {
+                // The cached page stays, so later pages follow on from it.
+                nextOffset = paintedPage.items.count
+                snapshot = paintedPage.snapshot
+            }
         }
     }
 }
