@@ -36,13 +36,7 @@ enum Route: Hashable {
         startFromBeginning: Bool,
         resumePosition: Double?
     )
-    case favorites
-    case watchlist
-    case history
-    case collections
-    case collectionDetail(collectionId: String)
     case settings
-    case recommendations
     case serverList
     case downloads
 

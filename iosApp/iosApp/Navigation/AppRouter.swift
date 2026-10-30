@@ -797,20 +797,8 @@ private extension Route {
             return "player"
         case .playerWithFile:
             return "playerWithFile"
-        case .favorites:
-            return "favorites"
-        case .watchlist:
-            return "watchlist"
-        case .history:
-            return "history"
-        case .collections:
-            return "collections"
-        case .collectionDetail:
-            return "collectionDetail"
         case .settings:
             return "settings"
-        case .recommendations:
-            return "recommendations"
         case .serverList:
             return "serverList"
         case .downloads:

@@ -906,16 +906,6 @@ struct MainTabView: View {
             #else
             EmptyView()
             #endif
-        case .favorites:
-            FavoritesView()
-        case .watchlist:
-            WatchlistView()
-        case .history:
-            HistoryView()
-        case .collections:
-            CollectionsView()
-        case .collectionDetail(let id):
-            CollectionDetailView(collectionId: id)
         case .browse(let libraryId):
             BrowseView(libraryId: libraryId)
         case .requestsHub:
@@ -928,8 +918,6 @@ struct MainTabView: View {
             SearchView()
         case .settings:
             SettingsView()
-        case .recommendations:
-            RecommendationsView()
         case .serverList:
             ServerListView()
         case .downloads:
@@ -975,7 +963,7 @@ struct MainTabView: View {
     #if os(iOS)
     private func routeNeedsSidebarToggle(_ route: Route) -> Bool {
         switch route {
-        case .downloads, .recommendations:
+        case .downloads:
             false
         default:
             true
