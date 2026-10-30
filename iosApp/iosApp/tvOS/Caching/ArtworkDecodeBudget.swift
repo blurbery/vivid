@@ -1,7 +1,8 @@
 import UIKit
 
-/// Request shapes, warming and decoded-memory budgets for artwork. Every
-/// member is safe to call from any thread.
+/// Request shapes, warming and decoded-memory budgets for artwork. The request
+/// and warming helpers can be called from any thread; `install()` runs once at
+/// launch, before any artwork loads.
 enum PosterImageCache {
     /// The main screen's scale, never below 1.
     static let displayScale: CGFloat = max(1, UIScreen.main.scale)
