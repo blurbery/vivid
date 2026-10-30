@@ -27,7 +27,7 @@ class SettingsViewModel {
         ServerRegistry.shared.activeServer?.displayName ?? String(localized: "Not configured")
     }
 
-    // Playback preferences (server-backed for this device/profile).
+    // Playback preferences.
 
     /// The selected shared preset's id, or nil when the stored pair is a
     /// combination no preset covers. The picker shows ``preferredQualityLabel``
