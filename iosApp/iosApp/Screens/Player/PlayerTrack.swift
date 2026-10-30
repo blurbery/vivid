@@ -137,43 +137,6 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
         return parts
     }
 
-    /// Rich human-readable label for track pickers,
-    /// e.g. "English · 5.1 · EAC3 · default".
-    var displayLabel: String {
-        var parts: [String] = []
-
-        if let title = normalizedTitle {
-            parts.append(title)
-        }
-        if let lang = normalizedLanguageCode,
-           !(normalizedTitle?.localizedCaseInsensitiveContains(lang) ?? false) {
-            parts.append(languageDisplayName(lang))
-        }
-        if kind == .audio, let label = channelCountLabel {
-            parts.append(label)
-        }
-        if let codec = Self.normalizedText(codec) {
-            parts.append(codec.uppercased())
-        }
-        if isDefault {
-            parts.append(String(localized: "default", comment: "Lowercase track attribute in a dot-separated label"))
-        }
-        if isForced {
-            parts.append(String(localized: "forced", comment: "Lowercase track attribute in a dot-separated label"))
-        }
-        if isHearingImpaired {
-            parts.append("SDH")
-        }
-        if isExternal {
-            parts.append(String(localized: "external", comment: "Lowercase track attribute in a dot-separated label"))
-        }
-
-        if parts.isEmpty {
-            parts.append(String(localized: "Track \(Int(trackId))", comment: "Fallback name for an untitled audio or subtitle track"))
-        }
-        return parts.joined(separator: " · ")
-    }
-
     /// Human-readable channel count for audio tracks (e.g. "5.1"), or nil when
     /// the demuxer reported no usable count.
     var channelCountLabel: String? {

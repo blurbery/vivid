@@ -27,8 +27,6 @@ final class RequestSearchSectionViewModel {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         #if os(tvOS) || os(iOS)
         let enabled = TVSeerrConnectionStore.shared.isConfigured
-        #else
-        let enabled = RequestsFeatureStore.shared.isEnabled
         #endif
         results = []
         isLoading = false
@@ -53,8 +51,6 @@ final class RequestSearchSectionViewModel {
         do {
             #if os(tvOS) || os(iOS)
             let page = try await TVSeerrConnectionStore.shared.search(trimmed)
-            #else
-            let page = try await api.requestsSearch(query: trimmed)
             #endif
             guard !Task.isCancelled else { return }
             // Only titles the library can't already answer — in-library

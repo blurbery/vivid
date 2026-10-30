@@ -339,12 +339,6 @@ final class HomeSectionPreferences {
     private static var platformStoragePrefix: String {
         #if os(tvOS) || os(iOS)
         "tvos.homeSections.v1"
-        #elseif os(iOS)
-        "ios.homeSections.v1"
-        #elseif os(macOS)
-        "mac.homeSections.v1"
-        #else
-        "apple.homeSections.v1"
         #endif
     }
 }

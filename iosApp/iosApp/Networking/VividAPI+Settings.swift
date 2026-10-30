@@ -6,7 +6,7 @@ import Foundation
 /// `/api/v1/settings/values/*`).
 ///
 /// The methods on ``VividAPI`` itself — `effectiveSettings`,
-/// `setDeviceSetting`, `getUserSetting` — speak the legacy string-only
+/// `getUserSetting` — speak the legacy string-only
 /// registry: every value is a string, the scope is implied by which function
 /// you call, and an unknown key is accepted silently. These speak the contract
 /// instead: values are typed JSON, the scope is explicit and validated against

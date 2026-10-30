@@ -20,9 +20,8 @@ actor PlaybackRealtimeClient {
         2_000_000_000,
         5_000_000_000,
     ]
-    /// After this many consecutive connection failures, stop reconnecting and
-    /// flip `isRealtimeUnavailable` so consumers can surface a non-fatal
-    /// "realtime control unavailable" notice. Local playback continues; only
+    /// After this many consecutive connection failures, stop reconnecting.
+    /// Local playback continues; only
     /// remote command/event delivery is degraded.
     private static let consecutiveFailureCircuitBreakerThreshold = 8
 
@@ -31,25 +30,6 @@ actor PlaybackRealtimeClient {
     private var socket: URLSessionWebSocketTask?
     private var runTask: Task<Void, Never>?
     private var seenCommandIds = Set<String>()
-    private(set) var isRealtimeConnected = false
-    private(set) var isRealtimeUnavailable = false
-    private struct ConnectivityObserver {
-        let id: UUID
-        let handler: (@MainActor (Bool) -> Void)
-    }
-    private struct UnavailabilityObserver {
-        let id: UUID
-        let handler: (@MainActor (Bool) -> Void)
-    }
-    private var connectivityListeners: [ConnectivityObserver] = []
-    private var unavailabilityListeners: [UnavailabilityObserver] = []
-    /// Serializes notification delivery to listeners. Without this, rapid
-    /// state flips can be observed out of order on the MainActor because
-    /// independent `Task { @MainActor in }` hops have no FIFO guarantee.
-    /// Tracking the in-flight task also lets `unbind` cancel pending
-    /// deliveries that no consumer is going to act on.
-    private var connectivityNotificationTask: Task<Void, Never>?
-    private var notificationTask: Task<Void, Never>?
 
     init(
         session: URLSession = .shared,
@@ -69,9 +49,6 @@ actor PlaybackRealtimeClient {
         generation += 1
         boundSessionId = normalized
         seenCommandIds.removeAll()
-        // Reset the circuit breaker — a new session deserves fresh
-        // reconnect budget independent of the previous session's history.
-        setRealtimeUnavailable(false)
         closeSocket()
         runTask?.cancel()
 
@@ -87,10 +64,6 @@ actor PlaybackRealtimeClient {
         seenCommandIds.removeAll()
         runTask?.cancel()
         runTask = nil
-        connectivityNotificationTask?.cancel()
-        connectivityNotificationTask = nil
-        notificationTask?.cancel()
-        notificationTask = nil
         closeSocket()
     }
 
@@ -111,8 +84,6 @@ actor PlaybackRealtimeClient {
                 try await send(makePlaybackRealtimeHello(sessionId: sessionId), on: socket)
                 attempt = 0
                 consecutiveFailures = 0
-                setRealtimeConnected(true)
-                setRealtimeUnavailable(false)
                 try await receiveLoop(on: socket, sessionId: sessionId, generation: generation)
             } catch is CancellationError {
                 break
@@ -133,82 +104,12 @@ actor PlaybackRealtimeClient {
                 Self.logger.error(
                     "Realtime websocket circuit breaker tripped after \(consecutiveFailures) consecutive failures for session \(sessionId, privacy: .public); pausing reconnect attempts"
                 )
-                setRealtimeUnavailable(true)
                 break
             }
 
             let delay = reconnectDelaysNanos[min(attempt, reconnectDelaysNanos.count - 1)]
             attempt += 1
             try? await Task.sleep(nanoseconds: delay)
-        }
-    }
-
-    /// Subscribe to changes in `isRealtimeUnavailable`. The handler runs on
-    /// the main actor — consumers (PlayerViewModel) can mutate
-    /// `@Observable` state directly. Returns the current value once at
-    /// subscription time so observers don't need a separate read. The
-    /// returned token must be passed to `removeUnavailabilityObserver`
-    /// to avoid leaking observers across binds.
-    @discardableResult
-    func observeUnavailability(_ handler: @escaping @MainActor (Bool) -> Void) async -> UUID {
-        let id = UUID()
-        unavailabilityListeners.append(UnavailabilityObserver(id: id, handler: handler))
-        let snapshot = isRealtimeUnavailable
-        await MainActor.run { handler(snapshot) }
-        return id
-    }
-
-    /// Subscribe to changes in websocket readiness. This is stricter than
-    /// `isRealtimeUnavailable`: it is false before the session websocket has
-    /// connected and sent hello, during reconnect gaps, and after unbind.
-    @discardableResult
-    func observeConnectivity(_ handler: @escaping @MainActor (Bool) -> Void) async -> UUID {
-        let id = UUID()
-        let observer = ConnectivityObserver(id: id, handler: handler)
-        connectivityListeners.append(observer)
-        let snapshot = isRealtimeConnected
-        notifyConnectivity(snapshot, listeners: [observer])
-        return id
-    }
-
-    func removeUnavailabilityObserver(_ id: UUID) {
-        unavailabilityListeners.removeAll { $0.id == id }
-    }
-
-    func removeConnectivityObserver(_ id: UUID) {
-        connectivityListeners.removeAll { $0.id == id }
-    }
-
-    private func setRealtimeConnected(_ value: Bool) {
-        guard isRealtimeConnected != value else { return }
-        isRealtimeConnected = value
-        notifyConnectivity(value, listeners: connectivityListeners)
-    }
-
-    private func notifyConnectivity(_ value: Bool, listeners: [ConnectivityObserver]) {
-        connectivityNotificationTask?.cancel()
-        connectivityNotificationTask = Task { @MainActor in
-            for observer in listeners {
-                if Task.isCancelled { return }
-                observer.handler(value)
-            }
-        }
-    }
-
-    private func setRealtimeUnavailable(_ value: Bool) {
-        guard isRealtimeUnavailable != value else { return }
-        isRealtimeUnavailable = value
-        let listeners = unavailabilityListeners
-        // Replace any in-flight notification task — the new state
-        // supersedes whatever the previous task was about to deliver, so
-        // listeners always see the latest value last regardless of how
-        // fast the state churns.
-        notificationTask?.cancel()
-        notificationTask = Task { @MainActor in
-            for observer in listeners {
-                if Task.isCancelled { return }
-                observer.handler(value)
-            }
         }
     }
 
@@ -357,7 +258,6 @@ actor PlaybackRealtimeClient {
     }
 
     private func closeSocket() {
-        setRealtimeConnected(false)
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
     }

@@ -2,8 +2,6 @@ import Foundation
 
 #if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
 #endif
 
 struct AppleDeviceIdentity: Sendable {
@@ -78,10 +76,6 @@ struct AppleDeviceIdentity: Sendable {
     private static func currentName() -> String {
         #if canImport(UIKit)
         return UIDevice.current.name
-        #elseif canImport(AppKit)
-        return Host.current().localizedName ?? "Mac"
-        #else
-        return "Apple Device"
         #endif
     }
 
@@ -90,22 +84,14 @@ struct AppleDeviceIdentity: Sendable {
         return "tvOS"
         #elseif os(iOS)
         return "iOS"
-        #elseif os(macOS)
-        return "macOS"
-        #else
-        return "Apple"
         #endif
     }
 
     private static func currentClientFamily() -> String {
         #if os(tvOS)
         return "tv"
-        #elseif os(macOS)
-        return "desktop"
         #elseif os(iOS)
         return UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "mobile"
-        #else
-        return "desktop"
         #endif
     }
 
@@ -114,12 +100,8 @@ struct AppleDeviceIdentity: Sendable {
     private static func currentClientName() -> String {
         #if os(tvOS)
         return "Vivid Apple TV"
-        #elseif os(macOS)
-        return "Vivid Mac"
         #elseif os(iOS)
         return UIDevice.current.userInterfaceIdiom == .pad ? "Vivid iPad" : "Vivid iPhone"
-        #else
-        return "Vivid"
         #endif
     }
 

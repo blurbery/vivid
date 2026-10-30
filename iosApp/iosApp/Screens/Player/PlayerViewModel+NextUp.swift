@@ -5,8 +5,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 extension PlayerViewModel {
@@ -481,27 +479,6 @@ extension PlayerViewModel {
             progressPosition: completionProgressPositionForCurrentItem(),
             finalizeCurrentSession: true,
             origin: .autoplay
-        )
-    }
-
-    func playOnDeckItemNow(_ item: PlayerOnDeckItem) {
-        // Another title rather than the next episode: Settings > Subtitles
-        // and Audio Language apply again.
-        viewingSubtitlePrefs = nil
-        viewingAudioLanguage = nil
-        viewingAudioSeedOrdinal = nil
-        let request = LoadRequest(
-            contentId: item.contentId,
-            preferredFileId: nil,
-            preferredAudioTrackIndex: nil,
-            preferredSubtitleTrackIndex: nil,
-            preferredSidecarSubtitleTrackId: nil,
-            startFromBeginning: false
-        )
-        beginFreshLoad(
-            request: request,
-            progressPosition: completionProgressPositionForCurrentItem(),
-            finalizeCurrentSession: true
         )
     }
 

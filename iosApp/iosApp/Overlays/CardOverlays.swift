@@ -133,19 +133,6 @@ struct OverlayBadgeRenderState: Equatable {
         return build(def: def, label: label, data: data, prefs: prefs, preset: preset)
     }
 
-    /// Force-resolve with the overlay's label as a fallback. Used by
-    /// the settings UI so every row shows a chip even if the chosen
-    /// sample fixture happens to not populate that overlay.
-    static func resolveForPreview(
-        def: OverlayDef,
-        data: OverlayData,
-        prefs: CardOverlayPrefs,
-        preset: OverlayPreset
-    ) -> OverlayBadgeRenderState {
-        let label = def.getValue(data) ?? def.label.uppercased()
-        return build(def: def, label: label, data: data, prefs: prefs, preset: preset)
-    }
-
     private static func build(
         def: OverlayDef,
         label: String,

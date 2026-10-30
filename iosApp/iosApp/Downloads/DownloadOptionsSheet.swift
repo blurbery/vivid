@@ -76,8 +76,6 @@ struct DownloadOptionsSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .background(Color.clear)
-            #else
-            .vividPageBackground()
             #endif
             .toolbar {
                 VividSheetCloseItem { dismiss() }
@@ -340,8 +338,6 @@ private struct DownloadVersionPage: View {
         .vividScrollContentBackgroundHidden()
         #if os(iOS)
         .background(Color.clear)
-        #else
-        .vividPageBackground()
         #endif
     }
 }

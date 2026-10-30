@@ -265,7 +265,6 @@ final class DownloadManager {
     }
 
     var activeRecords: [DownloadRecord] { records.filter { $0.localStatus.isActive } }
-    var completedRecords: [DownloadRecord] { records.filter { !$0.localStatus.isActive } }
     var subscriptions: [DownloadSubscription] { file.subscriptions }
 
     var totalBytesUsed: Int64 { storageBytesUsed }

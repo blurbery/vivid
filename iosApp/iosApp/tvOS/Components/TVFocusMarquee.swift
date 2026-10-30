@@ -14,43 +14,6 @@ struct TVHeroArtwork: Equatable {
     }
 }
 
-enum TVHeroEnrichmentState: Equatable {
-    case notStarted
-    case loading
-    case completed
-    case failed
-
-    var permitsFallback: Bool {
-        self == .completed || self == .failed
-    }
-}
-
-enum TVHeroArtworkResolver {
-    static func resolve(
-        sectionBackdrop: TVHeroArtwork?,
-        fallback: TVHeroArtwork?,
-        prefersEnrichedBackdrop: Bool,
-        canLoadEnrichment: Bool,
-        enrichmentState: TVHeroEnrichmentState,
-        enrichedBackdrop: TVHeroArtwork?
-    ) -> TVHeroArtwork? {
-        if !prefersEnrichedBackdrop, let sectionBackdrop {
-            return sectionBackdrop
-        }
-
-        guard canLoadEnrichment else {
-            return sectionBackdrop ?? fallback
-        }
-        guard enrichmentState.permitsFallback else {
-            // Do not paint the poster while detail enrichment is in flight:
-            // that creates a conspicuous portrait-to-landscape flash. The
-            // first image displayed should be the real backdrop.
-            return nil
-        }
-        return enrichedBackdrop ?? sectionBackdrop ?? fallback
-    }
-}
-
 #if os(tvOS)
 import SwiftUI
 import UIKit
@@ -184,40 +147,6 @@ extension TVMarqueeContent {
             progressUpdatedAt: item.progressUpdatedAt,
             prefersLastUsedPlaybackMetadata: isContinueWatching,
             isEpisode: isEpisode
-        )
-    }
-
-    /// Collection preview (§6.2): name, count, poster-derived backdrop.
-    init(collection: LibraryCollection, rowTitle: String) {
-        var meta: [String] = []
-        if let count = collection.itemCount, count > 0 {
-            meta.append(String(localized: "\(count) items"))
-        }
-        if collection.kind == .userCollections {
-            meta.append(String(localized: "User collection"))
-        }
-
-        self.init(
-            id: "\(rowTitle)#collection:\(collection.id)",
-            contentId: nil,
-            rowId: nil,
-            eyebrow: rowTitle,
-            title: collection.name,
-            logoUrl: nil,
-            badges: [],
-            metaParts: meta,
-            runtimeMetaIndex: meta.count,
-            runtimeText: nil,
-            synopsis: nil,
-            backdropUrl: nil,
-            backdropThumbhash: nil,
-            fallbackArtworkUrl: collection.posterUrl,
-            fallbackArtworkThumbhash: collection.posterThumbhash,
-            baseOverlayData: nil,
-            contentRatingBadge: nil,
-            progressUpdatedAt: nil,
-            prefersLastUsedPlaybackMetadata: false,
-            isEpisode: false
         )
     }
 
@@ -523,72 +452,6 @@ final class TVContinueWatchingPlaybackMetadataStore {
     }
 }
 
-// MARK: - Detail enrichment
-
-/// Fields the marquee wants but section payloads don't carry yet (§9:
-/// air date, cast) — backfilled from a cached, low-priority item-detail
-/// fetch that never blocks or delays the marquee itself.
-struct TVMarqueeEnrichment: Equatable {
-    /// `Aired Mar 12, 2026 · Pedro Pascal, Bella Ramsey, Anna Torv`
-    let detailLine: String?
-    /// Recommendation payloads may omit the age/content rating even though
-    /// item detail carries it. Keep that fallback with the other marquee
-    /// enrichment so For You renders the same leading rating pill as Home.
-    let contentRatingBadge: String?
-    /// Item-detail runtime fills section payloads that omit it (notably some
-    /// recommendation and library rows).
-    let runtimeText: String?
-    /// The detail-level backdrop. For episodes this is the series backdrop —
-    /// far higher-res than the episode still the section payload carries — so
-    /// the root hero swaps to it once enrichment arrives.
-    let backdropUrl: String?
-    let backdropThumbhash: String?
-
-    init(detail: ItemDetail) {
-        backdropUrl = detail.backdropUrl
-        backdropThumbhash = detail.backdropThumbhash
-        let trimmedRating = detail.contentRating?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        contentRatingBadge = trimmedRating?.isEmpty == false
-            ? trimmedRating?.uppercased()
-            : nil
-        runtimeText = Self.runtimeText(minutes: detail.runtime)
-        var parts: [String] = []
-        if let airDate = Self.airDateText(detail.airDate) {
-            parts.append(String(localized: "Aired \(airDate)"))
-        }
-        let cast = (detail.cast ?? [])
-            .sorted { ($0.order ?? Int.max) < ($1.order ?? Int.max) }
-            .prefix(3)
-            .map(\.name)
-            .filter { !$0.isEmpty }
-        if !cast.isEmpty {
-            parts.append(cast.joined(separator: ", "))
-        }
-        detailLine = parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// Mirrors PlayerView's air-date formatting, with a date-only
-    /// fallback for the server's `yyyy-MM-dd` strings.
-    private static func airDateText(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        let date = (try? Date(raw, strategy: .iso8601))
-            ?? (try? Date(raw, strategy: .iso8601.year().month().day()))
-        guard let date else { return nil }
-        return date.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    private static func runtimeText(minutes: Int?) -> String? {
-        guard let minutes, minutes > 0 else { return nil }
-        if minutes >= 60 {
-            let hours = minutes / 60
-            let remainder = minutes % 60
-            return remainder == 0 ? String(localized: "\(hours)h") : String(localized: "\(hours)h \(remainder)m")
-        }
-        return String(localized: "\(minutes) min")
-    }
-}
-
 // MARK: - Spotlight artwork
 
 /// Resolves artwork and metadata for a fixed spotlight slide.
@@ -609,8 +472,6 @@ final class TVSpotlightArtworkModel {
 
     private var displayedArtwork: TVHeroArtwork?
     var backdropURL: String? { displayedArtwork?.url }
-
-    var backdropThumbhash: String? { displayedArtwork?.thumbhash }
 
     private var tintTask: Task<Void, Never>?
     /// False while the feed is offscreen; every entry point is a no-op then.

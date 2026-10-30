@@ -13,11 +13,6 @@ struct VividPageBackdrop: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-        #else
-        Color.vividBackground
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
         #endif
     }
 }
@@ -47,31 +42,9 @@ extension View {
         }
     }
 
-    /// Card-style surface with rounded corners — zero elevation.
-    func vividCard() -> some View {
-        self
-            .background(Color.vividSurface)
-            .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
-    }
-
-    /// Standard content padding on all sides.
-    func vividPadding() -> some View {
-        self.padding(VividTheme.padding)
-    }
-
-    /// Hide the view conditionally.
-    @ViewBuilder
-    func hidden(_ isHidden: Bool) -> some View {
-        if isHidden {
-            self.hidden()
-        } else {
-            self
-        }
-    }
-
     @ViewBuilder
     func vividNavigationTitleDisplayMode(_ mode: VividNavigationTitleDisplayMode) -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         switch mode {
@@ -94,58 +67,9 @@ extension View {
         #endif
     }
 
-    /// Soft native scroll-edge blur at the top, where content passes under a
-    /// floating bar. iOS 18 keeps its legacy edge treatment; tvOS remains a
-    /// no-op because it has no floating bars in the 10-foot UI.
-    @ViewBuilder
-    func vividScrollEdgeEffect() -> some View {
-        #if os(tvOS)
-        self
-        #elseif os(iOS)
-        if #available(iOS 26.0, *) {
-            self.scrollEdgeEffectStyle(.soft, for: .top)
-        } else {
-            self
-        }
-        #else
-        self.scrollEdgeEffectStyle(.soft, for: .top)
-        #endif
-    }
-
-    /// Extends hero artwork through surrounding chrome on Apple 26+. Earlier
-    /// iOS versions retain the legacy clipped artwork without the new system
-    /// mirroring effect.
-    @ViewBuilder
-    func vividBackgroundExtensionEffect() -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self.backgroundExtensionEffect()
-        } else {
-            self.clipped()
-        }
-        #else
-        self.backgroundExtensionEffect()
-        #endif
-    }
-
-    /// Keeps the native minimizing tab bar on iOS 26 while leaving the fixed
-    /// iOS 18 tab bar unchanged.
-    @ViewBuilder
-    func vividTabBarMinimizeOnScroll() -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self.tabBarMinimizeBehavior(.onScrollDown)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-
     @ViewBuilder
     func vividStatusBarHidden() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self.statusBarHidden()
@@ -154,7 +78,7 @@ extension View {
 
     @ViewBuilder
     func vividToolbarColorSchemeDark() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self.toolbarColorScheme(.dark, for: .navigationBar)
@@ -163,7 +87,7 @@ extension View {
 
     @ViewBuilder
     func vividNavigationBarSurfaceBackground() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self
@@ -174,7 +98,7 @@ extension View {
 
     @ViewBuilder
     func vividNavigationBarBackgroundHidden() -> some View {
-        #if os(tvOS) || os(macOS)
+        #if os(tvOS)
         self
         #else
         self.toolbarBackground(.hidden, for: .navigationBar)
@@ -184,8 +108,6 @@ extension View {
     @ViewBuilder
     func vividSearchable(text: Binding<String>, prompt: String) -> some View {
         #if os(tvOS)
-        self.searchable(text: text, prompt: prompt)
-        #elseif os(macOS)
         self.searchable(text: text, prompt: prompt)
         #else
         // Keep the navigation bar's back button and title visible while the
@@ -205,8 +127,6 @@ extension View {
     func vividGroupedListStyle() -> some View {
         #if os(tvOS)
         self.listStyle(.plain)
-        #elseif os(macOS)
-        self.listStyle(.inset)
         #else
         self.listStyle(.insetGrouped)
         #endif
@@ -352,50 +272,6 @@ private struct PrimaryButtonBody: View {
     }
 }
 
-/// Secondary action button — outlined pill.
-struct VividSecondaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        SecondaryButtonBody(configuration: configuration)
-    }
-}
-
-private struct SecondaryButtonBody: View {
-    let configuration: ButtonStyle.Configuration
-    @Environment(\.isFocused) private var isFocused
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        configuration.label
-            .font(.vividSubheadline)
-            .foregroundColor(isFocused ? .vividBackground : .vividOnSurface)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 18)
-            .background(
-                Capsule()
-                    .fill(isFocused ? Color.vividOnSurface.opacity(0.96) : Color.clear)
-            )
-            .overlay(
-                Capsule().stroke(
-                    isFocused ? Color.white : Color.white.opacity(0.3),
-                    lineWidth: isFocused ? 3 : 1.5
-                )
-            )
-            .scaleEffect(isFocused && !reduceMotion ? 1.045 : 1.0)
-            .shadow(
-                color: isFocused ? Color.vividOnSurface.opacity(0.36) : .clear,
-                radius: isFocused ? 18 : 0,
-                y: isFocused ? 6 : 0
-            )
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
-            #if os(tvOS)
-            .focusEffectDisabled()
-            #endif
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: configuration.isPressed)
-            .animation(VividTheme.springAnimation, value: isFocused)
-    }
-}
-
 /// Text-only button style for tertiary actions. Focused state fills a
 /// soft pill behind the label so the user can distinguish the tertiary action
 /// from the primary button above.
@@ -457,25 +333,6 @@ extension View {
         } else {
             self.buttonStyle(VividPrimaryButtonStyle(isLoading: isLoading))
         }
-        #else
-        modernVividPrimaryButton(isLoading: isLoading)
-        #endif
-    }
-
-    /// Secondary action button: native glass on iOS/macOS, `VividSecondaryButtonStyle`
-    /// on tvOS.
-    @ViewBuilder
-    func vividSecondaryButton() -> some View {
-        #if os(tvOS)
-        self.buttonStyle(VividSecondaryButtonStyle())
-        #elseif os(iOS)
-        if #available(iOS 26.0, *) {
-            self.buttonStyle(.glass)
-        } else {
-            self.buttonStyle(VividSecondaryButtonStyle())
-        }
-        #else
-        self.buttonStyle(.glass)
         #endif
     }
 
@@ -491,8 +348,6 @@ extension View {
         } else {
             self.buttonStyle(VividTextButtonStyle())
         }
-        #else
-        self.buttonStyle(.glass)
         #endif
     }
 
@@ -509,20 +364,6 @@ extension View {
         }
         #else
         self.buttonStyle(.glass)
-        #endif
-    }
-
-    /// Prominent counterpart to `vividGlassButtonStyle()`.
-    @ViewBuilder
-    func vividGlassProminentButtonStyle() -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self.buttonStyle(.glassProminent)
-        } else {
-            self.buttonStyle(.borderedProminent)
-        }
-        #else
-        self.buttonStyle(.glassProminent)
         #endif
     }
 

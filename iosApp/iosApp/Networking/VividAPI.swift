@@ -388,10 +388,6 @@ actor VividAPI {
         )
     }
 
-    func setDeviceSetting(key: String, value: String) async throws {
-        try await http.putVoid("/api/v1/settings/device/\(key)", body: SetSettingBody(value: value))
-    }
-
     func setSetting(key: String, value: String) async throws {
         try await http.putVoid("/api/v1/settings/\(key)", body: SetSettingBody(value: value))
     }
@@ -761,9 +757,6 @@ actor VividAPI {
             await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
             await SimklSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
         }
-        #else
-        if played { try await http.postVoid("/api/v1/watched/\(contentId)") }
-        else { try await http.delete("/api/v1/watched/\(contentId)") }
         #endif
     }
 
@@ -888,13 +881,6 @@ actor VividAPI {
             )
         )
         return profile.asUserProfile
-    }
-
-    /// Patch a profile. Send only the fields you want to change — the
-    /// server treats absent fields as untouched. Used by Settings to
-    /// persist subtitle prefs.
-    func updateProfile(profileId: String, body: UpdateProfileBody) async throws {
-        try await http.putVoid("/api/v1/profiles/\(profileId)", body: body)
     }
 
     // --- Playback ---

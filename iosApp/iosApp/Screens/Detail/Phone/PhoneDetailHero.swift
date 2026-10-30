@@ -105,8 +105,6 @@ struct PhoneDetailPageSurface<Content: View>: View {
         guard enablesArtworkGlass, !reduceTransparency else { return false }
         #if os(iOS)
         return PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
-        #else
-        return false
         #endif
     }
 }
@@ -242,8 +240,6 @@ struct PhoneDetailParallaxArtwork: View {
             } else {
                 AsyncImageView(url: url, thumbhash: thumbhash, contentMode: artworkContentMode)
             }
-            #else
-            AsyncImageView(url: url, thumbhash: thumbhash, contentMode: artworkContentMode)
             #endif
         } else {
             Color.vividSurface
@@ -254,8 +250,6 @@ struct PhoneDetailParallaxArtwork: View {
         guard isEnabled, !reduceMotion else { return false }
         #if os(iOS)
         return PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass)
-        #else
-        return false
         #endif
     }
 
@@ -409,8 +403,6 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     private var usesFullScreenArtwork: Bool {
         #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
-        #else
-        false
         #endif
     }
 

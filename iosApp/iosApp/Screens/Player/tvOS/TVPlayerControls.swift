@@ -688,16 +688,6 @@ struct TVPlayerControls: View {
         viewModel.openHUD()
     }
 
-    private func openSettingsHUD() {
-        applyHUDEntryPoint(.settings)
-        viewModel.openSettingsHUD()
-    }
-
-    private func openPlaybackHUD() {
-        applyHUDEntryPoint(.playback)
-        viewModel.openPlaybackHUD()
-    }
-
     private func applyHUDEntryPoint(_ entryPoint: PlayerViewModel.TVHUDEntryPoint) {
         subtitleOnlyHUD = false
         cancelPendingScrub = true

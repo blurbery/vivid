@@ -35,8 +35,6 @@ enum PosterImageCache {
     static let displayScale: CGFloat = {
         #if canImport(UIKit)
         return max(1, UIScreen.main.scale)
-        #else
-        return 2
         #endif
     }()
 

@@ -71,7 +71,6 @@ struct TVSavedAccountCards: View {
     @Namespace private var profileFocusScope
     @FocusState private var focusedAccount: String?
     @State private var store = TVSavedAccountStore.shared
-    @State private var registry = ServerRegistry.shared
     @State private var pinAccount: TVSavedAccount?
     @State private var isEditingProfiles = false
     @State private var draftOrder: [String] = []

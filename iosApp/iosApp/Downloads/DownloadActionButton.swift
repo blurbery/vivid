@@ -1,13 +1,6 @@
 #if !os(tvOS)
 import SwiftUI
 
-/// Series-scope inputs an episode card needs to start a download for one of
-/// its episodes; built once per episode rail by the owning detail screen.
-struct EpisodeDownloadContext {
-    let seriesId: String
-    let posterThumbhash: String?
-}
-
 /// The download glyph with an X through it. Shown where downloads are off
 /// for the account, so the control keeps its place instead of vanishing.
 struct DownloadUnavailableGlyph: View {
@@ -124,30 +117,6 @@ struct DownloadActionButton: View {
         self.selectedVersionFileId = selectedVersionFileId
         lastVersionFileId = detail.userData?.lastFileId
         _showOptions = showOptions
-    }
-
-    /// Compact episode-card control. Episode list items only carry
-    /// `EpisodeFile` metadata, so version options stay on the episode detail
-    /// page and the failed state re-runs the same registration instead of
-    /// offering the sheet.
-    init(episode: EpisodeListItem, context: EpisodeDownloadContext) {
-        style = .compact
-        contentId = episode.contentId
-        isEpisode = true
-        seriesId = context.seriesId
-        displayTitle = episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
-        displaySubtitle = Self.episodeSubtitle(
-            seasonNumber: episode.seasonNumber,
-            episodeNumber: episode.episodeNumber,
-            fallback: nil
-        )
-        year = nil
-        posterThumbhash = context.posterThumbhash
-        versions = []
-        candidateFileSizes = (episode.files ?? []).compactMap(\.fileSize)
-        selectedVersionFileId = nil
-        lastVersionFileId = nil
-        _showOptions = .constant(false)
     }
 
     var body: some View {
