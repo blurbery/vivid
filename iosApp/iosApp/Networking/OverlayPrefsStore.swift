@@ -45,9 +45,6 @@ final class OverlayPrefsStore: ObservableObject {
     /// setting; when `false`, `CardOverlays` should not be rendered
     /// even if the user has prefs configured.
     @Published private(set) var enabled: Bool = OverlayPrefsStore.supportsServerOverlays
-    /// Resolved prefs (user value > admin defaults > registry
-    /// defaults). Card views read this directly.
-    @Published private(set) var prefs: CardOverlayPrefs = OverlaySchema.buildDefaults()
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: String?
 
@@ -180,13 +177,6 @@ final class OverlayPrefsStore: ObservableObject {
             self.usesLegacyAPI = resolvedLegacyAPI
         }
         self.hasUserOverride = userFetchFailed ? hasUserOverride : (userRaw != nil)
-        if !userFetchFailed {
-            // Use the freshly-resolved admin defaults when we have them;
-            // fall back to the cached value when the config fetch failed
-            // this round but a prior refresh had captured it.
-            let defaults = configFetchFailed ? adminDefaultsRaw : resolvedAdminDefaults
-            self.prefs = OverlaySchema.parse(userRaw ?? defaults)
-        }
         // Only complete hydration when BOTH endpoints gave a definitive
         // answer. Either failure leaves `hasHydrated` false so the
         // next `.task { await hydrateIfNeeded() }` retries.
@@ -203,7 +193,6 @@ final class OverlayPrefsStore: ObservableObject {
         refreshGeneration &+= 1
         isLoading = false
         enabled = Self.supportsServerOverlays
-        prefs = OverlaySchema.buildDefaults()
         adminDefaultsRaw = nil
         usesLegacyAPI = false
         hasUserOverride = false
