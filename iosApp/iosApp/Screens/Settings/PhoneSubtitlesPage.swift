@@ -102,7 +102,7 @@ extension SettingsView {
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(model.followsDeviceCaptions
-                         ? "Following this device's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Accessibility → Subtitles & Captioning."
+                         ? "Following this device's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Accessibility \u{2192} Subtitles & Captioning."
                          : model.usesCustomSubtitleAppearance
                          ? "Saved in Vivid for this profile on this device."
                          : "Using Vivid’s default appearance. Turn on Custom Appearance to adjust it.")

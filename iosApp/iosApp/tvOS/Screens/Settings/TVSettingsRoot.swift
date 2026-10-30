@@ -389,6 +389,7 @@ extension TVSettingsView {
                         TVSettingsFieldRow(title: "Name",
                                            detail: "Shown for this profile only, under its profile picture and on the Servers page. Leave it blank to show “\(defaultName)”.") {
                             TextField(defaultName, text: $name)
+                                .textFieldStyle(.plain)
                         }
                         Button { rename(to: name) } label: { TVSettingsRowLabel(title: "Save") }
                             .buttonStyle(TVSettingsPaneRowStyle())

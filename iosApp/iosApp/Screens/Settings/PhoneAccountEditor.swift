@@ -146,7 +146,7 @@ extension PhoneSavedProfilesScreen {
                     .disabled(submitDisabled)
                 if provider != .silo, !codeSignIn.isActive, let service = CodeSignIn.Service(provider) {
                     Button("Use \(service.title)") { startCodeSignIn(service) }
-                        .disabled((isNew && !store.canAddAccount) || store.busy || serverURL.isEmpty)
+                        .disabled(!store.canAddAccount || store.busy || serverURL.isEmpty)
                 }
             } header: { PhoneSettingsSectionHeader("Account") }
             .textInputAutocapitalization(.never)
@@ -207,26 +207,28 @@ extension PhoneSavedProfilesScreen {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 6)
                 case .results:
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 14) {
-                            ForEach(household.profiles) { profile in
-                                Button { Task { await household.choose(profile, for: account) } } label: {
-                                    SiloHouseholdTile(profile: profile, account: account,
-                                                      isAdding: household.addingID == profile.id)
+                    if !household.profiles.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 14) {
+                                ForEach(household.profiles) { profile in
+                                    Button { Task { await household.choose(profile, for: account) } } label: {
+                                        SiloHouseholdTile(profile: profile, account: account,
+                                                          isAdding: household.addingID == profile.id)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.white)
+                                    .disabled(household.addingID != nil)
                                 }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.white)
-                                .disabled(household.addingID != nil)
                             }
+                            .padding(.vertical, 6)
                         }
-                        .padding(.vertical, 6)
                     }
                     Button("Search Again") { Task { await household.search(for: account) } }
                 case .failed:
                     Button("Try Again") { Task { await household.search(for: account) } }
                 }
                 if let note = household.message {
-                    Text(note).font(.footnote)
+                    Text(note).font(.footnote).foregroundStyle(.secondary)
                 }
             } header: {
                 PhoneSettingsSectionHeader("Household")

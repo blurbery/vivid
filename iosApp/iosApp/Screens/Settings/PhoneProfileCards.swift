@@ -395,7 +395,7 @@ extension PhoneSavedProfilesScreen {
 
         private func reorderGesture(for account: TVSavedAccount) -> some Gesture {
             LongPressGesture(minimumDuration: 0.35)
-                .sequenced(before: DragGesture(coordinateSpace: .named(Self.space)))
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space)))
                 .updating($isGesturing) { _, state, _ in state = true }
                 .onChanged { value in
                     guard case .second(true, let moved?) = value else { return }

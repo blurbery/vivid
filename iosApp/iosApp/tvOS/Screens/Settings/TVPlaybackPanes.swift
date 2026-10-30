@@ -202,7 +202,7 @@ extension TVSettingsView {
 
         private var appearanceSource: String {
             if followsDevice {
-                return String(localized: "Following this Apple TV's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Settings → Accessibility.")
+                return String(localized: "Following this Apple TV's caption language, display behavior, CC/SDH preference, font, colors, opacity, edges, size, and caption window from Settings \u{2192} Accessibility.")
             }
             if model.usesCustomSubtitleAppearance {
                 return String(localized: "Appearance is saved in Vivid for this profile on this Apple TV.")

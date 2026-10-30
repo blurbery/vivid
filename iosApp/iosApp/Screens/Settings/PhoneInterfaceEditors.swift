@@ -338,7 +338,7 @@ extension SettingsView {
                         .foregroundStyle(Color.vividOnSurface)
                         .lineLimit(1)
                     if !section.items.isEmpty || section.totalCount != nil {
-                        Text("\(section.totalCount ?? section.items.count) items")
+                        Text("\(section.items.count) items")
                             .font(.caption)
                             .foregroundStyle(Color.vividSecondaryText)
                     }
