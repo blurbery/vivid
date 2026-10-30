@@ -10,9 +10,8 @@ root, temporary = map(Path, sys.argv[1:])
 source=(root/'iosApp/iosApp/tvOS/TVTMDbStore.swift').read_text()
 source=source.removeprefix('#if os(tvOS)\n').removesuffix('#endif\n')
 source = source.replace('#if os(iOS)', '#if true')
-helpers = (root/'iosApp/iosApp/Navigation/UICustomizationPreferences.swift').read_text()
-helpers = helpers[helpers.index('@MainActor\nenum MobileProfilePreferenceKeys'):]
-source += '\n' + helpers.replace('#if os(iOS)', '#if true')
+helpers = (root/'iosApp/iosApp/Navigation/ProfileScopedKeys.swift').read_text()
+source += '\n' + helpers.removeprefix('import Foundation\n')
 
 source += (root/'iosApp/iosApp/tvOS/TVLibrarySimilarityStore.swift').read_text().removeprefix('#if os(tvOS)\n').removesuffix('#endif\n')
 (temporary/'Client.swift').write_text(source)
