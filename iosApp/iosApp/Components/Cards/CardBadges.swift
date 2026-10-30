@@ -33,9 +33,9 @@ struct WatchedCheckPill: View {
 /// beside it when the duration is known.
 struct ResumeProgressBar: View {
     let value: Double
-    var duration: Double?
-    var height: CGFloat
-    var inset: CGFloat
+    let duration: Double?
+    let height: CGFloat
+    let inset: CGFloat
 
     #if os(tvOS)
     init(value: Double, duration: Double? = nil, height: CGFloat = 8, inset: CGFloat = 20) {

@@ -220,7 +220,7 @@ struct MediaCard: View {
                     secondLineText(secondLine, width: size.width)
                 }
             }
-            .modifier(ZoomSource(id: contentId == nil ? nil : zoomSourceID, namespace: zoomNamespace))
+            .zoomTransitionSource(id: zoomSourceID, in: contentId == nil ? nil : zoomNamespace)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -270,20 +270,6 @@ struct MediaCard: View {
         router.presentItemDetail(contentId: contentId, browseSource: browseSource)
     }
 
-    /// Only a card that opens a detail is a zoom source.
-    private struct ZoomSource: ViewModifier {
-        let id: String?
-        let namespace: Namespace.ID?
-
-        @ViewBuilder
-        func body(content: Content) -> some View {
-            if let id {
-                content.zoomTransitionSource(id: id, in: namespace)
-            } else {
-                content
-            }
-        }
-    }
     #else
     // MARK: Apple TV
 
