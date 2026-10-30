@@ -165,6 +165,9 @@ enum StartupContentPrefetcher {
             let home = TVHomeMetadataCache.capped(response)
             ResponseCache.shared.set(home, for: CacheKey.homeSections)
             TVHomeMetadataCache.shared.store(home)
+            // Silo's series backgrounds are looked up while Home is prepared.
+            HomeSeriesBackdrops.shared.prepare(home.sections
+                .filter { HomeSeriesBackdrops.applies(toSectionType: $0.sectionType) }.flatMap(\.items))
             prefetchHomeArtwork(for: SectionsResponse(sections: HomeSectionPreferences.shared.arrangedSections(home.sections)))
             return home
             #else
@@ -599,7 +602,10 @@ enum StartupContentPrefetcher {
         #endif
 
         func appendCardArtwork(_ item: SectionItem, in section: ResolvedSection) {
-            if episodeSectionTypes.contains(section.sectionType.lowercased()) {
+            if HomeSeriesBackdrops.applies(toSectionType: section.sectionType) {
+                // Continue Watching and Next Up show series backgrounds.
+                append(HomeSeriesBackdrops.shared.art(for: item).url, into: &cardURLs, seen: &seenCards)
+            } else if episodeSectionTypes.contains(section.sectionType.lowercased()) {
                 // Episode rows still need their landscape card artwork.
                 append(item.backdropUrl ?? item.posterUrl, into: &cardURLs, seen: &seenCards)
             } else {

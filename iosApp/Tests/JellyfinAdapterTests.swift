@@ -557,7 +557,12 @@ final class JellyfinAdapterTests: XCTestCase {
             XCTAssertEqual(card["posterUrl"] as? String, mapped["posterUrl"] as? String)
             XCTAssertEqual(card["backdropUrl"] as? String,
                 mapped[row == "latestmedia_library" ? "backdropUrl" : "stillUrl"] as? String)
+            // Home's cards show the series background from the same row.
+            XCTAssertEqual(card["seriesBackdropUrl"] as? String,
+                row == "latestmedia_library" ? nil : mapped["backdropUrl"] as? String)
         }
+        let backdrop = try XCTUnwrap(URLComponents(string: try XCTUnwrap(mapped["backdropUrl"] as? String)))
+        XCTAssertEqual(backdrop.path, "/jellyfin/Items/parent-series/Images/Backdrop")
     }
 
     func testBrowseRequestsOnlyCardMetadataAndKeepsWatchState() async throws {

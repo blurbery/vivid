@@ -37,6 +37,8 @@ struct EpisodeThumbCard: View {
     var onSetFavorite: ((Bool) async -> Bool)? = nil
 
     var usesRuntimeStatus = false
+    /// Home's Continue Watching and Next Up show an episode's series background.
+    var usesSeriesBackdrop = false
 
     @State private var playedOverride: Bool?
     @State private var favoriteOverride: Bool?
@@ -200,7 +202,7 @@ struct EpisodeThumbCard: View {
         if defersOffscreenArtwork {
             TVEpisodeFocusAwareArtwork(
                 url: imageUrl,
-                thumbhash: item.backdropThumbhash ?? item.posterThumbhash,
+                thumbhash: imageThumbhash,
                 size: CGSize(width: cardWidth, height: cardHeight),
                 isScrolledIntoView: artworkIsVisible,
                 focusedItemId: focusedItemId,
@@ -218,7 +220,7 @@ struct EpisodeThumbCard: View {
     private var standardThumbnailArtwork: some View {
         AsyncImageView(
             url: imageUrl,
-            thumbhash: item.backdropThumbhash ?? item.posterThumbhash,
+            thumbhash: imageThumbhash,
             targetSize: CGSize(width: cardWidth, height: cardHeight),
             contentMode: .fill
         )
@@ -318,10 +320,16 @@ struct EpisodeThumbCard: View {
 
     /// Prefer backdrop/still artwork; fall back to poster.
     private var imageUrl: String {
+        if usesSeriesBackdrop { return HomeSeriesBackdrops.shared.art(for: item).url }
         if let backdrop = item.backdropUrl, !backdrop.isEmpty {
             return backdrop
         }
         return item.posterUrl ?? ""
+    }
+
+    private var imageThumbhash: String? {
+        if usesSeriesBackdrop { return HomeSeriesBackdrops.shared.art(for: item).thumbhash }
+        return item.backdropThumbhash ?? item.posterThumbhash
     }
 
     /// Series pages already show the series name in their hero, so their

@@ -794,6 +794,9 @@ struct JellyfinAdapter {
             if ["continue_watching", "next_up"].contains(id),
                item["type"] as? String == "episode",
                let still = item["stillUrl"] as? String, !still.isEmpty {
+                // Home's cards show the series background; other places
+                // that use these rows keep the episode still.
+                card["seriesBackdropUrl"] = item["backdropUrl"]
                 card["backdropUrl"] = still
             }
             return card
