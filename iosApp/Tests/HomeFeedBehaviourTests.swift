@@ -507,6 +507,9 @@ final class HomeFeedBehaviourTests: XCTestCase {
         XCTAssertEqual(model.sections.map { $0.items.map(\.contentId) }, [["other"], ["target"]])
         XCTAssertEqual(model.sections.first?.totalCount, 1)
         XCTAssertEqual(cachedItemIDs(), [["other"], ["target"]])
+        XCTAssertEqual(
+            ResponseCache.shared.get(CacheKey.homeSections, as: SectionsResponse.self)?.sections.first?.totalCount, 1
+        )
         XCTAssertNil(model.actionError)
     }
 
@@ -552,6 +555,7 @@ final class HomeFeedBehaviourTests: XCTestCase {
         XCTAssertNotNil(cachedItemIDs())
 
         let refreshed = expectation(description: "Home refreshed")
+        refreshed.assertForOverFulfill = false
         let observer = NotificationCenter.default.addObserver(
             forName: .homeSectionsShouldRefresh, object: nil, queue: .main
         ) { _ in
