@@ -178,7 +178,7 @@ Simkl tracks the movies, shows and anime you watch, and keeps a Plan to Watch li
 1. Create a free account at [simkl.com](https://simkl.com) if you don't have one.
 2. In Vivid, open **Settings > Plugins > Simkl** and choose **Sign in with Simkl**.
 3. Approve Vivid on Simkl:
-   - **iPhone and iPad:** Vivid shows your code. Choose **Open Simkl** to approve it in your browser, where the code is already filled in, or go to [simkl.com/pin](https://simkl.com/pin) on another device and enter it. Sign in, allow Vivid, then come back to Vivid.
+   - **iPhone and iPad:** Vivid shows your code. Choose **Open Simkl** to approve it in your browser, where the code is usually filled in (if it isn't, enter the code Vivid shows), or go to [simkl.com/pin](https://simkl.com/pin) on another device and enter it. Sign in, allow Vivid, then come back to Vivid.
    - **Apple TV:** scan the QR code with your phone, or go to [simkl.com/pin](https://simkl.com/pin) on any device and enter the code shown.
 4. Status shows **Connected** with a green dot, and the first sync starts straight away.
 

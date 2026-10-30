@@ -629,10 +629,10 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
         store = try relaunch(client)
         await store.sync()
         check(since().contains("GET /redirect") && !fake.planAdds.contains("Up"), "leaves Up alone while it can't be matched")
-        fake.lock.withLock { fake.put(11121, "watching", watched: 5) }
+        // Nothing else changes, so only the failed lookup brings the watchlist back.
         store = try relaunch(client)
         await store.sync()
-        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch on a later check, once the lookup works")
+        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch on the next check, once the lookup works")
 
         step("\n10. The access token expires")
         fake.lock.withLock { fake.expireAccessToken() }

@@ -58,6 +58,9 @@ final class SimklSyncStore {
         var skipped: Set<String> = []
         /// Watchlist titles not matched to a Simkl title yet.
         var unmapped: Set<String> = []
+        /// The last watchlist pass left work for the next check: a failed or
+        /// deferred lookup, or more changes than one pass makes.
+        var watchlistWorkPending = false
         var retryAfter: Date?
         var lastAttempt: Date?
         var lastSync: Date?
@@ -299,8 +302,11 @@ final class SimklSyncStore {
 
     func run() async {
         reload()
-        // Coming back to Vivid checks again once 15 minutes have passed.
-        nextSync = min(nextSync, (state.lastAttempt ?? .distantPast).addingTimeInterval(Self.foregroundInterval))
+        // Coming back to Vivid checks again once 15 minutes have passed,
+        // unless the last sync failed and is waiting out its backoff.
+        if state.failures == 0 {
+            nextSync = min(nextSync, (state.lastAttempt ?? .distantPast).addingTimeInterval(Self.foregroundInterval))
+        }
         while !Task.isCancelled {
             await sync()
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -508,7 +514,8 @@ final class SimklSyncStore {
         let confirmedLocal = Set(state.watchlist.filter { $0.value.local }.keys)
         let fullCheckDue = now >= (state.lastFullWatchlistCheck ?? .distantPast).addingTimeInterval(24 * 3600)
         // Nothing moved on either side: no server lookups and no writes.
-        guard changed || local.subtracting(state.skipped).subtracting(state.unmapped) != confirmedLocal || fullCheckDue else { return }
+        guard changed || local.subtracting(state.skipped).subtracting(state.unmapped) != confirmedLocal || fullCheckDue
+                || state.watchlistWorkPending else { return }
         syncProgress = SimklSyncProgress(step: 2, label: String(localized: "Checking watchlist matches"))
 
         // Match each watchlist title with its Simkl ID. A title found more
@@ -518,6 +525,7 @@ final class SimklSyncStore {
         var lookedUp: [String: Date] = [:]
         var skipped = Set<String>()
         var lookups = 0
+        var lookupsPending = false
         let tracked = local.union(state.watchlist.filter { $0.value.local || $0.value.remote }.keys).sorted()
         for (index, id) in tracked.enumerated() {
             syncProgress = SimklSyncProgress(step: 2, label: String(localized: "Checking watchlist matches"),
@@ -530,8 +538,10 @@ final class SimklSyncStore {
             }
             let matches = library.values.filter { $0.kind == found.kind && $0.ids.matches(found.ids) }
             if matches.count == 1 { mapped[id] = matches[0].simkl; continue }
-            guard matches.isEmpty, found.ids.hasExternal, lookups < 40 else { continue }
+            guard matches.isEmpty, found.ids.hasExternal else { continue }
             if let looked = state.watchlist[id]?.lookedUpAt, now.timeIntervalSince(looked) < 7 * 24 * 3600 { continue }
+            // The rest wait for the next check rather than the daily one.
+            guard lookups < 40 else { lookupsPending = true; continue }
             lookups += 1
             // Not in the library under these IDs. Simkl's own lookup tells a
             // title it doesn't track apart from one it lists under other IDs.
@@ -539,7 +549,7 @@ final class SimklSyncStore {
             do { resolved = try await client.resolve(found.ids, kind: found.kind) }
             catch is CancellationError { throw CancellationError() }
             // A lookup that failed isn't recorded, so a later check tries it again.
-            catch { continue }
+            catch { lookupsPending = true; continue }
             try await validateContext()
             lookedUp[id] = now
             if let resolved { mapped[id] = resolved }
@@ -681,6 +691,7 @@ final class SimklSyncStore {
         }
         state.unmapped = unmapped
         if !moreWatchlistWork { state.lastFullWatchlistCheck = now }
+        state.watchlistWorkPending = moreWatchlistWork || lookupsPending
         try save()
     }
 
