@@ -46,7 +46,7 @@ struct HomeFeedRow: View {
             rowScroller
         }
         .task(id: section.items.map(\.contentId)) {
-            if usesSeriesBackdrops { HomeSeriesBackdrops.shared.prepare(section.items) }
+            if usesSeriesBackdrops { await HomeSeriesBackdrops.shared.keepPrepared(section.items) }
         }
     }
 

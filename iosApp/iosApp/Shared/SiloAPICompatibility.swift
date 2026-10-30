@@ -6,7 +6,8 @@ enum SiloAPICompatibility {
     enum Failure: Error { case invalidDiscovery, unsupportedStatus(Int), missingWindow }
     private static let artworkURLFields: Set<String> = [
         "poster_url", "backdrop_url", "logo_url", "photo_url",
-        "still_url", "thumbnail_url", "avatar_url", "image_url"
+        "still_url", "thumbnail_url", "avatar_url", "image_url",
+        "series_backdrop_url"
     ]
 
     static func legacyPath(_ url: URL) -> String? {

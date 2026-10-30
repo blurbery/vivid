@@ -5,11 +5,12 @@ import SwiftUI
 /// Series backgrounds for episodes on Home's Continue Watching and Next Up
 /// cards. Movies keep their own background.
 ///
-/// Emby sends the series background as the episode's backdrop, and Jellyfin
-/// keeps it in `seriesBackdropUrl`. Silo's Home rows carry the episode still
-/// instead, so Vivid looks each series up once, a few at a time, and keeps
-/// the answer on disk for the server and profile until shortly before its
-/// signed link expires.
+/// Emby sends the series background as the episode's backdrop unless the
+/// episode has one of its own, and Jellyfin keeps it in `seriesBackdropUrl`.
+/// Silo's Home rows carry the episode still instead, so Vivid looks each
+/// series up, a few at a time, and keeps the answer on disk for the server
+/// and profile until shortly before its signed link expires. While a row is
+/// showing, a link is renewed before then.
 @Observable @MainActor
 final class HomeSeriesBackdrops {
     static let shared = HomeSeriesBackdrops()
@@ -52,7 +53,9 @@ final class HomeSeriesBackdrops {
     @ObservationIgnored private var entries: [String: Artwork] = [:]
     @ObservationIgnored private var loadedScope: Scope?
     @ObservationIgnored private var inFlight = Set<String>()
-    @ObservationIgnored private var failedAt: [String: Date] = [:]
+    /// When each series may be asked for again: ten minutes after a lookup,
+    /// or an hour after one that found the series has no background.
+    @ObservationIgnored private var askAgainAt: [String: Date] = [:]
 
     /// Home rows whose episode cards show the series background.
     nonisolated static func applies(toSectionType type: String) -> Bool {
@@ -72,21 +75,27 @@ final class HomeSeriesBackdrops {
         return (item.posterUrl ?? "", item.posterThumbhash)
     }
 
-    /// Looks up the series of Silo episodes in these rows that don't have a
-    /// background saved yet. Each series is asked for once; one that fails
-    /// is tried again after ten minutes.
+    /// Keeps a row's series backgrounds current while it's showing: looks
+    /// them up now, then again as each saved link nears its expiry or a
+    /// failed lookup is due another try. Ends when the row's task does.
+    func keepPrepared(_ items: [SectionItem]) async {
+        while !Task.isCancelled {
+            prepare(items)
+            guard let next = nextLookup(for: items) else { return }
+            try? await Task.sleep(for: .seconds(max(60, next.timeIntervalSinceNow)))
+        }
+    }
+
+    /// Looks up the series of Silo episodes in these rows that have no
+    /// background saved, or one whose link expires within 90 minutes. A
+    /// lookup that fails is tried again after ten minutes.
     func prepare(_ items: [SectionItem]) {
         guard MediaServerProvider.active == .silo else { return }
         loadIfNeeded()
         guard let scope = loadedScope else { return }
         let now = Date()
-        let wanted = Set(items.compactMap { item -> String? in
-            guard item.type.lowercased() == "episode", (item.seriesBackdropUrl ?? "").isEmpty,
-                  let seriesID = item.seriesId, !seriesID.isEmpty else { return nil }
-            return seriesID
-        }).filter { id in
-            saved(id, at: now) == nil && !inFlight.contains(id)
-                && (failedAt[id].map { now.timeIntervalSince($0) > 600 } ?? true)
+        let wanted = seriesIDs(in: items).filter { id in
+            !inFlight.contains(id) && lookupDue(id) <= now
         }.sorted()
         guard !wanted.isEmpty else { return }
         inFlight.formUnion(wanted)
@@ -113,16 +122,44 @@ final class HomeSeriesBackdrops {
         }
     }
 
+    private func seriesIDs(in items: [SectionItem]) -> Set<String> {
+        Set(items.compactMap { item -> String? in
+            guard item.type.lowercased() == "episode", (item.seriesBackdropUrl ?? "").isEmpty,
+                  let seriesID = item.seriesId, !seriesID.isEmpty else { return nil }
+            return seriesID
+        })
+    }
+
+    /// When a series is next worth asking for: 90 minutes before its saved
+    /// link expires, so it's renewed while the card still shows it, but not
+    /// before `askAgainAt`.
+    private func lookupDue(_ seriesID: String) -> Date {
+        let renew = entries[seriesID].map { $0.expiresAt.addingTimeInterval(-90 * 60) } ?? .distantPast
+        return max(renew, askAgainAt[seriesID] ?? .distantPast)
+    }
+
+    private func nextLookup(for items: [SectionItem]) -> Date? {
+        guard MediaServerProvider.active == .silo, loadedScope != nil else { return nil }
+        // A lookup still running is checked again in a minute.
+        return seriesIDs(in: items)
+            .map { inFlight.contains($0) ? Date().addingTimeInterval(60) : lookupDue($0) }
+            .min()
+    }
+
     private func store(_ results: [String: ItemDetail?], scope: Scope) {
         inFlight.subtract(results.keys)
         guard scope == loadedScope else { return }
         let now = Date()
         for (id, detail) in results {
-            guard let detail, let url = detail.backdropUrl, !url.isEmpty else {
-                failedAt[id] = now
+            guard let detail else {
+                askAgainAt[id] = now.addingTimeInterval(600)
                 continue
             }
-            failedAt.removeValue(forKey: id)
+            guard let url = detail.backdropUrl, !url.isEmpty else {
+                askAgainAt[id] = now.addingTimeInterval(3600)
+                continue
+            }
+            askAgainAt[id] = now.addingTimeInterval(600)
             // A link without an expiry is still refreshed weekly.
             entries[id] = Artwork(url: url, thumbhash: detail.backdropThumbhash,
                                   expiresAt: SiloAPICompatibility.artworkExpiry(url) ?? now.addingTimeInterval(7 * 86_400))
@@ -146,7 +183,7 @@ final class HomeSeriesBackdrops {
         guard scope != loadedScope else { return }
         loadedScope = scope
         inFlight = []
-        failedAt = [:]
+        askAgainAt = [:]
         entries = scope?.cacheURL
             .flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(CacheFile.self, from: $0) }
