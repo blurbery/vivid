@@ -28,6 +28,9 @@ func visibleLibrariesForRoot(_ libraries: [Library], category: PrimaryMenuBuilti
     return libraries.filter { libraryMatchesPrimaryMenuCategory($0, category: category) }
 }
 
+/// The app never fixes a library root to one library today. This helper and
+/// the fixed-library rules in the others stay because they're part of the root
+/// contract `InterfacePreferencesTests` checks.
 func libraryRootCanSwitch(fixedLibraryId: Int?, visibleLibraryCount: Int) -> Bool {
     visibleLibraryCount > 1
 }

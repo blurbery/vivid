@@ -7,7 +7,8 @@ import TVServices
 
 /// When Vivid asks which profile is watching, and which profile it last
 /// used on each server. Every change is written straight back to shared
-/// defaults; a change that can't be saved is undone.
+/// defaults; a change that can't be saved is undone, except clearing a
+/// server's selection-required mark, which stays cleared in memory either way.
 @Observable
 final class ProfileLaunchPreferences {
     static let shared = ProfileLaunchPreferences()
