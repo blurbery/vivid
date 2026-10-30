@@ -3,7 +3,7 @@
 //  Vivid (iOS + tvOS)
 //
 //  Cached card-overlay configuration for the signed-in profile.
-//  Resolves a single rendered `CardOverlayPrefs` from one of two
+//  Resolves the raw overlay settings document from one of two
 //  sources, in this priority:
 //    1. The user's saved prefs — the contract key `ui.card_overlays`
 //       at profile scope, read through the canonical
@@ -11,12 +11,10 @@
 //       the entire source of truth.
 //    2. Otherwise, the admin-configured baseline JSON from
 //       `GET /settings/overlay-config` (`defaults` field).
-//    3. Otherwise, registry defaults (`OverlaySchema.buildDefaults()`).
 //
 //  The contract stores the document as a JSON object (jsonb), not the
-//  JSON string the retired legacy endpoint carried, so reads and
-//  writes bridge between `SettingJSONValue` and `OverlaySchema`'s
-//  string codec here. Servers that predate the canonical settings API
+//  JSON string the retired legacy endpoint carried.
+//  Servers that predate the canonical settings API
 //  are detected via `SettingsAPIError.serverUpgradeRequired` and fall
 //  back to the legacy `card_overlays` user setting, which those
 //  servers still accept.
@@ -42,12 +40,8 @@ final class OverlayPrefsStore: ObservableObject {
 
     /// `true` when the server allows overlays at all. An admin can
     /// flip this off globally via the `overlays.enabled` server
-    /// setting; when `false`, `CardOverlays` should not be rendered
-    /// even if the user has prefs configured.
+    /// setting.
     @Published private(set) var enabled: Bool = OverlayPrefsStore.supportsServerOverlays
-    /// Resolved prefs (user value > admin defaults > registry
-    /// defaults). Card views read this directly.
-    @Published private(set) var prefs: CardOverlayPrefs = OverlaySchema.buildDefaults()
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: String?
 
@@ -85,13 +79,12 @@ final class OverlayPrefsStore: ObservableObject {
     }
 
     /// Re-fetch both the admin config and the user setting from the
-    /// server, then recompute `prefs`. Called after every save so
+    /// server. Called after every save so
     /// local state matches what the server just stored.
     ///
     /// Failure semantics:
     /// - "No value stored yet" (a contract default answer, or a legacy
-    ///   404) is success — `userRaw` stays nil and we render from
-    ///   admin defaults or registry defaults.
+    ///   404) is success: `userRaw` stays nil.
     /// - Any other transport error (on either endpoint) leaves
     ///   `hasHydrated` false so the next `hydrateIfNeeded()` retries.
     ///   This matters most for the admin kill switch: if
@@ -101,9 +94,6 @@ final class OverlayPrefsStore: ObservableObject {
     ///   view appearance would not retry — the admin's "disable
     ///   overlays globally" toggle would be silently ignored for the
     ///   rest of the session.
-    /// - We still update `prefs` and `enabled` with what we know so
-    ///   cards render *something* (registry defaults at worst) rather
-    ///   than blocking the UI on the retry.
     func refresh() async {
         guard Self.supportsServerOverlays else { return }
         refreshGeneration &+= 1
@@ -180,13 +170,6 @@ final class OverlayPrefsStore: ObservableObject {
             self.usesLegacyAPI = resolvedLegacyAPI
         }
         self.hasUserOverride = userFetchFailed ? hasUserOverride : (userRaw != nil)
-        if !userFetchFailed {
-            // Use the freshly-resolved admin defaults when we have them;
-            // fall back to the cached value when the config fetch failed
-            // this round but a prior refresh had captured it.
-            let defaults = configFetchFailed ? adminDefaultsRaw : resolvedAdminDefaults
-            self.prefs = OverlaySchema.parse(userRaw ?? defaults)
-        }
         // Only complete hydration when BOTH endpoints gave a definitive
         // answer. Either failure leaves `hasHydrated` false so the
         // next `.task { await hydrateIfNeeded() }` retries.
@@ -203,7 +186,6 @@ final class OverlayPrefsStore: ObservableObject {
         refreshGeneration &+= 1
         isLoading = false
         enabled = Self.supportsServerOverlays
-        prefs = OverlaySchema.buildDefaults()
         adminDefaultsRaw = nil
         usesLegacyAPI = false
         hasUserOverride = false
@@ -213,11 +195,6 @@ final class OverlayPrefsStore: ObservableObject {
 
     // MARK: - Wire bridging
 
-    /// The contract stores the document as a JSON object; `OverlaySchema`
-    /// speaks JSON strings (shared with the admin `overlay-config`
-    /// baseline, which still travels as a string). These two hops keep
-    /// one codec — `OverlaySchema` — as the single interpreter of the
-    /// document shape.
     private static func jsonString(from value: SettingJSONValue) -> String? {
         guard let data = try? SettingsWireCoding.makeEncoder().encode(value) else { return nil }
         return String(data: data, encoding: .utf8)

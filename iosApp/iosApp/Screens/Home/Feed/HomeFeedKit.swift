@@ -318,7 +318,7 @@ extension View {
 
 /// Poster card with the shipping card's flaws corrected: true 2:3 artwork,
 /// a single-line title and the year folded onto the caption line instead of
-/// occupying its own. Card overlays remain shared with the rest of the app.
+/// occupying its own.
 struct HomePosterCard: View {
     let item: SectionItem
     var width: CGFloat = HomeFeedMetrics.posterWidth
@@ -381,26 +381,6 @@ struct HomePosterCard: View {
             RoundedRectangle(cornerRadius: HomeFeedMetrics.posterRadius, style: .continuous)
                 .stroke(.white.opacity(0.08), lineWidth: 0.5)
         )
-        .overlay {
-            // Home uses the same renderer and resolved profile preferences as
-            // Browse, For You, Watchlist, and Favorites. Keep this below the
-            // progress and watched affordances so those controls retain their
-            // established corner priority.
-            if overlayStore.enabled {
-                CardOverlays(
-                    data: OverlayData.from(item),
-                    prefs: overlayStore.prefs,
-                    variant: .poster
-                )
-                .frame(width: width, height: height)
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: HomeFeedMetrics.posterRadius,
-                        style: .continuous
-                    )
-                )
-            }
-        }
         .overlay(alignment: .topTrailing) {
             if isPlayed {
                 WatchedCheckPill()
@@ -551,21 +531,6 @@ struct HomeStillCard: View {
             .frame(height: height * 0.6)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(false)
-
-            if overlayStore.enabled {
-                CardOverlays(
-                    data: OverlayData.from(item),
-                    prefs: overlayStore.prefs,
-                    variant: .wide
-                )
-                .frame(width: width, height: height)
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: HomeFeedMetrics.stillRadius,
-                        style: .continuous
-                    )
-                )
-            }
 
             if showsEpisodeRuntimeStatus {
                 MediaRuntimeStatusOverlay(

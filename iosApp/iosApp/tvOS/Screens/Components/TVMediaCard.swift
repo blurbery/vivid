@@ -157,17 +157,6 @@ struct TVMediaCard: View {
             .frame(width: resolvedCardWidth, height: cardHeight)
             .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
 
-            if let overlayData, overlayStore.enabled {
-                CardOverlays(data: overlayData, prefs: overlayStore.prefs, variant: .poster)
-                    .frame(width: resolvedCardWidth, height: cardHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
-            }
-
-            if let mediaTypeLabel {
-                MediaTypePill(title: mediaTypeLabel)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
 
             if userState?.played == true {
                 WatchedCheckPill()

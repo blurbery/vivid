@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Loads an image from a URL with placeholder and error states.
-/// Placeholder uses surfaceElevated.
+/// Artwork through the shared cached image view, centred and resident.
 struct AsyncImageView: View {
     let url: String
     var thumbhash: String? = nil

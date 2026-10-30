@@ -1561,7 +1561,7 @@ struct SetSettingBody: Codable {
 }
 
 /// Server-wide overlay configuration. `defaults` is a JSON-stringified
-/// `CardOverlayPrefs` document the admin set as the baseline for users
+/// document the admin set as the baseline for users
 /// who haven't customized; absent when no baseline is configured.
 struct OverlayConfigResponse: Codable {
     let enabled: Bool
