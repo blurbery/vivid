@@ -340,10 +340,13 @@ final class SimklClient: @unchecked Sendable {
         if let tmdb = ids.tmdb { query["tmdb"] = tmdb }
         if let imdb = ids.imdb { query["imdb"] = imdb }
         if let tvdb = ids.tvdb { query["tvdb"] = tvdb }
-        let (status, _, http) = try await send("/redirect", query: query)
+        let (status, json, http) = try await send("/redirect", query: query)
         guard (300..<400).contains(status) else {
-            if status == 429 || status >= 500 { throw SimklFailure.unavailable }
-            return nil
+            // Simkl answers with a redirect even when it has no match, so any
+            // other reply is a failure to retry, not a title it doesn't know.
+            if status == 404 { return nil }
+            throw Self.failure(status: status, json: json,
+                               retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
         }
         return Self.parseRedirect(http.value(forHTTPHeaderField: "Location"), kind: kind)
     }

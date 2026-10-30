@@ -126,7 +126,9 @@ final class FakeSimkl: @unchecked Sendable {
     var polls = 0
     var remaining = 450
     var brokenIDsReply = false
-    var failedLookups = 0
+    /// Replies for the next ID lookups, before they work again.
+    var lookupFailures: [Int] = []
+    var failedActivities = 0
 
     var requests: [String] = []
     var lastHistoryBody: [String: Any] = [:]
@@ -229,10 +231,7 @@ final class FakeSimkl: @unchecked Sendable {
             return (200, [:], [String: Any]())
         case ("GET", "/redirect"):
             if request.value(forHTTPHeaderField: "Authorization") != nil { problems.append("the ID lookup sent the sign-in token") }
-            if failedLookups > 0 {
-                failedLookups -= 1
-                return (503, [:], ["error": "unavailable"])
-            }
+            if !lookupFailures.isEmpty { return (lookupFailures.removeFirst(), [:], nil) }
             let movie = query["type"] == "movie"
             let found = titles.values.first { title in
                 (title.type == "movies") == movie && ["tmdb", "imdb", "tvdb"].contains { query[$0] != nil && Self.string(title.ids[$0]) == query[$0] }
@@ -252,6 +251,10 @@ final class FakeSimkl: @unchecked Sendable {
         case ("GET", "/users/settings"):
             return (200, headers, ["user": ["name": "tester"], "account": ["id": 4242, "type": "free"]])
         case ("GET", "/sync/activities"):
+            if failedActivities > 0 {
+                failedActivities -= 1
+                return (503, headers, ["error": "unavailable"])
+            }
             var object: [String: Any] = ["settings": ["all": NSNull()]]
             var all: String?
             for domain in ["movies", "tv_shows", "anime"] {
@@ -462,11 +465,13 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
     }
 
     /// Like opening Vivid again: the checkpoint, the cached library and the
-    /// Keychain carry over, and the next sync is due straight away.
-    @MainActor static func relaunch(_ client: SimklClient) throws -> SimklSyncStore {
-        if let data = UserDefaults.standard.data(forKey: checkpointKey) {
+    /// Keychain carry over, and the next sync is due straight away unless
+    /// `keepingSchedule` leaves the times saved by the last one.
+    @MainActor static func relaunch(_ client: SimklClient, keepingSchedule: Bool = false) throws -> SimklSyncStore {
+        if !keepingSchedule, let data = UserDefaults.standard.data(forKey: checkpointKey) {
             var state = try JSONDecoder().decode(SimklSyncStore.Checkpoint.self, from: data)
             state.lastAttempt = nil
+            state.backoffUntil = nil
             UserDefaults.standard.set(try JSONEncoder().encode(state), forKey: checkpointKey)
         }
         return SimklSyncStore(client: client)
@@ -624,15 +629,37 @@ final class FakeSimklProtocol: URLProtocol, @unchecked Sendable {
 
         step("\n9b. Simkl's ID lookup fails for a new watchlist title")
         server.watchlist.append("m-up")
-        fake.lock.withLock { fake.failedLookups = 1 }
+        fake.lock.withLock { fake.lookupFailures = [408, 503] }
         await store.watchlistChanged(expected: auth)
         store = try relaunch(client)
         await store.sync()
-        check(since().contains("GET /redirect") && !fake.planAdds.contains("Up"), "leaves Up alone while it can't be matched")
+        check(since().filter { $0 == "GET /redirect" }.count == 1 && !fake.planAdds.contains("Up"),
+              "leaves Up alone after a timed-out lookup")
         // Nothing else changes, so only the failed lookup brings the watchlist back.
+        mark = fake.lock.withLock { fake.requests.count }
         store = try relaunch(client)
         await store.sync()
-        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch on the next check, once the lookup works")
+        check(since().contains("GET /redirect") && !fake.planAdds.contains("Up"), "tries again on the next check, and leaves it alone when Simkl is down")
+        store = try relaunch(client)
+        await store.sync()
+        check(fake.planAdds.last == "Up", "adds Up to Plan to Watch once the lookup works")
+
+        step("\n9c. A sync fails, then Vivid is opened again")
+        fake.lock.withLock { fake.failedActivities = 1 }
+        server.items["m-up"]?.userData = UserData(played: true)
+        store = try relaunch(client)
+        await store.sync()
+        check(since() == ["GET /sync/activities"] && store.status == "Simkl is unavailable. Sync will try again later.",
+              "stops at the failed request: \(store.status)")
+        mark = fake.lock.withLock { fake.requests.count }
+        await store.completedWatch(contentID: "m-up", expected: auth)
+        store = try relaunch(client, keepingSchedule: true)
+        await store.sync()
+        check(since().isEmpty, "waits out the backoff after opening again, even with a watch to send")
+        store = try relaunch(client)
+        await store.sync()
+        check(fake.watches.last == "Up" && store.status == "Watched history and watchlist are synced.",
+              "sends Up once the backoff ends: \(store.status)")
 
         step("\n10. The access token expires")
         fake.lock.withLock { fake.expireAccessToken() }

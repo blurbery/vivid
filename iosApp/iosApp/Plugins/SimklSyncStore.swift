@@ -66,6 +66,9 @@ final class SimklSyncStore {
         var lastSync: Date?
         var lastFullWatchlistCheck: Date?
         var failures = 0
+        /// Only Sync now runs before a failed sync's backoff ends, even
+        /// after Vivid is opened again.
+        var backoffUntil: Date?
     }
     struct PendingCompletion: Codable {
         var watchedAt: String
@@ -302,11 +305,9 @@ final class SimklSyncStore {
 
     func run() async {
         reload()
-        // Coming back to Vivid checks again once 15 minutes have passed,
-        // unless the last sync failed and is waiting out its backoff.
-        if state.failures == 0 {
-            nextSync = min(nextSync, (state.lastAttempt ?? .distantPast).addingTimeInterval(Self.foregroundInterval))
-        }
+        // Coming back to Vivid checks again once 15 minutes have passed. A
+        // failed sync's backoff still holds in `sync()`.
+        nextSync = min(nextSync, (state.lastAttempt ?? .distantPast).addingTimeInterval(Self.foregroundInterval))
         while !Task.isCancelled {
             await sync()
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -319,11 +320,12 @@ final class SimklSyncStore {
         reload()
         let now = Date()
         guard SimklApp.isAvailable, isConnected, !isSyncing, let scope, now >= (state.retryAfter ?? .distantPast) else { return }
-        // Sync now still waits a minute between runs.
+        // Sync now still waits a minute between runs. Every other check also
+        // waits out a failure's backoff.
         if force {
             guard now >= (state.lastAttempt ?? .distantPast).addingTimeInterval(60) else { return }
         } else {
-            guard now >= nextSync else { return }
+            guard now >= nextSync, now >= (state.backoffUntil ?? .distantPast) else { return }
         }
         let generation = revision
         guard let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
@@ -352,6 +354,7 @@ final class SimklSyncStore {
             try await validate(scope: scope, revision: generation, auth: auth)
             state.lastSync = Date()
             state.failures = 0
+            state.backoffUntil = nil
             try save()
             if mismatched > 0 {
                 status = String(localized: "Sync finished. Simkl filed \(mismatched) watched items under a different kind of title. Check them on Simkl.")
@@ -383,6 +386,7 @@ final class SimklSyncStore {
             state.retryAfter = now.addingTimeInterval(6 * 3600)
         case .rateLimited?, .writeLocked?:
             nextSync = now.addingTimeInterval(5 * 60)
+            state.backoffUntil = nextSync
         case .unauthorised?, .signInExpired?, .missingWriteAccess?:
             endSession(scope: scope, reason: failure == .missingWriteAccess ? .missingWriteAccess : .signInExpired)
             return
@@ -390,6 +394,7 @@ final class SimklSyncStore {
             state.failures += 1
             let backoff = min(2 * 3600, 5 * 60 * pow(2, Double(min(state.failures - 1, 5))))
             nextSync = now.addingTimeInterval(backoff)
+            state.backoffUntil = nextSync
         }
         try? save()
         status = failure?.localizedDescription ?? String(localized: "Sync interrupted. It will try again later.")
@@ -526,6 +531,7 @@ final class SimklSyncStore {
         var skipped = Set<String>()
         var lookups = 0
         var lookupsPending = false
+        var lookupFailed = false
         let tracked = local.union(state.watchlist.filter { $0.value.local || $0.value.remote }.keys).sorted()
         for (index, id) in tracked.enumerated() {
             syncProgress = SimklSyncProgress(step: 2, label: String(localized: "Checking watchlist matches"),
@@ -540,16 +546,26 @@ final class SimklSyncStore {
             if matches.count == 1 { mapped[id] = matches[0].simkl; continue }
             guard matches.isEmpty, found.ids.hasExternal else { continue }
             if let looked = state.watchlist[id]?.lookedUpAt, now.timeIntervalSince(looked) < 7 * 24 * 3600 { continue }
-            // The rest wait for the next check rather than the daily one.
-            guard lookups < 40 else { lookupsPending = true; continue }
+            // The rest wait for the next check rather than the daily one, and
+            // after a failed lookup they don't meet the same failure.
+            guard lookups < 40, !lookupFailed else { lookupsPending = true; continue }
             lookups += 1
             // Not in the library under these IDs. Simkl's own lookup tells a
             // title it doesn't track apart from one it lists under other IDs.
             let resolved: Int?
             do { resolved = try await client.resolve(found.ids, kind: found.kind) }
             catch is CancellationError { throw CancellationError() }
-            // A lookup that failed isn't recorded, so a later check tries it again.
-            catch { lookupsPending = true; continue }
+            catch {
+                // Simkl asked Vivid to wait, so the whole check waits.
+                switch error as? SimklFailure {
+                case .quota?, .rateLimited?, .suspended?: throw error
+                default: break
+                }
+                // A lookup that failed isn't recorded, so a later check tries it again.
+                lookupsPending = true
+                lookupFailed = true
+                continue
+            }
             try await validateContext()
             lookedUp[id] = now
             if let resolved { mapped[id] = resolved }
