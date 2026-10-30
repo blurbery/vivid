@@ -243,8 +243,8 @@ final class ContentProvider: TVTopShelfContentProvider {
         seriesPosters: EpisodePosters,
         strings: Bundle
     ) -> TVTopShelfItemCollection<TVTopShelfSectionedItem>? {
-        guard !items.isEmpty else { return nil }
-        let shelfItems = items.map { sectionedItem(from: $0, seriesPosters: seriesPosters, strings: strings) }
+        let shelfItems = items.compactMap { sectionedItem(from: $0, seriesPosters: seriesPosters, strings: strings) }
+        guard !shelfItems.isEmpty else { return nil }
         let collection = TVTopShelfItemCollection(items: shelfItems)
         collection.title = title
         return collection
@@ -254,7 +254,11 @@ final class ContentProvider: TVTopShelfContentProvider {
         from item: TopShelfItem,
         seriesPosters: EpisodePosters,
         strings: Bundle
-    ) -> TVTopShelfSectionedItem {
+    ) -> TVTopShelfSectionedItem? {
+        // The ID comes from the server. One that can't form a link is left
+        // off the shelf rather than crashing the extension.
+        guard let displayURL = URL(string: "vivid://item/\(item.contentId)"),
+              let playURL = URL(string: "vivid://play/\(item.contentId)") else { return nil }
         let shelfItem = TVTopShelfSectionedItem(identifier: item.contentId)
         shelfItem.title = displayTitle(for: item, strings: strings)
         shelfItem.imageShape = .poster
@@ -266,12 +270,8 @@ final class ContentProvider: TVTopShelfContentProvider {
             shelfItem.setImageURL(url, for: .screenScale1x)
             shelfItem.setImageURL(url, for: .screenScale2x)
         }
-        shelfItem.displayAction = TVTopShelfAction(
-            url: URL(string: "vivid://item/\(item.contentId)")!
-        )
-        shelfItem.playAction = TVTopShelfAction(
-            url: URL(string: "vivid://play/\(item.contentId)")!
-        )
+        shelfItem.displayAction = TVTopShelfAction(url: displayURL)
+        shelfItem.playAction = TVTopShelfAction(url: playURL)
         return shelfItem
     }
 

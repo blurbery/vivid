@@ -15,10 +15,13 @@ their LGPL texts, and the other engine libraries' Vivid-written header lines
 were updated; their upstream texts are unchanged. When the app moved to Lucid
 Engine 0.1.0, which builds every library from upstream source, only the
 engine libraries' Vivid-written header lines changed again (how each is built,
-its patches and the pipeline commit). README.txt is Vivid's own overview, which
-changes with the docs, so it is only checked for presence. When a licence
-file changes deliberately (for example a library update), update its entry
-here with the hash this script prints for the reconstructed file.
+its patches and the pipeline commit). Later, the Rust standard library notice
+gained the MIT texts of the crates.io crates built into it, and notices for
+the bundled Jellyfin logo (CC BY-SA 4.0) and Seerr icon (MIT) were added.
+README.txt is Vivid's own overview, which changes with the docs, so it is only
+checked for presence. When a licence file changes deliberately (for example a
+library update), update its entry here with the hash this script prints for
+the reconstructed file.
 
 Run: python3 scripts/tests/licence-texts-tests.py [--against <git revision>]
 --against also compares each reconstruction with that revision's file.
@@ -40,12 +43,14 @@ ORIGINALS = {
     "FreeType-FTL.txt": ("1896a2775dbc981b7e4b5fe49aad4266f520b0a25cb303fbb86a7d4222d440d9", 15666),
     "FriBidi-LGPL-2.1.txt": ("5c1e6a8f3fcfe67f42ad71ddd3d442c2a96f5c6c3c213aa82b8f2204db39111d", 27081),
     "HarfBuzz-MIT.txt": ("bab90809a4b4c1880913755acb1601e3de94e0613a4ebb9157cb154f4c17a889", 4200),
+    "Jellyfin-Logo-CC-BY-SA-4.0.txt": ("624e42e310cf4e501b5e41b92c85cf52dc8a0bcb98246f8627886e4454bb3f34", 21462),
     "LittleCMS-MIT.txt": ("a0bb4110b8ec064afdd3ec5074a7974312865b1c808e00152ed8127b83f91ee9", 1711),
     "MoltenVK-Apache-2.0.txt": ("b1b93fb781f8351460a69d4441e8b3629a47da2b7c3e872ec1c82cb13cd6b822", 12201),
-    "Rust-Standard-Library-MIT.txt": ("4e33a8e97437d3dbf459cb4adc16d14cb8300685f7b956c3c82c3768d6d6f6cb", 3664),
+    "Rust-Standard-Library-MIT.txt": ("b78fc93abe11a6be1b491a2320295a4f0e8bd84b40570e60fc120d43a527fcc4", 19918),
     "SPIRV-Cross-Apache-2.0.txt": ("fb9b07689f16dd2f26bb823b304f866c3510b26cbf9882be78f115e473e16de2", 13751),
     "SPIRV-Headers-MIT.txt": ("53f637fa9add95006c58844267eeda7cb3ec8afda9b57ba27235a571e0292ee8", 24230),
     "SPIRV-Tools-Apache-2.0.txt": ("b03185cd87802fe40144ff4e75251c20a8c1dce90c4a2e27911f2a0a1f1fd223", 12065),
+    "Seerr-Icon-MIT.txt": ("015b031dd7f8d5b70cc5038da6ab4c22c2d89daad264b2a134b119c9feac3b95", 2160),
     "ThumbHash-MIT.txt": ("c3848c6ae5964087a2a7c73de48d47d713f641319beebc74d243652614d8d65b", 1721),
     "Vivid-Apache-2.0.txt": ("cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30", 11358),
     "Vivid-Apple-Distribution.txt": ("0e34a96aa82d61d38a37721f23825f1e2a76d08d85c0b92bd199c83f167f00fd", 4930),

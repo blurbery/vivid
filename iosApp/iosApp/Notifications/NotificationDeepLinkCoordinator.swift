@@ -48,11 +48,19 @@ final class NotificationDeepLinkCoordinator {
     }
 }
 
-/// Asks once for permission to show local notifications, on the first
-/// signed-in profile, so download notifications can appear. Never prompts
-/// again after the person has answered.
+/// Asks once for permission to show local notifications, when the person
+/// first asks for a download or turns on series monitoring, so download
+/// notifications can appear. Never prompts again after the person has
+/// answered.
+@MainActor
 enum LocalNotificationAuthorization {
+    private static var isRequesting = false
+
     static func requestIfNeeded() async {
+        // An episode list asks for each episode in turn; one prompt covers them.
+        guard !isRequesting else { return }
+        isRequesting = true
+        defer { isRequesting = false }
         let center = UNUserNotificationCenter.current()
         guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])

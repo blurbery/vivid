@@ -1470,7 +1470,7 @@ private final class VividMPVCore: VividPlayerCore {
                         "audio-spdif": VividMPVAudio.spdifCodecs(rate: initialRate, enhancement: audioEnhancement),
                         "ao-avfoundation-manage-audio-session": "no",
                         "audio-exclusive": "yes", "audio-channels": airPlayPCM ? "7.1,5.1,stereo" : "auto-safe",
-                        "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
+                        "config": "no", "load-scripts": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
                         // Resume on the keyframe at or before the saved position. An exact

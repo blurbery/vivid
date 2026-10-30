@@ -26,5 +26,22 @@ else
   /usr/libexec/PlistBuddy -c "Add :VividSourceRevision string $revision" "$plist"
 fi
 echo "VividSourceRevision: ${revision:-unknown}"
+
 # The declared output lets the build system order this phase.
 [ -z "${DERIVED_FILE_DIR:-}" ] || { mkdir -p "$DERIVED_FILE_DIR"; echo "$revision" > "$DERIVED_FILE_DIR/source-revision-stamp"; }
+
+# A distributed build must map to published source. Release builds warn,
+# never fail, when this one doesn't: uncommitted changes, or a commit that
+# no fetched origin branch contains yet.
+if [ "${CONFIGURATION:-}" = "Release" ]; then
+  if [ -z "$revision" ]; then
+    echo "warning: This Release build isn't from a Git checkout, so it has no source revision. Distributed builds must map to published source (GPL corresponding source)."
+  elif [ "${revision%-modified}" != "$revision" ]; then
+    echo "warning: This Release build has uncommitted changes ($revision). Distributed builds must map to published source (GPL corresponding source), so commit and push first."
+  else
+    published="$(git -C "$SRCROOT" branch -r --list 'origin/*' --contains "$commit" 2>/dev/null || true)"
+    if [ -z "$published" ]; then
+      echo "warning: This Release build's commit $commit isn't on any origin branch (fetch if it was pushed from elsewhere). Distributed builds must map to published source (GPL corresponding source), so push it first."
+    fi
+  fi
+fi

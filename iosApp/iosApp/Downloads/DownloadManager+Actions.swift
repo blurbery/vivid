@@ -269,6 +269,12 @@ extension DownloadManager {
         let requestedProfileId = expectedScope?.profileId ?? current.profileId
         guard expectedScope == nil || expectedScope == current else { throw DownloadError.scopeChangedDuringRegistration }
         guard await prepareForDownload() else { throw DownloadError.unavailable }
+        #if os(iOS)
+        // The first download asked for is when notifications become useful.
+        // Registration doesn't wait on the answer: each notice checks the
+        // permission when it posts, so a finished download still gets one.
+        Task { await LocalNotificationAuthorization.requestIfNeeded() }
+        #endif
         guard requestedServerId == scopeServerId, requestedProfileId == scopeProfileId,
               let registrationAuth = await scopeAuth() else {
             throw DownloadError.scopeChangedDuringRegistration

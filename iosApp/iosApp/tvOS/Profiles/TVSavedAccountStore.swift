@@ -306,6 +306,15 @@ final class TVSavedAccountStore {
     /// active. Never saved, so a relaunch restores the active saved profile as
     /// before.
     private var chosenServerID: String?
+    /// Set when a new install's first launch stopped waiting for iCloud and
+    /// showed setup (see ``VividCloudAccountSync/synchronizeForFirstLaunch(router:limit:)``).
+    /// Until the person signs in, sync still imports saved profiles but
+    /// neither chooses one nor restores its session: either would rebuild
+    /// the setup screen under them and lose what they typed. Never saved, so
+    /// the next launch restores as before.
+    fileprivate var holdsCloudRestore = false
+    /// A sync is restoring the active saved profile's session.
+    fileprivate var isRestoringCloudSession = false
     private(set) var contentRevision = UUID()
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     /// Saved profiles per device, or per native Apple TV user.
@@ -348,6 +357,12 @@ final class TVSavedAccountStore {
         // The active saved profile is already on it, so there's nothing for
         // sync to keep, and a note left set would outlive a later sign-out.
         chosenServerID = activeAccount?.serverID == server ? nil : server
+    }
+
+    /// A saved profile is signed in, so sync may choose and restore saved
+    /// profiles again.
+    func resumeCloudRestore() {
+        holdsCloudRestore = false
     }
 
     private var keepsChosenServer: Bool {
@@ -1120,7 +1135,7 @@ final class TVSavedAccountStore {
         if let activeID, !accounts.contains(where: { $0.id == activeID }) {
             self.activeID = nil
         }
-        if activeID == nil, pendingProfileChoice == nil, !keepsChosenServer {
+        if activeID == nil, pendingProfileChoice == nil, !keepsChosenServer, !holdsCloudRestore {
             activeID = accounts
                 .filter { !$0.requiresLogin && session($0.id) != nil }
                 .max { (modificationDates[$0.id] ?? .distantPast) < (modificationDates[$1.id] ?? .distantPast) }?
@@ -1153,7 +1168,9 @@ final class TVSavedAccountStore {
            ServerRegistry.shared.activeServerId == account.serverID {
             return true
         }
-        guard !keepsChosenServer else { return false }
+        guard !keepsChosenServer, !holdsCloudRestore else { return false }
+        isRestoringCloudSession = true
+        defer { isRestoringCloudSession = false }
         do {
             try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             return true
@@ -1189,6 +1206,7 @@ final class VividCloudAccountSync {
     private var isSynchronizing = false
     private var needsAnotherSynchronization = false
     private var pendingRouter: AppRouter?
+    private var firstLaunchRestore: Task<Void, Never>?
 
     private init() {}
 
@@ -1261,6 +1279,39 @@ final class VividCloudAccountSync {
             await synchronizeOnce(router: routingContext)
         } while needsAnotherSynchronization
         isSynchronizing = false
+    }
+
+    /// A new install's first launch waits for iCloud to restore saved
+    /// profiles, but for no longer than `limit`: a slow or blocked iCloud
+    /// must not keep the startup splash up. Returns false when the wait ran
+    /// out. The sync carries on and still imports saved profiles, but holds
+    /// back choosing one and restoring its session (see
+    /// ``TVSavedAccountStore/holdsCloudRestore``), so it can't rebuild the
+    /// setup screen the person is already using.
+    func synchronizeForFirstLaunch(router: AppRouter, limit: Duration) async -> Bool {
+        // Launch is still on the splash, so a hold left by an attempt that
+        // never reached setup doesn't apply to this one.
+        TVSavedAccountStore.shared.holdsCloudRestore = false
+        if firstLaunchRestore == nil {
+            // Unstructured, so it keeps going once launch stops waiting. A
+            // retried launch waits on the same sync rather than starting one.
+            firstLaunchRestore = Task {
+                await self.synchronize(router: router)
+                self.firstLaunchRestore = nil
+            }
+        }
+        let deadline = ContinuousClock.now.advanced(by: limit)
+        while firstLaunchRestore != nil, !Task.isCancelled {
+            // A session restore under way is local and quick. Let it finish
+            // so launch routes with it, rather than showing setup over it.
+            if ContinuousClock.now >= deadline, !TVSavedAccountStore.shared.isRestoringCloudSession {
+                TVSavedAccountStore.shared.holdsCloudRestore = true
+                Self.logger.notice("Private iCloud account restore is slow; continuing to setup.")
+                return false
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return firstLaunchRestore == nil
     }
 
     private func synchronizeOnce(router: AppRouter?) async {

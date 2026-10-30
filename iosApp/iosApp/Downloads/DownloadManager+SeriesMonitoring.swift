@@ -23,6 +23,10 @@ extension DownloadManager {
             deleteWatched: deleteWatched,
             maxStorageBytes: maxStorageBytes
         )
+        #if os(iOS)
+        // Monitoring queues new episodes itself and says so in a notification.
+        Task { await LocalNotificationAuthorization.requestIfNeeded() }
+        #endif
         let response = try await VividAPI.shared.createSubscription(request)
         upsertSubscription(response.subscription, seriesTitle: seriesTitle)
         persist()

@@ -1,30 +1,31 @@
 {
-  "pins": [
+  "originHash" : "c3e481bd035756a27cd3d8f753642423559e086a9d433b61997e93ebf300364b",
+  "pins" : [
     {
-      "identity": "collectionhstack",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/LePips/CollectionHStack",
-      "state": {
-        "revision": "15baaaa759a0e252addae08431c79a49a25e4afc"
+      "identity" : "collectionhstack",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/LePips/CollectionHStack",
+      "state" : {
+        "revision" : "15baaaa759a0e252addae08431c79a49a25e4afc"
       }
     },
     {
-      "identity": "differencekit",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/ra1028/DifferenceKit",
-      "state": {
-        "revision": "073b9671ce2b9b5b96398611427a1f929927e428",
-        "version": "1.3.0"
+      "identity" : "differencekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ra1028/DifferenceKit",
+      "state" : {
+        "revision" : "073b9671ce2b9b5b96398611427a1f929927e428",
+        "version" : "1.3.0"
       }
     },
     {
-      "identity": "lucid-engine",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/blurbery/lucid-engine",
-      "state": {
-        "revision": "53ebeac793f251df987a8d80b997e7fe8064d1b7"
+      "identity" : "lucid-engine",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/blurbery/lucid-engine",
+      "state" : {
+        "revision" : "53ebeac793f251df987a8d80b997e7fe8064d1b7"
       }
     }
   ],
-  "version": 2
+  "version" : 3
 }

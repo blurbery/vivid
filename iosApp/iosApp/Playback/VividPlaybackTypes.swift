@@ -99,133 +99,140 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
 }
 typealias PlaybackErrorKind = PlaybackErrorInfo.Kind
 
-/// Vivid's own playback failure messages in the app's language.
+/// Vivid's own playback failure messages, as people see them.
 ///
 /// Failure messages stay English while recovery handles them: their words
 /// pick the replan classification and the diagnostics failure token, and
 /// they are sent to the server and logged. The failure panel and notices
-/// translate them here as they are shown. Any other message, the server's
-/// own or a system error's description, shows as it is.
+/// show them through here, in the app's language. Vivid's technical failures
+/// (engine, protocol and route details) are shown in plain words that say
+/// what the person can do, and the original message stays in logs and
+/// diagnostics. Any other message, the server's own or a system error's
+/// description, shows as it is.
 enum PlaybackFailureText {
     static func localized(_ message: String) -> String {
         if let exact = exact(message) { return exact }
-        for template in templates {
-            if let value = template.value(in: message) { return template.localized(value) }
+        for template in templates where template.matches(message) {
+            return template.shown()
         }
         return message
     }
 
-    // Keep each case's English identical to the message it translates.
+    // Each case is the exact English message where it's made.
     private static func exact(_ message: String) -> String? {
         switch message {
-        case "The playback surface is unavailable.":
-            return String(localized: "The playback surface is unavailable.")
         case "Audio output isn't available right now. Try again in a moment.":
             return String(localized: "Audio output isn't available right now. Try again in a moment.")
-        case "Lucid could not initialise.":
-            return String(localized: "Lucid could not initialise.", comment: "Lucid is the name of Vivid's playback engine")
-        case "Lucid did not open the source within 60 seconds.":
-            return String(localized: "Lucid did not open the source within 60 seconds.", comment: "Lucid is the name of Vivid's playback engine")
         case "The media stream ended before playback started.":
             return String(localized: "The media stream ended before playback started.")
-        case "Lucid could not change playback speed.":
-            return String(localized: "Lucid could not change playback speed.", comment: "Lucid is the name of Vivid's playback engine")
-        case "The Lucid seek did not complete.":
-            return String(localized: "The Lucid seek did not complete.", comment: "Lucid is the name of Vivid's playback engine")
-        case "Lucid is not available for this request.":
-            return String(localized: "Lucid is not available for this request.", comment: "Lucid is the name of Vivid's playback engine")
-        case "Lucid closed before the request finished.":
-            return String(localized: "Lucid closed before the request finished.", comment: "Lucid is the name of Vivid's playback engine")
         case "Playback could not be set up with the selected audio track.":
             return String(localized: "Playback could not be set up with the selected audio track.")
         case "Playback did not resume after reconnecting the media source.":
             return String(localized: "Playback did not resume after reconnecting the media source.")
         case "Playback did not resume after renewing authentication.":
             return String(localized: "Playback did not resume after renewing authentication.")
-        case "The server could not be reached while renewing playback.":
-            return String(localized: "The server could not be reached while renewing playback.")
         case "The media stream ended before playback completion could be confirmed.":
             return String(localized: "The media stream ended before playback completion could be confirmed.")
         case "The server didn't respond in time.":
             return String(localized: "The server didn't respond in time.")
-        case "The selected embedded subtitle is unavailable in the opened media.":
-            return String(localized: "The selected embedded subtitle is unavailable in the opened media.")
-        case "The Apple audio output route changed.":
-            return String(localized: "The Apple audio output route changed.")
-        case "Reanchor the active stream at the requested source position.":
-            return String(localized: "Reanchor the active stream at the requested source position.")
-        case "Your Silo server hasn't been updated to support the latest version of this app. Please update your server, or use an earlier compatible version of Vivid until the server has been updated.":
-            return String(localized: "Your Silo server hasn't been updated to support the latest version of this app. Please update your server, or use an earlier compatible version of Vivid until the server has been updated.")
         case "Select a profile before starting playback.":
             return String(localized: "Select a profile before starting playback.")
-        case "The server returned an incompatible protocol V3 playback plan.":
-            return String(localized: "The server returned an incompatible protocol V3 playback plan.")
-        case "This server did not honor authenticated media transport for the playback plan.":
-            return String(localized: "This server did not honor authenticated media transport for the playback plan.")
-        case "The server selected a media version that is not present in the item response.":
-            return String(localized: "The server selected a media version that is not present in the item response.")
-        case "Playback recovery exhausted the protocol V3 route ladder.":
-            return String(localized: "Playback recovery exhausted the protocol V3 route ladder.")
-        case "The server returned an incompatible protocol V3 replacement plan.":
-            return String(localized: "The server returned an incompatible protocol V3 replacement plan.")
-        case "The server did not preserve authenticated media transport during replanning.":
-            return String(localized: "The server did not preserve authenticated media transport during replanning.")
-        case "The server returned a protocol V3 plan that already failed on this output route.":
-            return String(localized: "The server returned a protocol V3 plan that already failed on this output route.")
-        case "The replacement plan selected an unavailable media version.":
-            return String(localized: "The replacement plan selected an unavailable media version.")
-        case "The server changed the route or playback intent during a V3 seek re-anchor.":
-            return String(localized: "The server changed the route or playback intent during a V3 seek re-anchor.")
-        case "The server could not produce a playable Apple route.":
-            return String(localized: "The server could not produce a playable Apple route.")
+        case "The playback surface is unavailable.",
+             "Lucid could not initialise.",
+             "Lucid is not available for this request.",
+             "Lucid closed before the request finished.":
+            return playerUnavailable
+        case "Lucid did not open the source within 60 seconds.":
+            return startTimedOut
+        case "Lucid could not change playback speed.":
+            return String(localized: "Couldn't change the playback speed. Try again.", comment: "Playback failure message")
+        case "The Lucid seek did not complete.",
+             "Reanchor the active stream at the requested source position.",
+             "The server changed the route or playback intent during a V3 seek re-anchor.":
+            return String(localized: "Playback couldn't move to that position. Try again.")
+        case "The Apple audio output route changed.":
+            return String(localized: "Playback couldn't continue after the audio output changed. Try again.", comment: "Playback failure message")
+        case "The server could not be reached while renewing playback.":
+            return String(localized: "Can't reach the server. Check your connection and try again.")
+        case "The selected embedded subtitle is unavailable in the opened media.":
+            return subtitlesUnavailable
+        // `server_upgrade_required`: the Silo server lacks what this version
+        // of Vivid needs, so updating the server is the fix.
+        case "Your Silo server hasn't been updated to support the latest version of this app. Please update your server, or use an earlier compatible version of Vivid until the server has been updated.",
+             "This server did not honor authenticated media transport for the playback plan.",
+             "The server did not preserve authenticated media transport during replanning.":
+            return serverNeedsUpdate
+        case "Playback recovery exhausted the protocol V3 route ladder.",
+             "The server returned a protocol V3 plan that already failed on this output route.":
+            return couldNotPlay
+        case "The server returned an incompatible protocol V3 playback plan.",
+             "The server returned an incompatible protocol V3 replacement plan.",
+             "The server could not produce a playable Apple route.",
+             "The server selected a media version that is not present in the item response.",
+             "The replacement plan selected an unavailable media version.":
+            return serverCouldNotPrepare
         default:
             return nil
         }
     }
 
+    /// Recovery tried every way it had to play the title.
+    private static var couldNotPlay: String {
+        String(localized: "Vivid couldn't play this. Try again, or go back and choose another version or quality.", comment: "Playback failure message")
+    }
+
+    /// The server's plan for this title isn't one this device can play.
+    private static var serverCouldNotPrepare: String {
+        String(localized: "The server couldn't prepare this to play on this device. Try again, or go back and choose another version or quality.", comment: "Playback failure message")
+    }
+
+    private static var serverNeedsUpdate: String {
+        String(localized: "This Silo server needs an update before Vivid can play from it. Update Silo, or ask your server administrator to update it.", comment: "Playback failure message; Silo is the name of a media server")
+    }
+
+    private static var playerUnavailable: String {
+        String(localized: "Vivid couldn't start the player. Try again.", comment: "Playback failure message")
+    }
+
+    private static var startTimedOut: String {
+        String(localized: "The video took too long to start. Check your connection and try again.", comment: "Playback failure message")
+    }
+
+    private static var subtitlesUnavailable: String {
+        String(localized: "Couldn't load the selected subtitles. Try again, or go back and choose other subtitles or turn them off.", comment: "Playback failure message")
+    }
+
     /// An English message with one inserted value, such as an error code.
+    /// The value is a technical detail for diagnostics, so what's shown
+    /// leaves it out.
     private struct Template: Sendable {
         let prefix: String
         let suffix: String
-        let localized: @Sendable (String) -> String
+        let shown: @Sendable () -> String
 
-        func value(in message: String) -> String? {
-            guard message.count > prefix.count + suffix.count,
-                  message.hasPrefix(prefix), message.hasSuffix(suffix) else { return nil }
-            return String(message.dropFirst(prefix.count).dropLast(suffix.count))
+        func matches(_ message: String) -> Bool {
+            message.count > prefix.count + suffix.count
+                && message.hasPrefix(prefix) && message.hasSuffix(suffix)
         }
     }
 
     private static let templates: [Template] = [
-        Template(prefix: "Lucid playback failed (", suffix: ").") {
-            String(localized: "Lucid playback failed (\($0)).", comment: "Lucid is the name of Vivid's playback engine; the value is an error code")
-        },
+        Template(prefix: "Lucid playback failed (", suffix: ").") { couldNotPlay },
         Template(prefix: "The server returned HTTP ", suffix: " while renewing playback.") {
-            String(localized: "The server returned HTTP \($0) while renewing playback.", comment: "The value is an HTTP status code")
+            String(localized: "The server ran into a problem. Try again in a moment.")
         },
-        Template(prefix: "The server selected an unsupported V3 delivery: ", suffix: ".") {
-            String(localized: "The server selected an unsupported V3 delivery: \($0).", comment: "The value is a technical identifier")
-        },
-        Template(prefix: "The V3 playback transport is invalid: ", suffix: ".") {
-            String(localized: "The V3 playback transport is invalid: \($0).", comment: "The value is a technical detail in English")
-        },
-        Template(prefix: "The V3 plan requires an unsupported client transformation: ", suffix: ".") {
-            String(localized: "The V3 plan requires an unsupported client transformation: \($0).", comment: "The value is a technical identifier")
-        },
-        Template(prefix: "The V3 client transformation cannot be executed as planned: ", suffix: ".") {
-            String(localized: "The V3 client transformation cannot be executed as planned: \($0).", comment: "The value is a technical detail in English")
-        },
-        Template(prefix: "The embedded subtitle selection is invalid: ", suffix: ".") {
-            String(localized: "The embedded subtitle selection is invalid: \($0).", comment: "The value is a technical detail in English")
-        },
-        Template(prefix: "The V3 plan requires an unsupported runtime correction: ", suffix: ".") {
-            String(localized: "The V3 plan requires an unsupported runtime correction: \($0).", comment: "The value is a technical identifier")
-        },
+        Template(prefix: "The server selected an unsupported V3 delivery: ", suffix: ".") { serverCouldNotPrepare },
+        Template(prefix: "The V3 playback transport is invalid: ", suffix: ".") { serverCouldNotPrepare },
+        Template(prefix: "The V3 plan requires an unsupported client transformation: ", suffix: ".") { serverCouldNotPrepare },
+        Template(prefix: "The V3 client transformation cannot be executed as planned: ", suffix: ".") { serverCouldNotPrepare },
+        Template(prefix: "The embedded subtitle selection is invalid: ", suffix: ".") { subtitlesUnavailable },
+        Template(prefix: "The V3 plan requires an unsupported runtime correction: ", suffix: ".") { serverCouldNotPrepare },
+        // Replan reasons, shown when a track or quality change can't start.
         Template(prefix: "User selected audio track ", suffix: ".") {
-            String(localized: "User selected audio track \($0).", comment: "The value is the audio track's name or number")
+            String(localized: "The audio track couldn't be switched. Try again.")
         },
         Template(prefix: "User selected playback quality ", suffix: ".") {
-            String(localized: "User selected playback quality \($0).", comment: "The value is a quality identifier such as 1080p")
+            String(localized: "Couldn't change quality right now. Try again.")
         },
     ]
 }

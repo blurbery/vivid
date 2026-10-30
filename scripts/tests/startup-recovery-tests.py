@@ -70,6 +70,7 @@ import Security
  static let shared=ServerRegistry()
  var activeServerId: String?="emby:test"
  var entries=["emby:test"]
+ var hasActiveServer: Bool { activeServerId != nil }
  func retryInitialRegistryReadIfNeeded() throws {}
 }
 @Observable @MainActor final class TVSavedAccountStore {
@@ -82,6 +83,7 @@ import Security
 @MainActor final class VividCloudAccountSync {
  static let shared=VividCloudAccountSync()
  func synchronize(router: AppRouter) async {}
+ func synchronizeForFirstLaunch(router: AppRouter, limit: Duration) async -> Bool { true }
 }
 actor TokenStore {
  static let shared=TokenStore()

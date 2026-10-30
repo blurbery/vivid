@@ -214,6 +214,7 @@ struct ContentView: View {
                 DownloadSettings.shared.reloadForCurrentProfile()
                 TVTMDbStore.shared.reloadForCurrentProfile()
                 #endif
+                TVSavedAccountStore.shared.resumeCloudRestore()
                 Task { await TVSavedAccountStore.shared.captureCurrent() }
             }
             #endif
@@ -223,9 +224,8 @@ struct ContentView: View {
             if router.authState == .authenticated {
                 #if !os(tvOS)
                 // Downloads load their own scope and permission straight away.
-                // Waiting behind the refreshes below (one of which can sit on
-                // the notification prompt) left them "unavailable" until the
-                // app next came to the foreground.
+                // Waiting behind the refreshes below left them "unavailable"
+                // until the app next came to the foreground.
                 Task { await DownloadManager.shared.onAppActive() }
                 #endif
                 let hasPendingDeepLink = pendingDeepLink != nil
@@ -250,9 +250,6 @@ struct ContentView: View {
                 await RequestsFeatureStore.shared.refresh()
                 await CurrentProfileStore.shared.refresh()
                 await uiCustomization.refresh()
-                #if os(iOS)
-                await LocalNotificationAuthorization.requestIfNeeded()
-                #endif
             }
         }
         .task(id: serverRegistry.activeServerId) {
@@ -377,9 +374,6 @@ struct ContentView: View {
             Task { await ImageSizeCapability.shared.refresh() }
             Task { await RequestsFeatureStore.shared.refresh() }
             Task { await uiCustomization.refresh() }
-            #if os(iOS)
-            Task { await LocalNotificationAuthorization.requestIfNeeded() }
-            #endif
             #if os(tvOS)
             NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
             #endif
@@ -859,14 +853,26 @@ struct ContentView: View {
             }
         }
         if shouldSyncCloudAccounts {
+            #if os(iOS)
+            // Saved profiles that a held restore (below) imported without
+            // signing one in: restore one now, before routing, instead of
+            // showing setup and then jumping to Home when the sync lands.
+            let lacksActiveServer = !ServerRegistry.shared.hasActiveServer
+            #else
+            let lacksActiveServer = false
+            #endif
             let needsCloudBootstrap = TVSavedAccountStore.shared.accounts.isEmpty
-                || ServerRegistry.shared.entries.isEmpty
+                || ServerRegistry.shared.entries.isEmpty || lacksActiveServer
             if needsCloudBootstrap {
                 #if os(iOS)
-                await VividCloudAccountSync.shared.synchronize(router: router)
+                // iCloud can be slow or blocked on a new device, so the splash
+                // waits about five seconds at most. A restore that lands later
+                // keeps its saved profiles for Restore from iCloud and the next
+                // launch, without moving the person off the setup screen.
+                _ = await VividCloudAccountSync.shared.synchronizeForFirstLaunch(router: router, limit: .seconds(5))
                 #endif
                 // Apple TV offers explicit restoration from the server choices.
-                // Failed mobile restoration also falls through to local setup.
+                // Failed or slow mobile restoration also falls through to local setup.
             } else {
                 // An existing installation can route immediately from its
                 // local Keychain. The fetch still runs before any cloud write,
@@ -1165,13 +1171,10 @@ struct ContentView: View {
             ServerSetupView(router: router)
             #endif
         default:
-            // Routes handled inside the authenticated tab view
-            EmptyStateView(
-                icon: "hammer.fill",
-                title: "Coming Soon",
-                subtitle: "This screen is under construction."
-            )
-            .vividPageBackground()
+            // Routes handled inside the authenticated tab view. Matches the
+            // tab view's own fallback for a route it doesn't show.
+            EmptyStateView(icon: "questionmark.circle", title: "Unknown", subtitle: nil)
+                .vividPageBackground()
         }
     }
 }
