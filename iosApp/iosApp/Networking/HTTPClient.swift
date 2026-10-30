@@ -2586,6 +2586,11 @@ enum HTTPDiagnosticsOutcome {
     /// A 401 refresh either did not run or produced no usable new credential,
     /// so the original 401 stands.
     static let notRetried = "not_retried"
+    /// Reachability transitions.
+    static let reachable = "reachable"
+    static let unreachable = "unreachable"
+    static let online = "online"
+    static let offline = "offline"
 }
 
 enum HTTPDiagnosticsErrorCode {

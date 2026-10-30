@@ -207,6 +207,10 @@ final class CalendarStore {
             self.sources = sources
         }
 
+        init(contentId: String, source: UpcomingEpisode.Source) {
+            self.init(contentId: contentId, sources: [source])
+        }
+
         /// The most personal list, shown on its rows.
         var source: UpcomingEpisode.Source { sources.min() ?? .history }
     }
