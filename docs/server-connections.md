@@ -105,7 +105,7 @@ Home first presents its account-scoped cached content, then reconciles it with t
   </tbody>
 </table>
 
-Successful final playback-progress writes and detail-page watched/unwatched changes also request a Home refresh. Hidden Apple TV refresh requests wait until return. Overlapping requests are coalesced and stale responses cannot replace newer state. Continue Watching changes when the server response reflects the update; this is separate from the private iCloud account vault and does not guarantee immediate server-push invalidation. The implementation is in [HomeView](../iosApp/iosApp/Screens/Home/HomeView.swift) and [HomeViewModel](../iosApp/iosApp/Screens/Home/HomeViewModel.swift).
+Successful final playback-progress writes and detail-page watched/unwatched changes also request a Home refresh. Hidden Apple TV refresh requests wait until return. Overlapping requests are coalesced and stale responses cannot replace newer state. Continue Watching changes when the server response reflects the update; this is separate from the private iCloud account vault and does not guarantee immediate server-push invalidation. The implementation is in [HomeView](../iosApp/iosApp/Screens/Home/HomeScreen.swift) and [HomeViewModel](../iosApp/iosApp/Screens/Home/HomeFeedModel.swift).
 
 ## Search matching
 
