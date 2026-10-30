@@ -31,7 +31,6 @@ class SearchViewModel {
     var selectedMediaType: SearchMediaType = .all
     var results: [BrowseItem] = []
 
-    var availableMediaTypes: [SearchMediaType] { SearchMediaType.allCases }
     var isSearching = false
     var error: ErrorState?
     var hasSearched = false

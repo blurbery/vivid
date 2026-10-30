@@ -191,9 +191,7 @@ struct LibrariesTabView: View {
             }
         }
         .background(VividAppBackdrop())
-        #if !os(macOS)
         .toolbar(.hidden, for: .navigationBar)
-        #endif
         .task(id: libraryRootScopeID(
             category: category,
             fixedLibraryId: fixedLibraryId,
@@ -432,8 +430,6 @@ private struct LibrariesTopBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            SidebarToggleButton()
-
             LibrarySelectorButton(
                 library: activeLibrary,
                 canSwitch: canSwitch,
@@ -514,13 +510,7 @@ private struct LibraryPickerSheet: View {
         NavigationStack {
             content
                 .toolbar {
-                    #if os(macOS)
-                    ToolbarItem {
-                        Button("Done") { dismiss() }
-                    }
-                    #else
                     VividSheetCloseItem { dismiss() }
-                    #endif
                 }
         }
         .vividGlassSheet()

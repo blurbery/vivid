@@ -619,26 +619,6 @@ final class AuthService: @unchecked Sendable {
         #endif
     }
 
-    func createProfile(
-        name: String,
-        avatarEmoji: String?,
-        pin: String?,
-        isChild: Bool,
-        maxContentRating: String? = nil,
-        libraryRestrictionsEnabled: Bool = false,
-        allowedLibraryIds: [Int] = []
-    ) async throws -> UserProfile {
-        try await VividAPI.shared.createProfile(
-            name: name,
-            avatarEmoji: avatarEmoji,
-            pin: pin,
-            isChild: isChild,
-            maxContentRating: maxContentRating,
-            libraryRestrictionsEnabled: libraryRestrictionsEnabled,
-            allowedLibraryIds: allowedLibraryIds
-        )
-    }
-
     // MARK: - Device Login (QR sign-in)
 
     func startDeviceLogin(deviceName: String, devicePlatform: String) async throws -> DeviceLoginStartResponse {

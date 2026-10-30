@@ -43,14 +43,6 @@ final class ProfileLaunchPreferences {
         }
     }
 
-    var behaviorID: String {
-        get { behavior.rawValue }
-        set {
-            guard let behavior = ProfileLaunchBehavior(rawValue: newValue) else { return }
-            self.behavior = behavior
-        }
-    }
-
     func rememberedProfile(for serverID: String?) -> RememberedProfile? {
         guard let serverID else { return nil }
         return state.rememberedByServerID[serverID]

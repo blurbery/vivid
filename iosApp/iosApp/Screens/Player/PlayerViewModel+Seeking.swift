@@ -5,8 +5,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 extension PlayerViewModel {
@@ -384,17 +382,4 @@ extension PlayerViewModel {
         scrubPreviewProvider.endInteraction()
     }
 
-    func seekToAdjacentChapter(forward: Bool) {
-        guard !chapters.isEmpty else { return }
-        let sorted = chapters.sorted { $0.time < $1.time }
-        let target: PlayerChapterInfo?
-        if forward {
-            target = sorted.first { $0.time > currentTime + 1.0 }
-        } else {
-            target = sorted.last { $0.time < currentTime - 1.0 }
-        }
-        if let target {
-            seekTo(seconds: target.time)
-        }
-    }
 }

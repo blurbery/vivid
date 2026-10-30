@@ -65,8 +65,6 @@ struct SearchView: View {
                         // to the search field above.
                         .frame(maxWidth: .infinity)
                         .focusSection()
-                    #elseif os(macOS)
-                        .padding(.horizontal, VividTheme.padding)
                     #endif
                 }
 
@@ -77,8 +75,6 @@ struct SearchView: View {
                 // server has requests disabled.
                 #if os(tvOS) || os(iOS)
                 if seerr.isConfigured { RequestSearchSectionView(viewModel: requestsViewModel) }
-                #else
-                RequestSearchSectionView(viewModel: requestsViewModel)
                 #endif
             }
             #if os(tvOS)
@@ -286,29 +282,8 @@ struct SearchView: View {
             Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
         }
         .padding(.vertical, 20)
-        #else
-        mediaTypePicker
         #endif
     }
-
-    private var mediaTypePicker: some View {
-        Picker("Media Type", selection: $viewModel.selectedMediaType) {
-            ForEach(viewModel.availableMediaTypes) { mediaType in
-                Text(mediaType.title)
-                    .tag(mediaType)
-            }
-        }
-        .pickerStyle(.segmented)
-#if os(tvOS)
-        .vividFormWidth(tvFilterWidth)
-#endif
-    }
-
-#if os(tvOS)
-    /// Narrower than the results column so the segmented control reads as a
-    /// centered pill rather than stretching across the whole search page.
-    private var tvFilterWidth: CGFloat { 760 }
-#endif
 }
 
 #if os(tvOS)

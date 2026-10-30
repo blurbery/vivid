@@ -90,9 +90,6 @@ enum PhoneDuo {
         var usualControlsTop: CGFloat { isInnerScreen ? 114 : 160 }
         /// Widgets added to the strip push the controls further down.
         @MainActor var controlsTop: CGFloat { usualControlsTop + DuoStatusArea.shared.growth }
-        /// iOS centres the status icons this far in from the strip's inner
-        /// edge, rather than in the middle of the strip.
-        static let iconCentreInset: CGFloat = 36
     }
 
     @MainActor static func sideStrip(_ geometry: GeometryProxy) -> SideStrip? {

@@ -5,8 +5,6 @@ import OSLog
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#else
-import AppKit
 #endif
 
 extension PlayerViewModel {
@@ -133,11 +131,6 @@ extension PlayerViewModel {
         #if os(iOS) || os(tvOS)
         nowPlaying.attach(
             session: vividPlaybackController.videoNowPlayingSession,
-            useSharedFallback: vividPlaybackController.shouldUseSharedVideoNowPlayingFallback,
-            handlers: handlers
-        )
-        #else
-        nowPlaying.attach(
             useSharedFallback: vividPlaybackController.shouldUseSharedVideoNowPlayingFallback,
             handlers: handlers
         )

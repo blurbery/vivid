@@ -108,12 +108,6 @@ extension DownloadManager {
         return downloadsEnabled
     }
 
-    /// Profile/server switched — load the new scope and refresh.
-    func onScopeChanged() async {
-        deactivate()
-        await onAppActive()
-    }
-
     /// Sign-out: stop active transfers and drop in-memory state. On-disk
     /// files are intentionally preserved (the user may sign back in).
     func clearForSignOut() {

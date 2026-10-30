@@ -80,8 +80,6 @@ final class RequestDetailViewModel {
             let identity = TVSeerrConnectionStore.shared.identity
             detail = try await TVSeerrConnectionStore.shared.detail(type: mediaType, id: tmdbId)
             seerrIdentity = identity
-            #else
-            detail = try await api.requestsDetail(mediaType: mediaType, tmdbId: tmdbId)
             #endif
         } catch {
             if detail == nil {
@@ -113,8 +111,6 @@ final class RequestDetailViewModel {
                 throw TVSeerrError(message: String(localized: "This account's connection changed. Open the title again from Search."))
             }
             let record = try await TVSeerrConnectionStore.shared.create(input)
-            #else
-            let record = try await api.createRequest(input)
             #endif
             RequestsEventBus.shared.publish(record)
             // Re-fetch so `request` reflects authoritative server state
@@ -123,8 +119,6 @@ final class RequestDetailViewModel {
         } catch {
             #if os(tvOS) || os(iOS)
             actionErrorMessage = error.localizedDescription
-            #else
-            actionErrorMessage = RequestErrorCopy.message(for: error)
             #endif
         }
         isSubmitting = false

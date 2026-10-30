@@ -380,8 +380,6 @@ private struct PlaybackRealtimeBaseEnvelope: Decodable {
 // Stable Vivid client identifiers for provider realtime sessions.
 #if os(tvOS)
 private let applePlaybackRealtimeClientName = "vivid-tvos"
-#elseif os(macOS)
-private let applePlaybackRealtimeClientName = "vivid-macos"
 #else
 private let applePlaybackRealtimeClientName = "vivid-ios"
 #endif

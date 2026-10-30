@@ -213,13 +213,6 @@ struct ServerListView: View {
                     Label("Add Server", systemImage: "plus")
                         .foregroundColor(.vividOnSurface)
                 }
-                #else
-                Button {
-                    router.resetToServerSetup()
-                } label: {
-                    Label("Add Server", systemImage: "plus")
-                        .foregroundColor(.vividOnSurface)
-                }
                 #endif
             }
 
