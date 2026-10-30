@@ -146,7 +146,7 @@ extension PhoneSavedProfilesScreen {
                     .disabled(submitDisabled)
                 if provider != .silo, !codeSignIn.isActive, let service = CodeSignIn.Service(provider) {
                     Button("Use \(service.title)") { startCodeSignIn(service) }
-                        .disabled(!store.canAddAccount || store.busy || serverURL.isEmpty)
+                        .disabled((isNew && !store.canAddAccount) || store.busy || serverURL.isEmpty)
                 }
             } header: { PhoneSettingsSectionHeader("Account") }
             .textInputAutocapitalization(.never)
