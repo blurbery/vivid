@@ -38,7 +38,10 @@ struct CatalogGrid: View {
     var body: some View {
         let columns = columns
         let cardWidth = cardWidth(columnCount: columns.count)
-        let loadMoreIndex = max(items.count - 6, 0)
+        // Any of the last six asks for more, so a page that adds only a few
+        // titles can't leave the trigger on a card that has already appeared.
+        // Callers ignore the request while a load is running.
+        let loadMoreFrom = max(items.count - 6, 0)
         LazyVGrid(columns: columns, spacing: 12) {
             ForEach(Array(items.enumerated()), id: \.element.contentId) { index, item in
                 MediaCard(
@@ -53,7 +56,7 @@ struct CatalogGrid: View {
                 )
                 .frame(maxWidth: .infinity)
                 .onAppear {
-                    if index == loadMoreIndex && hasMore { onLoadMore() }
+                    if index >= loadMoreFrom && hasMore { onLoadMore() }
                 }
             }
         }
