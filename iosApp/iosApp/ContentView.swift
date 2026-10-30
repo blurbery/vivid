@@ -90,9 +90,6 @@ struct ContentView: View {
         .environmentObject(overlayPrefs)
         .preferredColorScheme(.dark)
         .progressViewStyle(VividLoadingProgressStyle())
-        #if os(tvOS) && DEBUG
-        .modifier(TVFocusDebugActivationModifier())
-        #endif
         #if DEBUG
         .modifier(DebugPlayerPresentationModifier(
             contentId: debugPlayContentId,

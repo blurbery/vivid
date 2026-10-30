@@ -266,9 +266,8 @@ struct TVTrailerStatusPill: View {
 /// playback path on tvOS, which has no browser to fall back on (iOS falls
 /// back to the public watch page in the default browser).
 ///
-/// Plain (non-isolated) statics, matching
-/// `TVFocusDebugOverlay`'s `UIApplication` accessors; every call site is a
-/// view-body / `onAppear` closure on the main thread.
+/// Plain (non-isolated) statics, only called from view-body / `onAppear`
+/// closures on the main thread.
 enum TVTrailerLaunch {
     /// Keep remote trailer rails visible in the simulator so the complete
     /// movie and series detail hierarchy can be exercised and captured.
