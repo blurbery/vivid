@@ -3,7 +3,7 @@
 //  Vivid (iOS + tvOS)
 //
 //  Cached card-overlay configuration for the signed-in profile.
-//  Resolves a single rendered `CardOverlayPrefs` from one of two
+//  Resolves it from one of two
 //  sources, in this priority:
 //    1. The user's saved prefs — the contract key `ui.card_overlays`
 //       at profile scope, read through the canonical
@@ -11,12 +11,10 @@
 //       the entire source of truth.
 //    2. Otherwise, the admin-configured baseline JSON from
 //       `GET /settings/overlay-config` (`defaults` field).
-//    3. Otherwise, registry defaults (`OverlaySchema.buildDefaults()`).
 //
 //  The contract stores the document as a JSON object (jsonb), not the
-//  JSON string the retired legacy endpoint carried, so reads and
-//  writes bridge between `SettingJSONValue` and `OverlaySchema`'s
-//  string codec here. Servers that predate the canonical settings API
+//  JSON string the retired legacy endpoint carried.
+//  Servers that predate the canonical settings API
 //  are detected via `SettingsAPIError.serverUpgradeRequired` and fall
 //  back to the legacy `card_overlays` user setting, which those
 //  servers still accept.
@@ -42,8 +40,7 @@ final class OverlayPrefsStore: ObservableObject {
 
     /// `true` when the server allows overlays at all. An admin can
     /// flip this off globally via the `overlays.enabled` server
-    /// setting; when `false`, `CardOverlays` should not be rendered
-    /// even if the user has prefs configured.
+    /// setting.
     @Published private(set) var enabled: Bool = OverlayPrefsStore.supportsServerOverlays
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: String?
@@ -202,11 +199,6 @@ final class OverlayPrefsStore: ObservableObject {
 
     // MARK: - Wire bridging
 
-    /// The contract stores the document as a JSON object; `OverlaySchema`
-    /// speaks JSON strings (shared with the admin `overlay-config`
-    /// baseline, which still travels as a string). These two hops keep
-    /// one codec — `OverlaySchema` — as the single interpreter of the
-    /// document shape.
     private static func jsonString(from value: SettingJSONValue) -> String? {
         guard let data = try? SettingsWireCoding.makeEncoder().encode(value) else { return nil }
         return String(data: data, encoding: .utf8)

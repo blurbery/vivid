@@ -318,7 +318,7 @@ extension View {
 
 /// Poster card with the shipping card's flaws corrected: true 2:3 artwork,
 /// a single-line title and the year folded onto the caption line instead of
-/// occupying its own. Card overlays remain shared with the rest of the app.
+/// occupying its own.
 struct HomePosterCard: View {
     let item: SectionItem
     var width: CGFloat = HomeFeedMetrics.posterWidth

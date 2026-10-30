@@ -16,7 +16,6 @@ extension ResolvedSection {
 }
 
 /// A single section row on the home screen.
-/// Wraps MediaRow and handles "continue watching" progress display.
 /// Picks the thumbnail layout for episode-centric sections (Next Up,
 /// and Continue Watching resume rows).
 struct SectionRow: View {
@@ -30,30 +29,28 @@ struct SectionRow: View {
     var onSetWatched: ((SectionItem, Bool) async -> Bool)? = nil
     var showsHeadingIcon = true
     var prefersDefaultFocusOnFirstItem: Bool = false
-    /// Forwarded to `MediaRow` — see `MediaRow.defaultFocusPriority`.
     var defaultFocusPriority: DefaultFocusEvaluationPriority = .userInitiated
-    /// Programmatic focus kick forwarded to the underlying `MediaRow` — used
+    /// Programmatic focus kick, used
     /// when an unrelated view (e.g. the tvOS top menu) hands focus down into
     /// this row rather than the user d-padding into it.
     var focusRequest: Int = 0
     var defaultFocusItemId: String? = nil
     /// Optional exact item target for the programmatic focus kick.
     var focusRequestItemId: String? = nil
-    /// tvOS detail-pop token forwarded to `MediaRow`; the row's ownership gate
+    /// tvOS detail-pop token; the row's ownership gate
     /// ensures only the launch row restores its exact previously focused card.
     var detailReturnFocusRequest: Int = 0
     var onMoveUp: (() -> Void)? = nil
-    /// tvOS-only: card-focus reports forwarded from `MediaRow` so hosts
+    /// tvOS-only: card-focus reports, so hosts
     /// can drive the Skyline focus marquee with `(item, row title)`.
     var onItemFocus: ((SectionItem) -> Void)? = nil
-    /// Optional poster/square card width forwarded to `MediaRow` —
+    /// Optional poster/square card width.
     /// Skyline's dense landing rows (§5.6) pass a compact width.
     var cardWidth: CGFloat? = nil
     var homeRowIndex: Int? = nil
     /// Optional tvOS card-strip padding override. Skyline uses this to keep
     /// the focused row short enough for the next row title preview.
     var cardVerticalPadding: CGFloat? = nil
-    /// Down at the row boundary — forwarded to `MediaRow` for the section pager.
     var onMoveDown: (() -> Void)? = nil
     /// Live tvOS ownership gate for context-menu focus restoration.
     var focusRestorationOwner: Binding<Bool>? = nil
