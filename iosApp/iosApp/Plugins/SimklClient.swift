@@ -416,6 +416,9 @@ final class SimklClient: @unchecked Sendable {
             }
             if wait > 0 { try await Task.sleep(for: .milliseconds(Int(wait * 1000))) }
         }
+        // The next write waits from when this one finished, so a write that
+        // started late can't bring the next one closer than Simkl allows.
+        defer { if method == "POST" { lock.withLock { lastPost = max(lastPost, Date()) } } }
         var components = URLComponents(string: "https://api.simkl.com" + path)!
         let required = ["client_id": clientID, "app-name": SimklApp.name, "app-version": SimklApp.version]
         components.queryItems = query.merging(required) { _, required in required }.sorted { $0.key < $1.key }
