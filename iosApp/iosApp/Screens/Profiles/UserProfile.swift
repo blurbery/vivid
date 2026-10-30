@@ -1,19 +1,11 @@
 import Foundation
 
-// MARK: - Profile Models
-
-/// Minimal user profile as returned by the server. Carries the
-/// playback-pref fields the player resolver consults at session start
-/// (subtitle language, behavior, forced-subs toggle).
+/// A profile on the active server. Stored inside saved Apple TV accounts and
+/// synced through iCloud, so the property names are the stored keys.
 struct UserProfile: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let avatarEmoji: String?
-    /// Server-resolved avatar image URL (`avatar_url`). Absolute for uploads
-    /// (short-lived presigned object-store URL), or a server-relative path
-    /// for locally hosted artwork. Preferred over the
-    /// client-side resolution of ``avatarEmoji`` when present; optional so
-    /// cached payloads written before this field existed still decode.
     let avatarImageUrl: String?
     let hasPin: Bool
     let isChild: Bool
@@ -21,8 +13,6 @@ struct UserProfile: Codable, Identifiable, Hashable {
     let subtitleLanguage: String?
     let subtitleMode: String?
     let showForcedSubtitles: Bool?
-    /// Preferred metadata language (ISO 639-1; `""`/nil = inherit the
-    /// library default). Drives server-side overview/tagline translation.
     let preferredMetadataLanguage: String?
 
     init(
@@ -52,10 +42,34 @@ struct UserProfile: Codable, Identifiable, Hashable {
     }
 }
 
-/// Request body for creating a new profile.
+/// The body of a new-profile request.
 struct CreateProfileBody: Codable {
     let name: String
     let avatarEmoji: String?
     let pin: String?
     let isChild: Bool
+}
+
+/// Why switching to a profile couldn't finish.
+enum ProfileTransitionError: LocalizedError {
+    case noActiveAccount
+    case missingPINProof
+    case noActiveServer
+    case identityChanged
+    case accountEpochUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .noActiveAccount:
+            String(localized: "Sign in before selecting a profile.")
+        case .missingPINProof:
+            String(localized: "Vivid couldn't verify that profile's PIN. Please try again.")
+        case .noActiveServer:
+            String(localized: "Choose a server before selecting a profile.")
+        case .identityChanged:
+            String(localized: "The active account changed while selecting the profile. Please try again.")
+        case .accountEpochUnavailable:
+            String(localized: "Vivid couldn't securely remember this profile. Please try again.")
+        }
+    }
 }

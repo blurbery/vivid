@@ -470,7 +470,7 @@ enum StartupContentPrefetcher {
             task = Task {
                 // iOS omits `type` (library_id already scopes the page); the
                 // builder is the single source of the wire format shared with
-                // BrowseViewModel so prefetch and live fetch hit the same key.
+                // BrowseView.Model so prefetch and live fetch hit the same key.
                 let query = CatalogQueryBuilder.build(
                     state,
                     libraryId: libraryId,
