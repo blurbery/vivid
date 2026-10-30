@@ -648,16 +648,6 @@ struct TVMainTabView: View {
                 startFromBeginning: startFromBeginning,
                 resumePositionOverride: resumePosition
             )
-        case .favorites:
-            FavoritesView()
-        case .watchlist:
-            WatchlistView()
-        case .history:
-            HistoryView()
-        case .collections:
-            CollectionsView()
-        case .collectionDetail(let id):
-            CollectionDetailView(collectionId: id)
         case .browse(let libraryId):
             BrowseView(libraryId: libraryId)
         case .requestsHub:
@@ -670,8 +660,6 @@ struct TVMainTabView: View {
             SearchView(usesTVTopMenuInset: false, seededQuery: $siriSearchRequest)
         case .settings:
             TVSettingsView()
-        case .recommendations:
-            RecommendationsView()
         case .serverList:
             ServerListView()
         case .serverSetup:
