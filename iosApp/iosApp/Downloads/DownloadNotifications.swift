@@ -5,9 +5,10 @@ import UserNotifications
 /// Posts local notifications for download lifecycle events: completion,
 /// terminal failure, and monitoring-queued episodes.
 ///
-/// Permission is requested once by `LocalNotificationAuthorization` on the
-/// first signed-in profile, so this only checks the current status and
-/// stays silent when the person declined, never re-prompting.
+/// Permission is requested once by `LocalNotificationAuthorization` when the
+/// person first asks for a download or turns on series monitoring, so this
+/// only checks the current status when it posts and stays silent when the
+/// person declined, never re-prompting.
 @MainActor
 enum DownloadNotifier {
     /// Tapping any download notification lands on the Downloads screen

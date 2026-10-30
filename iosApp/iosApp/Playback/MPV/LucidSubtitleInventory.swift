@@ -121,7 +121,7 @@ private enum LucidSubtitleProbe {
         let task = Task.detached(priority: .utility) { () throws -> [TrackInfo] in
             guard let mpv = mpv_create() else { throw OpenSubtitlesError.file }
             defer { mpv_terminate_destroy(mpv) }
-            for (name, value) in ["config":"no", "terminal":"no", "vo":"null", "ao":"null",
+            for (name, value) in ["config":"no", "load-scripts":"no", "terminal":"no", "vo":"null", "ao":"null",
                 "track-auto-selection":"no", "vid":"no", "aid":"no", "sid":"no", "pause":"yes", "idle":"yes", "keep-open":"yes",
                 "cache":"no", "network-timeout":"10", "demuxer-max-bytes":"4194304"] {
                 guard mpv_set_option_string(mpv, name, value) >= 0 else { throw OpenSubtitlesError.file }

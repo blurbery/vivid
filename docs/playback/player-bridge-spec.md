@@ -400,7 +400,7 @@ For context only (Vivid-owned, not rewritten), the adapter's options hook then s
 | `ao-avfoundation-manage-audio-session` | `no` (Vivid owns the audio session) |
 | `audio-exclusive` | `yes` |
 | `audio-channels` | `7.1,5.1,stereo` when the tvOS route is AirPlay at load time, otherwise `auto-safe` |
-| `config`, `input-default-bindings`, `input-vo-keyboard`, `terminal` | `no` |
+| `config`, `load-scripts`, `input-default-bindings`, `input-vo-keyboard`, `terminal` | `no` |
 | `osd-level` | `0` |
 | `pause` | `no` when autoplaying, otherwise `yes` |
 | `start` | start position in seconds (`String(Double)`) |

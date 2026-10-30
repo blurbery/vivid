@@ -38,6 +38,8 @@
     {"id": "uchardet", "name": "uchardet", "version": "0.0.8", "licence": "MPL 1.1, GPL 2.0 or LGPL 2.1", "notice": "uchardet-MPL-1.1.txt"},
     {"id": "collectionhstack", "name": "CollectionHStack", "licence": "MIT", "notice": "CollectionHStack-MIT.txt"},
     {"id": "differencekit", "name": "DifferenceKit", "version": "1.3.0", "licence": "Apache 2.0", "notice": "DifferenceKit-Apache-2.0.txt", "text": "apache-2.0"},
-    {"id": "thumbhash", "name": "ThumbHash decoder", "licence": "MIT", "notice": "ThumbHash-MIT.txt"}
+    {"id": "thumbhash", "name": "ThumbHash decoder", "licence": "MIT", "notice": "ThumbHash-MIT.txt"},
+    {"id": "jellyfin-logo", "name": "Jellyfin logo", "licence": "CC BY-SA 4.0", "notice": "Jellyfin-Logo-CC-BY-SA-4.0.txt"},
+    {"id": "seerr-icon", "name": "Seerr icon", "licence": "MIT", "notice": "Seerr-Icon-MIT.txt"}
   ]
 }

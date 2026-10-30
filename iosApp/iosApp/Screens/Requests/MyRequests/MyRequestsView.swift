@@ -201,14 +201,14 @@ struct MyRequestsView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// "1080p done · 4K downloading" for multi-target requests in flight.
+    /// "1080p done · 4K on the way" for multi-target requests in flight.
     private func targetSummary(_ record: MediaRequest) -> String? {
         guard let targets = record.targets, targets.count > 1 else { return nil }
         let summaries = targets.compactMap { target -> String? in
             guard let quality = target.quality, !quality.isEmpty else { return nil }
             switch target.status {
             case .completed: return String(localized: "\(quality) done", comment: "Request target status, e.g. 1080p done")
-            case .downloading: return String(localized: "\(quality) downloading", comment: "Request target status, e.g. 4K downloading")
+            case .downloading: return String(localized: "\(quality) on the way", comment: "Request target status, e.g. 4K on the way")
             case .queued, .approved: return String(localized: "\(quality) queued", comment: "Request target status, e.g. 4K queued")
             case .pending: return String(localized: "\(quality) pending", comment: "Request target status, e.g. 4K pending")
             case .failed: return String(localized: "\(quality) failed", comment: "Request target status, e.g. 4K failed")

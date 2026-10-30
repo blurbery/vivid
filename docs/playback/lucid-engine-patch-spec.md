@@ -168,7 +168,7 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | `demuxer-max-bytes`, `demuxer-max-back-bytes` | `268435456`, `16777216` | always |
 | `cache-secs` | `60` | tvOS only |
 | `alang` | the preferred audio languages, comma-separated | |
-| `config`, `input-default-bindings`, `input-vo-keyboard`, `terminal` | `no` | always |
+| `config`, `load-scripts`, `input-default-bindings`, `input-vo-keyboard`, `terminal` | `no` | always |
 | `http-header-fields` | a string array, with `mpv_set_option` and `MPV_FORMAT_NODE`; an empty array when the server needs no headers | every load; the result is not checked |
 | `vid` | `no` | audio-only loads |
 | `tls-verify` | `yes` | app code on `fix/lgpl-media-engine` (not yet on `main`): only where the linked FFmpeg's configuration string contains `--enable-securetransport`, which every build of Vivid's pipeline does; applied in both mpv contexts below |
@@ -191,7 +191,7 @@ No GPU context is configured on iOS or tvOS: the old bridge sets `gpu-api` `vulk
 
   Only when the active track is AC-3 or E-AC-3 and the change crosses 1x does the adapter queue `seek 0 relative+exact` just before the `audio-spdif` write. On iOS, touch-and-hold 2x makes two crossings in quick succession.
 
-**A second mpv context.** Vivid's subtitle probe opens its own headless context, possibly while a player is alive in the same process. It sets `config` and `terminal` `no`; `vo` and `ao` `null`; `track-auto-selection`, `vid`, `aid` and `sid` `no`; `pause`, `idle` and `keep-open` `yes`; `cache` `no`; `network-timeout` `10`; `demuxer-max-bytes` `4194304`; `http-header-fields` (as above, unchecked); and `tls-verify` as above. A rejected option among the others, `tls-verify` included, or a failed `mpv_initialize` aborts the probe. It reads `track-list` after `file-loaded`. Upstream's `null` audio and video outputs must therefore stay available. The probe never selects the `avfoundation` outputs, so it never touches the AO's passthrough block.
+**A second mpv context.** Vivid's subtitle probe opens its own headless context, possibly while a player is alive in the same process. It sets `config`, `load-scripts` and `terminal` `no`; `vo` and `ao` `null`; `track-auto-selection`, `vid`, `aid` and `sid` `no`; `pause`, `idle` and `keep-open` `yes`; `cache` `no`; `network-timeout` `10`; `demuxer-max-bytes` `4194304`; `http-header-fields` (as above, unchecked); and `tls-verify` as above. A rejected option among the others, `tls-verify` included, or a failed `mpv_initialize` aborts the probe. It reads `track-list` after `file-loaded`. Upstream's `null` audio and video outputs must therefore stay available. The probe never selects the `avfoundation` outputs, so it never touches the AO's passthrough block.
 
 **Audio session.** "AirPlay" is decided once per load on tvOS: the current `AVAudioSession` route has an output whose port type is AirPlay. Vivid activates the shared session itself (category playback, mode moviePlayback, route-sharing policy longFormAudio) before creating each player, and deactivates it only after every retired player has finished tearing down.
 

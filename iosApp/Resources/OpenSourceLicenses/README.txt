@@ -68,7 +68,10 @@ Lucid media engine (iOS and tvOS)
   HarfBuzz, libunibreak, Little CMS, shaderc, MoltenVK, libplacebo,
   uavs3d, libbluray and uchardet. The one prebuilt part is the Rust
   standard library inside libdovi, from the Rust project's pinned
-  rust-std archives (Rust 1.98.0).
+  rust-std archives (Rust 1.98.0), with the ten crates.io crates built
+  into it: addr2line, adler2, cfg-if, gimli, hashbrown, libc, memchr,
+  miniz_oxide, object and rustc-demangle. Their MIT texts are in the
+  Rust standard library notice.
   Source: the pipeline, the pinned upstream sources (engine/pins.ini, by
   URL, commit and SHA-256) and every patch are in engine/ at the commit
   this release was built from:
@@ -124,3 +127,15 @@ DifferenceKit (CollectionHStack dependency)
   Version: 1.3.0, revision 073b9671ce2b9b5b96398611427a1f929927e428
   Source: https://github.com/ra1028/DifferenceKit/tree/073b9671ce2b9b5b96398611427a1f929927e428
   Apache 2.0, bundled in DifferenceKit-Apache-2.0.txt.
+
+Jellyfin logo and icon (server picker and MDBList plugin page)
+  Revision: jellyfin-ux 69a2b7b1237732a134dd501ff55b9404cf2d1601
+  Source: https://github.com/jellyfin/jellyfin-ux/tree/69a2b7b1237732a134dd501ff55b9404cf2d1601/logos
+  Artwork by the Jellyfin project, CC BY-SA 4.0, bundled in
+  Jellyfin-Logo-CC-BY-SA-4.0.txt. The icon is resized; the logo is
+  unchanged.
+
+Seerr icon (Settings)
+  Revision: seerr c0759ce0ec135cde5e68e3726dc193d7c2992c4c
+  Source: https://github.com/seerr-team/seerr/blob/c0759ce0ec135cde5e68e3726dc193d7c2992c4c/public/os_icon.svg
+  MIT, bundled in Seerr-Icon-MIT.txt. Simplified to one white shape.

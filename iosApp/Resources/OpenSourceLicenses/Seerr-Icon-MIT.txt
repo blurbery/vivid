@@ -1,0 +1,34 @@
+Component: Seerr icon (artwork bundled as the SeerrSettingsIcon asset)
+Author: The Seerr project (https://github.com/seerr-team/seerr)
+Source: https://github.com/seerr-team/seerr/blob/c0759ce0ec135cde5e68e3726dc193d7c2992c4c/public/os_icon.svg
+SPDX: MIT
+Note: SeerrSettingsIcon is a simplified copy of public/os_icon.svg at that commit. It keeps the icon's shape (the file's first path, unchanged) filled in white, without the gradients and the shading and highlight layers. Vivid shows it as a monochrome template image for Seerr in Settings on iPhone, iPad and Apple TV.
+Note: The Seerr name and icon identify the Seerr media request service Vivid connects to. Vivid is an independent app and isn't made, endorsed or supported by the Seerr project.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: LICENSE
+https://github.com/seerr-team/seerr/blob/c0759ce0ec135cde5e68e3726dc193d7c2992c4c/LICENSE
+--------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2020 sct
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

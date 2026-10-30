@@ -80,7 +80,7 @@ A key added to a catalog by hand is removed on the next sync unless it has a tra
 - **Sentences** are written whole, `"\(count) of \(total)"`, never joined from pieces, and any word inserted into one is translated too.
 - **Optional parameters:** a ternary of literals passed to an Optional `LocalizedStringResource?` only has its first branch extracted. Give each branch its own `Text` or `String(localized:)`.
 - **One English word with two meanings** gets its own key, such as `String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")` beside the Series tab.
-- **Playback failure messages** stay English where they're made, because their wording drives route fallback, diagnostics and reports to the server. `PlaybackFailureText` translates them where they're shown.
+- **Playback failure messages** stay English where they're made, because their wording drives route fallback, diagnostics and reports to the server. `PlaybackFailureText` translates them where they're shown, and shows Vivid's technical failures (engine, protocol and route details) as plain messages that say what to do next. The original message stays in logs and diagnostics.
 - **Not translated:** logs, diagnostics reports sent to Vivid, identifiers, product names, and legal text (the copyright line, the TMDB attribution, licences and the privacy policy).
 
 ## Adding a language

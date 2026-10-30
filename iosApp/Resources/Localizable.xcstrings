@@ -894,6 +894,42 @@
         }
       }
     },
+    "%@ on the way" : {
+      "comment" : "Request target status, e.g. 4K on the way",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ unterwegs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ en camino"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ en route"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ まもなく追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 即将上线"
+          }
+        }
+      }
+    },
     "%@ pending" : {
       "comment" : "Request target status, e.g. 4K pending",
       "extractionState" : "manual",
@@ -10350,6 +10386,41 @@
         }
       }
     },
+    "App privacy information · Updated 30 October 2026" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzinformationen der App · Aktualisiert am 30. Oktober 2026"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Información de privacidad de la app · Actualizada el 30 de octubre de 2026"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidentialité de l’app · Mise à jour le 30 octobre 2026"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appのプライバシー情報 · 2026年10月30日更新"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 隐私信息 · 更新于 2026 年 10 月 30 日"
+          }
+        }
+      }
+    },
     "App-level options for this Apple TV." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18914,6 +18985,42 @@
         }
       }
     },
+    "Couldn't change the playback speed. Try again." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Wiedergabetempo konnte nicht geändert werden. Versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido cambiar la velocidad de reproducción. Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de modifier la vitesse de lecture. Réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生速度を変更できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法更改播放速度。请重试。"
+          }
+        }
+      }
+    },
     "Couldn't load the next episode. Go back to choose something else." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18945,6 +19052,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法载入下一集。请返回以选择其他内容。"
+          }
+        }
+      }
+    },
+    "Couldn't load the selected subtitles. Try again, or go back and choose other subtitles or turn them off." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die ausgewählten Untertitel konnten nicht geladen werden. Versuche es erneut oder geh zurück und wähle andere Untertitel oder schalte sie aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han podido cargar los subtítulos seleccionados. Inténtalo de nuevo o vuelve atrás y elige otros subtítulos o desactívalos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de charger les sous-titres sélectionnés. Réessayez, ou revenez en arrière et choisissez d’autres sous-titres ou désactivez-les."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した字幕を読み込めませんでした。もう一度試すか、戻って別の字幕を選択するか、字幕をオフにしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载所选字幕。请重试，或返回并选择其他字幕或关闭字幕。"
           }
         }
       }
@@ -43871,6 +44014,42 @@
         }
       }
     },
+    "Playback couldn't continue after the audio output changed. Try again." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Wiedergabe konnte nach dem Wechsel der Audioausgabe nicht fortgesetzt werden. Versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La reproducción no ha podido continuar tras cambiar la salida de audio. Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lecture n’a pas pu reprendre après le changement de sortie audio. Réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオ出力が変更された後、再生を続行できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音频输出更改后无法继续播放。请重试。"
+          }
+        }
+      }
+    },
     "Playback couldn't move to that position. Try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -63786,6 +63965,42 @@
         }
       }
     },
+    "The server couldn't prepare this to play on this device. Try again, or go back and choose another version or quality." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server konnte das nicht für die Wiedergabe auf diesem Gerät vorbereiten. Versuche es erneut oder geh zurück und wähle eine andere Version oder Qualität."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no ha podido preparar esto para reproducirlo en este dispositivo. Inténtalo de nuevo o vuelve atrás y elige otra versión o calidad."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur n’a pas pu préparer ce contenu pour le lire sur cet appareil. Réessayez, ou revenez en arrière et choisissez une autre version ou qualité."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバはこのデバイスで再生できるように準備できませんでした。もう一度試すか、戻って別のバージョンまたは画質を選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器无法准备好在此设备上播放此内容。请重试，或返回并选择其他版本或画质。"
+          }
+        }
+      }
+    },
     "The server did not preserve authenticated media transport during replanning." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -64418,6 +64633,42 @@
         }
       }
     },
+    "The video took too long to start. Check your connection and try again." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Video hat zu lange zum Starten gebraucht. Prüfe deine Verbindung und versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El vídeo ha tardado demasiado en empezar. Comprueba tu conexión e inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La vidéo a mis trop de temps à démarrer. Vérifiez votre connexion et réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオの開始に時間がかかりすぎました。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频启动时间过长。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
     "Theme" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -64764,6 +65015,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本季"
+          }
+        }
+      }
+    },
+    "This Silo server needs an update before Vivid can play from it. Update Silo, or ask your server administrator to update it." : {
+      "comment" : "Playback failure message; Silo is the name of a media server",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Silo-Server muss aktualisiert werden, bevor Vivid davon abspielen kann. Aktualisiere Silo oder bitte deinen Serveradministrator darum."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor Silo necesita una actualización para que Vivid pueda reproducir desde él. Actualiza Silo o pide al administrador del servidor que lo actualice."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur Silo doit être mis à jour pour que Vivid puisse lire depuis celui-ci. Mettez à jour Silo, ou demandez à l’administrateur de votre serveur de le faire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VividでこのSiloサーバから再生するには、サーバのアップデートが必要です。Siloをアップデートするか、サーバ管理者にアップデートを依頼してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Silo 服务器需要更新后，Vivid 才能从中播放。请更新 Silo，或让服务器管理员进行更新。"
           }
         }
       }
@@ -70850,6 +71137,42 @@
         }
       }
     },
+    "Vivid couldn't play this. Try again, or go back and choose another version or quality." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid konnte das nicht abspielen. Versuche es erneut oder geh zurück und wähle eine andere Version oder Qualität."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid no ha podido reproducir esto. Inténtalo de nuevo o vuelve atrás y elige otra versión o calidad."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid n’a pas pu lire ce contenu. Réessayez, ou revenez en arrière et choisissez une autre version ou qualité."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vividで再生できませんでした。もう一度試すか、戻って別のバージョンまたは画質を選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 无法播放此内容。请重试，或返回并选择其他版本或画质。"
+          }
+        }
+      }
+    },
     "Vivid couldn't reach the diagnostics service. Check the connection and try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -70951,6 +71274,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vivid 无法安全地记住此个人资料。请重试。"
+          }
+        }
+      }
+    },
+    "Vivid couldn't start the player. Try again." : {
+      "comment" : "Playback failure message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid konnte den Player nicht starten. Versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid no ha podido iniciar el reproductor. Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid n’a pas pu démarrer le lecteur. Réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vividはプレーヤーを起動できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 无法启动播放器。请重试。"
           }
         }
       }
