@@ -374,12 +374,6 @@ private struct DiagnosticsSendRow: View {
         self.init(title: Text(title), status: status, disabled: disabled, action: action)
     }
 
-    /// Shown verbatim. Disfavoured so literals take the localised init, as with `Text`.
-    @_disfavoredOverload
-    init<S: StringProtocol>(title: S, status: DiagnosticsSendStatus, disabled: Bool, action: @escaping () -> Void) {
-        self.init(title: Text(title), status: status, disabled: disabled, action: action)
-    }
-
     init(title: Text, status: DiagnosticsSendStatus, disabled: Bool, action: @escaping () -> Void) {
         self.title = title
         self.status = status

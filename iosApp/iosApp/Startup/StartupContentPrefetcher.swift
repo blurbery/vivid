@@ -170,10 +170,6 @@ enum StartupContentPrefetcher {
                 .filter { HomeSeriesBackdrops.applies(toSectionType: $0.sectionType) }.flatMap(\.items))
             prefetchHomeArtwork(for: SectionsResponse(sections: HomeSectionPreferences.shared.arrangedSections(home.sections)))
             return home
-            #else
-            ResponseCache.shared.set(response, for: CacheKey.homeSections)
-            prefetchHomeArtwork(for: response)
-            return response
             #endif
         } catch {
             if profileScopedGeneration == profileGeneration,
@@ -408,12 +404,6 @@ enum StartupContentPrefetcher {
         }
     }
 
-    static func prefetchUserLibraries() {
-        Task {
-            _ = try? await fetchUserLibraries()
-        }
-    }
-
     static func fetchUserLibraries() async throws -> LibrariesResponse {
         let generation = profileScopedGeneration
         #if os(iOS) || os(tvOS)
@@ -455,12 +445,6 @@ enum StartupContentPrefetcher {
             probe.finish(error: error)
             #endif
             throw error
-        }
-    }
-
-    static func prefetchBrowseFirstPage(libraryId: Int?, state: CatalogFilterState = .none) {
-        Task {
-            _ = try? await fetchBrowseFirstPage(libraryId: libraryId, state: state)
         }
     }
 

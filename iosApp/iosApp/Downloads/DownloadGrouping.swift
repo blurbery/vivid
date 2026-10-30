@@ -17,7 +17,6 @@ struct DownloadSeasonGroup: Identifiable, Hashable, Sendable {
     var id: Int { seasonNumber }
     var episodeCount: Int { records.count }
     var isSpecials: Bool { seasonNumber <= 0 }
-    var allWatched: Bool { !records.isEmpty && watchedCount == records.count }
 }
 
 /// All downloaded episodes for one series, grouped by season.

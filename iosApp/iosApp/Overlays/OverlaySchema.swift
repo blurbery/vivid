@@ -49,18 +49,6 @@ enum OverlaySchema {
         return migrateFromV1(dict)
     }
 
-    static func serialize(_ prefs: CardOverlayPrefs) -> String {
-        let dict = toDict(prefs)
-        // Sorted keys keep the wire format stable so the user setting
-        // doesn't churn the server-side change log on every save.
-        let options: JSONSerialization.WritingOptions = [.sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: options),
-              let str = String(data: data, encoding: .utf8) else {
-            return "{}"
-        }
-        return str
-    }
-
     // MARK: - V2
 
     /// Strict version check: a V2 document MUST carry `version: 2`. Earlier
@@ -136,26 +124,5 @@ enum OverlaySchema {
 
     private static func isHexColor(_ value: String) -> Bool {
         value.range(of: #"^#[0-9a-fA-F]{6}$"#, options: .regularExpression) != nil
-    }
-
-    // MARK: - Encoding
-
-    private static func toDict(_ prefs: CardOverlayPrefs) -> [String: Any] {
-        var items: [String: Any] = [:]
-        for (id, cfg) in prefs.items {
-            var entry: [String: Any] = [
-                "enabled": cfg.enabled,
-                "position": cfg.position.rawValue,
-            ]
-            if let accent = cfg.accentColor { entry["accentColor"] = accent }
-            if let showIcon = cfg.showIcon { entry["showIcon"] = showIcon }
-            items[id.rawValue] = entry
-        }
-        return [
-            "version": prefs.version,
-            "preset": prefs.preset.rawValue,
-            "order": prefs.order.map { $0.rawValue },
-            "items": items,
-        ]
     }
 }

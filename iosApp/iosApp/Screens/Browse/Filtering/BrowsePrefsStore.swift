@@ -117,10 +117,6 @@ struct BrowsePrefsStore {
     private static var platformPrefix: String {
         #if os(tvOS) || os(iOS)
         "vivid.browsePrefs"
-        #elseif os(macOS)
-        "mac.browsePrefs"
-        #else
-        "apple.browsePrefs"
         #endif
     }
 }

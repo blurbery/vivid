@@ -1,8 +1,6 @@
 import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
-#elseif os(macOS)
-import AppKit
 #endif
 
 struct ContentView: View {
@@ -176,11 +174,6 @@ struct ContentView: View {
             if state != .loading, state != .needsServerSetup, !serverRegistry.entries.isEmpty {
                 didCompleteProviderSetup = true
             }
-        }
-        #endif
-        #if os(macOS)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            markProfileAwayStartForTermination()
         }
         #endif
         #if DEBUG
@@ -421,8 +414,6 @@ struct ContentView: View {
             since: mark,
             failureReason: overlayPrefs.lastError == nil ? nil : "overlay_prefs_unavailable"
         )
-        #else
-        await overlayPrefs.hydrateIfNeeded()
         #endif
     }
 
@@ -443,15 +434,6 @@ struct ContentView: View {
         } else {
             launchPreferences.markBackgrounded(at: date)
         }
-    }
-
-    /// macOS does not reliably publish a background scene phase before Cmd-Q.
-    /// Termination always ends active playback, so it starts an away interval
-    /// even when media was still playing at the time of the notification.
-    private func markProfileAwayStartForTermination(at date: Date = .now) {
-        guard AuthService.shared.isLoggedIn,
-              AuthService.shared.profileId != nil else { return }
-        launchPreferences.markBackgrounded(at: date)
     }
 
     /// If PiP starts, stop the away clock. If it later stops while Vivid is
@@ -540,8 +522,6 @@ struct ContentView: View {
             } catch { return }
             showsStartupOverlay = false
         }
-        #else
-        authContent
         #endif
     }
 
@@ -572,20 +552,6 @@ struct ContentView: View {
             didFinishStartupSplash = true
             finishInitialStartupIfReady()
         }
-        #else
-        ProgressView("Loading Vivid")
-            .onAppear {
-                if initialSplashContentReady {
-                    didFinishStartupSplash = true
-                    finishInitialStartupIfReady()
-                }
-            }
-            .onChange(of: initialSplashContentReady) { _, ready in
-                if ready {
-                    didFinishStartupSplash = true
-                    finishInitialStartupIfReady()
-                }
-            }
         #endif
     }
 
@@ -614,8 +580,6 @@ struct ContentView: View {
         } else {
             routedAuthContent
         }
-        #else
-        routedAuthContent
         #endif
     }
 
@@ -628,8 +592,6 @@ struct ContentView: View {
                 Color.clear.ignoresSafeArea()
                 #elseif os(iOS)
                 VividAppBackdrop()
-                #else
-                startupPresentation
                 #endif
             }
 
@@ -651,8 +613,6 @@ struct ContentView: View {
                             destinationView(for: route)
                         }
                 }
-                #else
-                ServerSetupView(router: router)
                 #endif
             } else {
                 NavigationStack(path: $router.path) {
@@ -678,8 +638,6 @@ struct ContentView: View {
             #elseif os(iOS)
             VividAppBackdrop()
                 .onAppear { Task { await TVLoginPreparation.shared.begin(router: router) } }
-            #else
-            Color.clear
             #endif
 
         case .authenticated:
@@ -1195,15 +1153,9 @@ private struct DebugPlayerPresentationModifier: ViewModifier {
     let overlayPrefs: OverlayPrefsStore
 
     func body(content: Content) -> some View {
-        #if os(macOS)
-        content.sheet(isPresented: $isPresented) {
-            player
-        }
-        #else
         content.fullScreenCover(isPresented: $isPresented) {
             player
         }
-        #endif
     }
 
     @ViewBuilder

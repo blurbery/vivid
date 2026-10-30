@@ -700,10 +700,6 @@ struct CreateSubscriptionResponse: Codable, Sendable {
     let registered: Int
 }
 
-struct SubscriptionsListResponse: Codable, Sendable {
-    let subscriptions: [ServerSubscription]
-}
-
 struct SubscriptionSyncResponse: Codable, Sendable {
     let registered: Int
 }

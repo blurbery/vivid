@@ -664,9 +664,6 @@ struct PlayerView: View {
             }
             #if os(iOS)
             .buttonStyle(MobilePlayerGlassButtonStyle())
-            #else
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
             #endif
             .accessibilityLabel("Close Player")
             .accessibilityIdentifier("player.close")
@@ -812,19 +809,6 @@ private struct PlaybackFailureButtonStyle: ButtonStyle {
     }
 }
 
-#if DEBUG
-#Preview("Playback failure") {
-    ZStack {
-        Color.black.ignoresSafeArea()
-        PlaybackFailurePanel(
-            error: "The video could not be loaded. Please check your connection and try again.",
-            onRetry: {},
-            onBack: {}
-        )
-    }
-}
-#endif
-
 private enum PlayerNextUpFocusTarget: Hashable {
     case playNow
     case keepWatching
@@ -870,11 +854,6 @@ struct PlayerNextUpScreen: View {
                     mobileNextUpPanel(compact: compact)
                         .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(actions: $0) }
                 } extras: {
-                    #if !os(iOS)
-                    if !viewModel.nextUpCarouselItems.isEmpty {
-                        onDeckSection
-                    }
-                    #endif
                 }
                 #if os(iOS)
                 .padding(.top, MobilePlayerRotationControls.topClearance)
@@ -971,8 +950,6 @@ struct PlayerNextUpScreen: View {
             actionRow(hasNextEpisode: viewModel.nextUpEpisode != nil, compact: compact)
             if viewModel.nextUpEpisode != nil {
                 #if os(iOS)
-                autoPlayToggle
-                #else
                 autoPlayToggle
                 #endif
             } else if !viewModel.isLoadingNextUpEpisode {
@@ -1142,51 +1119,6 @@ struct PlayerNextUpScreen: View {
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(.white)
         }
-        #else
-        VStack(spacing: compact ? 6 : 10) {
-            HStack(spacing: 12) {
-                if hasNextEpisode {
-                    Button(action: { viewModel.playNextEpisodeNow() }) {
-                        Label("Play Now", systemImage: "play.fill")
-                            .frame(maxWidth: .infinity, minHeight: compact ? 24 : 44)
-                    }
-                    .vividPrimaryButton(isLoading: viewModel.isNextUpTransitioning)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("next-up-play-now")
-                }
-                if let seconds = viewModel.nextUpCountdownSeconds {
-                    CountdownRing(seconds: seconds, totalSeconds: viewModel.nextUpCountdownTotalSeconds)
-                }
-            }
-
-            HStack(spacing: 10) {
-                if !viewModel.nextUpScreenVideoEnded {
-                    Button(action: { viewModel.keepWatchingCurrentEpisode() }) {
-                        Text("Keep Watching")
-                            .frame(maxWidth: .infinity, minHeight: compact ? 24 : 44)
-                    }
-                    .vividSecondaryButton()
-                    .frame(minHeight: 44)
-                    .disabled(viewModel.isNextUpTransitioning)
-                }
-                Button(action: onBack) {
-                    Label("Back", systemImage: "chevron.left")
-                        .frame(minHeight: compact ? 24 : 44)
-                }
-                .vividSecondaryButton()
-                .frame(minHeight: 44)
-                #if os(iOS)
-                if compact && hasNextEpisode { autoPlayToggle }
-                #endif
-            }
-        }
-        .font(.callout)
-        .lineLimit(1)
-        #if os(iOS)
-        .frame(maxWidth: compact ? 560 : 380)
-        #else
-        .frame(maxWidth: 380)
-        #endif
         #endif
     }
 
@@ -1210,28 +1142,6 @@ struct PlayerNextUpScreen: View {
         #endif
     }
 
-    private var onDeckSection: some View {
-        MediaRow(
-            title: String(localized: "On Deck"),
-            items: viewModel.nextUpCarouselItems.map(\.sectionItem),
-            onItemTap: playOnDeckItem(contentId:),
-            showProgress: true,
-            icon: "play.circle.fill",
-            layout: .thumbnail,
-            usesProvidedThumbnailTapAction: onDeckUsesProvidedThumbnailTapAction,
-            focusRequest: onDeckFocusRequest,
-            onMoveUp: focusAboveOnDeck
-        )
-    }
-
-    private var onDeckUsesProvidedThumbnailTapAction: Bool {
-        #if os(iOS)
-        return true
-        #else
-        return false
-        #endif
-    }
-
     private var statusLabel: String {
         if viewModel.nextUpEpisode == nil && !viewModel.isLoadingNextUpEpisode {
             return viewModel.nextUpScreenVideoEnded
@@ -1252,20 +1162,6 @@ struct PlayerNextUpScreen: View {
             return String(localized: "Couldn't load the next episode. Go back to choose something else.")
         }
         return String(localized: "No next episode is available.")
-        #else
-        if let startError = viewModel.nextUpStartError {
-            let reason = PlaybackFailureText.localized(startError)
-            return viewModel.nextUpCarouselItems.isEmpty
-                ? String(localized: "Couldn't start the next episode: \(reason) Try again or go back.")
-                : String(localized: "Couldn't start the next episode: \(reason) Try again, pick something from On Deck, or go back.")
-        }
-        if viewModel.nextUpLookupError != nil {
-            return String(localized: "Couldn't load the next episode. Pick something from On Deck, or go back.")
-        }
-        if viewModel.nextUpCarouselItems.isEmpty {
-            return String(localized: "No next episode is available.")
-        }
-        return String(localized: "No next episode is available. Pick something from On Deck instead.")
         #endif
     }
 
@@ -1279,14 +1175,6 @@ struct PlayerNextUpScreen: View {
             return
         }
         focusFirstOnDeckItem()
-    }
-
-    private func focusAboveOnDeck() {
-        if viewModel.nextUpEpisode != nil {
-            focusedTarget = .autoPlay
-            return
-        }
-        focusPreferredAction()
     }
 
     private func focusFirstOnDeckItem() {
@@ -1317,13 +1205,6 @@ struct PlayerNextUpScreen: View {
             return .keepWatching
         }
         return .back
-    }
-
-    private func playOnDeckItem(contentId: String) {
-        guard let item = viewModel.nextUpCarouselItems.first(where: { $0.contentId == contentId }) else {
-            return
-        }
-        viewModel.playOnDeckItemNow(item)
     }
 
     private var backgroundArtwork: (url: String, thumbhash: String?)? {
@@ -1365,9 +1246,6 @@ struct PlayerNextUpScreen: View {
         false
         #endif
     }
-    private var horizontalPadding: CGFloat { isTV ? 80 : 24 }
-    private var verticalPadding: CGFloat { isTV ? 58 : 24 }
-    private var sectionSpacing: CGFloat { isTV ? 34 : 22 }
     private var eyebrowSize: CGFloat { isTV ? 18 : 12 }
     private var seriesTitleSize: CGFloat { isTV ? 34 : 22 }
     private var subtitleSize: CGFloat { isTV ? 25 : 17 }

@@ -6,9 +6,6 @@ extension Font {
     // tvOS is viewed from ~10 feet away, so all typography is scaled up
     // roughly 2.3x from iOS and uses Apple TV's system text design.
 
-    /// Hero title overlaid on backdrop — massive on TV (76pt bold)
-    static let vividHeroTitle = Font.system(size: 76, weight: .heavy).leading(.tight)
-
     /// Large screen titles — "Discover", "TV Shows" (48pt bold)
     static let vividTitle = Font.system(size: 48, weight: .bold)
 
@@ -39,9 +36,6 @@ extension Font {
     static let vividPIN = Font.system(size: 64, weight: .bold, design: .monospaced)
 
     #else
-
-    /// Hero title overlaid on backdrop (36pt bold, tight tracking)
-    static let vividHeroTitle = Font.system(size: 36, weight: .bold).leading(.tight)
 
     /// Large screen titles — "Discover", "TV Shows" (18pt bold)
     static let vividTitle = Font.system(size: 18, weight: .bold)

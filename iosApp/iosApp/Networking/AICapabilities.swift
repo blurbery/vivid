@@ -25,10 +25,6 @@ final class AICapabilities {
 
     // MARK: - Gating convenience
 
-    /// Whether the metadata-language setting row + on-view affordance may
-    /// appear at all.
-    var metadataEnabled: Bool { metadataStatus?.enabled ?? false }
-
     /// How the item-detail translate affordance behaves. Defaults to
     /// `.off` when the probe hasn't landed or the feature is disabled.
     var metadataOnView: MetadataAIStatus.OnViewMode {

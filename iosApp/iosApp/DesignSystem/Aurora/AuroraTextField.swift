@@ -14,7 +14,6 @@ enum AuroraFieldKeyboard { case `default`, url, email, number }
 struct AuroraFieldLabel: View {
     private let text: Text
     init(_ text: LocalizedStringKey) { self.text = Text(text) }
-    @_disfavoredOverload init<S: StringProtocol>(_ text: S) { self.text = Text(text) }
     init(_ text: Text) { self.text = text }
     var body: some View {
         text
@@ -123,12 +122,10 @@ struct AuroraTextField<F: Hashable>: View {
                         .tint(isFocused ? AuroraControl.activeInk : Color.auroraAccent)
                         .submitLabel(submitLabel)
                         .onSubmit(onSubmit)
-                        #if !os(macOS)
                         .textContentType(uiContentType)
                         .keyboardType(uiKeyboard)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        #endif
                 }
                 if showsRevealToggle {
                     Button {
@@ -168,7 +165,6 @@ struct AuroraTextField<F: Hashable>: View {
         }
     }
 
-    #if !os(macOS)
     private var uiContentType: UITextContentType? {
         switch contentType {
         case .username: .username
@@ -187,7 +183,6 @@ struct AuroraTextField<F: Hashable>: View {
         case .number: .numberPad
         }
     }
-    #endif
 }
 
 // MARK: - Screen scaffold

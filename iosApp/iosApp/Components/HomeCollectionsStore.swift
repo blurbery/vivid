@@ -89,8 +89,6 @@ final class HomeCollectionsStore {
         return collection.withItemCount(count)
     }
 
-    var automaticPicks: [String] { Self.automaticPicks(collections.map(\.collection)) }
-
     /// The server collections with the most titles, ties A to Z. Silo's smart
     /// collections have no count, so they come last. The profile's own
     /// collections show only when chosen.

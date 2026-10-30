@@ -471,11 +471,7 @@ struct PlayerSettingsSheet: View {
             sleepSection
             subtitleStylingSection
         }
-        #if !os(tvOS)
-        .scrollContentBackground(.hidden)
-        #else
         .background(Color.black.opacity(0.85).ignoresSafeArea())
-        #endif
     }
 
     private var routeSection: some View {

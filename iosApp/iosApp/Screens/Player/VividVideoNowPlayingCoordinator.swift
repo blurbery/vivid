@@ -182,26 +182,6 @@ final class VividVideoNowPlayingCoordinator {
         registerRemoteCommands()
         publishNowPlayingInfo()
     }
-    #else
-    /// macOS has no Vivid video `MPNowPlayingSession`; bind its active video
-    /// route to the process-wide centers and remain detached while idle.
-    func attach(useSharedFallback: Bool, handlers: Handlers) {
-        let nextDestination: Destination = useSharedFallback ? .shared : .none
-        self.handlers = handlers
-        guard destination != nextDestination else {
-            updateCommandAvailability()
-            publishNowPlayingInfo()
-            return
-        }
-
-        unbindCurrentDestination()
-        destination = nextDestination
-        if useSharedFallback {
-            bindSharedCenters()
-            registerRemoteCommands()
-            publishNowPlayingInfo()
-        }
-    }
     #endif
 
     func detach() {
@@ -212,24 +192,6 @@ final class VividVideoNowPlayingCoordinator {
         artworkFetchTask = nil
         artworkURL = nil
         nowPlayingInfo = [:]
-    }
-
-    func setPreferredSkipInterval(_ seconds: TimeInterval) {
-        setPreferredSkipIntervals(backward: seconds, forward: seconds)
-    }
-
-    func setPreferredSkipIntervals(backward: TimeInterval, forward: TimeInterval) {
-        preferredSkipIntervals = SkipIntervals(
-            backward: max(1, backward),
-            forward: max(1, forward)
-        )
-        guard let center = commandCenter else { return }
-        center.skipForwardCommand.preferredIntervals = [
-            NSNumber(value: preferredSkipIntervals.forward),
-        ]
-        center.skipBackwardCommand.preferredIntervals = [
-            NSNumber(value: preferredSkipIntervals.backward),
-        ]
     }
 
     /// Publishes the source-media timeline. `position` and `duration` must be
@@ -298,8 +260,6 @@ final class VividVideoNowPlayingCoordinator {
                 boundsSize: image.size
             ) { _ in image }
             publishNowPlayingInfo()
-            #else
-            _ = data
             #endif
         } catch is CancellationError {
             return

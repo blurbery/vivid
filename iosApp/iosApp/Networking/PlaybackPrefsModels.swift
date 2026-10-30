@@ -84,8 +84,6 @@ struct PlaybackLanguageOption: Identifiable, Hashable {
     let label: String
     var id: String { code }
 
-    static let all = options(for: .playbackSubtitleLanguage)
-
     /// ISO 639-2/B spellings whose terminology form differs. Foundation
     /// canonicalizes most of these through CLDR, but not every supported
     /// spelling (notably `mao`), so keep the stable ISO aliases explicit.

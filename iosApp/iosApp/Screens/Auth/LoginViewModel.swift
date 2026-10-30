@@ -32,8 +32,6 @@ class LoginViewModel {
             // A Silo sign-in becomes a saved profile, and records the sign-in,
             // once its viewing profile is entered.
             if isSilo { await TVSavedAccountStore.shared.beginProfileChoice() }
-            #else
-            try await auth.login(username: username, password: password)
             #endif
             await finishSignIn(router: router)
         } catch let loginError {
@@ -114,9 +112,6 @@ class LoginViewModel {
     private func finishSignIn(router: AppRouter) async {
         #if os(tvOS) || os(iOS)
         await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
-        #else
-        await StartupContentPrefetcher.prefetchProfiles()
-        router.showProfileSelection()
         #endif
     }
 }
