@@ -113,7 +113,7 @@ extension SettingsView {
                 let items = previewItems
                 MobileGlassNavigationBar(items: items, selectedID: previewSelection ?? items.first?.id,
                                          onSelect: { previewSelection = $0 })
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button { swapsUtilities.toggle() } label: {
                     Label("Swap Search and Profile", systemImage: "arrow.left.arrow.right")
                         .font(.subheadline.weight(.semibold))

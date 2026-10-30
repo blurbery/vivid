@@ -38,6 +38,7 @@ extension SettingsView {
                     Picker("Position", selection: appearanceValue(\.position)) {
                         ForEach(SubtitlePositionPreset.allCases) { Text(verbatim: $0.label).tag($0) }
                     }
+                    .pickerStyle(.navigationLink)
                     .foregroundStyle(Color.vividOnSurface)
                 } header: {
                     Text("Layout").foregroundStyle(Color.vividSecondaryText)
@@ -118,6 +119,7 @@ extension SettingsView {
                 Picker("Font Size", selection: appearanceValue(\.fontSize)) {
                     ForEach(SubtitleFontSizePreset.allCases) { Text(verbatim: $0.label).tag($0) }
                 }
+                .pickerStyle(.navigationLink)
                 .foregroundStyle(Color.vividOnSurface)
                 ColourPicker(title: "Font Color", options: SubtitleAppearance.fontColors, hex: appearance.fontColor) { hex in
                     change { $0.fontColor = hex }
@@ -141,6 +143,7 @@ extension SettingsView {
                 })) {
                     ForEach(SubtitleBackgroundStylePreset.selectableCases) { Text(verbatim: $0.label).tag($0) }
                 }
+                .pickerStyle(.navigationLink)
                 .foregroundStyle(Color.vividOnSurface)
                 opacityRow
                     .disabled(!usesBox)

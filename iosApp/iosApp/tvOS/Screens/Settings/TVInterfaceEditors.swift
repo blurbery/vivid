@@ -121,7 +121,7 @@ extension TVSettingsView {
                     Text(section.title)
                         .font(.tvSettings(26, weight: .medium))
                         .lineLimit(1)
-                    Text("\(section.totalCount ?? section.items.count) items")
+                    Text("\(section.items.count) items")
                         .font(.tvSettings(18))
                         .foregroundStyle(Color.vividSecondaryText)
                 }
@@ -292,6 +292,7 @@ extension TVSettingsView {
                 }
                 previewDivider
                 Image(systemName: swapsUtilities ? "magnifyingglass" : "person.crop.circle.fill")
+                    .frame(width: TVSettingsLayout.scaled(42))
             }
             .font(.tvSettings(24))
             .modifier(TVTopMenuGlassChrome())
@@ -309,8 +310,11 @@ extension TVSettingsView {
 
         // MARK: Groups
 
+        // Each heading, group and footer below flattens into the page's
+        // own stack, so every heading sits a full page gap above its group.
+
         private var searchAndProfile: some View {
-            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
+            Group {
                 heading("SEARCH & PROFILE")
                 TVSettingsGroup {
                     Button { swapsUtilities.toggle() } label: {
@@ -332,7 +336,7 @@ extension TVSettingsView {
 
         private var visibleSection: some View {
             let visible = visibleItems
-            return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
+            return Group {
                 heading("VISIBLE DESTINATIONS")
                 TVSettingsGroup {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
@@ -366,7 +370,7 @@ extension TVSettingsView {
 
         private var hiddenSection: some View {
             let visible = visibleItems
-            return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
+            return Group {
                 heading("HIDDEN DESTINATIONS")
                 TVSettingsGroup {
                     ForEach(hiddenItems) { item in
@@ -389,7 +393,7 @@ extension TVSettingsView {
         private var calendarSection: some View {
             let detail: LocalizedStringResource = !showsCalendar ? "Hidden from the tab bar."
                 : showsForYou ? "Shown in the tab bar, just after For You." : "Shown at the end of the tab bar."
-            return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
+            return Group {
                 heading("CALENDAR")
                 TVSettingsGroup {
                     HStack(spacing: TVSettingsLayout.scaled(12)) {

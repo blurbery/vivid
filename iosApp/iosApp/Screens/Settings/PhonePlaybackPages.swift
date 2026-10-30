@@ -196,6 +196,7 @@ extension SettingsView {
                     }
                 }
                 .pickerStyle(.inline)
+                .foregroundStyle(Color.vividOnSurface)
             }
             .settingsListChrome()
             .navigationTitle("Quality")

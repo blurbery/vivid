@@ -120,14 +120,20 @@ extension View {
 
 /// On iPad, keeps settings content in a 760-point column centred in a wider
 /// window, with the backdrop still filling the window.
+///
+/// The padding comes from the last measured width, and that width is taken
+/// outside the padding, once the padded view fills the full width. The
+/// padding can never change the width it's worked out from, so the layout
+/// settles in one pass.
 private struct SettingsReadingColumn: ViewModifier {
     @State private var width: CGFloat = 0
 
     func body(content: Content) -> some View {
         if UIDevice.current.userInterfaceIdiom == .pad {
             content
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 .safeAreaPadding(.horizontal, max(0, (width - 760) / 2))
+                .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 .background(VividAppBackdrop())
         } else {
             content
