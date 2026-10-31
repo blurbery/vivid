@@ -22,7 +22,6 @@ extension Color {
 
     // Status
     static let vividError = srgb(176, 0, 32)
-    static let vividSuccess = Color.green
     static let vividWarning = srgb(255, 193, 7)
 
     // Chips, toggles and other chrome on dark pages

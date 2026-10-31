@@ -35,16 +35,6 @@ enum DetailPlaybackFormatting {
         return label.isEmpty ? String(localized: "Auto") : label
     }
 
-    /// Not shown anywhere. Kept only because main's Apple TV selector row
-    /// still names it, from `TVPlaybackActionSelectors.versionValue`, a
-    /// private property nothing reads; this stops that file failing to
-    /// build. A clean-up after the detail rewrites removes both together.
-    static func versionCompactLabel(_ version: FileVersion?) -> String {
-        guard let version else { return String(localized: "Auto") }
-        let label = joined([trimmedText(version.resolution), dynamicRangeLabel(version)])
-        return label.isEmpty ? String(localized: "Auto") : label
-    }
-
     static func versionDetailLabel(_ version: FileVersion) -> String {
         let container = trimmedText(version.container)?.uppercased()
         let size = version.fileSize.map { fileSizeFormatter.string(fromByteCount: $0) }

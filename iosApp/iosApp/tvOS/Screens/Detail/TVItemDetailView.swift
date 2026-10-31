@@ -61,7 +61,6 @@ struct TVItemDetailView: View {
                 seasonSelectionTask?.cancel()
                 Self.log.debug("itemDetail.disappear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
                 viewModel.cancelDeferredEpisodeFavoriteStateRefresh()
-                viewModel.stopTrailerFetch()
                 // A page that pops proves the YouTube hand-off didn't take over.
                 TVTrailerReturnStore.shared.clear()
             }

@@ -8,19 +8,6 @@ struct UserItemState {
     let inWatchlist: Bool
 }
 
-/// The trailer search a page could once start from its Find Trailers
-/// button. Nothing in the shipped apps starts it, so this stand-in only
-/// keeps the pages' references compiling: it never reports a status and
-/// never fetches.
-@MainActor
-final class TrailerFetchCoordinator {
-    nonisolated init() {}
-
-    var statusMessage: String? { nil }
-    var isFetching: Bool { false }
-    func acknowledge() {}
-}
-
 /// The data behind one detail page: the catalogue item with its playback
 /// metadata, the season list and episode pages, and the person's flags.
 /// iPhone and iPad make one per page view; Apple TV keeps one per title in
@@ -72,15 +59,6 @@ class ItemDetailViewModel {
     var preferredNextUpFileId: Int? = nil
     var preferredNextUpAudioTrackIndex: Int? = nil
     var preferredNextUpSubtitleTrackIndex: Int? = nil
-
-    // MARK: Trailer search stand-in
-
-    @ObservationIgnored private let trailerStandIn = TrailerFetchCoordinator()
-    var trailerFetch: TrailerFetchCoordinator { trailerStandIn }
-
-    func startTrailerFetch() {}
-    func stopTrailerFetch() {}
-    func resumeTrailerFetchIfNeeded() {}
 
     // MARK: Bookkeeping
     // Model only: pages must not write these.

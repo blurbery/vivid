@@ -3,10 +3,6 @@ import SwiftUI
 
 /// A horizontal row of episode cards for one season, used on the season page
 /// and on an episode that couldn't open its series.
-///
-/// The initialiser is frozen for now. `seriesId`, `seriesTitle`,
-/// `cardHeightRatio`, `onMoveUp`, `onMoveDown` and `focusRequest` are
-/// accepted and ignored until a later cleanup removes them.
 struct TVEpisodeRail: View {
     private let episodes: [EpisodeListItem]
     private let onSelect: (String) -> Void
@@ -37,16 +33,10 @@ struct TVEpisodeRail: View {
         currentContentId: String? = nil,
         currentContentIsFavorite: Bool = false,
         favoriteStates: [String: Bool] = [:],
-        seriesId: String? = nil,
-        seriesTitle: String? = nil,
         prefersCurrentContentFocus: Bool = false,
         baseCardWidth: CGFloat = 480,
-        cardHeightRatio: CGFloat = 9 / 16,
         cardSpacing: CGFloat = 54,
-        anchorsFocusedCard: Bool = false,
-        onMoveUp: (() -> Void)? = nil,
-        onMoveDown: (() -> Void)? = nil,
-        focusRequest: Int = 0
+        anchorsFocusedCard: Bool = false
     ) {
         self.episodes = episodes
         self.onSelect = onSelect
