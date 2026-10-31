@@ -29,6 +29,7 @@ extension SettingsView {
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 .foregroundStyle(.white)
                 .accessibilityAddTraits(.isHeader)
+                .modifier(CentredOnPad())
                 .settingsPageHeaderRow()
             if duoSideStrip == nil {
                 Section {
@@ -36,7 +37,7 @@ extension SettingsView {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 8, trailing: 0))
-                } header: { PhoneSettingsSectionHeader("Profiles") }
+                } header: { PhoneSettingsSectionHeader("Profiles").modifier(CentredOnPad()) }
             }
             Section {
                 destinationRows
@@ -115,6 +116,18 @@ extension SettingsView {
         unsentReports = await Task.detached(priority: .utility) {
             AppHealthSendState.unsent(in: AppHealthStore.shared.reports()).count
         }.value
+    }
+}
+
+/// On iPad, centres the overview's heading and Profiles label in the
+/// settings column. iPhone keeps them at the leading edge.
+private struct CentredOnPad: ViewModifier {
+    func body(content: Content) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content.frame(maxWidth: .infinity)
+        } else {
+            content
+        }
     }
 }
 
