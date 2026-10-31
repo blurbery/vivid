@@ -14,7 +14,10 @@ struct DescriptionTranslationView: View {
 
     var body: some View {
         let mode = AICapabilities.shared.metadataOnView
-        Group {
+        // A stack, not a group: a group hands its modifiers to whichever
+        // branch is showing, so a phase change would cancel the run. Only
+        // leaving the page should.
+        ZStack {
             if mode != .off, let target = targetLanguage {
                 switch translation.phase {
                 case .translating:
