@@ -211,7 +211,7 @@ struct TVSeriesDetailPage: View {
     // MARK: Shelves
 
     /// The loaded pages with the selected season's current list in its slot
-    /// and spoilers covered. Worked out once per draw, not per focus move.
+    /// and spoilers covered.
     private var shelfPages: [Int: [EpisodeListItem]] {
         var pages = viewModel.episodesBySeason
         if !viewModel.isLoadingEpisodes, let selected = viewModel.selectedSeason {

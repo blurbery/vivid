@@ -136,6 +136,7 @@ struct TVSeriesEpisodeShelf: View {
                         ForEach(page, id: \.contentId) { episode in
                             TVSeriesShelfCard(
                                 episode: episode,
+                                isCurrent: episode.contentId == currentEpisodeId,
                                 isFavorite: favoriteStates[episode.contentId] ?? false,
                                 focus: $focusedEpisodeId,
                                 onPlay: { onPlayEpisode(episode.contentId) },
@@ -367,6 +368,8 @@ private struct TVSeasonPillBody: View {
 /// status, and the episode's number, title, overview and air date below.
 private struct TVSeriesShelfCard: View {
     let episode: EpisodeListItem
+    /// Spoken by VoiceOver; the shelf draws no current-episode outline.
+    let isCurrent: Bool
     let isFavorite: Bool
     var focus: FocusState<String?>.Binding
     let onPlay: () -> Void
@@ -507,7 +510,7 @@ private struct TVSeriesShelfCard: View {
             episodeNumber: episode.episodeNumber,
             title: episode.title,
             metadata: parts.isEmpty ? nil : parts.joined(separator: "  \u{00B7}  "),
-            isCurrent: false,
+            isCurrent: isCurrent,
             isPlayed: isWatched
         )
     }

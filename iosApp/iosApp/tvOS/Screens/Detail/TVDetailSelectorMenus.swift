@@ -1,8 +1,7 @@
 #if os(tvOS)
 import SwiftUI
 
-/// What the audio and subtitle circles, the version menu and the playback
-/// summary are built from.
+/// What the audio and subtitle circles in the action row are built from.
 struct TVDetailSelectorInputs {
     /// The version playback will start with, if any.
     var version: FileVersion?

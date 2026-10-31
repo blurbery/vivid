@@ -128,10 +128,14 @@ struct TVDetailEyebrow: View {
 }
 
 /// The logo that appears over the shelves once the hero has scrolled away.
+/// Its visibility comes from the page's scroll state.
 struct TVDetailShelfLogo: View {
     let logoUrl: String?
     let title: String
-    let isVisible: Bool
+
+    @Environment(TVDetailScrollState.self) private var scroll: TVDetailScrollState?
+
+    private var isVisible: Bool { scroll?.showsShelfLogo ?? false }
 
     var body: some View {
         TVDetailLogoTitle(logoUrl: logoUrl, label: title, maxWidth: 480, maxHeight: 110, alignment: .bottom) {

@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The native movie and series page: a fixed backdrop, the material that
 /// rises as the page scrolls, and a hero that snaps away to reveal the
-/// shelves under the title's logo.
+/// shelves under the title's logo. The scroll position lives in
+/// `TVDetailFoldScrolling`, so scrolling never rebuilds the hero or shelves.
 struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
     let backdropUrl: String?
     let backdropThumbhash: String?
@@ -12,10 +13,6 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
     /// Built for the showcase height.
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let shelves: () -> Shelves
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var scrollTop: CGFloat = 0
-    @State private var showsShelfLogo = false
 
     /// The hero's height on a viewport of the given height.
     static func showcaseHeight(forViewportHeight height: CGFloat) -> CGFloat {
@@ -38,7 +35,6 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
                     .frame(width: viewport.width, height: viewport.height)
                     .clipped()
                 }
-                TVDetailScrollMaterialLayer(viewportSize: viewport, showcaseHeight: showcase, offset: scrollTop)
                 scrollContent(viewport: viewport, showcase: showcase)
             }
             .frame(width: viewport.width, height: viewport.height)
@@ -58,29 +54,17 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
                     .padding(.bottom, TVDetailHeroLayout.pageBottomPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .top) {
-                        TVDetailShelfLogo(logoUrl: logoUrl, title: title, isVisible: showsShelfLogo)
+                        TVDetailShelfLogo(logoUrl: logoUrl, title: title)
                     }
             }
             .scrollTargetLayout()
         }
-        .scrollTargetBehavior(TVDetailFoldSnapping(showcaseHeight: showcase))
         .scrollClipDisabled()
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.visibleRect.minY
-        } action: { _, top in
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                scrollTop = min(max(top, 0), showcase)
-            }
-            let logoVisible = top >= TVDetailHeroLayout.browsingTopInset(for: showcase) + 160
-            if logoVisible != showsShelfLogo {
-                let animation: Animation? = reduceMotion ? nil : .easeOut(duration: logoVisible ? 0.25 : 0.08)
-                withAnimation(animation) {
-                    showsShelfLogo = logoVisible
-                }
-            }
-        }
+        .modifier(TVDetailFoldScrolling(
+            viewportSize: viewport,
+            showcaseHeight: showcase,
+            logoThreshold: TVDetailHeroLayout.browsingTopInset(for: showcase) + 160
+        ))
     }
 }
 

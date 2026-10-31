@@ -255,8 +255,10 @@ private struct TVEpisodeRailCard: View {
         }
     }
 
+    /// Hidden as soon as the episode is marked watched or unwatched here.
     private var resumeProgress: (fraction: Double, duration: Double)? {
-        guard let duration = episode.userData?.durationSeconds, duration > 0,
+        guard watchedOverride == nil,
+              let duration = episode.userData?.durationSeconds, duration > 0,
               let position = episode.userData?.positionSeconds, position > 0, position < duration else { return nil }
         return (position / duration, duration)
     }

@@ -36,9 +36,9 @@ struct TVSeasonDetailPage: View {
                                 TVCastAndCrewRail(cast: detail.cast ?? [], crew: detail.crew ?? [], onSelectPerson: actions.selectPerson)
                             }
                         }
-                        TVDetailSection(title: "Details", spacing: Self.sectionSpacing) {
-                            let facts = TVDetailFactsBlock.facts(for: detail)
-                            if !facts.isEmpty {
+                        let facts = TVDetailFactsBlock.facts(for: detail)
+                        if !facts.isEmpty {
+                            TVDetailSection(title: "Details", spacing: Self.sectionSpacing) {
                                 TVDetailFactsBlock(facts: facts)
                             }
                         }
@@ -66,15 +66,10 @@ struct TVSeasonDetailPage: View {
 
     private var versions: [FileVersion] { nextUp.detail?.versions ?? [] }
 
-    /// The picked file, else the last one used, else the first.
+    /// The file Play starts: the pick, else the entry page's choice for the
+    /// next-up episode, so the selectors and summary describe what plays.
     private var currentVersion: FileVersion? {
-        if let pick = picks.fileId, let version = versions.first(where: { $0.fileId == pick }) {
-            return version
-        }
-        if let last = nextUp.detail?.userData?.lastFileId, let version = versions.first(where: { $0.fileId == last }) {
-            return version
-        }
-        return versions.first
+        TVDetailPlaybackRules.effectiveVersion(of: nextUp.detail, filePick: picks.fileId)
     }
 
     private var playAction: TVDetailPlayAction {
@@ -215,6 +210,115 @@ struct TVSeasonDetailPage: View {
                 )
             }
         }
+    }
+}
+
+// MARK: - Details facts
+
+/// The season page's credits and dates in one glass panel.
+struct TVDetailFactsBlock: View {
+    struct Fact: Identifiable {
+        /// A stable English identity, so labels that translate alike never
+        /// collide.
+        let id: String
+        let label: String
+        let value: String
+    }
+
+    let facts: [Fact]
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(facts.enumerated()), id: \.element.id) { index, fact in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.16))
+                        .frame(width: 1)
+                        .frame(maxHeight: .infinity)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(verbatim: fact.label)
+                        .textCase(.uppercase)
+                        .font(.system(size: 16, weight: .semibold))
+                        .tracking(1)
+                        .foregroundStyle(Color.white.opacity(0.55))
+                    Text(verbatim: fact.value)
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 22)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .vividGlass(
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous),
+            tint: Color.white.opacity(isFocused ? 0.12 : 0.03)
+        )
+        .focusEffectDisabled()
+        .contentShape(Rectangle())
+        .focusable()
+        .focused($isFocused)
+        .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+    }
+
+    /// The facts for a season page, in display order, each only when known.
+    static func facts(for detail: ItemDetail) -> [Fact] {
+        let crew = detail.crew ?? []
+        var facts: [Fact] = []
+
+        let directors = crew.filter { ($0.job ?? "").lowercased() == "director" }.map(\.name)
+        if let names = creditNames(directors) {
+            facts.append(Fact(id: "Director", label: String(localized: "Director"), value: names))
+        }
+
+        let writerJobs: Set<String> = ["writer", "screenplay", "story"]
+        let writers = crew.filter { writerJobs.contains(($0.job ?? "").lowercased()) }.map(\.name)
+        if let names = creditNames(writers) {
+            let hasScreenplay = crew.contains { ($0.job ?? "").lowercased() == "screenplay" }
+            let label = hasScreenplay ? String(localized: "Writer") : String(localized: "Written by")
+            facts.append(Fact(id: "Writer", label: label, value: names))
+        }
+
+        let lists: [(String, String, [String]?)] = [
+            ("Studio", String(localized: "Studio"), detail.studios),
+            ("Network", String(localized: "Network"), detail.networks),
+            ("Country", String(localized: "Country"), detail.countries)
+        ]
+        for (id, label, values) in lists {
+            let first = (values ?? []).prefix(3)
+            if !first.isEmpty {
+                facts.append(Fact(id: id, label: label, value: first.joined(separator: ", ")))
+            }
+        }
+
+        let dates: [(String, String, String?)] = [
+            ("Aired", String(localized: "Aired"), detail.airDate),
+            ("Released", String(localized: "Released"), detail.releaseDate),
+            ("First Aired", String(localized: "First Aired"), detail.firstAirDate),
+            ("Last Aired", String(localized: "Last Aired"), detail.lastAirDate)
+        ]
+        for (id, label, raw) in dates {
+            if let date = DetailDateFormatting.longDate(raw) {
+                facts.append(Fact(id: id, label: label, value: date))
+            }
+        }
+        return facts
+    }
+
+    /// Distinct names in plain string order, at most three, with an ellipsis
+    /// when there are more.
+    private static func creditNames(_ names: [String]) -> String? {
+        let distinct = Array(Set(names)).sorted()
+        guard !distinct.isEmpty else { return nil }
+        let shown = distinct.prefix(3).joined(separator: ", ")
+        return distinct.count > 3 ? shown + ", \u{2026}" : shown
     }
 }
 #endif

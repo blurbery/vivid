@@ -30,9 +30,9 @@ struct TVDetailFocusChoreography: ViewModifier {
     let proxy: ScrollViewProxy
     let region: TVDetailFocusRegion?
 
+    /// Advances on every region change, including focus leaving all three,
+    /// so a delayed move runs only while its region still has focus.
     @State private var generation = 0
-    /// The region as of the latest change, read when a delayed move runs.
-    @State private var latestRegion: TVDetailFocusRegion?
 
     private static let delays: [Double] = [0.02, 0.15, 0.45, 0.8, 1.1]
 
@@ -40,13 +40,12 @@ struct TVDetailFocusChoreography: ViewModifier {
         content
             .onChange(of: region) { _, newRegion in
                 generation &+= 1
-                latestRegion = newRegion
                 guard let newRegion else { return }
                 let started = generation
                 let (anchorId, anchor) = Self.target(for: newRegion)
                 for delay in Self.delays {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        guard generation == started, latestRegion == newRegion else { return }
+                        guard generation == started else { return }
                         withAnimation(.easeInOut(duration: 0.45)) {
                             proxy.scrollTo(anchorId, anchor: anchor)
                         }

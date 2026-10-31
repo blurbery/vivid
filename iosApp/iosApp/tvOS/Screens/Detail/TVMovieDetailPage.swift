@@ -68,7 +68,9 @@ struct TVMovieDetailPage: View {
         )
     }
 
-    /// The saved position Play resumes from.
+    /// The saved position behind Play's title, its progress label and
+    /// whether it offers Start Over. Play itself resumes from
+    /// `TVDetailPlaybackRules.resumePosition`.
     private var resumePosition: Double? {
         guard let position = detail.userData?.positionSeconds, position > 30 else { return nil }
         if let duration = detail.userData?.durationSeconds, duration > 0, position >= duration - 5 { return nil }

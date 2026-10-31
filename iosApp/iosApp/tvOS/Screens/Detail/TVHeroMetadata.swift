@@ -121,12 +121,8 @@ enum TVHeroMetadata {
     static func sourceBadges(_ version: FileVersion?, summary: OverlaySummary? = nil) -> [String] {
         var badges: [String] = []
 
-        let resolution: String
-        if let version {
-            resolution = resolutionLabel(version) ?? ""
-        } else {
-            resolution = summary?.resolution?.uppercased() ?? ""
-        }
+        // The catalogue summary fills in when the file gives no resolution.
+        let resolution = version.flatMap(resolutionLabel) ?? summary?.resolution?.uppercased() ?? ""
         if !resolution.isEmpty {
             badges.append(normalisedResolution(resolution))
         }

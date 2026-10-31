@@ -36,21 +36,67 @@ struct TVDetailFoldSnapping: ScrollTargetBehavior {
     }
 }
 
+/// Where the native page has scrolled to. Only the material and the shelf
+/// logo read it, so a scroll frame redraws nothing else.
+@MainActor
+@Observable
+final class TVDetailScrollState {
+    /// The visible top, clamped to 0 through the showcase height.
+    var offset: CGFloat = 0
+    var showsShelfLogo = false
+}
+
+/// Fold snapping for the native page's scroll view, the scroll position the
+/// material and the shelf logo follow, and the material behind the scroll
+/// view. It owns that position, so the page content never rebuilds while it
+/// scrolls.
+struct TVDetailFoldScrolling: ViewModifier {
+    let viewportSize: CGSize
+    let showcaseHeight: CGFloat
+    /// The visible top from which the shelf logo shows.
+    let logoThreshold: CGFloat
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var scroll = TVDetailScrollState()
+
+    func body(content: Content) -> some View {
+        content
+            .scrollTargetBehavior(TVDetailFoldSnapping(showcaseHeight: showcaseHeight))
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.visibleRect.minY
+            } action: { _, top in
+                let offset = min(max(top, 0), showcaseHeight)
+                if offset != scroll.offset {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        scroll.offset = offset
+                    }
+                }
+                let logoVisible = top >= logoThreshold
+                if logoVisible != scroll.showsShelfLogo {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: logoVisible ? 0.25 : 0.08)) {
+                        scroll.showsShelfLogo = logoVisible
+                    }
+                }
+            }
+            .environment(scroll)
+            .background {
+                TVDetailScrollMaterialLayer(viewportSize: viewportSize, showcaseHeight: showcaseHeight, scroll: scroll)
+            }
+    }
+}
+
 /// The material that rises behind the scrolling shelves, with the contrast
 /// gradient that keeps the hero text readable over the backdrop.
 struct TVDetailScrollMaterialLayer: View {
     let viewportSize: CGSize
     let showcaseHeight: CGFloat
-    /// The visible top of the scroll view, already clamped to the showcase.
-    let offset: CGFloat
-
-    private var progress: CGFloat {
-        guard showcaseHeight > 0 else { return 0 }
-        return min(max(offset / showcaseHeight, 0), 1)
-    }
+    let scroll: TVDetailScrollState
 
     var body: some View {
-        let progress = progress
+        let offset = scroll.offset
+        let progress = showcaseHeight > 0 ? min(max(offset / showcaseHeight, 0), 1) : 0
         ZStack {
             Rectangle()
                 .fill(.regularMaterial)

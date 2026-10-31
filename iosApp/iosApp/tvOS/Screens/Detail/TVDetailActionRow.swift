@@ -28,7 +28,9 @@ struct TVDetailPlayAction {
 /// Identifies the page for the one focus claim the row makes.
 struct TVDetailFocusClaimKey: Equatable {
     var pageKey: String
-    /// The selected season's id; only the season page waits for it.
+    /// The selected season's id; only the season page waits for it. The
+    /// first known id counts, and another season replacing it cancels the
+    /// claim.
     var seasonKey: String?
     var requiresSeasonKey = false
 }
@@ -107,12 +109,22 @@ struct TVDetailActionRow<MoreMenu: View>: View {
         // Up at the top of the page must never act as Back.
         .onMoveCommand { _ in }
         .onChange(of: claimKey.pageKey, initial: true) { _, key in
+            // The same page coming back (from playback or a pushed page)
+            // keeps its claim, so Play never takes focus a second time.
+            guard key != claim.pageKey else { return }
             claim = FocusClaim(pageKey: key, firstSeasonKey: claimKey.seasonKey)
             attemptClaim()
         }
         .onChange(of: claimKey.seasonKey) { _, key in
-            guard claimKey.requiresSeasonKey, !claim.isMade, key != claim.firstSeasonKey else { return }
-            claim.isAbandoned = true
+            guard claimKey.requiresSeasonKey, !claim.isMade, let key else { return }
+            if claim.firstSeasonKey == nil {
+                // The season arrived after the page opened, so it is the
+                // first one the row has seen.
+                claim.firstSeasonKey = key
+                attemptClaim()
+            } else if key != claim.firstSeasonKey {
+                claim.isAbandoned = true
+            }
         }
         .onChange(of: play.title) { _, title in
             if title != nil { attemptClaim() }
@@ -200,7 +212,7 @@ private struct TVDetailPlayButton: View {
 /// invisible control laid over it, which takes the presses and speaks for
 /// it.
 struct TVDetailCircleButton<Control: View>: View {
-    /// Kept with the control for the catalogue; the circles show no title.
+    /// Never shown; keeps the circle catalogue keys in use (spec 4.21).
     let title: LocalizedStringKey
     let systemImage: String
     let isFocused: Bool

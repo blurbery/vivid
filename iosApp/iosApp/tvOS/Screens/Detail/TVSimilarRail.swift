@@ -31,7 +31,8 @@ struct SimilarPosterItem: Identifiable, Hashable, Codable {
 }
 
 /// Library titles like this one. Always present, so it can host its own
-/// load; the heading and rail show only once suggestions exist.
+/// load. While loading it shows the heading over placeholders; once loaded,
+/// the heading and rail show only when there are suggestions.
 struct TVMoreLikeThisSection: View {
     let sourceId: String
     let sourceDetail: ItemDetail?
