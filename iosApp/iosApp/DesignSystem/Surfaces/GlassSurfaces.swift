@@ -16,8 +16,8 @@ extension View {
         #endif
     }
 
-    /// Glass for surfaces over live video. Hardware that can't sample video
-    /// smoothly gets a flat dark fill instead.
+    /// Glass for surfaces over live video. iOS 18 to 25, and Apple TV models
+    /// that can't sample video smoothly, get a flat dark fill instead.
     @ViewBuilder
     func vividPlayerGlass(in shape: some Shape, tint: Color? = nil, interactive: Bool = false) -> some View {
         #if os(tvOS)

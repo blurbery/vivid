@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Vivid's palette. Every value is sRGB, written as 0 to 255 channels.
+/// Vivid's palette. Most colours are sRGB values written as 0 to 255
+/// channels; the rest are white at an opacity, a grey level or a system colour.
 extension Color {
     private static func srgb(_ red: Double, _ green: Double, _ blue: Double, opacity: Double = 1) -> Color {
         Color(.sRGB, red: red / 255, green: green / 255, blue: blue / 255, opacity: opacity)
@@ -48,8 +49,11 @@ extension Color {
 }
 
 extension Color {
-    /// Reads `RRGGBB` or `AARRGGBB`, with or without a leading `#` or `0x`.
-    /// Any other length gives opaque black.
+    /// Reads hex colour text such as `#RRGGBB` or `#AARRGGBB`. Punctuation
+    /// such as `#` is trimmed from both ends, then six characters read as RGB
+    /// and eight as ARGB; any other length gives opaque black. A leading `0x`
+    /// is skipped when reading digits but still counts towards the length,
+    /// so `0xRRGGBB` reads as ARGB with alpha 0.
     init(hex: String) {
         let trimmed = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var digits = Substring(trimmed)
