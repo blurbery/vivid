@@ -1,112 +1,63 @@
 import Foundation
 
-/// One card in the merged "Trailers & More" rail: either a remote provider
-/// video (YouTube) or a locally-scanned extras file.
-///
-/// `Identifiable` ids are stable across refetches — remotes key off the
-/// site reference, locals off their own `contentId` — so SwiftUI keeps card
-/// identity when a poll swaps in a new `ItemDetail`. The two cases are
-/// namespaced so a local extra whose contentId happens to collide with a
-/// YouTube key cannot shadow it.
+/// One card in a detail page's trailer rail: a video the catalogue links to
+/// (YouTube today, found through TMDb) or one of the title's own extras.
 enum TrailerRailEntry: Identifiable, Hashable {
     case remote(ItemVideo)
     case local(ItemExtra)
 
+    /// Remote and local cards use different prefixes, so an extra can never
+    /// shadow a video that happens to share its key.
     var id: String {
         switch self {
-        case .remote(let video): return "remote:\(video.site):\(video.siteKey)"
-        case .local(let extra): return "local:\(extra.contentId)"
+        case .remote(let video): "remote:\(video.site):\(video.siteKey)"
+        case .local(let extra): "local:\(extra.contentId)"
         }
     }
 
-    /// Shared kind vocabulary across both cases (`trailer`, `featurette`, …).
     var kind: String {
         switch self {
-        case .remote(let video): return video.kind
-        case .local(let extra): return extra.kind
+        case .remote(let video): video.kind
+        case .local(let extra): extra.kind
         }
     }
 
-    /// Card title. Falls back to the kind label when the server has no name
-    /// for the entry (both `name` and `title` are `omitempty`).
+    /// The video's name or the extra's title, else the label for its kind.
     var title: String {
+        let given: String?
         switch self {
-        case .remote(let video):
-            let name = video.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let name, !name.isEmpty { return name }
-            return ExtraKindLabels.label(for: video.kind)
-        case .local(let extra):
-            let title = extra.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let title, !title.isEmpty { return title }
-            return ExtraKindLabels.label(for: extra.kind)
+        case .remote(let video): given = video.name
+        case .local(let extra): given = extra.title
         }
+        let trimmed = given?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? ExtraKindLabels.label(for: kind) : trimmed
     }
 }
 
-/// Pure shaping + URL construction for the detail page's trailers rail.
-/// Deliberately free of SwiftUI so both the phone and TV rails render the
-/// same list from the same rules, and so it is testable headless.
+/// Builds the trailer rail and the YouTube links its cards open. Thumbnails
+/// load from i.ytimg.com and a card hands the video to the YouTube app or
+/// website. A card sends YouTube only the video key and normal connection
+/// information, as the privacy policy says.
 enum TrailerRail {
-    /// The only remote site the clients can play. Everything else the
-    /// server may store (vimeo, …) is dropped rather than rendered as a
-    /// card that cannot open.
-    static let supportedSite = "youtube"
-
-    /// The remote videos a rail can actually render, in server order.
-    ///
-    /// Shared with ``TrailerFetchCoordinator``: its "did the refresh find
-    /// something" check has to count exactly what the user would see appear,
-    /// or a fetch that returns only unplayable sites reads as a success and
-    /// nothing new shows up.
-    static func supportedVideos(_ videos: [ItemVideo]?) -> [ItemVideo] {
-        (videos ?? []).filter { $0.site.lowercased() == supportedSite }
+    /// Playable videos first (only YouTube can be opened), in server order,
+    /// then every extra in server order.
+    static func entries(videos: [ItemVideo]?, extras: [ItemExtra]?, allowRemote: Bool) -> [TrailerRailEntry] {
+        let remote = allowRemote
+            ? (videos ?? []).filter { $0.site.lowercased() == "youtube" }.map(TrailerRailEntry.remote)
+            : []
+        return remote + (extras ?? []).map(TrailerRailEntry.local)
     }
 
-    /// Merge an item's remote videos and local extras into one ordered rail.
-    ///
-    /// Remote videos come first — the server already sorts them for display
-    /// (trailers first, official first) and that order is preserved verbatim
-    /// — then local extras in server order. When `allowRemote` is false
-    /// (e.g. tvOS without the YouTube app installed) remote entries are
-    /// dropped entirely, leaving a local-extras-only rail.
-    static func entries(
-        videos: [ItemVideo]?,
-        extras: [ItemExtra]?,
-        allowRemote: Bool
-    ) -> [TrailerRailEntry] {
-        var result: [TrailerRailEntry] = []
-        if allowRemote {
-            result.append(contentsOf: supportedVideos(videos).map { TrailerRailEntry.remote($0) })
-        }
-        if let extras {
-            result.append(contentsOf: extras.map { TrailerRailEntry.local($0) })
-        }
-        return result
-    }
-
-    // MARK: - Remote URLs
-
-    /// YouTube's still thumbnail for a video. `hqdefault` is the largest
-    /// size guaranteed to exist for every video (maxresdefault 404s on
-    /// older uploads).
     static func thumbnailURL(siteKey: String) -> URL? {
         URL(string: "https://i.ytimg.com/vi/\(siteKey)/hqdefault.jpg")
     }
 
-    /// Deep link into the installed YouTube app on every Apple platform.
-    ///
-    /// The full web URL with only the scheme swapped — NOT the iOS-style
-    /// short form `youtube://watch?v=`. The tvOS YouTube app ignores the
-    /// short form (opens on its home screen, id dropped); the full-URL
-    /// form starts the video. Verified on Apple TV 4K hardware (2nd gen,
-    /// tvOS 26, Aug 2026); same format Home Assistant documents for its
-    /// Apple TV deep links.
+    /// The full web address with the app's scheme: the Apple TV YouTube app
+    /// ignores the short form.
     static func youtubeDeepLinkURL(siteKey: String) -> URL? {
         URL(string: "youtube://www.youtube.com/watch?v=\(siteKey)")
     }
 
-    /// Public watch page used on iOS when the YouTube app isn't installed.
-    /// The system opens this in the default browser.
     static func youtubeWatchURL(siteKey: String) -> URL? {
         URL(string: "https://www.youtube.com/watch?v=\(siteKey)")
     }
