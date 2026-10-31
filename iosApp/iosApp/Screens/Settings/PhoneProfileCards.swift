@@ -63,6 +63,7 @@ extension PhoneSavedProfilesScreen {
         @State private var drag: CardDrag?
         @State private var dragEndedAt: Date?
         @State private var frames: [String: CGRect] = [:]
+        @State private var settingsRowWidth: CGFloat = 0
         @State private var pinAccount: TVSavedAccount?
         @State private var pin = ""
         @State private var pinError: String?
@@ -141,6 +142,8 @@ extension PhoneSavedProfilesScreen {
             switch layout {
             case .strip:
                 strip
+            case .settings where UIDevice.current.userInterfaceIdiom == .pad:
+                centredSettingsGrid
             case .settings:
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 72, maximum: 112), spacing: 12, alignment: .top)],
                           alignment: .leading, spacing: 16) {
@@ -193,6 +196,25 @@ extension PhoneSavedProfilesScreen {
                 .padding(.horizontal, 20)
                 .frame(maxWidth: .infinity)
             }
+        }
+
+        /// On iPad the Settings cards sit as one centred group, sized as the
+        /// adaptive grid would size them: as many 72-point columns as fit,
+        /// each grown to share the row, up to 112.
+        private var centredSettingsGrid: some View {
+            let count = accounts.count + (store.canAddAccount ? 1 : 0)
+            let fitting = max(1, Int((settingsRowWidth + 12) / (72 + 12)))
+            let width = min(112, (settingsRowWidth - 12 * CGFloat(fitting - 1)) / CGFloat(fitting))
+            let columns = settingsRowWidth > 0
+                ? Array(repeating: GridItem(.fixed(max(72, width)), spacing: 12, alignment: .top),
+                        count: max(1, min(count, fitting)))
+                : [GridItem(.adaptive(minimum: 72, maximum: 112), spacing: 12, alignment: .top)]
+            return LazyVGrid(columns: columns, alignment: .center, spacing: 16) {
+                ForEach(accounts) { card($0) }
+                if store.canAddAccount { addTile }
+            }
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { settingsRowWidth = $0 }
         }
 
         private enum Entry: Identifiable {
