@@ -107,6 +107,18 @@ final class HomeCollectionsStoreTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.collection.name), ["Alien", "Collection 9", "Collection 10", "Toy Story"])
     }
 
+    func testCollectionsSortWithoutALeadingArticle() {
+        let sorted = HomeCollectionsStore.sorted([
+            HomeCollection(collection: collection("1", "The Matrix"), libraryID: 1),
+            HomeCollection(collection: collection("2", "A Nightmare on Elm Street"), libraryID: 1),
+            HomeCollection(collection: collection("3", "Alien"), libraryID: 1),
+            HomeCollection(collection: collection("4", "An American Tail"), libraryID: 1),
+            HomeCollection(collection: collection("5", "Batman"), libraryID: 1),
+        ])
+        XCTAssertEqual(sorted.map(\.collection.name),
+                       ["Alien", "An American Tail", "Batman", "The Matrix", "A Nightmare on Elm Street"])
+    }
+
     func testTheProfilesOwnCollectionsComeFirst() {
         let mine = LibraryCollection(id: "m", name: "Weekend Movies", itemCount: 3, kind: .userCollections)
         let sorted = HomeCollectionsStore.sorted([
