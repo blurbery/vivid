@@ -26,9 +26,10 @@ final class AppRootModel {
 
     private static let providerSetupKey = "vivid.didCompleteProviderSetup"
 
-    /// Apple TV only: set once it has had a server, after which restore is
-    /// offered from the profile selector rather than the first-run provider
-    /// choice. Never set on iPhone and iPad.
+    /// Apple TV only: set once it has had a server. After that, provider
+    /// setup is no longer needed, the saved-profile selector may show, and a
+    /// server that needs setting up opens the server setup page. Never set on
+    /// iPhone and iPad.
     var didCompleteProviderSetup = UserDefaults.standard.bool(forKey: AppRootModel.providerSetupKey) {
         didSet {
             guard didCompleteProviderSetup != oldValue else { return }

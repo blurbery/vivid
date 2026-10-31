@@ -1,7 +1,5 @@
 import SwiftUI
-#if os(iOS) || os(tvOS)
 import UIKit
-#endif
 
 /// The app's root: the launch splash, then whichever screen the sign-in
 /// state calls for. Everything below the two identity keys is rebuilt when

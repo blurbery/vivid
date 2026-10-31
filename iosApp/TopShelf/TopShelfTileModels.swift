@@ -1,7 +1,10 @@
 import Foundation
 
 // Home and catalogue payloads the Top Shelf reads. Decoded with snake-case
-// key conversion. Foundation only: CI compiles this file on its own on macOS.
+// key conversion. Foundation only: a CI check compiles this file on macOS
+// with the native Emby and Jellyfin client, cuts of the profile policy and
+// the saved-profile limit, and a test, so it can't depend on anything else in
+// the extension.
 
 struct TopShelfSectionsResponse: Decodable {
     let sections: [TopShelfSection]

@@ -1,3 +1,4 @@
+import Security
 import XCTest
 @testable import Vivid
 
@@ -52,14 +53,16 @@ final class ServerRegistrySaveTests: XCTestCase {
     ) -> (ServerRegistry, ProfileLaunchPreferences) {
         let suiteName = "registry-tests.shared.\(UUID().uuidString)"
         let standardName = "registry-tests.standard.\(UUID().uuidString)"
+        let service = "registry-tests.\(UUID().uuidString)"
         let suite = UserDefaults(suiteName: suiteName)!
         let standard = UserDefaults(suiteName: standardName)!
         addTeardownBlock {
             UserDefaults().removePersistentDomain(forName: suiteName)
             UserDefaults().removePersistentDomain(forName: standardName)
+            Self.deleteKeychainItems(service: service)
         }
         let defaults = SharedDefaults(suite: suite, standard: standard)
-        let keychain = SharedKeychain(service: "registry-tests.\(UUID().uuidString)", accessGroup: nil)
+        let keychain = SharedKeychain(service: service, accessGroup: nil)
         let launchPreferences = ProfileLaunchPreferences(defaults: defaults)
         let registry = ServerRegistry(
             defaults: defaults,
@@ -68,5 +71,15 @@ final class ServerRegistrySaveTests: XCTestCase {
             persistenceOverride: persistenceOverride
         )
         return (registry, launchPreferences)
+    }
+
+    /// Removes every item the test stored under its own service name.
+    private nonisolated static func deleteKeychainItems(service: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
