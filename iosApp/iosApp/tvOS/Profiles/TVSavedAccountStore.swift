@@ -857,27 +857,6 @@ final class TVSavedAccountStore {
         }
     }
 
-    #if DEBUG
-    /// Explicit Xcode launch action for testing the complete setup journey.
-    func signOutForSetup() async -> Bool {
-        guard !busy else { print("VIVID_SETUP_FAILURE_BUSY"); return false }
-        busy = true
-        defer { busy = false }
-        if let id = activeID {
-            guard keychain.delete(sessionKey(id)) else { print("VIVID_SETUP_FAILURE_SAVED_SESSION"); return false }
-            if let index = accounts.firstIndex(where: { $0.id == id }) {
-                accounts[index].requiresLogin = true
-            }
-            persist()
-        }
-        guard await AuthService.shared.signOut() else { print("VIVID_SETUP_FAILURE_AUTH"); return false }
-        activeID = nil
-        persist()
-        showsSelector = false
-        return true
-    }
-    #endif
-
     func signOut(router: AppRouter) async {
         guard !busy, let id = activeID else { return }
         busy = true; error = nil
