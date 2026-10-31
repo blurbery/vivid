@@ -25,7 +25,7 @@ extension AppRootModel {
     }
 
     func handleDeepLink(_ url: URL) {
-        guard url.scheme?.lowercased() == "vivid", let host = url.host?.lowercased(), !host.isEmpty else { return }
+        guard url.scheme?.lowercased() == "vivid", let host = url.host?.lowercased() else { return }
 
         #if os(tvOS)
         // Acting on a search link stops playback and resets the screens, so

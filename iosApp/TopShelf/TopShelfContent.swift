@@ -116,7 +116,7 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     /// The strings for Vivid's chosen language, else the system's.
     private static func stringsBundle(language: String?) -> Bundle {
-        let preferences: [String]?
+        let preferences: [String]
         if let language {
             preferences = [language]
         } else {
@@ -125,7 +125,7 @@ final class ContentProvider: TVTopShelfContentProvider {
                 kCFPreferencesAnyApplication,
                 kCFPreferencesCurrentUser,
                 kCFPreferencesAnyHost
-            ) as? [String]
+            ) as? [String] ?? []
         }
         guard let localization = Bundle.preferredLocalizations(
                 from: Bundle.main.localizations, forPreferences: preferences
@@ -152,7 +152,7 @@ struct TopShelfEpisodePosters {
     static func lookUp(for items: [TopShelfItem], client: TopShelfServerClient, query: [String: String]) async -> TopShelfEpisodePosters {
         var seriesIds: [String] = []
         for item in items where item.type == "episode" {
-            if let seriesId = item.seriesId, !seriesId.isEmpty, !seriesIds.contains(seriesId) {
+            if let seriesId = item.seriesId, !seriesIds.contains(seriesId) {
                 seriesIds.append(seriesId)
             }
         }
@@ -168,7 +168,7 @@ struct TopShelfEpisodePosters {
             }
             for await (seriesId, seasons) in group {
                 for season in seasons {
-                    guard let poster = season.posterUrl, !poster.isEmpty else { continue }
+                    guard let poster = season.posterUrl else { continue }
                     posters.seasonPosters[seriesId, default: [:]][season.seasonNumber] = poster
                 }
             }
@@ -184,7 +184,7 @@ struct TopShelfEpisodePosters {
                 }
             }
             for await (seriesId, poster) in group {
-                if let poster, !poster.isEmpty {
+                if let poster {
                     posters.seriesPosters[seriesId] = poster
                 }
             }

@@ -70,7 +70,7 @@ struct MainTabView: View {
             .onReceive(NotificationCenter.default.publisher(for: .userLibrariesDidRefresh)) { notification in
                 applyRefreshedLibraries(notification)
             }
-            .onChange(of: router.requestedTab, initial: true) {
+            .onChange(of: router.requestedTab) {
                 applyRequestedTab()
             }
             .onChange(of: showsDownloadsTab) {
@@ -198,7 +198,8 @@ struct MainTabView: View {
             items: destinations.map {
                 MobileGlassNavigationBar.Item(id: Self.itemID($0.id), title: $0.title, icon: $0.icon, selectedIcon: $0.selectedIcon)
             },
-            selectedID: Self.itemID(selectedDestination.id),
+            // The raw selection: a hidden selected tab highlights nothing.
+            selectedID: Self.itemID(selectedID),
             onSelect: { itemID in
                 if let destination = destinations.first(where: { Self.itemID($0.id) == itemID }) {
                     selectedID = destination.id

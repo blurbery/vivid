@@ -44,8 +44,7 @@ struct TopShelfServerClient {
     // MARK: State
 
     private var activeServerId: String? {
-        guard let serverId = defaults.string(forKey: SharedStorage.activeServerIdKey), !serverId.isEmpty else { return nil }
-        return serverId
+        defaults.string(forKey: SharedStorage.activeServerIdKey)
     }
 
     private var activeProfileId: String? {
@@ -165,10 +164,10 @@ struct TopShelfServerClient {
         request.timeoutInterval = 5
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if let profileId = activeProfileId, !profileId.isEmpty {
+        if let profileId = activeProfileId {
             request.setValue(profileId, forHTTPHeaderField: "X-Profile-Id")
         }
-        if let profileToken = profileKeychain.get(SharedStorage.profileTokenAccount(for: serverId)), !profileToken.isEmpty {
+        if let profileToken = profileKeychain.get(SharedStorage.profileTokenAccount(for: serverId)) {
             request.setValue(profileToken, forHTTPHeaderField: "X-Profile-Token")
         }
 
@@ -181,9 +180,9 @@ struct TopShelfServerClient {
         guard let httpResponse = response as? HTTPURLResponse else { throw Failure.unexpectedStatus(0) }
         guard (200...299).contains(httpResponse.statusCode) else { throw Failure.unexpectedStatus(httpResponse.statusCode) }
 
-        // Root-relative artwork resolves against the server that answered.
+        // Root-relative artwork resolves against the server the request went to.
         let body = usesV2
-            ? try SiloAPICompatibility.response(data, path: path, requestURL: httpResponse.url ?? request.url)
+            ? try SiloAPICompatibility.response(data, path: path, requestURL: request.url)
             : data
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

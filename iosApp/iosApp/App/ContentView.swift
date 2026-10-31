@@ -40,10 +40,10 @@ struct ContentView: View {
             .onAppear {
                 model.rootViewAppeared()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .vividSessionExpired).receive(on: DispatchQueue.main)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .vividSessionExpired)) { notification in
                 model.sessionDidExpire(notification)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .vividProfileSelectionRequired).receive(on: DispatchQueue.main)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .vividProfileSelectionRequired)) { _ in
                 model.profileSelectionDidBecomeRequired()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
@@ -114,10 +114,11 @@ struct ContentView: View {
 
     private var launchStack: some View {
         ZStack {
+            // Keyed to the splash finishing, so the first screen replacing the
+            // loading layer in the same update fades in with it.
             routedContent
-                .animation(.easeInOut(duration: 0.6 * handoffDuration).delay(0.4 * handoffDuration)) { content in
-                    content.opacity(model.splashFinished ? 1 : 0)
-                }
+                .opacity(model.splashFinished ? 1 : 0)
+                .animation(.easeInOut(duration: 0.6 * handoffDuration).delay(0.4 * handoffDuration), value: model.splashFinished)
                 .disabled(model.showsSplashOverlay)
                 .accessibilityHidden(model.showsSplashOverlay)
 
