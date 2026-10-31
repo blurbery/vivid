@@ -1,1248 +1,720 @@
 #if os(tvOS)
-import SwiftUI
 import os
+import SwiftUI
+import UIKit
 
-/// Cinematic item-detail screen for tvOS. Replaces the shared
-/// `MovieDetailContent` / `SeriesDetailContent` layouts on tvOS only; the
-/// iOS / iPadOS targets continue to use those views verbatim.
-///
-/// The layout mirrors VidHub / Infuse / Plex: a full-width backdrop hero
-/// with the title + key metadata + primary actions overlaid on the left,
-/// then a scrollable body of horizontal rails below the fold.
+/// The Apple TV detail page for one content id. It keeps the title's view
+/// model and the Play target state while it stays in the stack, and shows
+/// the movie, series or season page for the loaded type. Episodes open
+/// their series instead.
 struct TVItemDetailView: View {
     let contentId: String
     let seed: TVItemDetailRouteSeed?
 
-    @State private var viewModel: ItemDetailViewModel
-    @State private var nextUpPlaybackDetail: ItemDetail?
-    /// Pin playback independently of browsing; nil uses the suggested episode.
-    @State private var activeSeriesEpisodeContentId: String?
-    @State private var pendingCompletionRefresh: TVPlaybackStateRefreshEvent?
-    @State private var pendingSeriesNavigationContext: TVSeriesDetailNavigationContextStore.Context?
-    @State private var hasLoadedDetailVisit = false
-    @State private var episodeSeriesDetail: ItemDetail?
-    /// An episode normally canonicalizes to its parent Series overview. Keep
-    /// the standalone detail as a resilient fallback when that parent cannot
-    /// be loaded or the hierarchy metadata is incomplete.
-    @State private var failedSeriesRedirectEpisodeContentId: String?
-    @State private var isLoadingNextUpPlaybackDetail = false
-    @State private var didLoadNextUpPlaybackDetail = false
-    /// Serializes rapid season-tab intent before it reaches the async view
-    /// model. A superseded task must never begin after its replacement and
-    /// make an older season the selected one.
-    @State private var seriesSeasonSelectionTask: Task<Void, Never>?
-    @State private var seriesSeasonSelectionGeneration = 0
-    /// Whether remote YouTube trailers should be presented, probed once per
-    /// page appearance. Real Apple TVs require the YouTube app because tvOS
-    /// has no browser fallback. The simulator deliberately presents the
-    /// cards so the full detail layout can be developed and verified even
-    /// though it cannot install or launch the external YouTube app.
-    @State private var allowRemoteTrailers = false
-    @State private var tmdb = TVTMDbStore.shared
-    @State private var tmdbVideos: [ItemVideo] = []
-    @State private var tmdbVideoContext = ""
     @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
-    private static let focusLogger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
-        category: "TVFocus"
-    )
+
+    @State private var viewModel: ItemDetailViewModel
+    @State private var nextUp = TVDetailNextUp()
+    /// The series page's Play target, pinned apart from browsing.
+    @State private var activeEpisodeId: String?
+    @State private var pendingCompletion: TVPlaybackStateRefreshEvent?
+    @State private var pendingContext: TVSeriesDetailNavigationContextStore.Context?
+    @State private var hasLoadedOnce = false
+    @State private var parentSeries: ItemDetail?
+    @State private var failedRedirectId: String?
+    @State private var seasonSelectionTask: Task<Void, Never>?
+    @State private var selectionGeneration = 0
+    @State private var allowsRemoteTrailers = false
+    @State private var tmdbVideos: [ItemVideo] = []
+    @State private var tmdbVideosContext: String?
+
+    private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app", category: "TVFocus")
 
     init(contentId: String, seed: TVItemDetailRouteSeed? = nil) {
         self.contentId = contentId
         self.seed = seed
-        // Resolve the cached view model eagerly so the first `body`
-        // evaluation can render cached content without a blank frame.
-        _viewModel = State(
-            initialValue: ItemDetailCache.shared.viewModel(for: contentId)
-        )
+        // Looked up on every construction so the cached model is refreshed
+        // from the response cache and the first frame paints it.
+        _viewModel = State(initialValue: ItemDetailCache.shared.viewModel(for: contentId))
     }
 
     var body: some View {
-        Group {
-            // Skip the spinner on cache hits — `detail != nil` means we
-            // already have something to paint and the `.task` below is
-            // refreshing it in the background.
-            if let detail = viewModel.detail {
-                content(for: detail)
-            } else if let error = viewModel.error {
-                ErrorView(state: error, onRetry: { Task { await viewModel.loadDetail(contentId: contentId) } })
-            } else {
-                TVItemDetailLoadingView(seed: seed)
+        content
+            .environment(\.seasonWatchedAction, { [viewModel] id, played in
+                await viewModel.setSeasonWatched(contentId: id, played: played)
+            })
+            .task(id: tmdbVideosKey) {
+                await loadTMDbVideos()
             }
-        }
-        .environment(\.seasonWatchedAction, { id, played in await viewModel.setSeasonWatched(contentId: id, played: played) })
-        .task(id: (viewModel.detail?.contentId ?? "") + tmdb.contextKey) {
-            tmdbVideos = []
-            guard let detail = viewModel.detail, tmdb.isConfigured else { return }
-            let context = tmdb.contextKey
-            do {
-                let videos = try await tmdb.videos(contentId: detail.contentId)
-                guard !Task.isCancelled, tmdb.contextKey == context else { return }
-                tmdbVideos = videos
-                tmdbVideoContext = context
-            } catch {}
-        }
-        .vividBackground()
-        .vividNavigationTitleDisplayMode(.inline)
-        // Own visibility for every detail state, including loading and errors,
-        // instead of inheriting the previous destination's navigation chrome.
-        .toolbar(.hidden, for: .navigationBar)
-        .onAppear {
-            Self.focusLogger.debug("itemDetail.appear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
-            allowRemoteTrailers = TVTrailerLaunch.canDisplayRemoteCards()
-            // Returning from the player (or an extra) resumes a poll that
-            // `onDisappear` cancelled — without re-POSTing, since the server
-            // already spent the item's weekly slot. Precedent:
-            // `PersonDetailView.resumeMetadataRefreshIfNeeded`.
-        }
-        .onDisappear {
-            seriesSeasonSelectionTask?.cancel()
-            seriesSeasonSelectionTask = nil
-            Self.focusLogger.debug("itemDetail.disappear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
-            viewModel.cancelDeferredEpisodeFavoriteStateRefresh()
-            // The coordinator's poll is not owned by `.task`, so it would
-            // otherwise keep running (and retaining the view model) after
-            // this route pops.
-            viewModel.stopTrailerFetch()
-            // A pop proves the user is navigating in-app, so any handoff
-            // record is dead: if the YouTube launch had actually taken over
-            // the screen, this page could not be popping. Without this, a
-            // failed `open` (app deleted after the probe) leaves a live
-            // record that would ghost-navigate a later cold launch. The
-            // jetsam case this store exists for never pops, so it is
-            // unaffected.
-            TVTrailerReturnStore.shared.clear()
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            // A warm return from the YouTube app lands here with the page
-            // still alive — nothing to restore, so the handoff record must
-            // not survive to be replayed on some later cold launch. Re-probe
-            // YouTube as well because its installation can change while Vivid
-            // is suspended.
-            if newPhase == .active {
-                allowRemoteTrailers = TVTrailerLaunch.canDisplayRemoteCards()
+            .toolbar(.hidden, for: .navigationBar)
+            .vividBackground()
+            .vividNavigationTitleDisplayMode(.inline)
+            .task(id: contentId) {
+                await load()
+            }
+            .onAppear {
+                Self.log.debug("itemDetail.appear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
+                probeRemoteTrailers()
+            }
+            .onDisappear {
+                seasonSelectionTask?.cancel()
+                Self.log.debug("itemDetail.disappear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
+                viewModel.cancelDeferredEpisodeFavoriteStateRefresh()
+                viewModel.stopTrailerFetch()
+                // A page that pops proves the YouTube hand-off didn't take over.
                 TVTrailerReturnStore.shared.clear()
             }
-        }
-        .task(id: contentId) {
-            seriesSeasonSelectionTask?.cancel()
-            seriesSeasonSelectionTask = nil
-            seriesSeasonSelectionGeneration &+= 1
-            let selectionGeneration = seriesSeasonSelectionGeneration
-            if let context = TVSeriesDetailNavigationContextStore.take(for: contentId) {
-                pendingSeriesNavigationContext = context
-                activeSeriesEpisodeContentId = context.episodeContentId
-            }
-            // Keep the entry intent across SwiftUI task cancellation/reappearance.
-            // Once resolved, a return from playback preserves the browsed season.
-            let navigationContext = pendingSeriesNavigationContext
-            viewModel.initialResumeSeasonNumber = navigationContext?.seasonNumber
-            if let navigationContext {
-                viewModel.jellyfinResumeEpisode = MediaServerProvider.active == .jellyfin
-                    ? (navigationContext.episodeContentId, navigationContext.seasonNumber) : nil
-            } else if !hasLoadedDetailVisit {
-                viewModel.jellyfinResumeEpisode = nil
-            }
-            nextUpPlaybackDetail = nil
-            episodeSeriesDetail = nil
-            failedSeriesRedirectEpisodeContentId = nil
-            isLoadingNextUpPlaybackDetail = false
-            didLoadNextUpPlaybackDetail = false
-            await viewModel.loadDetail(
-                contentId: contentId,
-                preserveSeasonSelection: hasLoadedDetailVisit && navigationContext == nil
-            )
-            guard !Task.isCancelled,
-                  selectionGeneration == seriesSeasonSelectionGeneration else { return }
-            if let navigationContext {
-                await applySeriesNavigationContext(navigationContext)
-            }
-            guard !Task.isCancelled,
-                  selectionGeneration == seriesSeasonSelectionGeneration else { return }
-            hasLoadedDetailVisit = viewModel.detail?.contentId == contentId
-            if let navigationContext,
-               viewModel.selectedSeason?.seasonNumber == navigationContext.seasonNumber,
-               viewModel.episodes.contains(where: { $0.contentId == navigationContext.episodeContentId }) {
-                pendingSeriesNavigationContext = nil
-                viewModel.initialResumeSeasonNumber = nil
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .tvPlaybackStateDidRefresh)) { note in
-            guard let event = note.object as? TVPlaybackStateRefreshEvent else { return }
-            applyCompletedPlaybackRefresh(event)
-        }
-        .onChange(of: viewModel.episodesBySeason.keys.sorted()) { _, _ in
-            if let event = pendingCompletionRefresh { applyCompletedPlaybackRefresh(event) }
-        }
-    }
-
-    // Selection state lives on the cached view model so a pushed player route
-    // or a temporary navigation away from this item cannot discard it. These
-    // nonmutating proxies keep the existing selector callbacks concise.
-    private var preferredVersionFileId: Int? {
-        get { viewModel.preferredVersionFileId }
-        nonmutating set { viewModel.preferredVersionFileId = newValue }
-    }
-
-    /// Continue Watching episodes open the combined Series page at their exact
-    /// season and episode. The marquee has normally warmed this hierarchy, but
-    /// this post-load resolution is authoritative when cached preference state
-    /// points at a different in-progress season.
-    private func applySeriesNavigationContext(
-        _ context: TVSeriesDetailNavigationContextStore.Context
-    ) async {
-        guard viewModel.detail?.type == "series" else { return }
-        if viewModel.selectedSeason?.seasonNumber != context.seasonNumber
-            || !viewModel.episodes.contains(where: { $0.contentId == context.episodeContentId }),
-           let season = viewModel.seasons.first(where: {
-               $0.seasonNumber == context.seasonNumber
-           }) {
-            await viewModel.selectSeason(season, forceRefresh: true)
-        }
-    }
-
-    /// The cache has already reloaded authoritative watched/progress data when
-    /// this arrives. Advance only the editorial episode selection; the native
-    /// episode rail keeps ownership of focus and scrolling exactly as before.
-    private func applyCompletedPlaybackRefresh(_ event: TVPlaybackStateRefreshEvent) {
-        guard event.refreshedContentIds.contains(contentId),
-              viewModel.detail?.type == "series",
-              !event.completedContentIds.isEmpty else { return }
-        viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
-
-        let seasons = viewModel.seasons.sorted { $0.seasonNumber < $1.seasonNumber }
-        let pages = seasons.map { viewModel.episodesBySeason[$0.seasonNumber] }
-        let activeSeasonIndex = pages.firstIndex { page in
-            page?.contains { $0.contentId == activeSeriesEpisodeContentId } == true
-        }
-        // A missing page is a boundary, not an empty season. Resume this
-        // decision when the existing preloader supplies that page.
-        if activeSeriesEpisodeContentId != nil, activeSeasonIndex == nil {
-            pendingCompletionRefresh = event
-            return
-        }
-        let startIndex = activeSeasonIndex ?? 0
-        let remainingPages = Array(pages.dropFirst(startIndex))
-        let playbackEpisodes = DetailEpisodeSequence.contiguousEpisodes(remainingPages)
-
-        let activeWasCompleted = activeSeriesEpisodeContentId.map {
-            event.completedContentIds.contains($0)
-        } ?? false
-        let completedEpisodeIsVisible = playbackEpisodes.contains {
-            event.completedContentIds.contains($0.contentId)
-        }
-        guard activeSeriesEpisodeContentId == nil
-                || activeWasCompleted
-                || completedEpisodeIsVisible else { return }
-
-        pendingCompletionRefresh = remainingPages.contains(where: { $0 == nil }) ? event : nil
-
-        if let inProgress = playbackEpisodes.first(where: {
-            $0.userData?.isInProgress == true && !($0.userData?.played ?? false)
-        }) {
-            activeSeriesEpisodeContentId = inProgress.contentId
-            pendingCompletionRefresh = nil
-            return
-        }
-
-        if let activeSeriesEpisodeContentId,
-           let completedIndex = playbackEpisodes.firstIndex(where: {
-               $0.contentId == activeSeriesEpisodeContentId
-           }),
-           let next = playbackEpisodes.dropFirst(completedIndex + 1).first(where: {
-               !($0.userData?.played ?? false)
-           }) {
-            self.activeSeriesEpisodeContentId = next.contentId
-            pendingCompletionRefresh = nil
-            return
-        }
-
-        if activeSeriesEpisodeContentId == nil,
-           let nextUnwatched = playbackEpisodes.first(where: {
-            !($0.userData?.played ?? false)
-        }) {
-            activeSeriesEpisodeContentId = nextUnwatched.contentId
-            pendingCompletionRefresh = nil
-        }
-    }
-
-    private var preferredAudioTrackIndex: Int? {
-        get { viewModel.preferredAudioTrackIndex }
-        nonmutating set { viewModel.preferredAudioTrackIndex = newValue }
-    }
-
-    private var preferredSubtitleTrackIndex: Int? {
-        get { viewModel.preferredSubtitleTrackIndex }
-        nonmutating set { viewModel.preferredSubtitleTrackIndex = newValue }
-    }
-
-    private var preferredNextUpFileId: Int? {
-        get { viewModel.preferredNextUpFileId }
-        nonmutating set { viewModel.preferredNextUpFileId = newValue }
-    }
-
-    private var preferredNextUpAudioTrackIndex: Int? {
-        get { viewModel.preferredNextUpAudioTrackIndex }
-        nonmutating set { viewModel.preferredNextUpAudioTrackIndex = newValue }
-    }
-
-    private var preferredNextUpSubtitleTrackIndex: Int? {
-        get { viewModel.preferredNextUpSubtitleTrackIndex }
-        nonmutating set { viewModel.preferredNextUpSubtitleTrackIndex = newValue }
-    }
-
-    // MARK: - Trailers & extras
-
-    /// Merged rail for the detail on screen. Remote entries are dropped
-    /// when the YouTube app isn't available (see `allowRemoteTrailers`).
-    private func trailerEntries(for detail: ItemDetail) -> [TrailerRailEntry] {
-        TrailerRail.entries(
-            videos: tmdb.isConfigured && tmdbVideoContext == tmdb.contextKey ? tmdbVideos : [],
-            extras: nil,
-            allowRemote: allowRemoteTrailers
-        )
-    }
-
-    /// Local extras go straight to the streaming path — they are ordinary
-    /// watch targets with their own contentId, always from the beginning
-    /// (nothing tracks resume position for an extra). Remote entries hand
-    /// off to the YouTube app.
-    private func playTrailer(_ entry: TrailerRailEntry) {
-        switch entry {
-        case .remote(let video):
-            // Recorded before the deep link so a jetsam during the trailer
-            // can restore this page on the next cold launch (see
-            // `TVTrailerReturnStore`). tvOS cannot bring the user back from
-            // YouTube; this is the fallback for when suspension doesn't
-            // preserve the page either.
-            TVTrailerReturnStore.shared.saveHandoff(contentId: contentId)
-            TVTrailerLaunch.open(siteKey: video.siteKey) { didOpen in
-                guard !didOpen else { return }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                probeRemoteTrailers()
                 TVTrailerReturnStore.shared.clear()
             }
-        case .local(let extra):
-            router.navigate(
-                to: .player(
-                    contentId: extra.contentId,
-                    startFromBeginning: true,
-                    resumePosition: nil
-                )
-            )
+            .onReceive(NotificationCenter.default.publisher(for: .tvPlaybackStateDidRefresh)) { notification in
+                guard let event = notification.object as? TVPlaybackStateRefreshEvent else { return }
+                applyCompletedPlayback(event)
+            }
+            .onChange(of: viewModel.episodesBySeason.keys.sorted()) { _, _ in
+                guard let pendingCompletion else { return }
+                applyCompletedPlayback(pendingCompletion)
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let detail = viewModel.detail {
+            page(for: detail)
+        } else if let error = viewModel.error {
+            ErrorView(state: error) {
+                Task { await viewModel.loadDetail(contentId: contentId) }
+            }
+        } else {
+            TVDetailLoadingPage(seed: seed)
         }
     }
 
     @ViewBuilder
-    private func content(for detail: ItemDetail) -> some View {
+    private func page(for detail: ItemDetail) -> some View {
         if detail.type == "season" {
-            TVSeasonDetailView(
-                detail: detail,
-                isFavorite: viewModel.isFavorite,
-                inWatchlist: viewModel.inWatchlist,
-                isWatched: viewModel.isWatched,
-                seasons: viewModel.seasons,
-                selectedSeason: viewModel.selectedSeason,
-                episodes: viewModel.episodes,
-                episodeFavoriteStates: viewModel.episodeFavoriteStates,
-                isLoadingEpisodes: viewModel.isLoadingEpisodes,
-                selectedNextUpFileId: preferredNextUpFileId,
-                selectedNextUpAudioTrackIndex: preferredNextUpAudioTrackIndex,
-                selectedNextUpSubtitleTrackIndex: preferredNextUpSubtitleTrackIndex,
-                nextUpPlaybackDetail: nextUpPlaybackDetail,
-                onPlayEpisode: { id, fileId, startFromBeginning in
-                    pendingCompletionRefresh = nil
-                    let episode = viewModel.episodes.first { $0.contentId == id }
-                    let resumePosition = startFromBeginning
-                        ? nil
-                        : playableResumePosition(
-                            position: episode?.userData?.positionSeconds,
-                            duration: episode?.userData?.durationSeconds
-                        )
-                    if let fileId = nextUpPlaybackFileId(resolvedFileId: fileId) {
-                        router.navigate(
-                            to: .playerWithFile(
-                                contentId: id,
-                                fileId: fileId,
-                                audioTrackIndex: preferredNextUpAudioTrackIndex,
-                                subtitleTrackIndex: preferredNextUpSubtitleTrackIndex,
-                                startFromBeginning: startFromBeginning,
-                                resumePosition: resumePosition
-                            )
-                        )
-                    } else {
-                        router.navigate(
-                            to: .player(
-                                contentId: id,
-                                startFromBeginning: startFromBeginning,
-                                resumePosition: resumePosition
-                            )
-                        )
-                    }
-                },
-                onEpisodeTap: { id in
-                    router.navigate(to: .itemDetail(contentId: id))
-                },
-                onSetEpisodeWatched: { id, played in
-                    await viewModel.setEpisodeWatched(contentId: id, played: played)
-                },
-                onSetEpisodeFavorite: { id, isFavorite in
-                    await viewModel.setEpisodeFavorite(contentId: id, isFavorite: isFavorite)
-                },
-                onSelectSeason: { season in
-                    guard season.id != detail.contentId else { return }
-                    router.navigate(to: .itemDetail(contentId: season.contentId))
-                },
-                onSelectNextUpVersion: { fileId in
-                    preferredNextUpFileId = fileId
-                    preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: fileId,
-                        candidate: preferredNextUpAudioTrackIndex
-                    )
-                    preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: fileId,
-                        candidate: preferredNextUpSubtitleTrackIndex
-                    )
-                },
-                onSelectNextUpAudioTrack: { index in
-                    preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: preferredNextUpFileId,
-                        candidate: index
-                    )
-                },
-                onSelectNextUpSubtitleTrack: { index in
-                    preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: preferredNextUpFileId,
-                        candidate: index
-                    )
-                },
-                onToggleFavorite: { Task { await viewModel.toggleFavorite() } },
-                onToggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
-                onToggleWatched: { Task { await viewModel.toggleWatched() } },
-                onPersonTap: { personId in
-                    if let pid = Int(personId) {
-                        router.navigate(to: .personDetail(personId: pid))
-                    }
-                },
-                onNavigateToItem: { id in
-                    router.navigate(to: .itemDetail(contentId: id))
-                },
-                belowSynopsis: {
-                    DescriptionTranslationView(viewModel: viewModel, contentId: detail.contentId)
-                        .id(detail.contentId)
-                }
-            )
-            .task(id: seasonNextUpEpisodeContentId(for: detail)) {
-                await loadSeasonNextUpPlaybackDetail(for: detail)
-            }
-        } else if let destination = episodeSeriesDestination(for: detail),
-                  failedSeriesRedirectEpisodeContentId != detail.contentId {
-            // Episode pages are not a separate tvOS destination. Resolve the
-            // parent first so malformed hierarchy data can still fall back to
-            // the existing standalone episode detail instead of dead-ending.
+            seasonPage(detail)
+        } else if let redirect = redirectTarget(for: detail) {
             Color.clear
-                .task(id: destination) {
-                    await redirectEpisodeToSeries(destination)
+                .task(id: redirect) {
+                    await runRedirect(redirect)
                 }
         } else if detail.type == "series" {
-            TVSeriesDetailView(
-                detail: detail,
-                isFavorite: viewModel.isFavorite,
-                inWatchlist: viewModel.inWatchlist,
-                isWatched: viewModel.isWatched,
-                seasons: viewModel.seasons,
-                selectedSeason: viewModel.selectedSeason,
-                episodes: viewModel.episodes,
-                episodesBySeason: viewModel.episodesBySeason,
-                activeEpisodeContentId: activeSeriesEpisodeContentId,
-                resumeEpisode: seriesNextUpEpisode(for: detail),
-                episodeFavoriteStates: viewModel.episodeFavoriteStates,
-                isLoadingEpisodes: viewModel.isLoadingEpisodes,
-                selectedNextUpFileId: preferredNextUpFileId,
-                selectedNextUpAudioTrackIndex: preferredNextUpAudioTrackIndex,
-                selectedNextUpSubtitleTrackIndex: preferredNextUpSubtitleTrackIndex,
-                nextUpPlaybackDetail: nextUpPlaybackDetail,
-                isLoadingNextUpPlaybackDetail: isLoadingNextUpPlaybackDetail,
-                didLoadNextUpPlaybackDetail: didLoadNextUpPlaybackDetail,
-                trailerEntries: trailerEntries(for: detail),
-                onSelectTrailer: playTrailer,
-                supportsTrailerFetch: false,
-                onFindTrailers: {},
-                trailerFetchStatus: nil,
-                isFetchingTrailers: false,
-                onTrailerStatusShown: {},
-                onSelectSeason: { season in
-                    pendingSeriesNavigationContext = nil
-                    viewModel.initialResumeSeasonNumber = nil
-                    seriesSeasonSelectionTask?.cancel()
-                    seriesSeasonSelectionGeneration &+= 1
-                    let generation = seriesSeasonSelectionGeneration
-                    seriesSeasonSelectionTask = Task { @MainActor in
-                        guard !Task.isCancelled,
-                              generation == seriesSeasonSelectionGeneration else { return }
-                        await viewModel.selectSeason(season)
-                        guard !Task.isCancelled,
-                              generation == seriesSeasonSelectionGeneration else { return }
-                        seriesSeasonSelectionTask = nil
-                    }
-                },
-                onActivateEpisode: { id in
-                    activeSeriesEpisodeContentId = id
-                    pendingCompletionRefresh = nil
-                },
-                onPlayEpisode: { id, fileId, startFromBeginning in
-                    pendingCompletionRefresh = nil
-                    let episode = viewModel.episodes.first(where: { $0.contentId == id })
-                        ?? viewModel.episodesBySeason.values.lazy.flatMap { $0 }.first(where: { $0.contentId == id })
-                    let resumePosition = startFromBeginning
-                        ? nil
-                        : playableResumePosition(
-                            position: episode?.userData?.positionSeconds,
-                            duration: episode?.userData?.durationSeconds
-                        )
-                    if let fileId = nextUpPlaybackFileId(
-                        resolvedFileId: fileId,
-                        contentId: id
-                    ) {
-                        router.navigate(
-                            to: .playerWithFile(
-                                contentId: id,
-                                fileId: fileId,
-                                audioTrackIndex: preferredNextUpAudioTrackIndex,
-                                subtitleTrackIndex: preferredNextUpSubtitleTrackIndex,
-                                startFromBeginning: startFromBeginning,
-                                resumePosition: resumePosition
-                            )
-                        )
-                    } else {
-                        router.navigate(
-                            to: .player(
-                                contentId: id,
-                                startFromBeginning: startFromBeginning,
-                                resumePosition: resumePosition
-                            )
-                        )
-                    }
-                },
-                onSetEpisodeWatched: { id, played in
-                    await viewModel.setEpisodeWatched(contentId: id, played: played)
-                },
-                onSetEpisodeFavorite: { id, isFavorite in
-                    await viewModel.setEpisodeFavorite(contentId: id, isFavorite: isFavorite)
-                },
-                onSelectNextUpVersion: { fileId in
-                    preferredNextUpFileId = fileId
-                    preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: fileId,
-                        candidate: preferredNextUpAudioTrackIndex
-                    )
-                    preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: fileId,
-                        candidate: preferredNextUpSubtitleTrackIndex
-                    )
-                },
-                onSelectNextUpAudioTrack: { index in
-                    preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: preferredNextUpFileId,
-                        candidate: index
-                    )
-                },
-                onSelectNextUpSubtitleTrack: { index in
-                    preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
-                        for: nextUpPlaybackDetail,
-                        versionFileId: preferredNextUpFileId,
-                        candidate: index
-                    )
-                },
-                onToggleFavorite: { Task { await viewModel.toggleFavorite() } },
-                onToggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
-                onToggleWatched: { Task { await viewModel.toggleWatched() } },
-                onToggleSeasonWatched: { Task { await viewModel.toggleSelectedSeasonWatched() } },
-                onPersonTap: { personId in
-                    if let pid = Int(personId) {
-                        router.navigate(to: .personDetail(personId: pid))
-                    }
-                },
-                onNavigateToItem: { id in
-                    router.navigate(to: .itemDetail(contentId: id))
-                },
-                belowSynopsis: {
-                    DescriptionTranslationView(viewModel: viewModel, contentId: detail.contentId)
-                        .id(detail.contentId)
-                }
-            )
-            .task(id: seriesNextUpEpisodeContentId(for: detail)) {
-                await loadSeriesNextUpPlaybackDetail(for: detail)
-            }
-            .task(
-                id: viewModel.selectedSeason?.contentId,
-                priority: .background
-            ) {
-                await prefetchAdjacentSeriesSeasons(for: detail)
-            }
+            seriesPage(detail)
         } else {
-            let supportingDetail = episodeSupportingDetail(for: detail)
-            TVMovieDetailView(
-                detail: detail,
-                supportingDetail: supportingDetail,
-                isFavorite: viewModel.isFavorite,
-                inWatchlist: viewModel.inWatchlist,
-                isWatched: viewModel.isWatched,
-                selectedVersionFileId: preferredVersionFileId,
-                selectedAudioTrackIndex: preferredAudioTrackIndex,
-                selectedSubtitleTrackIndex: preferredSubtitleTrackIndex,
-                seasons: viewModel.seasons,
-                selectedSeason: viewModel.selectedSeason,
-                seasonEpisodes: viewModel.episodes,
-                episodeFavoriteStates: viewModel.episodeFavoriteStates,
-                isLoadingEpisodes: viewModel.isLoadingEpisodes,
-                trailerEntries: trailerEntries(for: supportingDetail ?? detail),
-                onSelectTrailer: playTrailer,
-                supportsTrailerFetch: false,
-                onFindTrailers: {},
-                trailerFetchStatus: nil,
-                isFetchingTrailers: false,
-                onTrailerStatusShown: {},
-                onPlay: { startFromBeginning in
-                    let resumePosition = startFromBeginning ? nil : playableResumePosition(for: detail)
-                    if let fileId = playbackFileId(for: detail) {
-                        router.navigate(
-                            to: .playerWithFile(
-                                contentId: contentId,
-                                fileId: fileId,
-                                audioTrackIndex: preferredAudioTrackIndex,
-                                subtitleTrackIndex: preferredSubtitleTrackIndex,
-                                startFromBeginning: startFromBeginning,
-                                resumePosition: resumePosition
-                            )
-                        )
-                    } else {
-                        router.navigate(
-                            to: .player(
-                                contentId: contentId,
-                                startFromBeginning: startFromBeginning,
-                                resumePosition: resumePosition
-                            )
-                        )
-                    }
-                },
-                onSelectVersion: { fileId in
-                    preferredVersionFileId = fileId
-                    preferredAudioTrackIndex = sanitizedAudioTrackIndex(
-                        for: detail,
-                        versionFileId: fileId,
-                        candidate: preferredAudioTrackIndex
-                    )
-                    preferredSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
-                        for: detail,
-                        versionFileId: fileId,
-                        candidate: preferredSubtitleTrackIndex
-                    )
-                },
-                onSelectAudioTrack: { index in
-                    preferredAudioTrackIndex = sanitizedAudioTrackIndex(
-                        for: detail,
-                        versionFileId: preferredVersionFileId,
-                        candidate: index
-                    )
-                },
-                onSelectSubtitleTrack: { index in
-                    viewModel.preferredSubtitleTrackWasManuallySelected = true
-                    preferredSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
-                        for: detail,
-                        versionFileId: preferredVersionFileId,
-                        candidate: index
-                    )
-                },
-                onSelectSeason: { season in
-                    // Swap the episode rail in place (series-page behavior)
-                    // instead of pushing the season's own detail page.
-                    guard season.id != viewModel.selectedSeason?.id else { return }
-                    Task { await viewModel.selectSeason(season) }
-                },
-                onToggleFavorite: { Task { await viewModel.toggleFavorite() } },
-                onToggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
-                onToggleWatched: { Task { await viewModel.toggleWatched() } },
-                onPersonTap: { personId in
-                    if let pid = Int(personId) {
-                        router.navigate(to: .personDetail(personId: pid))
-                    }
-                },
-                onNavigateToItem: { id in
-                    router.navigate(to: .itemDetail(contentId: id))
-                },
-                onEpisodeTap: { id in
-                    guard id != detail.contentId else { return }
-                    // Switch only the active episode detail. Replacing the
-                    // current route keeps Back returning to the series page
-                    // and avoids stacking one route per episode browse.
-                    router.replaceCurrent(with: .itemDetail(contentId: id))
-                },
-                onPlayEpisodeShortcut: { id in
-                    let episode = viewModel.episodes.first { $0.contentId == id }
-                    let resumePosition = playableResumePosition(
-                        position: episode?.userData?.positionSeconds,
-                        duration: episode?.userData?.durationSeconds
-                    )
-                    router.presentPlayer(
-                        contentId: id,
-                        fileId: nil,
-                        audioTrackIndex: nil,
-                        subtitleTrackIndex: nil,
-                        startFromBeginning: false,
-                        resumePosition: resumePosition,
-                        returnToContentId: id
-                    )
-                },
-                onSetEpisodeWatched: { id, played in
-                    await viewModel.setEpisodeWatched(contentId: id, played: played)
-                },
-                onSetEpisodeFavorite: { id, isFavorite in
-                    await viewModel.setEpisodeFavorite(contentId: id, isFavorite: isFavorite)
-                },
-                belowSynopsis: {
-                    DescriptionTranslationView(viewModel: viewModel, contentId: detail.contentId)
-                        .id(detail.contentId)
-                }
-            )
-            .task(id: detail.type == "episode" ? detail.seriesId : nil) {
-                await loadEpisodeSeriesDetail(for: detail)
-            }
+            moviePage(detail)
         }
     }
 
-    private func episodeSeriesDestination(
-        for detail: ItemDetail
-    ) -> TVSeriesDetailNavigationContextStore.Context? {
-        guard detail.type == "episode",
-              let rawSeriesId = detail.seriesId,
-              let seasonNumber = detail.seasonNumber else { return nil }
+    // MARK: - Pages
 
-        let seriesId = rawSeriesId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !seriesId.isEmpty, seriesId != detail.contentId else { return nil }
-
-        return TVSeriesDetailNavigationContextStore.Context(
-            seriesContentId: seriesId,
-            seasonNumber: seasonNumber,
-            episodeContentId: detail.contentId
+    private var pageActions: TVDetailPageActions {
+        TVDetailPageActions(
+            selectPerson: { personId in
+                guard let id = Int(personId) else { return }
+                router.navigate(to: .personDetail(personId: id))
+            },
+            selectItem: { id in
+                router.navigate(to: .itemDetail(contentId: id))
+            },
+            toggleFavorite: { Task { await viewModel.toggleFavorite() } },
+            toggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
+            toggleWatched: { Task { await viewModel.toggleWatched() } },
+            setEpisodeWatched: { [viewModel] id, played in
+                await viewModel.setEpisodeWatched(contentId: id, played: played)
+            },
+            setEpisodeFavorite: { [viewModel] id, favorite in
+                await viewModel.setEpisodeFavorite(contentId: id, isFavorite: favorite)
+            },
+            selectTrailer: { selectTrailer($0) }
         )
     }
 
-    private func redirectEpisodeToSeries(
-        _ destination: TVSeriesDetailNavigationContextStore.Context
-    ) async {
-        let cacheKey = CacheKey.itemDetail(destination.seriesContentId)
-        if let cached: ItemDetail = ResponseCache.shared.get(cacheKey),
-           cached.type == "series" {
-            routeToSeries(destination)
-            return
+    private var nextUpPicks: TVDetailNextUpPicks {
+        TVDetailNextUpPicks(
+            fileId: viewModel.preferredNextUpFileId,
+            audio: viewModel.preferredNextUpAudioTrackIndex,
+            subtitle: viewModel.preferredNextUpSubtitleTrackIndex,
+            pickVersion: { pickNextUpVersion($0) },
+            pickAudio: { pickNextUpAudio($0) },
+            pickSubtitle: { pickNextUpSubtitle($0) }
+        )
+    }
+
+    private func moviePage(_ detail: ItemDetail) -> some View {
+        TVMovieDetailPage(
+            viewModel: viewModel,
+            detail: detail,
+            contentId: contentId,
+            supportingDetail: supportingDetail(for: detail),
+            trailerEntries: trailerEntries,
+            actions: pageActions,
+            play: { playMovie(fromBeginning: $0) },
+            pickVersion: { pickMovieVersion($0) },
+            pickAudio: { pickMovieAudio($0) },
+            pickSubtitle: { pickMovieSubtitle($0) },
+            selectEpisode: { id in
+                guard id != contentId else { return }
+                router.replaceCurrent(with: .itemDetail(contentId: id))
+            },
+            playEpisodeShortcut: { presentEpisodeShortcut($0) }
+        )
+        .task(id: detail.type == "episode" ? detail.seriesId : nil) {
+            await loadParentSeries(for: detail)
+        }
+    }
+
+    private func seriesPage(_ detail: ItemDetail) -> some View {
+        let target = seriesPlayTarget
+        return TVSeriesDetailPage(
+            viewModel: viewModel,
+            detail: detail,
+            contentId: contentId,
+            playTarget: target,
+            activeEpisodeId: activeEpisodeId,
+            nextUp: nextUp,
+            picks: nextUpPicks,
+            trailerEntries: trailerEntries,
+            actions: pageActions,
+            selectSeason: { selectSeriesSeason($0) },
+            playEpisode: { id, fileId, fromBeginning in
+                activateEpisode(id)
+                playSeriesEpisode(id, fileId: fileId, fromBeginning: fromBeginning)
+            }
+        )
+        .task(id: target?.contentId) {
+            await loadSeriesNextUp(target?.contentId)
+        }
+        .task(id: viewModel.selectedSeason?.contentId, priority: .background) {
+            await TVDetailPlaybackRules.warmNeighbourSeasons(of: viewModel)
+        }
+    }
+
+    private func seasonPage(_ detail: ItemDetail) -> some View {
+        let next = TVDetailPlaybackRules.nextUpEpisode(in: viewModel.episodes)
+        return TVSeasonDetailPage(
+            viewModel: viewModel,
+            detail: detail,
+            nextUpEpisode: next,
+            nextUp: nextUp,
+            picks: nextUpPicks,
+            actions: pageActions,
+            selectEpisode: { router.navigate(to: .itemDetail(contentId: $0)) },
+            selectSeason: { season in
+                guard season.contentId != detail.contentId else { return }
+                router.navigate(to: .itemDetail(contentId: season.contentId))
+            },
+            playEpisode: { id, fileId, fromBeginning in
+                playSeasonEpisode(id, fileId: fileId, fromBeginning: fromBeginning)
+            }
+        )
+        .task(id: next?.contentId) {
+            await loadSeasonNextUp(next?.contentId)
+        }
+    }
+
+    // MARK: - Main load
+
+    private func load() async {
+        seasonSelectionTask?.cancel()
+        selectionGeneration += 1
+        let generation = selectionGeneration
+
+        if let staged = TVSeriesDetailNavigationContextStore.take(for: contentId) {
+            pendingContext = staged
+            activeEpisodeId = staged.episodeContentId
+        }
+        // The pending context outlives a cancelled run until it resolves.
+        let context = pendingContext
+        viewModel.initialResumeSeasonNumber = context?.seasonNumber
+        if let context {
+            viewModel.jellyfinResumeEpisode = MediaServerProvider.active == .jellyfin
+                ? (contentId: context.episodeContentId, seasonNumber: Optional(context.seasonNumber))
+                : nil
+        } else if !hasLoadedOnce {
+            viewModel.jellyfinResumeEpisode = nil
         }
 
+        nextUp = TVDetailNextUp()
+        parentSeries = nil
+        failedRedirectId = nil
+
+        await viewModel.loadDetail(contentId: contentId, preserveSeasonSelection: hasLoadedOnce && context == nil)
+        guard !Task.isCancelled, generation == selectionGeneration else { return }
+
+        if let context, viewModel.detail?.type == "series", !isResolved(context),
+           let season = viewModel.seasons.first(where: { $0.seasonNumber == context.seasonNumber }) {
+            await viewModel.selectSeason(season, forceRefresh: true)
+        }
+        guard !Task.isCancelled, generation == selectionGeneration else { return }
+
+        hasLoadedOnce = viewModel.detail?.contentId == contentId
+        if let context, isResolved(context) {
+            pendingContext = nil
+            viewModel.initialResumeSeasonNumber = nil
+        }
+    }
+
+    /// The context's season is selected and holds its episode.
+    private func isResolved(_ context: TVSeriesDetailNavigationContextStore.Context) -> Bool {
+        viewModel.selectedSeason?.seasonNumber == context.seasonNumber
+            && viewModel.episodes.contains { $0.contentId == context.episodeContentId }
+    }
+
+    // MARK: - Episode redirect
+
+    private struct RedirectTarget: Hashable {
+        let seriesId: String
+        let seasonNumber: Int
+        let episodeId: String
+    }
+
+    private func redirectTarget(for detail: ItemDetail) -> RedirectTarget? {
+        guard detail.type == "episode" else { return nil }
+        let seriesId = detail.seriesId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !seriesId.isEmpty, seriesId != detail.contentId,
+              let seasonNumber = detail.seasonNumber,
+              detail.contentId != failedRedirectId else { return nil }
+        return RedirectTarget(seriesId: seriesId, seasonNumber: seasonNumber, episodeId: detail.contentId)
+    }
+
+    private func runRedirect(_ target: RedirectTarget) async {
+        let key = CacheKey.itemDetail(target.seriesId)
+        if let cached: ItemDetail = ResponseCache.shared.get(key), cached.type == "series" {
+            route(to: target)
+            return
+        }
         do {
-            let series = try await MetadataRequestPool.shared.itemDetail(
-                contentId: destination.seriesContentId
-            )
-            guard !Task.isCancelled,
-                  contentId == destination.episodeContentId else { return }
+            let series = try await MetadataRequestPool.shared.itemDetail(contentId: target.seriesId)
+            guard !Task.isCancelled, contentId == target.episodeId else { return }
             guard series.type == "series" else {
-                failedSeriesRedirectEpisodeContentId = destination.episodeContentId
+                failedRedirectId = target.episodeId
                 return
             }
-            ResponseCache.shared.set(series, for: cacheKey)
-            routeToSeries(destination)
+            ResponseCache.shared.set(series, for: key)
+            route(to: target)
         } catch {
-            guard !Task.isCancelled,
-                  contentId == destination.episodeContentId else { return }
-            failedSeriesRedirectEpisodeContentId = destination.episodeContentId
+            guard !Task.isCancelled, contentId == target.episodeId else { return }
+            failedRedirectId = target.episodeId
         }
     }
 
-    private func routeToSeries(
-        _ destination: TVSeriesDetailNavigationContextStore.Context
-    ) {
-        guard contentId == destination.episodeContentId else { return }
+    /// Replaces the episode with its series, so Back returns to wherever the
+    /// episode was opened from.
+    private func route(to target: RedirectTarget) {
+        guard contentId == target.episodeId else { return }
         TVSeriesDetailNavigationContextStore.stage(
-            seriesContentId: destination.seriesContentId,
-            seasonNumber: destination.seasonNumber,
-            episodeContentId: destination.episodeContentId
+            seriesContentId: target.seriesId,
+            seasonNumber: target.seasonNumber,
+            episodeContentId: target.episodeId
         )
-        router.replaceCurrent(
-            with: .itemDetail(contentId: destination.seriesContentId)
-        )
+        router.replaceCurrent(with: .itemDetail(contentId: target.seriesId))
     }
 
-    private func loadEpisodeSeriesDetail(for detail: ItemDetail) async {
-        guard detail.type == "episode",
-              let seriesId = detail.seriesId,
-              !seriesId.isEmpty else {
-            episodeSeriesDetail = nil
+    // MARK: - Older layout's parent series
+
+    private func loadParentSeries(for detail: ItemDetail) async {
+        guard detail.type == "episode", let seriesId = detail.seriesId, !seriesId.isEmpty else {
+            parentSeries = nil
             return
         }
-        if let cached: ItemDetail = ResponseCache.shared.get(CacheKey.itemDetail(seriesId)) {
-            episodeSeriesDetail = cached
+        let key = CacheKey.itemDetail(seriesId)
+        if let cached: ItemDetail = ResponseCache.shared.get(key) {
+            parentSeries = cached
         }
-        guard let fresh = try? await MetadataRequestPool.shared.itemDetail(contentId: seriesId),
-              !Task.isCancelled else { return }
-        ResponseCache.shared.set(fresh, for: CacheKey.itemDetail(seriesId))
-        episodeSeriesDetail = fresh
+        do {
+            let series = try await MetadataRequestPool.shared.itemDetail(contentId: seriesId)
+            guard !Task.isCancelled else { return }
+            ResponseCache.shared.set(series, for: key)
+            parentSeries = series
+        } catch {
+            // Keep what is shown.
+        }
     }
 
-    /// The series page that launched an episode is already in the process-wide
-    /// cache. Read it during the episode's very first body evaluation so its
-    /// logo never waits for the supporting-detail task to make another trip.
-    private func episodeSupportingDetail(for detail: ItemDetail) -> ItemDetail? {
-        guard detail.type == "episode",
-              let seriesId = detail.seriesId,
-              !seriesId.isEmpty else { return episodeSeriesDetail }
-        return episodeSeriesDetail
-            ?? ResponseCache.shared.get(CacheKey.itemDetail(seriesId))
+    /// The series an episode belongs to, for its logo, title and cast. A
+    /// series page that launched the episode has cached it already.
+    private func supportingDetail(for detail: ItemDetail) -> ItemDetail? {
+        if let parentSeries { return parentSeries }
+        guard detail.type == "episode", let seriesId = detail.seriesId, !seriesId.isEmpty else { return nil }
+        return ResponseCache.shared.get(CacheKey.itemDetail(seriesId))
     }
 
-    private func playbackFileId(for detail: ItemDetail) -> Int? {
-        if let preferredVersionFileId {
-            return preferredVersionFileId
-        }
-        if preferredAudioTrackIndex != nil || preferredSubtitleTrackIndex != nil {
-            return effectiveVersion(for: detail, versionFileId: preferredVersionFileId)?.fileId
-        }
-        return nil
+    // MARK: - Trailers
+
+    private var tmdbVideosKey: String {
+        "\(viewModel.detail?.contentId ?? "")|\(TVTMDbStore.shared.contextKey)"
     }
 
-    /// Next-up analogue of `playbackFileId(for:)`. When Series focus changes,
-    /// reject any file choice still belonging to the previous episode so an
-    /// immediate quick Play safely falls back to server/device defaults.
-    private func nextUpPlaybackFileId(
-        resolvedFileId: Int?,
-        contentId: String? = nil
-    ) -> Int? {
-        if let contentId,
-           nextUpPlaybackDetail?.contentId != contentId {
-            return nil
+    private func loadTMDbVideos() async {
+        tmdbVideos = []
+        let store = TVTMDbStore.shared
+        guard let detail = viewModel.detail, store.isConfigured else { return }
+        let context = store.contextKey
+        do {
+            let videos = try await store.videos(contentId: detail.contentId)
+            guard !Task.isCancelled, store.contextKey == context else { return }
+            tmdbVideos = videos
+            tmdbVideosContext = context
+        } catch {
+            // No trailers.
         }
-        if let resolvedFileId {
-            return resolvedFileId
-        }
-        return effectiveVersion(
-            for: nextUpPlaybackDetail,
-            versionFileId: preferredNextUpFileId
-        )?.fileId
     }
 
-    private func playableResumePosition(for detail: ItemDetail) -> Double? {
-        playableResumePosition(
-            position: detail.userData?.positionSeconds,
-            duration: detail.userData?.durationSeconds
+    private var trailerEntries: [TrailerRailEntry] {
+        let store = TVTMDbStore.shared
+        let videos = store.isConfigured && tmdbVideosContext == store.contextKey ? tmdbVideos : nil
+        return TrailerRail.entries(videos: videos, extras: nil, allowRemote: allowsRemoteTrailers)
+    }
+
+    /// The simulator always shows remote trailers so the full layout can be
+    /// built; a device needs the YouTube app.
+    private func probeRemoteTrailers() {
+        #if targetEnvironment(simulator)
+        allowsRemoteTrailers = true
+        #else
+        allowsRemoteTrailers = URL(string: "youtube://").map { UIApplication.shared.canOpenURL($0) } ?? false
+        #endif
+    }
+
+    private func selectTrailer(_ entry: TrailerRailEntry) {
+        switch entry {
+        case .remote(let video):
+            let store = TVTrailerReturnStore.shared
+            store.saveHandoff(contentId: contentId)
+            guard let url = TrailerRail.youtubeDeepLinkURL(siteKey: video.siteKey) else {
+                store.clear()
+                return
+            }
+            UIApplication.shared.open(url, options: [:]) { opened in
+                if !opened { store.clear() }
+            }
+        case .local(let extra):
+            router.navigate(to: .player(contentId: extra.contentId, startFromBeginning: true, resumePosition: nil))
+        }
+    }
+
+    // MARK: - Completed playback
+
+    private func applyCompletedPlayback(_ event: TVPlaybackStateRefreshEvent) {
+        guard event.refreshedContentIds.contains(contentId),
+              viewModel.detail?.type == "series",
+              !event.completedContentIds.isEmpty else { return }
+        viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
+        guard let outcome = TVDetailPlaybackRules.completionOutcome(
+            completed: event.completedContentIds,
+            activeEpisodeId: activeEpisodeId,
+            seasons: viewModel.seasons,
+            pages: viewModel.episodesBySeason
+        ) else { return }
+        if let id = outcome.activeEpisodeId {
+            activeEpisodeId = id
+        }
+        pendingCompletion = outcome.staysPending ? event : nil
+    }
+}
+
+// MARK: - Playback actions
+
+extension TVItemDetailView {
+    // MARK: Movie page
+
+    private func playMovie(fromBeginning: Bool) {
+        guard let detail = viewModel.detail else { return }
+        let resume = fromBeginning
+            ? nil
+            : TVDetailPlaybackRules.resumePosition(detail.userData?.positionSeconds, duration: detail.userData?.durationSeconds)
+        let audio = viewModel.preferredAudioTrackIndex
+        let subtitle = viewModel.preferredSubtitleTrackIndex
+        let fileId: Int?
+        if let pick = viewModel.preferredVersionFileId {
+            fileId = pick
+        } else if audio != nil || subtitle != nil {
+            fileId = TVDetailPlaybackRules.effectiveVersion(of: detail, filePick: nil)?.fileId
+        } else {
+            fileId = nil
+        }
+        navigateToPlayer(contentId: contentId, fileId: fileId, audio: audio, subtitle: subtitle,
+                         fromBeginning: fromBeginning, resume: resume)
+    }
+
+    private func pickMovieVersion(_ fileId: Int?) {
+        viewModel.preferredVersionFileId = fileId
+        let version = TVDetailPlaybackRules.effectiveVersion(of: viewModel.detail, filePick: fileId)
+        viewModel.preferredAudioTrackIndex = TVDetailPlaybackRules.sanitisedAudio(viewModel.preferredAudioTrackIndex, version: version)
+        viewModel.preferredSubtitleTrackIndex = TVDetailPlaybackRules.sanitisedSubtitle(viewModel.preferredSubtitleTrackIndex, version: version)
+    }
+
+    private func pickMovieAudio(_ index: Int?) {
+        let version = TVDetailPlaybackRules.effectiveVersion(of: viewModel.detail, filePick: viewModel.preferredVersionFileId)
+        viewModel.preferredAudioTrackIndex = TVDetailPlaybackRules.sanitisedAudio(index, version: version)
+    }
+
+    private func pickMovieSubtitle(_ index: Int?) {
+        viewModel.preferredSubtitleTrackWasManuallySelected = true
+        let version = TVDetailPlaybackRules.effectiveVersion(of: viewModel.detail, filePick: viewModel.preferredVersionFileId)
+        viewModel.preferredSubtitleTrackIndex = TVDetailPlaybackRules.sanitisedSubtitle(index, version: version)
+    }
+
+    /// Play/Pause on another episode in the older layout's rail presents the
+    /// player for it, returning to that episode's page.
+    private func presentEpisodeShortcut(_ episodeId: String) {
+        let episode = viewModel.episodes.first { $0.contentId == episodeId }
+        let resume = TVDetailPlaybackRules.resumePosition(
+            episode?.userData?.positionSeconds,
+            duration: episode?.userData?.durationSeconds
+        )
+        router.presentPlayer(contentId: episodeId, resumePosition: resume, returnToContentId: episodeId)
+    }
+
+    // MARK: Next-up picks (season and series pages)
+
+    private var nextUpVersion: FileVersion? {
+        TVDetailPlaybackRules.effectiveVersion(of: nextUp.detail, filePick: viewModel.preferredNextUpFileId)
+    }
+
+    private func pickNextUpVersion(_ fileId: Int?) {
+        viewModel.preferredNextUpFileId = fileId
+        let version = TVDetailPlaybackRules.effectiveVersion(of: nextUp.detail, filePick: fileId)
+        viewModel.preferredNextUpAudioTrackIndex = sanitisedNextUpAudio(viewModel.preferredNextUpAudioTrackIndex, version: version)
+        viewModel.preferredNextUpSubtitleTrackIndex = sanitisedNextUpSubtitle(viewModel.preferredNextUpSubtitleTrackIndex, version: version)
+    }
+
+    private func pickNextUpAudio(_ index: Int?) {
+        viewModel.preferredNextUpAudioTrackIndex = sanitisedNextUpAudio(index, version: nextUpVersion)
+    }
+
+    private func pickNextUpSubtitle(_ index: Int?) {
+        viewModel.preferredNextUpSubtitleTrackIndex = sanitisedNextUpSubtitle(index, version: nextUpVersion)
+    }
+
+    /// Without a next-up detail every pick is cleared.
+    private func sanitisedNextUpAudio(_ pick: Int?, version: FileVersion?) -> Int? {
+        guard nextUp.detail != nil else { return nil }
+        return TVDetailPlaybackRules.sanitisedAudio(pick, version: version)
+    }
+
+    private func sanitisedNextUpSubtitle(_ pick: Int?, version: FileVersion?) -> Int? {
+        guard nextUp.detail != nil else { return nil }
+        return TVDetailPlaybackRules.sanitisedSubtitle(pick, version: version)
+    }
+
+    private func clearNextUpPicks() {
+        viewModel.preferredNextUpFileId = nil
+        viewModel.preferredNextUpAudioTrackIndex = nil
+        viewModel.preferredNextUpSubtitleTrackIndex = nil
+    }
+
+    // MARK: Season page
+
+    private func playSeasonEpisode(_ episodeId: String, fileId: Int?, fromBeginning: Bool) {
+        pendingCompletion = nil
+        let episode = viewModel.episodes.first { $0.contentId == episodeId }
+        let resume = fromBeginning
+            ? nil
+            : TVDetailPlaybackRules.resumePosition(episode?.userData?.positionSeconds, duration: episode?.userData?.durationSeconds)
+        let file = fileId ?? nextUpVersion?.fileId
+        navigateToPlayer(
+            contentId: episodeId,
+            fileId: file,
+            audio: viewModel.preferredNextUpAudioTrackIndex,
+            subtitle: viewModel.preferredNextUpSubtitleTrackIndex,
+            fromBeginning: fromBeginning,
+            resume: resume
         )
     }
 
-    private func playableResumePosition(position: Double?, duration: Double?) -> Double? {
-        guard let position, position.isFinite, position > 30 else { return nil }
-        if let duration, duration.isFinite, duration > 0, position >= duration - 5 {
-            return nil
+    private func loadSeasonNextUp(_ episodeId: String?) async {
+        guard let episodeId else {
+            nextUp = TVDetailNextUp()
+            clearNextUpPicks()
+            return
         }
-        return position
+        nextUp = TVDetailNextUp(detail: nil, isLoading: true, isLoaded: false)
+        clearNextUpPicks()
+        do {
+            let item = try await MetadataRequestPool.shared.itemDetail(contentId: episodeId)
+            guard !Task.isCancelled else { return }
+            let enriched = await TVDetailPlaybackRules.enrich(item)
+            guard !Task.isCancelled else { return }
+            nextUp.detail = enriched
+            nextUp.isLoaded = true
+        } catch {
+            guard !Task.isCancelled else { return }
+            nextUp.detail = nil
+            nextUp.isLoaded = true
+        }
+        nextUp.isLoading = false
     }
 
-    private func effectiveVersion(for detail: ItemDetail, versionFileId: Int?) -> FileVersion? {
-        DetailVersionSelection.displayVersion(
-            versions: detail.versions ?? [],
-            selectedFileId: versionFileId,
-            lastFileId: detail.userData?.lastFileId,
-            preferredQualityId: PlayerSettings.shared.preferredQuality
+    // MARK: Series page
+
+    /// The episode Play starts: the pinned episode once there is one,
+    /// otherwise the season's next-up episode.
+    private var seriesPlayTarget: EpisodeListItem? {
+        if let activeEpisodeId {
+            if let match = viewModel.episodes.first(where: { $0.contentId == activeEpisodeId }) {
+                return match
+            }
+            for page in viewModel.episodesBySeason.values {
+                if let match = page.first(where: { $0.contentId == activeEpisodeId }) { return match }
+            }
+            return nil
+        }
+        return TVDetailPlaybackRules.nextUpEpisode(in: viewModel.episodes)
+    }
+
+    private func activateEpisode(_ episodeId: String) {
+        activeEpisodeId = episodeId
+        pendingCompletion = nil
+    }
+
+    private func playSeriesEpisode(_ episodeId: String, fileId: Int?, fromBeginning: Bool) {
+        pendingCompletion = nil
+        let episode = viewModel.episodes.first { $0.contentId == episodeId }
+            ?? viewModel.episodesBySeason.values.lazy.compactMap { $0.first { $0.contentId == episodeId } }.first
+        let resume = fromBeginning
+            ? nil
+            : TVDetailPlaybackRules.resumePosition(episode?.userData?.positionSeconds, duration: episode?.userData?.durationSeconds)
+        // A quick Play after focus moved never carries another episode's file.
+        let file = nextUp.detail?.contentId == episodeId ? (fileId ?? nextUpVersion?.fileId) : nil
+        navigateToPlayer(
+            contentId: episodeId,
+            fileId: file,
+            audio: viewModel.preferredNextUpAudioTrackIndex,
+            subtitle: viewModel.preferredNextUpSubtitleTrackIndex,
+            fromBeginning: fromBeginning,
+            resume: resume
         )
     }
 
-    private func effectiveVersion(for detail: ItemDetail?, versionFileId: Int?) -> FileVersion? {
-        guard let detail else { return nil }
-        return effectiveVersion(for: detail, versionFileId: versionFileId)
-    }
-
-    private func sanitizedAudioTrackIndex(
-        for detail: ItemDetail,
-        versionFileId: Int?,
-        candidate: Int?
-    ) -> Int? {
-        guard let candidate else { return nil }
-        guard let version = effectiveVersion(for: detail, versionFileId: versionFileId) else {
-            return nil
+    /// Selects a season from the shelf. A newer request always wins, and a
+    /// superseded one never starts after it.
+    private func selectSeriesSeason(_ season: Season) {
+        pendingContext = nil
+        viewModel.initialResumeSeasonNumber = nil
+        seasonSelectionTask?.cancel()
+        selectionGeneration += 1
+        let generation = selectionGeneration
+        seasonSelectionTask = Task { @MainActor in
+            guard !Task.isCancelled, generation == selectionGeneration else { return }
+            await viewModel.selectSeason(season)
+            guard !Task.isCancelled, generation == selectionGeneration else { return }
+            seasonSelectionTask = nil
         }
-        let tracks = version.audioTracks ?? []
-        return tracks.indices.contains(candidate) ? candidate : nil
     }
 
-    private func sanitizedSubtitleTrackIndex(
-        for detail: ItemDetail,
-        versionFileId: Int?,
-        candidate: Int?
-    ) -> Int? {
-        guard let candidate else { return nil }
-        if candidate < 0 { return candidate }
-        guard let version = effectiveVersion(for: detail, versionFileId: versionFileId) else {
-            return nil
-        }
-        let available = version.subtitleTracks?.compactMap(\.selectionIndex) ?? []
-        return available.contains(candidate) ? candidate : nil
-    }
-
-    private func sanitizedAudioTrackIndex(
-        for detail: ItemDetail?,
-        versionFileId: Int?,
-        candidate: Int?
-    ) -> Int? {
-        guard let detail else { return nil }
-        return sanitizedAudioTrackIndex(for: detail, versionFileId: versionFileId, candidate: candidate)
-    }
-
-    private func sanitizedSubtitleTrackIndex(
-        for detail: ItemDetail?,
-        versionFileId: Int?,
-        candidate: Int?
-    ) -> Int? {
-        guard let detail else { return nil }
-        return sanitizedSubtitleTrackIndex(for: detail, versionFileId: versionFileId, candidate: candidate)
-    }
-
-    private func seasonNextUpEpisode(for detail: ItemDetail) -> EpisodeListItem? {
-        guard detail.type == "season" else { return nil }
-        if let inProgress = viewModel.episodes.first(where: { $0.userData?.isInProgress == true }) {
-            return inProgress
-        }
-        if let unwatched = viewModel.episodes.first(where: { !($0.userData?.played ?? false) }) {
-            return unwatched
-        }
-        return viewModel.episodes.first
-    }
-
-    private func seasonNextUpEpisodeContentId(for detail: ItemDetail) -> String? {
-        seasonNextUpEpisode(for: detail)?.contentId
-    }
-
-    private func loadSeasonNextUpPlaybackDetail(for detail: ItemDetail) async {
-        guard let nextUp = seasonNextUpEpisode(for: detail) else {
-            nextUpPlaybackDetail = nil
-            isLoadingNextUpPlaybackDetail = false
-            didLoadNextUpPlaybackDetail = false
-            preferredNextUpFileId = nil
-            preferredNextUpAudioTrackIndex = nil
-            preferredNextUpSubtitleTrackIndex = nil
+    private func loadSeriesNextUp(_ episodeId: String?) async {
+        guard let episodeId else {
+            nextUp = TVDetailNextUp()
+            clearNextUpPicks()
             return
         }
+        // Later browsing or episode focus never retargets Play.
+        if activeEpisodeId == nil {
+            activeEpisodeId = episodeId
+        }
+        let key = CacheKey.itemDetail(episodeId)
+        let cached: ItemDetail? = ResponseCache.shared.get(key)
+        let usableCache = cached.flatMap { ($0.versions ?? []).isEmpty ? nil : $0 }
+        nextUp = TVDetailNextUp(detail: usableCache, isLoading: true, isLoaded: usableCache != nil)
+        clearNextUpPicks()
 
-        nextUpPlaybackDetail = nil
-        isLoadingNextUpPlaybackDetail = true
-        didLoadNextUpPlaybackDetail = false
-        preferredNextUpFileId = nil
-        preferredNextUpAudioTrackIndex = nil
-        preferredNextUpSubtitleTrackIndex = nil
-
+        let pool = MetadataRequestPool.shared
+        async let watchRequest = try? pool.watchDetail(contentId: episodeId)
         do {
-            let item = try await MetadataRequestPool.shared.itemDetail(contentId: nextUp.contentId)
+            let item = try await pool.itemDetail(contentId: episodeId)
             guard !Task.isCancelled else { return }
-            let enriched = await enrichPlaybackMetadata(for: item, contentId: nextUp.contentId)
+            if usableCache == nil, !(item.versions ?? []).isEmpty {
+                // Fill the selectors without waiting for the watch detail.
+                nextUp.detail = item
+                nextUp.isLoaded = true
+                nextUp.isLoading = false
+            }
+            let watch = await watchRequest
             guard !Task.isCancelled else { return }
-            nextUpPlaybackDetail = enriched
-            didLoadNextUpPlaybackDetail = true
+            var enriched: ItemDetail?
+            if let watch {
+                enriched = await TVDetailPlaybackRules.enrich(item, watch: watch)
+            }
+            guard !Task.isCancelled else { return }
+            if let enriched, !(enriched.versions ?? []).isEmpty {
+                ResponseCache.shared.set(enriched, for: key)
+                nextUp.detail = enriched
+            } else {
+                nextUp.detail = nextUp.detail ?? item
+            }
+            nextUp.isLoaded = true
         } catch {
             guard !Task.isCancelled else { return }
-            nextUpPlaybackDetail = nil
-            didLoadNextUpPlaybackDetail = true
+            nextUp.isLoaded = true
         }
-        isLoadingNextUpPlaybackDetail = false
-    }
-
-    private func seriesNextUpEpisode(for detail: ItemDetail) -> EpisodeListItem? {
-        guard detail.type == "series" else { return nil }
-        if let activeSeriesEpisodeContentId {
-            return viewModel.episodes.first { $0.contentId == activeSeriesEpisodeContentId }
-                ?? viewModel.episodesBySeason.values.lazy.flatMap { $0 }.first { $0.contentId == activeSeriesEpisodeContentId }
-        }
-        if let inProgress = viewModel.episodes.first(where: { $0.userData?.isInProgress == true }) {
-            return inProgress
-        }
-        if let unwatched = viewModel.episodes.first(where: { !($0.userData?.played ?? false) }) {
-            return unwatched
-        }
-        return viewModel.episodes.first
-    }
-
-    private func seriesNextUpEpisodeContentId(for detail: ItemDetail) -> String? {
-        seriesNextUpEpisode(for: detail)?.contentId
-    }
-
-    private func loadSeriesNextUpPlaybackDetail(for detail: ItemDetail) async {
-        guard let nextUp = seriesNextUpEpisode(for: detail) else {
-            nextUpPlaybackDetail = nil
-            isLoadingNextUpPlaybackDetail = false
-            didLoadNextUpPlaybackDetail = false
-            preferredNextUpFileId = nil
-            preferredNextUpAudioTrackIndex = nil
-            preferredNextUpSubtitleTrackIndex = nil
-            return
-        }
-
-        // Pin the initial resume target before metadata loads. Browsing another
-        // season or focusing an episode must not retarget the main Play action.
-        if activeSeriesEpisodeContentId == nil { activeSeriesEpisodeContentId = nextUp.contentId }
-
-        let cached: ItemDetail? = ResponseCache.shared.get(
-            CacheKey.itemDetail(nextUp.contentId)
-        )
-        let usableCached = cached?.versions?.isEmpty == false ? cached : nil
-        nextUpPlaybackDetail = usableCached
-        isLoadingNextUpPlaybackDetail = true
-        didLoadNextUpPlaybackDetail = usableCached != nil
-        preferredNextUpFileId = nil
-        preferredNextUpAudioTrackIndex = nil
-        preferredNextUpSubtitleTrackIndex = nil
+        nextUp.isLoading = false
 
         do {
-            async let watch = try? MetadataRequestPool.shared.watchDetail(contentId: nextUp.contentId)
-            let item = try await MetadataRequestPool.shared.itemDetail(contentId: nextUp.contentId)
-            guard !Task.isCancelled else { return }
-            // Publish catalog file/audio choices before waiting for playback
-            // enrichment. A slow watch request must not hold the selectors blank.
-            if usableCached == nil, item.versions?.isEmpty == false {
-                nextUpPlaybackDetail = item
-                didLoadNextUpPlaybackDetail = true
-                isLoadingNextUpPlaybackDetail = false
-            }
-            let watchDetail = await watch
-            guard !Task.isCancelled else { return }
-            // A failed speculative watch request is already a completed attempt;
-            // do not immediately repeat it through the enrichment fallback.
-            let enriched: ItemDetail?
-            if let watchDetail {
-                enriched = await enrichPlaybackMetadata(for: item, contentId: nextUp.contentId, prefetchedWatch: watchDetail)
-            } else {
-                enriched = nil
-            }
-            guard !Task.isCancelled else { return }
-            let resolved: ItemDetail?
-            if let enriched, enriched.versions?.isEmpty == false {
-                ResponseCache.shared.set(enriched, for: CacheKey.itemDetail(nextUp.contentId))
-                resolved = enriched
-            } else {
-                resolved = nextUpPlaybackDetail ?? item
-            }
-            nextUpPlaybackDetail = resolved
-            didLoadNextUpPlaybackDetail = true
-        } catch {
-            guard !Task.isCancelled else { return }
-            didLoadNextUpPlaybackDetail = true
-        }
-        isLoadingNextUpPlaybackDetail = false
-
-        // Neighbor playback data is speculative. Keep it out of the selected
-        // episode's critical path so its detail and artwork get first use of
-        // the network and decoder queues.
-        do {
-            try await Task.sleep(for: .milliseconds(1_200))
+            try await Task.sleep(for: .seconds(1.2))
         } catch {
             return
         }
-        await prefetchAdjacentEpisodePlayback(around: nextUp)
+        await TVDetailPlaybackRules.warmNeighbours(of: episodeId, in: viewModel.episodes)
     }
 
-    /// Warm the immediate neighbors without publishing either one. Moving
-    /// laterally can then swap the selector and hero from ResponseCache while
-    /// the fresh request silently validates the data.
-    private func prefetchAdjacentEpisodePlayback(
-        around episode: EpisodeListItem
-    ) async {
-        guard let index = viewModel.episodes.firstIndex(where: {
-            $0.contentId == episode.contentId
-        }) else { return }
+    // MARK: Navigation
 
-        let neighborIndices = [index - 1, index + 1]
-            .filter { viewModel.episodes.indices.contains($0) }
-
-        for neighborIndex in neighborIndices {
-            guard !Task.isCancelled else { return }
-            let neighbor = viewModel.episodes[neighborIndex]
-            let cached: ItemDetail? = ResponseCache.shared.get(
-                CacheKey.itemDetail(neighbor.contentId)
-            )
-            if cached?.versions?.isEmpty == false { continue }
-
-            guard let item = try? await MetadataRequestPool.shared.itemDetail(
-                contentId: neighbor.contentId
-            ), !Task.isCancelled else { continue }
-            guard let enriched = await enrichPlaybackMetadata(
-                for: item,
-                contentId: neighbor.contentId
-            ), enriched.versions?.isEmpty == false else { continue }
-            guard !Task.isCancelled else { return }
-            ResponseCache.shared.set(
-                enriched,
-                for: CacheKey.itemDetail(neighbor.contentId)
-            )
-        }
-    }
-
-    /// Prefetch the episode lists and stills for the seasons beside the
-    /// selected one. `ItemDetailViewModel.selectSeason` already hydrates from
-    /// this same cache key, so first-time season changes avoid the empty/jumpy
-    /// state without duplicating ownership of the published episode array.
-    private func prefetchAdjacentSeriesSeasons(for detail: ItemDetail) async {
-        guard detail.type == "series",
-              let selectedSeason = viewModel.selectedSeason,
-              let index = viewModel.seasons.firstIndex(where: {
-                  $0.contentId == selectedSeason.contentId
-              }) else { return }
-
-        let neighborIndices = viewModel.seasons.indices
-            .filter { $0 != index }
-            .sorted { abs($0 - index) < abs($1 - index) }
-
-        for neighborIndex in neighborIndices {
-            guard !Task.isCancelled else { return }
-            let season = viewModel.seasons[neighborIndex]
-            let key = CacheKey.itemEpisodes(
-                seriesId: detail.contentId,
-                seasonNumber: season.seasonNumber
-            )
-
-            let response: EpisodesResponse
-            if let cached: EpisodesResponse = ResponseCache.shared.get(key) {
-                response = cached
-            } else {
-                guard let fetched = try? await MetadataRequestPool.shared.episodes(
-                    seriesId: detail.contentId,
-                    seasonNumber: season.seasonNumber
-                ), !Task.isCancelled else { continue }
-                ResponseCache.shared.set(fetched, for: key)
-                response = fetched
-            }
-
-            let stillURLs = response.episodes.prefix(6).compactMap { episode in
-                episode.stillUrl.flatMap(URL.init(string:))
-            }
-            PosterImageCache.prefetchCardArtwork(stillURLs)
-
-            let sorted = response.episodes.sorted {
-                $0.episodeNumber < $1.episodeNumber
-            }
-            if viewModel.episodesBySeason[season.seasonNumber] == nil {
-                // Feed the route-scoped page cache as well as ResponseCache.
-                // The full season rail can then mount this neighbour before
-                // the first tab movement instead of warming only after it.
-                viewModel.episodesBySeason[season.seasonNumber] = sorted
-            }
-        }
-    }
-
-    private func enrichPlaybackMetadata(for item: ItemDetail, contentId: String, prefetchedWatch: WatchDetail? = nil) async -> ItemDetail? {
-        guard item.type != "series" else { return item }
-
-        do {
-            let watchDetail: WatchDetail
-            if let prefetchedWatch {
-                watchDetail = prefetchedWatch
-            } else {
-                watchDetail = try await MetadataRequestPool.shared.watchDetail(contentId: contentId)
-            }
-            ResponseCache.shared.set(watchDetail, for: CacheKey.itemWatchDetail(contentId))
-            return ItemDetail(
-                contentId: item.contentId,
-                type: item.type,
-                status: item.status,
-                title: item.title,
-                sortTitle: item.sortTitle,
-                originalTitle: item.originalTitle,
-                originalLanguage: item.originalLanguage,
-                showStatus: item.showStatus,
-                year: item.year,
-                overview: item.overview,
-                tagline: item.tagline,
-                runtime: item.runtime,
-                contentRating: item.contentRating,
-                genres: item.genres,
-                ratingImdb: item.ratingImdb,
-                ratingTmdb: item.ratingTmdb,
-                ratingRtCritic: item.ratingRtCritic,
-                ratingRtAudience: item.ratingRtAudience,
-                imdbId: item.imdbId,
-                tmdbId: item.tmdbId,
-                tvdbId: item.tvdbId,
-                cast: item.cast,
-                crew: item.crew,
-                studios: item.studios,
-                networks: item.networks,
-                countries: item.countries,
-                releaseDate: item.releaseDate,
-                firstAirDate: item.firstAirDate,
-                lastAirDate: item.lastAirDate,
-                posterUrl: item.posterUrl,
-                posterThumbhash: item.posterThumbhash,
-                backdropUrl: item.backdropUrl,
-                backdropThumbhash: item.backdropThumbhash,
-                logoUrl: item.logoUrl,
-                seasonCount: item.seasonCount,
-                seriesId: item.seriesId,
-                seriesTitle: item.seriesTitle,
-                seasonNumber: item.seasonNumber,
-                episodeNumber: item.episodeNumber,
-                episodeCount: item.episodeCount,
-                airDate: item.airDate,
-                isSpecials: item.isSpecials,
-                userData: item.userData,
-                versions: watchDetail.versions,
-                subtitles: watchDetail.subtitles,
-                intro: watchDetail.intro,
-                credits: watchDetail.credits,
-                effectiveSubtitleMode: watchDetail.effectiveSubtitleMode,
-                effectiveShowForcedSubtitles: watchDetail.effectiveShowForcedSubtitles,
-                effectiveSubtitleTrackSignature: watchDetail.effectiveSubtitleTrackSignature,
-                overlaySummary: item.overlaySummary,
-                pendingTranslationLanguage: item.pendingTranslationLanguage,
-                // Catalog-only fields: the watch detail knows nothing about
-                // them, so they must be carried across or the trailers rail
-                // would disappear the moment enrichment succeeds.
-                videos: item.videos,
-                extras: item.extras
-            )
-        } catch {
-            return nil
+    private func navigateToPlayer(
+        contentId: String,
+        fileId: Int?,
+        audio: Int?,
+        subtitle: Int?,
+        fromBeginning: Bool,
+        resume: Double?
+    ) {
+        if let fileId {
+            router.navigate(to: .playerWithFile(
+                contentId: contentId,
+                fileId: fileId,
+                audioTrackIndex: audio,
+                subtitleTrackIndex: subtitle,
+                startFromBeginning: fromBeginning,
+                resumePosition: resume
+            ))
+        } else {
+            router.navigate(to: .player(contentId: contentId, startFromBeginning: fromBeginning, resumePosition: resume))
         }
     }
 }
 
-/// One-shot route payload for opening an episode in its parent Series overview.
-/// `Route.itemDetail` remains a shared iOS/tvOS destination; this tvOS-only
-/// store supplies the extra browse context without widening every platform's
-/// navigation enum.
-@MainActor
-enum TVSeriesDetailNavigationContextStore {
-    struct Context: Equatable {
-        let seriesContentId: String
-        let seasonNumber: Int
-        let episodeContentId: String
-    }
+// MARK: - Page inputs
 
-    private static var pending: Context?
+/// The next-up episode's playback detail on the season and series pages.
+struct TVDetailNextUp {
+    var detail: ItemDetail?
+    var isLoading = false
+    var isLoaded = false
+}
 
-    static func stage(
-        seriesContentId: String,
-        seasonNumber: Int,
-        episodeContentId: String
-    ) {
-        pending = Context(
-            seriesContentId: seriesContentId,
-            seasonNumber: seasonNumber,
-            episodeContentId: episodeContentId
-        )
-    }
+/// The next-up picks and how to change them.
+struct TVDetailNextUpPicks {
+    var fileId: Int?
+    var audio: Int?
+    var subtitle: Int?
+    var pickVersion: (Int?) -> Void
+    var pickAudio: (Int?) -> Void
+    var pickSubtitle: (Int?) -> Void
+}
 
-    static func take(for contentId: String) -> Context? {
-        guard pending?.seriesContentId == contentId else { return nil }
-        defer { pending = nil }
-        return pending
-    }
+/// What every page can ask the entry page to do.
+struct TVDetailPageActions {
+    var selectPerson: (String) -> Void
+    var selectItem: (String) -> Void
+    var toggleFavorite: () -> Void
+    var toggleWatchlist: () -> Void
+    var toggleWatched: () -> Void
+    var setEpisodeWatched: (String, Bool) async -> Bool
+    var setEpisodeFavorite: (String, Bool) async -> Bool
+    var selectTrailer: (TrailerRailEntry) -> Void
 }
 #endif

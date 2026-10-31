@@ -1,767 +1,374 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Horizontal rail of episode cards for the tvOS series/season/episode
-/// detail screens. The caller owns Select semantics: legacy season/episode
-/// pages can still navigate, while the Series overview launches playback
-/// directly and uses focus changes to update its in-place episode state.
+/// A horizontal row of episode cards for one season, used on the season page
+/// and on an episode that couldn't open its series.
 ///
-/// Pass `currentContentId` to highlight the episode currently represented
-/// by the surrounding detail experience. Legacy rails center that card on
-/// first appearance. Series uses Home's native thumbnail controls inside
-/// the season pager.
+/// The initialiser is frozen for now. `seriesId`, `seriesTitle`,
+/// `cardHeightRatio`, `onMoveUp`, `onMoveDown` and `focusRequest` are
+/// accepted and ignored until a later cleanup removes them.
 struct TVEpisodeRail: View {
-    let episodes: [EpisodeListItem]
-    let onSelect: (String) -> Void
-    /// Seasons of the series, so Hide Episode Spoilers can place the viewer's
-    /// position from their watched counts. Without them the rail's own list
-    /// decides.
-    var spoilerSeasons: [Season] = []
-    /// Optional Play action surfaced by the long-press context menu. Series
-    /// supplies this even though its normal Select action also plays, keeping
-    /// the context menu explicit and useful alongside watched-state actions.
-    var onPlay: ((String) -> Void)? = nil
-    var onFocusedEpisodeChange: ((String?) -> Void)? = nil
-    var onSetWatched: ((_ contentId: String, _ played: Bool) async -> Bool)? = nil
-    var onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)? = nil
-    /// When non-nil, the matching card is visually highlighted and anchored
-    /// at first appearance.
-    var currentContentId: String? = nil
-    var currentContentIsFavorite = false
-    var favoriteStates: [String: Bool] = [:]
-    var seriesId: String? = nil
-    var seriesTitle: String? = nil
-    var prefersCurrentContentFocus = false
-    /// Series opts into a larger carousel card. The default keeps the
-    /// approved 480-point geometry on existing season/episode pages.
-    var baseCardWidth: CGFloat = 480
-    /// Series can exactly reuse Home's 360×200 thumbnail aspect while legacy
-    /// episode pages retain their existing 16:9 geometry.
-    var cardHeightRatio: CGFloat = 9 / 16
-    var cardSpacing: CGFloat = 54
-    var anchorsFocusedCard = false
-    /// Anchored Series rails hand vertical exits back to the parent while
-    /// native focus owns movement between episode cards.
-    var onMoveUp: (() -> Void)? = nil
-    var onMoveDown: (() -> Void)? = nil
-    /// Non-zero changes restore focus to the current Series episode card.
-    var focusRequest = 0
+    private let episodes: [EpisodeListItem]
+    private let onSelect: (String) -> Void
+    private let spoilerSeasons: [Season]
+    private let onPlay: ((String) -> Void)?
+    private let onFocusedEpisodeChange: ((String?) -> Void)?
+    private let onSetWatched: ((_ contentId: String, _ played: Bool) async -> Bool)?
+    private let onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)?
+    private let currentContentId: String?
+    private let currentContentIsFavorite: Bool
+    private let favoriteStates: [String: Bool]
+    private let prefersCurrentContentFocus: Bool
+    private let baseCardWidth: CGFloat
+    private let cardSpacing: CGFloat
+    private let anchorsFocusedCard: Bool
 
-    @FocusState private var focusedCardId: String?
-    @State private var uiCustomization = UICustomizationPreferences.shared
-    @State private var playerSettings = PlayerSettings.shared
+    @State private var preferences = UICustomizationPreferences.shared
+    @FocusState private var focusedId: String?
 
-    /// The rail's episodes with the ones after the viewer's position covered
-    /// when Hide Episode Spoilers is on. This rail only knows one season's
-    /// list, so that list is the loaded page.
+    init(
+        episodes: [EpisodeListItem],
+        onSelect: @escaping (String) -> Void,
+        spoilerSeasons: [Season] = [],
+        onPlay: ((String) -> Void)? = nil,
+        onFocusedEpisodeChange: ((String?) -> Void)? = nil,
+        onSetWatched: ((_ contentId: String, _ played: Bool) async -> Bool)? = nil,
+        onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)? = nil,
+        currentContentId: String? = nil,
+        currentContentIsFavorite: Bool = false,
+        favoriteStates: [String: Bool] = [:],
+        seriesId: String? = nil,
+        seriesTitle: String? = nil,
+        prefersCurrentContentFocus: Bool = false,
+        baseCardWidth: CGFloat = 480,
+        cardHeightRatio: CGFloat = 9 / 16,
+        cardSpacing: CGFloat = 54,
+        anchorsFocusedCard: Bool = false,
+        onMoveUp: (() -> Void)? = nil,
+        onMoveDown: (() -> Void)? = nil,
+        focusRequest: Int = 0
+    ) {
+        self.episodes = episodes
+        self.onSelect = onSelect
+        self.spoilerSeasons = spoilerSeasons
+        self.onPlay = onPlay
+        self.onFocusedEpisodeChange = onFocusedEpisodeChange
+        self.onSetWatched = onSetWatched
+        self.onSetFavorite = onSetFavorite
+        self.currentContentId = currentContentId
+        self.currentContentIsFavorite = currentContentIsFavorite
+        self.favoriteStates = favoriteStates
+        self.prefersCurrentContentFocus = prefersCurrentContentFocus
+        self.baseCardWidth = baseCardWidth
+        self.cardSpacing = cardSpacing
+        self.anchorsFocusedCard = anchorsFocusedCard
+    }
+
+    /// The episodes as shown, with Hide Episode Spoilers applied.
     private var shownEpisodes: [EpisodeListItem] {
-        guard playerSettings.hideFutureEpisodeSpoilers,
-              let seasonNumber = episodes.first?.seasonNumber else { return episodes }
-        let position = EpisodeSpoilerPolicy.currentPosition(seasons: spoilerSeasons, pages: [seasonNumber: episodes])
+        guard PlayerSettings.shared.hideFutureEpisodeSpoilers, let first = episodes.first else { return episodes }
+        let position = EpisodeSpoilerPolicy.currentPosition(
+            seasons: spoilerSeasons,
+            pages: [first.seasonNumber: episodes]
+        )
         return EpisodeSpoilerPolicy.cover(episodes, after: position)
     }
 
-    @ViewBuilder
     var body: some View {
-            legacyRail
-    }
-
-    private var legacyRail: some View {
+        let presentation = preferences.cardPresentation
+        let cardWidth = baseCardWidth * presentation.posterSize.scale
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: cardSpacing) {
-                    ForEach(shownEpisodes) { episode in
-                        TVEpisodeCard(
-                            episode: episode,
-                            focusedEpisode: $focusedCardId,
-                            isCurrent: currentContentId == episode.contentId,
-                            baseCardWidth: baseCardWidth,
-                            posterSize: uiCustomization.cardPresentation.posterSize,
-                            captionStyle: uiCustomization.cardPresentation.caption,
-                            onSelect: { onSelect(episode.contentId) },
-                            onPlay: onPlay,
-                            onSetWatched: onSetWatched,
-                            initialIsFavorite: currentContentId == episode.contentId
-                                ? currentContentIsFavorite
-                                : favoriteStates[episode.contentId] ?? false,
-                            onSetFavorite: onSetFavorite
-                        )
-                        .id(episode.contentId)
+                    ForEach(shownEpisodes, id: \.contentId) { episode in
+                        card(for: episode, width: cardWidth, caption: presentation.caption)
+                            .id(episode.contentId)
                     }
                 }
                 .scrollTargetLayout()
                 .padding(.vertical, 12)
             }
-            .applyEpisodeScrollTargetBehavior(anchorsFocusedCard)
-            .focusSection()
-            .applyCurrentEpisodeDefaultFocus(
-                prefersCurrentContentFocus ? currentContentId : nil,
-                binding: $focusedCardId
-            )
+            .scrollIndicators(.hidden)
+            .modifier(TVEpisodeRailTargeting(viewAligned: anchorsFocusedCard))
             .scrollClipDisabled()
-            .onChange(of: focusedCardId) { _, contentId in
-                onFocusedEpisodeChange?(contentId)
+            .focusSection()
+            .modifier(TVEpisodeRailDefaultFocus(
+                focus: $focusedId,
+                currentId: prefersCurrentContentFocus ? currentContentId : nil
+            ))
+            .onChange(of: focusedId) { _, newValue in
+                onFocusedEpisodeChange?(newValue)
+            }
+            .onAppear {
+                guard let currentContentId else { return }
+                let anchor: UnitPoint = anchorsFocusedCard ? .leading : .center
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: VividTheme.normalDuration)) {
+                        proxy.scrollTo(currentContentId, anchor: anchor)
+                    }
+                }
             }
             .onDisappear {
                 onFocusedEpisodeChange?(nil)
             }
-            .onAppear {
-                guard let id = currentContentId else { return }
-                // Run on next tick so the LazyHStack has instantiated the
-                // target cell before we try to anchor on it.
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: VividTheme.normalDuration)) {
-                        proxy.scrollTo(id, anchor: anchorsFocusedCard ? .leading : .center)
-                    }
-                }
-            }
+        }
+    }
+
+    private func card(for episode: EpisodeListItem, width: CGFloat, caption: CardCaptionStyle) -> some View {
+        let id = episode.contentId
+        let isCurrent = id == currentContentId
+        return TVEpisodeRailCard(
+            episode: episode,
+            cardWidth: width,
+            caption: caption,
+            isCurrent: isCurrent,
+            isFavorite: isCurrent ? currentContentIsFavorite : (favoriteStates[id] ?? false),
+            focus: $focusedId,
+            onSelect: { onSelect(id) },
+            onPlay: onPlay.map { play in { play(id) } },
+            onSetWatched: onSetWatched.map { action in { played in await action(id, played) } },
+            onSetFavorite: onSetFavorite.map { action in { favorite in await action(id, favorite) } }
+        )
+    }
+}
+
+private struct TVEpisodeRailTargeting: ViewModifier {
+    let viewAligned: Bool
+
+    func body(content: Content) -> some View {
+        if viewAligned {
+            content.scrollTargetBehavior(.viewAligned)
+        } else {
+            content
         }
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func applyEpisodeScrollTargetBehavior(_ enabled: Bool) -> some View {
-        if enabled {
-            scrollTargetBehavior(.viewAligned)
-        } else {
-            self
-        }
-    }
+private struct TVEpisodeRailDefaultFocus: ViewModifier {
+    var focus: FocusState<String?>.Binding
+    let currentId: String?
 
-    @ViewBuilder
-    func applyCurrentEpisodeDefaultFocus(
-        _ contentId: String?,
-        binding: FocusState<String?>.Binding
-    ) -> some View {
-        if let contentId {
-            defaultFocus(binding, contentId, priority: .userInitiated)
+    func body(content: Content) -> some View {
+        if let currentId {
+            content.defaultFocus(focus, currentId, priority: .userInitiated)
         } else {
-            self
+            content
         }
     }
 }
 
-struct TVEpisodeCard: View {
+/// One episode in the rail: its still with watched and progress marks, and
+/// the interface's caption choice below.
+private struct TVEpisodeRailCard: View {
     let episode: EpisodeListItem
-    let focusedEpisode: FocusState<String?>.Binding
-    var isCurrent: Bool = false
-    var usesNativeShelf = false
-    var baseCardWidth: CGFloat = 480
-    var posterSize: CardPosterSize = .standard
-    var captionStyle: CardCaptionStyle = .titleMetadata
+    let cardWidth: CGFloat
+    let caption: CardCaptionStyle
+    let isCurrent: Bool
+    let isFavorite: Bool
+    var focus: FocusState<String?>.Binding
     let onSelect: () -> Void
-    var onPlay: ((String) -> Void)? = nil
-    var onSetWatched: ((_ contentId: String, _ played: Bool) async -> Bool)? = nil
-    var initialIsFavorite = false
-    var onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)? = nil
+    let onPlay: (() -> Void)?
+    let onSetWatched: ((Bool) async -> Bool)?
+    let onSetFavorite: ((Bool) async -> Bool)?
 
-    @State private var playedOverride: Bool?
+    @State private var watchedOverride: Bool?
     @State private var favoriteOverride: Bool?
 
-    private var cardWidth: CGFloat { baseCardWidth * posterSize.scale }
-    private var stillHeight: CGFloat { cardWidth * 9 / 16 }
-    private let stillCornerRadius: CGFloat = 18
+    private var isFocused: Bool { focus.wrappedValue == episode.contentId }
+    private var stillSize: CGSize { CGSize(width: cardWidth, height: cardWidth * 9 / 16) }
+    private var isWatched: Bool { watchedOverride ?? episode.userData?.played ?? false }
+    private var isFavoriteShown: Bool { favoriteOverride ?? isFavorite }
+    private var hasMenu: Bool { onPlay != nil || onSetWatched != nil || onSetFavorite != nil }
 
     var body: some View {
-        cardButton
-        .onChange(of: episode.userData?.played) { _, refreshedValue in
-            guard let playedOverride, refreshedValue == playedOverride else { return }
-            self.playedOverride = nil
-        }
-        .onChange(of: initialIsFavorite) { _, refreshedValue in
-            guard let favoriteOverride, refreshedValue == favoriteOverride else { return }
-            self.favoriteOverride = nil
-        }
-    }
-
-    @ViewBuilder
-    private var cardButton: some View {
-        if usesNativeShelf {
-            VStack(alignment: .leading, spacing: 14) {
-                episodeButton {
-                    CachedAsyncImage(url: episode.stillUrl ?? "",
-                        targetSize: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillDecodeSize : CGSize(width: cardWidth, height: stillHeight),
-                        contentMode: .fill,
-                        softening: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil)
-                        .frame(width: cardWidth, height: stillHeight)
-                        .spoilerCovered(episode.hidesSpoilers, symbolSize: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .overlay(alignment: .bottomLeading) {
-                                    HStack(spacing: 6) {
-                                        if isPlayed { Image(systemName: "checkmark.circle.fill") }
-                                        if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
-                                    }
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(.white)
-                                    .fixedSize(horizontal: true, vertical: true)
-                                    .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(.black.opacity(0.45), in: Capsule())
-                                    .padding(12)
-                                    .opacity(nativeResumeProgress == nil ? 1 : 0)
-                                }
-                        .overlay(alignment: .bottomLeading) {
-                            if let progress = nativeResumeProgress {
-                                HStack(spacing: 12) {
-                                    HStack(spacing: 6) {
-                                        if isPlayed { Image(systemName: "checkmark.circle.fill") }
-                                        if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
-                                    }
-                                    .font(.system(size: 18)).foregroundStyle(.white)
-                                    .fixedSize().padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(.black.opacity(0.45), in: Capsule())
-                                    ResumeProgressBar(value: progress.fraction,
-                                                      duration: episode.userData?.durationSeconds, height: 8, inset: 0)
-                                }
-                                    .padding(.horizontal, 12).padding(.bottom, 12)
-                                    .frame(width: cardWidth, height: stillHeight, alignment: .bottom)
-                                    .allowsHitTesting(false)
-                            }
-                        }
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 18) {
+                still
+                if caption.showsTitle {
+                    captionView
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("EPISODE \(String(episode.episodeNumber))").font(.system(size: 18)).foregroundStyle(.secondary)
-                    (episode.title.map { Text($0) } ?? Text("Episode \(String(episode.episodeNumber))")).font(.system(size: 24, weight: .semibold)).lineLimit(1)
-                    Text(episode.overview ?? "").font(.system(size: 20)).foregroundStyle(.secondary).lineLimit(2)
-                        .frame(height: 52, alignment: .topLeading)
-                    Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
-                        .font(.system(size: 18)).foregroundStyle(.secondary)
-                }.frame(width: cardWidth, alignment: .leading)
-                    .accessibilityHidden(true)
             }
-        } else {
-            episodeButton {
-                EpisodeCardLabel(episode: episode, isPlayed: isPlayed, isCurrent: isCurrent,
-                                 cardWidth: cardWidth, stillHeight: stillHeight,
-                                 stillCornerRadius: stillCornerRadius, captionStyle: captionStyle)
-            }
+            .frame(width: cardWidth, alignment: .leading)
         }
-    }
-
-    @ViewBuilder
-    private func episodeButton<Label: View>(@ViewBuilder label: () -> Label) -> some View {
-        let button = Button(action: onSelect, label: label)
-            .buttonStyle(.card)
-            .focused(focusedEpisode, equals: episode.contentId)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityDescription)
-        if onPlay != nil || onSetWatched != nil || onSetFavorite != nil {
-            button.contextMenu { contextActions }
-        } else {
-            button
-        }
-    }
-
-    private var nativeResumeProgress: ResumePresentation? {
-        guard playedOverride == nil else { return nil }
-        return ResumePresentation(position: episode.userData?.positionSeconds,
-                           duration: episode.userData?.durationSeconds)
-    }
-
-    private var isPlayed: Bool {
-        playedOverride ?? episode.userData?.played ?? false
-    }
-
-    private var isFavorite: Bool {
-        favoriteOverride ?? initialIsFavorite
-    }
-
-    private var accessibilityDescription: String {
-        episodeRailAccessibilityLabel(
+        .buttonStyle(.card)
+        .focused(focus, equals: episode.contentId)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: accessibilityLabel))
+        .modifier(TVEpisodeCardMenu(
+            isEnabled: hasMenu,
             seasonNumber: episode.seasonNumber,
             episodeNumber: episode.episodeNumber,
-            title: episode.title,
-            metadata: episodeMetadataLine,
-            isCurrent: isCurrent,
-            isPlayed: isPlayed
-        )
-    }
-
-    private var episodeMetadataLine: String? {
-        var parts: [String] = []
-        if let airDate = DetailDateFormatting.abbreviatedDate(episode.airDate) {
-            parts.append(airDate)
+            isWatched: isWatched,
+            isFavorite: isFavoriteShown,
+            onPlay: onPlay,
+            onToggleWatched: onSetWatched.map { _ in toggleWatched },
+            onToggleFavorite: onSetFavorite.map { _ in toggleFavorite }
+        ))
+        .onChange(of: episode.userData?.played) { _, played in
+            if let played, played == watchedOverride { watchedOverride = nil }
         }
-        if let runtime = episode.runtime, runtime > 0 {
-            if runtime >= 60 {
-                parts.append(String(localized: "\(runtime / 60)h \(runtime % 60)m"))
-            } else {
-                parts.append(String(localized: "\(runtime)m"))
-            }
+        .onChange(of: isFavorite) { _, favorite in
+            if favorite == favoriteOverride { favoriteOverride = nil }
         }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
-    }
-
-    @ViewBuilder
-    private var contextActions: some View {
-        if let onPlay {
-            Button {
-                onPlay(episode.contentId)
-            } label: {
-                Label("Play S\(String(episode.seasonNumber)):E\(String(episode.episodeNumber))", systemImage: "play.fill")
-            }
-        }
-
-        if let onSetWatched {
-            Button {
-                let played = !isPlayed
-                playedOverride = played
-                Task {
-                    if await onSetWatched(episode.contentId, played) == false {
-                        playedOverride = nil
-                    }
-                }
-            } label: {
-                Label(
-                    isPlayed ? "Mark as Unwatched" : "Mark as Watched",
-                    systemImage: isPlayed ? "circle" : "checkmark.circle"
-                )
-            }
-        }
-
-        if let onSetFavorite {
-            Button {
-                let newValue = !isFavorite
-                favoriteOverride = newValue
-                Task {
-                    if await onSetFavorite(episode.contentId, newValue) == false {
-                        favoriteOverride = nil
-                    }
-                }
-            } label: {
-                Label(
-                    isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                    systemImage: isFavorite ? "heart.slash" : "heart"
-                )
-            }
-        }
-    }
-}
-
-private struct EpisodeCardLabel: View {
-    let episode: EpisodeListItem
-    let isPlayed: Bool
-    let isCurrent: Bool
-    let cardWidth: CGFloat
-    let stillHeight: CGFloat
-    let stillCornerRadius: CGFloat
-    let captionStyle: CardCaptionStyle
-    var focusOverride: Bool? = nil
-    var hidesEpisodeTitle = false
-    var showsCurrentOutline = true
-
-    @Environment(\.isFocused) private var environmentIsFocused
-
-    private var isFocused: Bool {
-        focusOverride ?? environmentIsFocused
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            still
-            if captionStyle.showsTitle {
-                VStack(alignment: .leading, spacing: 7) {
-                    if hidesEpisodeTitle, let compactEpisodeTitle {
-                        // Keep the compact Series caption inside the moving
-                        // control without animating its layout independently.
-                        Text(compactEpisodeTitle)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(titleColor)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(width: cardWidth, height: 28, alignment: .topLeading)
-                            .clipped()
-                            .transaction { transaction in
-                                transaction.animation = nil
-                                transaction.disablesAnimations = true
-                            }
-                    }
-
-                    if !hidesEpisodeTitle {
-                        HStack(alignment: .firstTextBaseline, spacing: 16) {
-                            (episode.title.map { Text($0) } ?? Text("Episode \(String(episode.episodeNumber))"))
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(titleColor)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            if captionStyle.showsMetadata,
-                               let runtime = episode.runtime,
-                               runtime > 0 {
-                                Text(formatRuntime(runtime))
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(Color.vividSecondaryText)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                }
-
-            }
-        }
-        .frame(width: cardWidth, alignment: .leading)
-    }
-
-    private var titleColor: Color {
-        if isCurrent { return .vividOnSurface }
-        return isFocused ? .vividOnSurface : Color.vividOnSurface.opacity(0.92)
-    }
-
-    /// "S01E02 · Pilot" — the same code Home puts on episode cards, so the
-    /// Series carousel makes each episode's position obvious at a glance.
-    private var compactEpisodeTitle: String? {
-        let code = EpisodeCardCaption.code(
-            season: episode.seasonNumber,
-            episode: episode.episodeNumber
-        )
-        guard let title = episode.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !title.isEmpty else { return code }
-        return "\(code) · \(title)"
-    }
-
-    private var episodeMetadataLine: String? {
-        var parts: [String] = []
-        if let airDate = DetailDateFormatting.abbreviatedDate(episode.airDate) {
-            parts.append(airDate)
-        }
-        if let runtime = episode.runtime, runtime > 0 {
-            parts.append(formatRuntime(runtime))
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
     private var still: some View {
-        ZStack(alignment: .bottom) {
+        let hidesSpoilers = episode.hidesSpoilers
+        return ZStack(alignment: .bottom) {
             Color.vividSurfaceElevated
-                .frame(width: cardWidth, height: stillHeight)
-
             if let url = episode.stillUrl, !url.isEmpty {
                 CachedAsyncImage(
                     url: url,
-                    targetSize: episode.hidesSpoilers
-                        ? EpisodeSpoilerPolicy.coveredStillDecodeSize
-                        : CGSize(width: cardWidth, height: stillHeight),
+                    targetSize: hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillDecodeSize : stillSize,
                     thumbhash: episode.stillThumbhash,
                     contentMode: .fill,
-                    softening: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil
+                    softening: hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil
                 )
-                .frame(width: cardWidth, height: stillHeight)
-                .spoilerCovered(episode.hidesSpoilers, symbolSize: 40)
+                .frame(width: stillSize.width, height: stillSize.height)
+                .spoilerCovered(hidesSpoilers, symbolSize: 40)
             } else {
                 Image(systemName: "film")
                     .font(.system(size: 48))
-                    .foregroundColor(.vividSecondaryText)
-                    .frame(width: cardWidth, height: stillHeight)
+                    .foregroundStyle(Color.vividSecondaryText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            if isPlayed {
+            if isWatched {
                 Color.black.opacity(0.35)
-                    .frame(width: cardWidth, height: stillHeight)
             }
-
-            if isPlayed {
-                VStack {
-                    HStack {
-                        Spacer()
-                        watchedBadge.padding(10)
-                    }
-                    Spacer()
-                }
-                .frame(width: cardWidth, height: stillHeight)
-            }
-
-            if let progress = progressFraction {
-                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds)
+            if let progress = resumeProgress {
+                ResumeProgressBar(value: progress.fraction, duration: progress.duration)
             }
         }
-        .frame(width: cardWidth, height: stillHeight)
-        .clipShape(RoundedRectangle(cornerRadius: stillCornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: stillCornerRadius)
-                .stroke(
-                    Color.white.opacity(showsCurrentOutline && isCurrent && !isFocused ? 0.7 : 0),
-                    lineWidth: showsCurrentOutline && isCurrent && !isFocused ? 2 : 0
-                )
+        .frame(width: stillSize.width, height: stillSize.height)
+        .overlay(alignment: .topTrailing) {
+            if isWatched {
+                TVWatchedBadge()
+                    .padding(10)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            if isCurrent, !isFocused {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Color.white.opacity(0.7), lineWidth: 2)
+            }
+        }
+    }
+
+    /// Hidden as soon as the episode is marked watched or unwatched here.
+    private var resumeProgress: (fraction: Double, duration: Double)? {
+        guard watchedOverride == nil,
+              let duration = episode.userData?.durationSeconds, duration > 0,
+              let position = episode.userData?.positionSeconds, position > 0, position < duration else { return nil }
+        return (position / duration, duration)
+    }
+
+    private var captionView: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                titleText
+                    .font(.system(size: 24, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(isCurrent || isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
+                Spacer(minLength: 8)
+                if caption.showsMetadata, let runtime = episode.runtime, runtime > 0 {
+                    Text(verbatim: TVHeroMetadata.shortRuntime(runtime))
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.vividSecondaryText)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private var titleText: Text {
+        // A missing or empty title falls back to the episode number.
+        if let title = episode.title, !title.isEmpty {
+            return Text(verbatim: title)
+        }
+        return Text("Episode \(String(episode.episodeNumber))")
+    }
+
+    private var accessibilityLabel: String {
+        var parts: [String] = []
+        if let aired = DetailDateFormatting.abbreviatedDate(episode.airDate) {
+            parts.append(aired)
+        }
+        if let runtime = episode.runtime, runtime > 0 {
+            parts.append(TVHeroMetadata.shortRuntime(runtime))
+        }
+        return episodeRailAccessibilityLabel(
+            seasonNumber: episode.seasonNumber,
+            episodeNumber: episode.episodeNumber,
+            title: episode.title,
+            metadata: parts.isEmpty ? nil : parts.joined(separator: "  \u{00B7}  "),
+            isCurrent: isCurrent,
+            isPlayed: isWatched
         )
-
     }
 
-    private var watchedBadge: some View {
-        TVWatchedBadge()
-    }
-
-
-
-    private var progressFraction: Double? {
-        guard let userData = episode.userData,
-              let pos = userData.positionSeconds,
-              let dur = userData.durationSeconds,
-              dur > 0, pos > 0, pos < dur
-        else { return nil }
-        return pos / dur
-    }
-
-    private func formatRuntime(_ minutes: Int) -> String {
-        if minutes >= 60 {
-            return String(localized: "\(minutes / 60)h \(minutes % 60)m")
+    private func toggleWatched() {
+        guard let onSetWatched else { return }
+        let played = !isWatched
+        watchedOverride = played
+        Task {
+            let succeeded = await onSetWatched(played)
+            if !succeeded { watchedOverride = nil }
         }
-        return String(localized: "\(minutes)m")
+    }
+
+    private func toggleFavorite() {
+        guard let onSetFavorite else { return }
+        let favorite = !isFavoriteShown
+        favoriteOverride = favorite
+        Task {
+            let succeeded = await onSetFavorite(favorite)
+            if !succeeded { favoriteOverride = nil }
+        }
     }
 }
 
-/// One native shelf across seasons. Season buttons jump inside the same scroll view.
-struct TVContinuousEpisodeShelf: View {
-    let seasons: [Season]
-    let pages: [Int: [EpisodeListItem]]
-    let selectedSeason: Season?
-    let currentContentId: String?
-    var heroEntryEpisode: EpisodeListItem? = nil
-    var isHeroFocused = false
-    let favorites: [String: Bool]
-    let onSeason: (Season) -> Void
-    let onFocus: (EpisodeListItem) -> Void
-    let onPlay: (EpisodeListItem) -> Void
-    let onWatched: (String, Bool) async -> Bool
-    let onFavorite: (String, Bool) async -> Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var focusedEpisode: String?
-    @FocusState private var focusedSeason: String?
-    @Namespace private var seasonFocusNamespace
-    @State private var highlightedSeason: String?
-    @State private var scrollHighlightedSeason: String?
-    @State private var pendingJump: String?
-    @State private var pendingEpisodeJump: String?
-    @State private var seeded = false
-    /// Own only the entry from the hero. Horizontal season/episode browsing
-    /// releases this preference until the hero receives focus again.
-    @State private var isEnteringFromHero = true
+/// The long-press menu of an episode card, attached only when it has rows.
+struct TVEpisodeCardMenu: ViewModifier {
+    let isEnabled: Bool
+    let seasonNumber: Int
+    let episodeNumber: Int
+    let isWatched: Bool
+    let isFavorite: Bool
+    let onPlay: (() -> Void)?
+    let onToggleWatched: (() -> Void)?
+    let onToggleFavorite: (() -> Void)?
 
-    private var heroEntrySeason: Season? {
-        guard let episode = heroEntryEpisode else { return nil }
-        return seasons.first { $0.seasonNumber == episode.seasonNumber }
-    }
-
-    private func items(_ season: Season) -> [EpisodeListItem]? { pages[season.seasonNumber] }
-    private var contentKey: [String] { seasons.flatMap { items($0)?.map(\.contentId) ?? [] } }
-
-    private var visibleSeasonID: String? {
-        focusedSeason ?? scrollHighlightedSeason ?? highlightedSeason ?? selectedSeason?.id
-    }
-
-    private func seasonAtVisiblePosition(_ visibleRect: CGRect) -> String? {
-        var firstIndex = 0
-        var visibleSeason: String?
-        let leadingCardCentre = max(0, visibleRect.minX) + 200
-        for season in seasons {
-            let episodes = items(season)
-            let count = episodes?.count ?? 1
-            if let focusedEpisode,
-               let index = episodes?.firstIndex(where: { $0.contentId == focusedEpisode }) {
-                let centre = CGFloat(firstIndex + index) * 440 + 200
-                if centre >= visibleRect.minX && centre <= visibleRect.maxX {
-                    return season.id
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.contextMenu {
+                if let onPlay {
+                    Button(action: onPlay) {
+                        Label("Play S\(String(seasonNumber)):E\(String(episodeNumber))", systemImage: "play.fill")
+                    }
                 }
-            }
-            if count > 0, leadingCardCentre >= CGFloat(firstIndex) * 440 {
-                visibleSeason = season.id
-            }
-            firstIndex += count
-        }
-        return visibleSeason
-    }
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            VStack(alignment: .leading, spacing: 24) {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 20) {
-                        ForEach(seasons) { season in
-                            Button {
-                                selectSeason(season, using: proxy)
-                            } label: {
-                                Text(season.seasonNumber == 0 ? "Specials" : "Season \(String(season.seasonNumber))")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .fixedSize()
-                            }
-                            .buttonStyle(TVContinuousSeasonButtonStyle(
-                                isFocused: focusedSeason == season.id,
-                                isSelected: visibleSeasonID == season.id))
-                            .focusEffectDisabled()
-                            .focused($focusedSeason, equals: season.id)
-                            .modifier(SeasonWatchedContextMenu(season: season))
+                if let onToggleWatched {
+                    Button(action: onToggleWatched) {
+                        if isWatched {
+                            Label("Mark as Unwatched", systemImage: "circle")
+                        } else {
+                            Label("Mark as Watched", systemImage: "checkmark.circle")
                         }
                     }
-                }.scrollClipDisabled().focusSection()
-                .focusScope(seasonFocusNamespace)
-                .defaultFocus($focusedSeason, highlightedSeason ?? selectedSeason?.id,
-                              priority: focusedSeason == nil ? .userInitiated : .automatic)
-                .onChange(of: focusedSeason) { previous, id in
-                    guard let id else { return }
-                    if previous == nil, isEnteringFromHero, let entrySeason = heroEntrySeason {
-                        // Spatial Down can land on Season 1. Resolve this entry
-                        // before the dwell handler treats it as browsing intent.
-                        prepareHeroEntry(using: proxy)
-                        if id != entrySeason.id {
-                            focusedSeason = entrySeason.id
-                            return
+                }
+                if let onToggleFavorite {
+                    Button(action: onToggleFavorite) {
+                        if isFavorite {
+                            Label("Remove from Favorites", systemImage: "heart.slash")
+                        } else {
+                            Label("Add to Favorites", systemImage: "heart")
                         }
                     }
-                    scrollHighlightedSeason = nil
-                    if id != (highlightedSeason ?? selectedSeason?.id) {
-                        isEnteringFromHero = false
-                        pendingJump = nil
-                        pendingEpisodeJump = nil
-                    }
-                }
-                .task(id: focusedSeason) { @MainActor in
-                    guard let id = focusedSeason,
-                          !isEnteringFromHero || heroEntrySeason?.id == id,
-                          id != (highlightedSeason ?? selectedSeason?.id) else { return }
-                    do {
-                        try await Task.sleep(for: .milliseconds(120))
-                    } catch { return }
-                    guard !Task.isCancelled, focusedSeason == id,
-                          id != (highlightedSeason ?? selectedSeason?.id),
-                          let season = seasons.first(where: { $0.id == id }) else { return }
-                    selectSeason(season, using: proxy)
-                }
-
-                ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: 40) {
-                        ForEach(seasons) { season in
-                            if let episodes = items(season) {
-                                ForEach(episodes) { episode in
-                                    TVEpisodeCard(episode: episode, focusedEpisode: $focusedEpisode, isCurrent: currentContentId == episode.contentId,
-                                        usesNativeShelf: true, baseCardWidth: 400,
-                                        onSelect: { onPlay(episode) }, onPlay: { _ in onPlay(episode) },
-                                        onSetWatched: onWatched, initialIsFavorite: favorites[episode.contentId] ?? false,
-                                        onSetFavorite: onFavorite)
-                                        .id(episode.contentId)
-
-                                }
-                            } else {
-                                Button("Load Season \(String(season.seasonNumber))") {
-                                    pendingJump = season.id
-                                    onSeason(season)
-                                }.frame(width: 400, height: 225)
-                            }
-                        }
-                    }.padding(.vertical, 20)
-                }
-                .scrollClipDisabled().focusSection()
-                .onScrollGeometryChange(for: String?.self) { geometry in
-                    seasonAtVisiblePosition(geometry.visibleRect)
-                } action: { _, seasonID in
-                    // Accelerated remote scrolling can move the rail before
-                    // native episode focus catches up. This only paints selection.
-                    guard !isHeroFocused, !isEnteringFromHero, focusedSeason == nil, let seasonID else { return }
-                    scrollHighlightedSeason = seasonID
-                }
-                .onChange(of: focusedEpisode) { previous, id in
-                    guard let id else { return }
-                    if previous == nil, isEnteringFromHero, let entry = heroEntryEpisode,
-                       id != entry.contentId,
-                       pages[entry.seasonNumber]?.contains(where: { $0.contentId == entry.contentId }) == true {
-                        // Seed only the vertical handoff, including a late or
-                        // last episode that cannot scroll to the leading edge.
-                        focusedEpisode = entry.contentId
-                        return
-                    }
-                    guard let season = seasons.first(where: { items($0)?.contains { $0.contentId == id } == true }),
-                          let episode = items(season)?.first(where: { $0.contentId == id }) else { return }
-                    isEnteringFromHero = false
-                    pendingJump = nil
-                    pendingEpisodeJump = nil
-                    scrollHighlightedSeason = nil
-                    highlightedSeason = season.id
-                    if selectedSeason?.id != season.id { onSeason(season) }
-                    onFocus(episode)
                 }
             }
-            .onPlayPauseCommand {
-                guard let id = focusedEpisode,
-                      let episode = pages.values.lazy.flatMap({ $0 }).first(where: { $0.contentId == id }) else { return }
-                onPlay(episode)
-            }
-            .onChange(of: heroEntryEpisode?.contentId, initial: true) { _, _ in
-                prepareHeroEntry(using: proxy)
-            }
-            .onChange(of: isHeroFocused) { _, focused in
-                guard focused else { return }
-                isEnteringFromHero = true
-                prepareHeroEntry(using: proxy)
-            }
-            .onChange(of: seasons.map(\.id)) { _, _ in
-                prepareHeroEntry(using: proxy)
-            }
-            .onChange(of: contentKey, initial: true) { _, _ in
-                if isEnteringFromHero, heroEntryEpisode != nil {
-                    prepareHeroEntry(using: proxy)
-                    return
-                }
-                if !seeded, pendingJump == nil, let season = selectedSeason, items(season) != nil {
-                    seeded = true
-                    if let id = currentContentId ?? items(season)?.first?.contentId {
-                        proxy.scrollTo(id, anchor: .leading)
-                    }
-                }
-                jumpIfReady(proxy)
-            }
-        }
-    }
-
-    private func prepareHeroEntry(using proxy: ScrollViewProxy) {
-        guard isEnteringFromHero, let episode = heroEntryEpisode,
-              let season = heroEntrySeason else { return }
-        scrollHighlightedSeason = nil
-        highlightedSeason = season.id
-        pendingJump = season.id
-        pendingEpisodeJump = episode.contentId
-        if selectedSeason?.id != season.id { onSeason(season) }
-        jumpIfReady(proxy)
-    }
-
-    private func selectSeason(_ season: Season, using proxy: ScrollViewProxy) {
-        isEnteringFromHero = false
-        highlightedSeason = season.id
-        pendingEpisodeJump = nil
-        pendingJump = season.id
-        if selectedSeason?.id != season.id { onSeason(season) }
-        jumpIfReady(proxy)
-    }
-
-    private func jumpIfReady(_ proxy: ScrollViewProxy) {
-        guard let pendingJump, let season = seasons.first(where: { $0.id == pendingJump }),
-              let episodes = items(season) else { return }
-        let id: String
-        if let target = pendingEpisodeJump {
-            guard episodes.contains(where: { $0.contentId == target }) else { return }
-            id = target
         } else {
-            guard let first = episodes.first else { return }
-            id = first.contentId
+            content
         }
-        withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(id, anchor: .leading) }
-        seeded = true
-        self.pendingJump = nil
-        pendingEpisodeJump = nil
     }
 }
-
-private struct TVContinuousSeasonButtonStyle: ButtonStyle {
-    let isFocused: Bool
-    let isSelected: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isFocused ? Color.black : Color.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.36 : 0.10), in: Capsule())
-            .opacity(configuration.isPressed ? 0.8 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
-    }
-}
-
 #endif

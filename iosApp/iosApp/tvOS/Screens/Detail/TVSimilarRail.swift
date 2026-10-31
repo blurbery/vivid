@@ -1,232 +1,16 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Horizontal poster rail of "More Like This" items used at the bottom
-/// of the tvOS Movie / Series detail pages. Uses app-ranked suggestions
-/// matched to the current server library, and renders `TVMediaCard` posters
-/// so cards focus-lift consistently with the rest of the detail body.
-///
-/// The rail self-loads on appear and silently hides if the request
-/// fails or returns nothing — recommendations are non-essential, so a
-/// missing rail is preferable to an error placeholder. The section
-/// header lives in here (not the parent) for the same reason: when
-/// recommendations are disabled or empty, an orphaned "More Like This"
-/// title must vanish along with the cards.
-struct TVSimilarRail: View {
-    let contentId: String
-    let title: LocalizedStringKey
-    var sourceDetail: ItemDetail? = nil
-    let onSelect: (String) -> Void
-    var focusRequest = 0
-
-    @State private var items: [SimilarPosterItem] = []
-    @State private var isLoading = false
-    @State private var homeCards = TVHomeCardPreferences.shared
-    private let library = TVLibrarySimilarityStore.shared
-    @State private var resultContext = ""
-    @State private var lastAppliedFocusRequest = 0
-    @FocusState private var focusedItemId: String?
-
-    private let cardWidth: CGFloat = VividTheme.Skyline.densePosterCardWidth
-    private let cardSpacing: CGFloat = 44
-    private let railVerticalPadding: CGFloat = 12
-    /// Header-to-content gap, matching the other detail sections'
-    /// `VStack(spacing: 28)` so the page rhythm stays uniform.
-    private let headerSpacing: CGFloat = TVDetailLayout.sectionHeaderSpacing
-
-    var body: some View {
-        // Keep a mounted container even before results exist so the task runs.
-        VStack(alignment: .leading, spacing: 0) {
-            if isLoading {
-                section { loadingPlaceholder }
-            } else if !items.isEmpty, resultContext == library.contextKey {
-                section { rail }
-            }
-        }
-        .task(id: contentId + library.contextKey, priority: .userInitiated) { await load() }
-        .onChange(of: focusRequest, initial: true) { _, _ in
-            applyFocusRequestIfPossible()
-        }
-        .onChange(of: items) { _, _ in
-            applyFocusRequestIfPossible()
-        }
-    }
-
-    private func section(@ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: headerSpacing) {
-            TVSectionHeader(title: title)
-            content()
-        }
-    }
-
-    // MARK: - Rail
-
-    private var rail: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: cardSpacing) {
-                ForEach(items) { item in
-                    TVMediaCard(
-                        title: item.title,
-                        posterUrl: item.posterUrl ?? "",
-                        posterThumbhash: item.posterThumbhash,
-                        year: item.year,
-                        action: { onSelect(item.contentId) },
-                        cardWidth: cardWidth,
-                        posterSize: homeCards.presentation.posterSize,
-                        leadingCaption: true,
-                        focusBinding: $focusedItemId,
-                        focusContentId: item.contentId
-                    )
-                }
-            }
-            .padding(.vertical, railVerticalPadding)
-        }
-        .focusSection()
-        // Land d-pad entry on the first card (like the cast/episode rails)
-        // instead of letting tvOS pick the geometrically-nearest middle card.
-        .applySimilarRailDefaultFocus(items.first?.contentId, binding: $focusedItemId)
-        .scrollClipDisabled()
-    }
-
-    // MARK: - Loading placeholder
-
-    private var loadingPlaceholder: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: cardSpacing) {
-                ForEach(0..<4, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: VividTheme.cornerRadius)
-                        .fill(Color.vividSurfaceElevated)
-                        .frame(
-                            width: cardWidth * homeCards.presentation.posterSize.scale,
-                            height: cardWidth * homeCards.presentation.posterSize.scale * 1.5
-                        )
-                }
-            }
-            .padding(.vertical, railVerticalPadding)
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func applyFocusRequestIfPossible() {
-        guard focusRequest > 0,
-              focusRequest != lastAppliedFocusRequest,
-              let firstContentId = items.first?.contentId else { return }
-        lastAppliedFocusRequest = focusRequest
-        focusedItemId = firstContentId
-    }
-
-    // MARK: - Data loading
-
-    private func load() async {
-        items = []
-        isLoading = false
-        lastAppliedFocusRequest = 0
-        let context = library.contextKey
-        isLoading = true
-        do {
-            let result = try await library.suggestions(contentId: contentId, sourceDetail: sourceDetail)
-            guard !Task.isCancelled, library.contextKey == context else { return }
-            items = result
-            resultContext = context
-        } catch {
-            guard !Task.isCancelled, library.contextKey == context else { return }
-            items = []
-        }
-        isLoading = false
-    }
-
-}
-
-// MARK: - Collection rail
-
-/// "<Name> Collection" rail under More Like This on movie pages: the
-/// library titles from the movie's TMDb collection, in release order.
-/// Hidden without a TMDb connection, when the movie isn't in a
-/// collection, or when it's the only one from it in the library.
-///
-/// The movie page loads the row and only adds this view once there is
-/// one, so a hidden row leaves no gap.
-struct TVCollectionRail: View {
-    let detail: ItemDetail
-    let row: MovieCollectionRowStore.Row
-    let onSelect: (String) -> Void
-
-    @State private var homeCards = TVHomeCardPreferences.shared
-    @FocusState private var focusedItemId: String?
-
-    private let cardWidth: CGFloat = VividTheme.Skyline.densePosterCardWidth
-    private let cardSpacing: CGFloat = 44
-    private let railVerticalPadding: CGFloat = 12
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
-            TVSectionHeader(title: row.name)
-            rail(row.items)
-        }
-    }
-
-    private func rail(_ items: [SimilarPosterItem]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: cardSpacing) {
-                ForEach(items) { item in
-                    TVMediaCard(
-                        title: item.title,
-                        posterUrl: item.posterUrl ?? "",
-                        posterThumbhash: item.posterThumbhash,
-                        year: item.year,
-                        action: {
-                            // The movie being viewed still gets the press
-                            // animation, but stays on this page.
-                            guard item.contentId != detail.contentId else { return }
-                            onSelect(item.contentId)
-                        },
-                        cardWidth: cardWidth,
-                        posterSize: homeCards.presentation.posterSize,
-                        leadingCaption: true,
-                        focusBinding: $focusedItemId,
-                        focusContentId: item.contentId
-                    )
-                }
-            }
-            .padding(.vertical, railVerticalPadding)
-        }
-        .focusSection()
-        .applySimilarRailDefaultFocus(items.first?.contentId, binding: $focusedItemId)
-        .scrollClipDisabled()
-    }
-
-}
-
-private extension View {
-    /// When focus enters the Recommended rail, land on the first card rather
-    /// than the geometrically-nearest one. `.userInitiated` priority is what
-    /// makes `defaultFocus` win over geometric proximity on d-pad entry — the
-    /// same helper shape as `TVDetailCastRail.applyCastRailDefaultFocus`.
-    /// No-op while loading / empty (first id is nil).
-    @ViewBuilder
-    func applySimilarRailDefaultFocus(
-        _ firstContentId: String?,
-        binding: FocusState<String?>.Binding
-    ) -> some View {
-        if let firstContentId {
-            self.defaultFocus(binding, firstContentId, priority: .userInitiated)
-        } else {
-            self
-        }
-    }
-}
-
-// MARK: - Card model
-
-/// View-side projection of an `ItemDetail` containing only what the
-/// poster card needs. Decoupled so the card never re-renders when
-/// unrelated detail fields change.
+/// A poster in the More Like This and collection rails. Studios & Networks
+/// also saves these to disk, so the stored fields and their coding keys must
+/// not change.
 struct SimilarPosterItem: Identifiable, Hashable, Codable {
     let contentId: String
     let title: String
     let posterUrl: String?
     let posterThumbhash: String?
     let year: Int?
+
     var id: String { contentId }
 
     init(item: BrowseItem) {
@@ -238,11 +22,132 @@ struct SimilarPosterItem: Identifiable, Hashable, Codable {
     }
 
     init(detail: ItemDetail) {
-        self.contentId = detail.contentId
-        self.title = detail.title
-        self.posterUrl = detail.posterUrl
-        self.posterThumbhash = detail.posterThumbhash
-        self.year = detail.year
+        contentId = detail.contentId
+        title = detail.title
+        posterUrl = detail.posterUrl
+        posterThumbhash = detail.posterThumbhash
+        year = detail.year
+    }
+}
+
+/// Library titles like this one. Always present, so it can host its own
+/// load. While loading it shows the heading over placeholders; once loaded,
+/// the heading and rail show only when there are suggestions.
+struct TVMoreLikeThisSection: View {
+    let sourceId: String
+    let sourceDetail: ItemDetail?
+    let onSelect: (String) -> Void
+    var onFocusChange: ((Bool) -> Void)? = nil
+
+    @State private var items: [SimilarPosterItem] = []
+    @State private var itemsContext: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        let store = TVLibrarySimilarityStore.shared
+        let contextKey = store.contextKey
+        VStack(alignment: .leading, spacing: 14) {
+            if isLoading {
+                TVDetailSectionHeader("More Like This")
+                TVPosterRailPlaceholder()
+            } else if !items.isEmpty, itemsContext == contextKey {
+                TVDetailSectionHeader("More Like This")
+                TVPosterRail(items: items, onSelect: { onSelect($0.contentId) }, onFocusChange: onFocusChange)
+            }
+        }
+        .task(id: "\(sourceId)|\(contextKey)", priority: .userInitiated) {
+            items = []
+            isLoading = true
+            let context = store.contextKey
+            do {
+                let result = try await store.suggestions(contentId: sourceId, sourceDetail: sourceDetail)
+                guard !Task.isCancelled, store.contextKey == context else { return }
+                items = result
+                itemsContext = context
+            } catch {
+                guard !Task.isCancelled, store.contextKey == context else { return }
+                items = []
+            }
+            isLoading = false
+        }
+    }
+}
+
+/// A TMDb collection the movie belongs to, with its library titles.
+struct TVCollectionRailSection: View {
+    let row: MovieCollectionRowStore.Row
+    let currentContentId: String
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            TVDetailSectionHeader(verbatim: row.name)
+            TVPosterRail(items: row.items) { item in
+                guard item.contentId != currentContentId else { return }
+                onSelect(item.contentId)
+            }
+        }
+    }
+}
+
+/// A row of library posters with Home's card size and captions.
+struct TVPosterRail: View {
+    let items: [SimilarPosterItem]
+    let onSelect: (SimilarPosterItem) -> Void
+    var onFocusChange: ((Bool) -> Void)? = nil
+
+    @State private var homeCards = TVHomeCardPreferences.shared
+    @FocusState private var focusedId: String?
+
+    var body: some View {
+        let posterSize = homeCards.presentation.posterSize
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 44) {
+                ForEach(items) { item in
+                    TVMediaCard(
+                        title: item.title,
+                        posterUrl: item.posterUrl ?? "",
+                        posterThumbhash: item.posterThumbhash,
+                        year: item.year,
+                        action: { onSelect(item) },
+                        cardWidth: VividTheme.Skyline.densePosterCardWidth,
+                        posterSize: posterSize,
+                        leadingCaption: true,
+                        focusBinding: $focusedId,
+                        focusContentId: item.contentId
+                    )
+                }
+            }
+            .padding(.vertical, 12)
+        }
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        .focusSection()
+        .defaultFocus($focusedId, items.first?.contentId, priority: .userInitiated)
+        .onChange(of: focusedId) { _, newValue in
+            onFocusChange?(newValue != nil)
+        }
+    }
+}
+
+/// Four empty posters while More Like This loads.
+private struct TVPosterRailPlaceholder: View {
+    @State private var homeCards = TVHomeCardPreferences.shared
+
+    var body: some View {
+        let width = VividTheme.Skyline.densePosterCardWidth * homeCards.presentation.posterSize.scale
+        ScrollView(.horizontal) {
+            HStack(spacing: 44) {
+                ForEach(0..<4, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.vividSurfaceElevated)
+                        .frame(width: width, height: width * 1.5)
+                }
+            }
+            .padding(.vertical, 12)
+        }
+        .scrollIndicators(.hidden)
+        .allowsHitTesting(false)
     }
 }
 #endif
