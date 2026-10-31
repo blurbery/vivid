@@ -316,8 +316,9 @@ struct TVDetailFactsBlock: View {
     /// when there are more.
     private static func creditNames(_ names: [String]) -> String? {
         let distinct = Array(Set(names)).sorted()
-        guard !distinct.isEmpty else { return nil }
         let shown = distinct.prefix(3).joined(separator: ", ")
+        // No names, or only empty ones, leave the fact out.
+        guard !shown.isEmpty else { return nil }
         return distinct.count > 3 ? shown + ", \u{2026}" : shown
     }
 }

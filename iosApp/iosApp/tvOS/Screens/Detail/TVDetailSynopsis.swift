@@ -107,7 +107,6 @@ struct TVFullSynopsis: View {
                         contentHeight = height
                     }
                 }
-                .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(height: min(max(contentHeight, 40), 560))
                 .defaultFocus($focusedBlock, 0)

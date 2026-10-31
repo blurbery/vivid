@@ -88,15 +88,18 @@ private struct TVSeasonChipBody: View {
 
     @Environment(\.isFocused) private var isFocused
 
-    private var fill: Color {
-        if isFocused { return .white }
-        return .white.opacity(isSelected ? 0.20 : 0.05)
-    }
-
     var body: some View {
         configuration.label
             .foregroundStyle(isFocused ? Color.black : Color.white)
-            .background(Capsule().fill(fill))
+            .background {
+                // Separate capsules, so a focus change cross-fades them
+                // rather than tweening one colour.
+                if isFocused {
+                    Capsule().fill(Color.white)
+                } else {
+                    Capsule().fill(Color.white.opacity(isSelected ? 0.20 : 0.05))
+                }
+            }
             .scaleEffect((isFocused ? 1.04 : 1) * (configuration.isPressed ? 0.97 : 1))
             .focusEffectDisabled()
             .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)

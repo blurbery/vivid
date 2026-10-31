@@ -199,7 +199,9 @@ private struct TVDetailSubtitleMenu: View {
         guard let fileContext, requestedContext == fileContext else { return }
         isReading = true
         do {
-            readTracks = try await LucidSubtitleInventory.shared.read(context: fileContext)
+            let tracks = try await LucidSubtitleInventory.shared.read(context: fileContext)
+            // A read that finished after its file changed is dropped.
+            if !Task.isCancelled { readTracks = tracks }
         } catch is CancellationError {
             // A newer read replaces this one.
         } catch {

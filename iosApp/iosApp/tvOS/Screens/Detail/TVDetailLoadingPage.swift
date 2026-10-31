@@ -159,7 +159,8 @@ struct TVDetailLoadingPage: View {
             TVDetailCompactHeading(
                 tokens: [token],
                 genres: seed?.genre.map { [$0] } ?? [],
-                contentRating: TVHeroMetadata.contentRating(seed?.contentRating)
+                // Passed as the seed gives it, spaces and all.
+                contentRating: seed?.contentRating
             )
             .frame(height: 36, alignment: .leading)
             .padding(.top, 10)
@@ -210,7 +211,7 @@ struct TVDetailLoadingPage: View {
         if parts.isEmpty {
             placeholder(width: 390, height: 22, radius: 6)
         } else {
-            Text(verbatim: parts.joined(separator: "  \u{00B7}  ").uppercased())
+            Text(verbatim: parts.joined(separator: "  \u{00B7}  "))
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.76))
                 .lineLimit(1)
@@ -236,7 +237,8 @@ struct TVDetailLoadingPage: View {
             }
         }
         if let rating = seed.contentRating?.trimmingCharacters(in: .whitespacesAndNewlines), !rating.isEmpty {
-            parts.append(rating)
+            // Only the rating is upper-cased.
+            parts.append(rating.uppercased())
         }
         return parts
     }

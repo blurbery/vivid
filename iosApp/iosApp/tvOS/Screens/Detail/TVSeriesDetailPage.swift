@@ -45,11 +45,12 @@ struct TVSeriesDetailPage: View {
         .onAppear {
             showsSeriesOverview = activeEpisodeId == nil
         }
-        .onChange(of: heroFocus) { _, focus in
+        .onChange(of: heroFocus) { old, focus in
             guard let focus, focus.isActionRow else { return }
             if focus == .play {
                 playHadFocus = true
-            } else if playTarget == nil {
+            } else if playTarget == nil, old?.isActionRow != true {
+                // Only focus entering the row counts, not a move along it.
                 actionHadFocusWithoutTarget = true
             }
         }

@@ -160,10 +160,13 @@ struct TVSeriesEpisodeShelf: View {
         }
         .scrollClipDisabled()
         .focusSection()
-        .onScrollGeometryChange(for: CGRect.self) { geometry in
-            geometry.visibleRect
-        } action: { _, visible in
-            reportScrollSeason(visible)
+        // Acts only when the season in view changes to a known one, so
+        // scrolling never clears the reported season.
+        .onScrollGeometryChange(for: String?.self) { geometry in
+            seasonInView(geometry.visibleRect)
+        } action: { _, seasonId in
+            guard let seasonId, !isActionRowFocused, !isEnteringFromHero, focusedPillId == nil else { return }
+            scrollSeasonId = seasonId
         }
     }
 
@@ -301,7 +304,7 @@ struct TVSeriesEpisodeShelf: View {
 
     /// Works out which season is in view from the fixed slot geometry, so
     /// the pill highlight can follow the scroll without moving focus.
-    private func reportScrollSeason(_ visible: CGRect) {
+    private func seasonInView(_ visible: CGRect) -> String? {
         var slot = 0
         var firstSlots: [(season: Season, start: CGFloat)] = []
         var focusedCentre: (season: Season, centre: CGFloat)?
@@ -321,16 +324,11 @@ struct TVSeriesEpisodeShelf: View {
             slot += count
         }
 
-        let seasonInView: Season?
         if let focusedCentre, focusedCentre.centre >= visible.minX, focusedCentre.centre <= visible.maxX {
-            seasonInView = focusedCentre.season
-        } else {
-            let leadingCentre = max(0, visible.minX) + Self.cardCentre
-            seasonInView = firstSlots.last(where: { $0.start <= leadingCentre })?.season
+            return focusedCentre.season.contentId
         }
-
-        guard !isActionRowFocused, !isEnteringFromHero, focusedPillId == nil else { return }
-        scrollSeasonId = seasonInView?.contentId
+        let leadingCentre = max(0, visible.minX) + Self.cardCentre
+        return firstSlots.last(where: { $0.start <= leadingCentre })?.season.contentId
     }
 }
 
@@ -491,7 +489,8 @@ private struct TVSeriesShelfCard: View {
     }
 
     private var titleText: Text {
-        if let title = episode.title, !title.isEmpty {
+        // Only a missing title falls back; an empty one shows as it is.
+        if let title = episode.title {
             return Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")
