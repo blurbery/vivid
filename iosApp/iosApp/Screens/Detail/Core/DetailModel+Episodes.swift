@@ -148,10 +148,11 @@ extension ItemDetailViewModel {
 
     // MARK: - Season list
 
-    /// Loads the season list. A favourite, watchlist or watched change made
-    /// while it loads drops the response.
+    /// Loads the season list. A watched change made while it loads drops
+    /// the response, which may not include it yet; a favourite or watchlist
+    /// change doesn't touch seasons, so it keeps the response.
     func loadSeasonList(seriesId: String, autoSelect: Bool, pooled: Bool) async {
-        let changeTurn = localChangeTurn
+        let writeTurn = watchedWriteTurn
         let response: SeasonsResponse
         do {
             response = pooled
@@ -160,7 +161,7 @@ extension ItemDetailViewModel {
         } catch {
             return
         }
-        guard localChangeTurn == changeTurn else { return }
+        guard watchedWriteTurn == writeTurn else { return }
         ResponseCache.shared.set(response, for: CacheKey.itemSeasons(seriesId))
         seasons = response.seasons.sortedForDisplay()
         guard autoSelect, let initial = preferredInitialSeason(seasons: seasons) else { return }
@@ -174,9 +175,12 @@ extension ItemDetailViewModel {
 
     /// Requests the season list and the resume season's episodes together,
     /// alongside the catalogue request, when a Continue Watching card opens
-    /// a series. Returns true only when both answered. A season tap made
-    /// meanwhile wins, and unchanged data is not assigned again, so an open
-    /// page doesn't redraw. The resume intent is left for the caller.
+    /// a series. Returns true only when both answered or, when the list no
+    /// longer has the resume season, when the list answered and the season
+    /// that replaced it is now selected and shown (its page is then loaded
+    /// the usual way and the resume season's page is not used). A season
+    /// tap made meanwhile wins, and unchanged data is not assigned again, so
+    /// an open page doesn't redraw. The resume intent is left for the caller.
     @discardableResult
     func loadContinueWatchingStructure(
         contentId: String,
@@ -354,46 +358,60 @@ extension ItemDetailViewModel {
     }
 
     /// Refreshes the shown episodes' favourite flags shortly after a page
-    /// settles, at low priority.
+    /// settles, at low priority: asks the server about each episode, six at
+    /// a time, and publishes the answers if the same episodes are still
+    /// shown. A flag changed here since the refresh began keeps its local
+    /// value. The task re-reads its weak reference after every wait, so a
+    /// model that has gone away stops it.
     private func scheduleEpisodeFavoriteRefresh(page: [EpisodeListItem], turn: Int) {
         guard !page.isEmpty else { return }
         favoriteRefresh?.cancel()
+        let ids = page.map(\.contentId)
         favoriteRefresh = Task(priority: .utility) { [weak self] in
             try? await Task.sleep(for: .milliseconds(1_100))
-            guard !Task.isCancelled, let self, self.episodeTurn == turn else { return }
-            await self.refreshEpisodeFavoriteStates(page: page)
-            guard !Task.isCancelled, self.episodeTurn == turn else { return }
-            self.favoriteRefresh = nil
+            guard !Task.isCancelled, let start = self?.beginEpisodeFavoriteRefresh(episodeTurn: turn) else { return }
+            var answers: [String: Bool] = [:]
+            for batchStart in stride(from: 0, to: ids.count, by: 6) {
+                guard !Task.isCancelled, self?.favoriteRefreshTurn == start.refreshTurn else { return }
+                let batch = Array(ids[batchStart..<min(batchStart + 6, ids.count)])
+                let batchAnswers = await ItemDetailViewModel.favoriteAnswers(for: batch)
+                answers.merge(batchAnswers) { _, new in new }
+                guard !Task.isCancelled, self?.favoriteRefreshTurn == start.refreshTurn else { return }
+            }
+            self?.publishEpisodeFavoriteStates(answers, queried: ids, refreshTurn: start.refreshTurn,
+                                               editsAtStart: start.edits)
+            guard !Task.isCancelled, self?.episodeTurn == turn else { return }
+            self?.favoriteRefresh = nil
         }
     }
 
-    /// Asks the server about each episode, six at a time, and publishes the
-    /// answers if the same episodes are still shown. A flag changed here
-    /// since the refresh began keeps its local value.
-    private func refreshEpisodeFavoriteStates(page: [EpisodeListItem]) async {
+    /// Takes a refresh turn and notes each episode's edit count, unless a
+    /// newer episode load has started.
+    private func beginEpisodeFavoriteRefresh(episodeTurn turn: Int) -> (refreshTurn: Int, edits: [String: Int])? {
+        guard episodeTurn == turn else { return nil }
         favoriteRefreshTurn += 1
-        let refreshTurn = favoriteRefreshTurn
-        let editsAtStart = episodeFavoriteEdits
-        let ids = page.map(\.contentId)
-        var answers: [String: Bool] = [:]
+        return (favoriteRefreshTurn, episodeFavoriteEdits)
+    }
 
-        for start in stride(from: 0, to: ids.count, by: 6) {
-            guard !Task.isCancelled, favoriteRefreshTurn == refreshTurn else { return }
-            let batch = Array(ids[start..<min(start + 6, ids.count)])
-            let results = await withTaskGroup(of: (String, Bool?).self) { group in
-                for id in batch {
-                    group.addTask { (id, try? await VividAPI.shared.isFavorite(contentId: id)) }
-                }
-                var collected: [String: Bool] = [:]
-                for await (id, value) in group {
-                    if let value { collected[id] = value }
-                }
-                return collected
+    /// One batch of favourite lookups, asked together; a failed lookup
+    /// gives no answer.
+    private nonisolated static func favoriteAnswers(for ids: [String]) async -> [String: Bool] {
+        await withTaskGroup(of: (String, Bool?).self) { group in
+            for id in ids {
+                group.addTask { (id, try? await VividAPI.shared.isFavorite(contentId: id)) }
             }
-            answers.merge(results) { _, new in new }
-            guard !Task.isCancelled, favoriteRefreshTurn == refreshTurn else { return }
+            var collected: [String: Bool] = [:]
+            for await (id, value) in group {
+                if let value { collected[id] = value }
+            }
+            return collected
         }
+    }
 
+    /// Publishes a refresh's answers if its turn is still the newest and the
+    /// same episodes are shown.
+    private func publishEpisodeFavoriteStates(_ answers: [String: Bool], queried ids: [String],
+                                              refreshTurn: Int, editsAtStart: [String: Int]) {
         let shown = Set(episodes.map(\.contentId))
         guard favoriteRefreshTurn == refreshTurn, shown == Set(ids) else { return }
         var states = episodeFavoriteStates.filter { shown.contains($0.key) }

@@ -14,11 +14,8 @@ struct DescriptionTranslationView: View {
 
     var body: some View {
         let mode = AICapabilities.shared.metadataOnView
-        if mode != .off, let target = targetLanguage {
-            // One container that stays while the state changes, so only
-            // leaving the page (or the translation no longer applying)
-            // cancels the run.
-            ZStack {
+        Group {
+            if mode != .off, let target = targetLanguage {
                 switch translation.phase {
                 case .translating:
                     HStack(spacing: 8) {
@@ -44,8 +41,8 @@ struct DescriptionTranslationView: View {
                     }
                 }
             }
-            .onDisappear { translation.cancel() }
         }
+        .onDisappear { translation.cancel() }
     }
 
     private var targetLanguage: String? {
@@ -91,14 +88,39 @@ private final class DescriptionTranslationRun {
         start(contentId: contentId, targetLanguage: targetLanguage, model: model)
     }
 
-    /// Ignored while a run is going.
+    /// Ignored while a run is going. The run re-reads its weak references
+    /// to this driver and the page's model after every wait, so either
+    /// going away stops it.
     func start(contentId: String, targetLanguage: String, model: ItemDetailViewModel) {
         guard task == nil else { return }
         phase = .translating
         generation += 1
         let run = generation
         task = Task { [weak self, weak model] in
-            await self?.perform(run: run, contentId: contentId, targetLanguage: targetLanguage, model: model)
+            do {
+                try await VividAI.shared.translateDescription(contentId: contentId, targetLanguage: targetLanguage)
+            } catch {
+                self?.finish(run, as: .failed)
+                return
+            }
+            for delay in DescriptionTranslationRun.refetchDelays {
+                guard self?.isLive(run) == true else { return }
+                try? await Task.sleep(for: .seconds(delay))
+                guard self?.isLive(run) == true else { return }
+                guard let item = try? await VividAPI.shared.itemDetail(contentId: contentId) else { continue }
+                guard self?.isLive(run) == true else { return }
+                guard let model else {
+                    self?.finish(run, as: .idle)
+                    return
+                }
+                // The model publishes it and caches what it published.
+                model.publishRefetchedDetail(item, contentId: contentId)
+                if item.pendingTranslationLanguage == nil {
+                    self?.finish(run, as: .idle)
+                    return
+                }
+            }
+            self?.finish(run, as: .failed)
         }
     }
 
@@ -119,28 +141,5 @@ private final class DescriptionTranslationRun {
         guard isLive(run) else { return }
         phase = outcome
         task = nil
-    }
-
-    private func perform(run: Int, contentId: String, targetLanguage: String, model: ItemDetailViewModel?) async {
-        do {
-            try await VividAI.shared.translateDescription(contentId: contentId, targetLanguage: targetLanguage)
-        } catch {
-            finish(run, as: .failed)
-            return
-        }
-        for delay in Self.refetchDelays {
-            guard isLive(run) else { return }
-            try? await Task.sleep(for: .seconds(delay))
-            guard isLive(run) else { return }
-            guard let item = try? await VividAPI.shared.itemDetail(contentId: contentId) else { continue }
-            guard isLive(run) else { return }
-            ResponseCache.shared.set(item, for: CacheKey.itemDetail(contentId))
-            model?.publishRefetchedDetail(item, contentId: contentId)
-            if item.pendingTranslationLanguage == nil {
-                finish(run, as: .idle)
-                return
-            }
-        }
-        finish(run, as: .failed)
     }
 }

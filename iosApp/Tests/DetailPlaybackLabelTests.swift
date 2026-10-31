@@ -257,4 +257,8 @@ final class DetailPlaybackLabelTests: XCTestCase {
         let tracks = try XCTUnwrap(file.subtitleTracks)
         XCTAssertEqual(DetailPlaybackFormatting.subtitleShortLabel(tracks[1], ordinal: 1), "Director's Commentary (Hearing Impaired)")
     }
+
+    func testLanguageValueStartingWithASeparatorReadsAsAName() {
+        XCTAssertEqual(DetailPlaybackFormatting.languageLabel("-english", inAppLanguage: false), "-English")
+    }
 }

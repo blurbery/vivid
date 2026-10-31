@@ -35,8 +35,10 @@ enum DetailPlaybackFormatting {
         return label.isEmpty ? String(localized: "Auto") : label
     }
 
-    /// Only an unused helper in the previous Apple TV selector row calls
-    /// this. It stays until that file is gone, then a clean-up removes it.
+    /// Not shown anywhere. Kept only because main's Apple TV selector row
+    /// still names it, from `TVPlaybackActionSelectors.versionValue`, a
+    /// private property nothing reads; this stops that file failing to
+    /// build. A clean-up after the detail rewrites removes both together.
     static func versionCompactLabel(_ version: FileVersion?) -> String {
         guard let version else { return String(localized: "Auto") }
         let label = joined([trimmedText(version.resolution), dynamicRangeLabel(version)])
@@ -55,7 +57,8 @@ enum DetailPlaybackFormatting {
         let label = joined(shortParts(version))
         if !label.isEmpty { return label }
         if let fileName = trimmedText(version.fileName) {
-            let base = ((fileName as NSString).lastPathComponent as NSString).deletingPathExtension
+            // The extension as a file URL sees it.
+            let base = URL(fileURLWithPath: fileName, isDirectory: false).deletingPathExtension().lastPathComponent
             if let name = trimmedText(base) { return name }
         }
         return String(localized: "Version \(String(version.fileId))")
@@ -296,10 +299,12 @@ enum DetailPlaybackFormatting {
     /// in English. A value longer than a code is already a name.
     static func languageLabel(_ value: String?, inAppLanguage: Bool) -> String? {
         guard let trimmed = trimmedText(value) else { return nil }
-        let base = trimmed.lowercased()
+        // Empty pieces are skipped, so a value starting with a separator is
+        // judged by its first real piece.
+        let pieces: [Substring] = trimmed.lowercased()
             .replacingOccurrences(of: "_", with: "-")
-            .components(separatedBy: "-")
-            .first ?? ""
+            .split(separator: "-")
+        let base = pieces.first ?? ""
         if base.count > 3 { return trimmed.capitalized }
         if let key = SubtitleDisplayOrder.canonicalLanguageKey(trimmed) {
             return inAppLanguage

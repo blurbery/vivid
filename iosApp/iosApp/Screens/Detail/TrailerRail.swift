@@ -36,7 +36,8 @@ enum TrailerRailEntry: Identifiable, Hashable {
 
 /// Builds the trailer rail and the YouTube links its cards open. Thumbnails
 /// load from i.ytimg.com and a card hands the video to the YouTube app or
-/// website; nothing else about the viewer is sent.
+/// website. A card sends YouTube only the video key and normal connection
+/// information, as the privacy policy says.
 enum TrailerRail {
     /// Playable videos first (only YouTube can be opened), in server order,
     /// then every extra in server order.

@@ -84,16 +84,21 @@ extension ItemDetailViewModel {
     private func writeWatched(contentId target: String, played: Bool) async -> Bool {
         guard !isWatchedWritePending else { return false }
         let refreshHome = StartupContentPrefetcher.homeRefreshAfterPlaybackWrite()
+        // The write drops any episode request still out, so a page from
+        // before it can't undo it. A rail that was empty and waiting for
+        // that request is reloaded once the write ends.
+        let waitingSeasonNumber = isLoadingEpisodes ? (selectedSeason?.seasonNumber ?? detail?.seasonNumber) : nil
         localChangeTurn += 1
+        watchedWriteTurn += 1
         episodeTurn += 1
+        let writeEpisodeTurn = episodeTurn
         isLoadingEpisodes = false
         #if os(tvOS)
         cancelDeferredEpisodeFavoriteStateRefresh()
-        #else
+        #elseif os(iOS)
         stopEpisodePagePrefetch()
         #endif
         isWatchedWritePending = true
-        defer { isWatchedWritePending = false }
 
         let snapshotDetailId = detail?.contentId
         let snapshotEpisodes = episodes
@@ -145,26 +150,41 @@ extension ItemDetailViewModel {
 
         if target == detail?.contentId || seriesWide {
             isWatched = played
+        } else if detail?.type == "episode", let targetSeasonNumber, detail?.seasonNumber == targetSeasonNumber {
+            // The episode page's own season was written.
+            isWatched = played
         } else if detail?.type == "series", !seasons.isEmpty {
             isWatched = seasons.allSatisfy { $0.userData?.played == true }
         }
 
+        let succeeded: Bool
         do {
             try await VividAPI.shared.setWatched(contentId: target, played: played)
+            dropStaleCacheEntries(contentId: target, seriesId: seriesIdInUse, seasonNumber: targetSeasonNumber)
+            refreshHome()
+            succeeded = true
         } catch {
-            guard detail?.contentId == snapshotDetailId else { return false }
-            if selectedSeason?.contentId == snapshotSelectedSeason?.contentId {
-                episodes = snapshotEpisodes
-                selectedSeason = snapshotSelectedSeason
+            if detail?.contentId == snapshotDetailId {
+                if selectedSeason?.contentId == snapshotSelectedSeason?.contentId {
+                    episodes = snapshotEpisodes
+                    selectedSeason = snapshotSelectedSeason
+                }
+                episodesBySeason = snapshotPages
+                seasons = snapshotSeasons
+                isWatched = snapshotIsWatched
             }
-            episodesBySeason = snapshotPages
-            seasons = snapshotSeasons
-            isWatched = snapshotIsWatched
-            return false
+            succeeded = false
         }
-        dropStaleCacheEntries(contentId: target, seriesId: seriesIdInUse, seasonNumber: targetSeasonNumber)
-        refreshHome()
-        return true
+        isWatchedWritePending = false
+
+        if let waitingSeasonNumber, let seriesId = seriesIdInUse, episodeTurn == writeEpisodeTurn,
+           detail?.contentId == snapshotDetailId, episodes.isEmpty,
+           selectedSeason == nil || selectedSeason?.seasonNumber == waitingSeasonNumber {
+            // Direct, so it can't join the dropped request if that is still
+            // out and get the page from before the write.
+            await loadEpisodes(seriesId: seriesId, seasonNumber: waitingSeasonNumber, fallbackSeasonNumber: nil, pooled: false)
+        }
+        return succeeded
     }
 
     /// Played, not in progress, back at the start.

@@ -83,6 +83,7 @@ class ItemDetailViewModel {
     func resumeTrailerFetchIfNeeded() {}
 
     // MARK: Bookkeeping
+    // Model only: pages must not write these.
 
     /// The series whose seasons and episodes the page requests.
     @ObservationIgnored var seriesIdInUse: String?
@@ -95,8 +96,13 @@ class ItemDetailViewModel {
     /// Taken by every episode load, stored-page switch and watched write.
     @ObservationIgnored var episodeTurn = 0
     /// Taken by favourite, watchlist and watched changes made here, so a
-    /// response that started earlier can't undo them.
+    /// load's favourite and watchlist answers that started earlier can't
+    /// undo them.
     @ObservationIgnored var localChangeTurn = 0
+    /// Taken only by watched writes, so a season list or watched flag that
+    /// started loading earlier can't undo one. Favourite and watchlist
+    /// changes don't touch either.
+    @ObservationIgnored var watchedWriteTurn = 0
     @ObservationIgnored var isWatchedWritePending = false
     @ObservationIgnored var watchDetailFollowUp: Task<Void, Never>?
     #if os(iOS)
@@ -122,7 +128,7 @@ class ItemDetailViewModel {
             } else {
                 detail = cached
             }
-            #else
+            #elseif os(iOS)
             detail = cached
             #endif
             isWatched = cached.userData?.played ?? false
@@ -158,7 +164,7 @@ class ItemDetailViewModel {
                 selectedSeason = seasons.first { $0.seasonNumber == number }
             }
             let paintsSelectedPage = true
-            #else
+            #elseif os(iOS)
             if detail.type == "series" {
                 if let resume = initialResumeSeasonNumber {
                     selectedSeason = seasons.first { $0.seasonNumber == resume }
@@ -221,13 +227,15 @@ class ItemDetailViewModel {
         #if os(tvOS)
         let paintedThisTitle = detail?.contentId == contentId ? detail : nil
         let cachedFollowUpPayload = resumeSeason == nil ? paintedThisTitle : nil
-        async let cachedFollowUp: Void = followUpPiece(cachedFollowUpPayload, preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
+        async let cachedFollowUp: Void = followUpPiece(cachedFollowUpPayload, contentId: contentId,
+                                                       preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
         async let _: Void = earlyWatchDetailPiece(
             contentId: contentId, turn: turn, runs: paintedThisTitle.map { Self.isLeaf($0) } ?? false)
         #endif
 
         error = nil
         let changeTurnAtStart = localChangeTurn
+        let watchedTurnAtStart = watchedWriteTurn
         async let favoriteAnswer = Self.answer { try await VividAPI.shared.isFavorite(contentId: contentId) }
         async let watchlistAnswer = Self.answer { try await VividAPI.shared.isInWatchlist(contentId: contentId) }
 
@@ -243,22 +251,35 @@ class ItemDetailViewModel {
         }
 
         guard let published = publishCatalogue(fetched, contentId: contentId, turn: turn, pooled: pooled) else { return }
-        isWatched = published.userData?.played ?? false
+        // A watched change made here since the request went out (or still
+        // being sent) is newer than this payload's flag.
+        if watchedWriteTurn == watchedTurnAtStart, !isWatchedWritePending {
+            isWatched = published.userData?.played ?? false
+        }
 
         if let resumeSeason {
             let loaded = await structureLoaded
-            if loaded, !Task.isCancelled, publishTurn == turn, initialResumeSeasonNumber == resumeSeason {
+            let resumeStillWanted = !Task.isCancelled && publishTurn == turn && initialResumeSeasonNumber == resumeSeason
+            if loaded, resumeStillWanted {
                 initialResumeSeasonNumber = nil
+            } else if !loaded, resumeStillWanted {
+                // The season list or the resume season's page didn't load:
+                // load the title the usual way. The resume season is still
+                // set, so the season list opens on it.
+                await runFollowUp(for: published, contentId: contentId,
+                                  preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
             }
         } else {
             #if os(tvOS)
             if cachedFollowUpPayload != nil {
                 await cachedFollowUp
             } else {
-                await runFollowUp(for: published, preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
+                await runFollowUp(for: published, contentId: contentId,
+                                  preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
             }
-            #else
-            await runFollowUp(for: published, preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
+            #elseif os(iOS)
+            await runFollowUp(for: published, contentId: contentId,
+                              preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
             #endif
         }
 
@@ -280,9 +301,9 @@ class ItemDetailViewModel {
     #if os(tvOS)
     /// The follow-up for a payload the cache paint already showed, started
     /// without waiting for the catalogue request.
-    private func followUpPiece(_ payload: ItemDetail?, preserveSeasonSelection: Bool, pooled: Bool) async {
+    private func followUpPiece(_ payload: ItemDetail?, contentId: String, preserveSeasonSelection: Bool, pooled: Bool) async {
         guard let payload else { return }
-        await runFollowUp(for: payload, preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
+        await runFollowUp(for: payload, contentId: contentId, preserveSeasonSelection: preserveSeasonSelection, pooled: pooled)
     }
 
     /// Requests the painted title's playback metadata beside the catalogue
@@ -339,6 +360,11 @@ class ItemDetailViewModel {
     private func startWatchDetailFollowUp(for item: ItemDetail, contentId: String, turn: Int, pooled: Bool) {
         watchDetailFollowUp?.cancel()
         watchDetailFollowUp = Task { [weak self] in
+            // Once started, the task keeps the model until it ends, so the
+            // merged payload still reaches the cache after the page closes
+            // and a reopened page paints its version, audio and subtitle
+            // rows straight away.
+            guard let self else { return }
             let watch: WatchDetail
             do {
                 watch = pooled
@@ -348,32 +374,48 @@ class ItemDetailViewModel {
                 return
             }
             ResponseCache.shared.set(watch, for: CacheKey.itemWatchDetail(contentId))
-            guard let self, !Task.isCancelled, self.publishTurn == turn else { return }
+            guard !Task.isCancelled, self.publishTurn == turn else { return }
             let merged = ItemDetailViewModel.merging(watch, into: item)
             self.detail = merged
             ResponseCache.shared.set(merged, for: CacheKey.itemDetail(contentId))
         }
     }
 
-    /// Publishes a re-fetched item exactly as given (used by description
-    /// translation).
+    /// Publishes a re-fetched item (used by description translation). A
+    /// playable item keeps its playback metadata: the cached watch detail
+    /// when there is one, as a catalogue load does. Otherwise it keeps what
+    /// the page shows for the same title, and the watch detail is fetched
+    /// again and merged into the re-fetched item, since taking the turn
+    /// stopped any follow-up still waiting for it.
     func publishRefetchedDetail(_ item: ItemDetail, contentId: String) {
-        takePublishTurn()
-        detail = item
-        ResponseCache.shared.set(item, for: CacheKey.itemDetail(contentId))
+        let turn = takePublishTurn()
+        var published = item
+        if Self.isLeaf(item) {
+            if let watch = ResponseCache.shared.get(CacheKey.itemWatchDetail(contentId), as: WatchDetail.self) {
+                published = Self.merging(watch, into: item)
+            } else {
+                if (item.versions ?? []).isEmpty, let current = detail, current.contentId == contentId {
+                    published = Self.keepingPlayback(of: current, in: item)
+                }
+                startWatchDetailFollowUp(for: item, contentId: contentId, turn: turn, pooled: true)
+            }
+        }
+        detail = published
+        ResponseCache.shared.set(published, for: CacheKey.itemDetail(contentId))
     }
 
     // MARK: - Follow-up by type
 
     /// Loads what the page needs beyond the catalogue item: the season list
     /// for a series, the episode page and season list for a season or an
-    /// episode (plus the parent series artwork for an episode).
-    func runFollowUp(for item: ItemDetail, preserveSeasonSelection: Bool, pooled: Bool) async {
+    /// episode (plus the parent series artwork for an episode). A series
+    /// uses the id the page asked for, as the cache paint does.
+    func runFollowUp(for item: ItemDetail, contentId: String, preserveSeasonSelection: Bool, pooled: Bool) async {
         switch item.type {
         case "series":
-            seriesIdInUse = item.contentId
+            seriesIdInUse = contentId
             let rememberedSeason = preserveSeasonSelection ? selectedSeason?.seasonNumber : nil
-            await loadSeasonList(seriesId: item.contentId, autoSelect: rememberedSeason == nil, pooled: pooled)
+            await loadSeasonList(seriesId: contentId, autoSelect: rememberedSeason == nil, pooled: pooled)
             if let rememberedSeason, let fresh = seasons.first(where: { $0.seasonNumber == rememberedSeason }) {
                 selectedSeason = fresh
             }
@@ -454,6 +496,31 @@ class ItemDetailViewModel {
             effectiveSubtitleMode: watch.effectiveSubtitleMode,
             effectiveShowForcedSubtitles: watch.effectiveShowForcedSubtitles,
             effectiveSubtitleTrackSignature: watch.effectiveSubtitleTrackSignature,
+            overlaySummary: item.overlaySummary, pendingTranslationLanguage: item.pendingTranslationLanguage,
+            videos: item.videos, extras: item.extras)
+    }
+
+    /// The catalogue item with the same seven playback fields taken from a
+    /// payload already shown for the title instead of a watch detail.
+    nonisolated static func keepingPlayback(of shown: ItemDetail, in item: ItemDetail) -> ItemDetail {
+        ItemDetail(
+            contentId: item.contentId, type: item.type, status: item.status, title: item.title,
+            sortTitle: item.sortTitle, originalTitle: item.originalTitle, originalLanguage: item.originalLanguage,
+            showStatus: item.showStatus, year: item.year, overview: item.overview, tagline: item.tagline,
+            runtime: item.runtime, contentRating: item.contentRating, genres: item.genres,
+            ratingImdb: item.ratingImdb, ratingTmdb: item.ratingTmdb, ratingRtCritic: item.ratingRtCritic,
+            ratingRtAudience: item.ratingRtAudience, imdbId: item.imdbId, tmdbId: item.tmdbId, tvdbId: item.tvdbId,
+            cast: item.cast, crew: item.crew, studios: item.studios, networks: item.networks,
+            countries: item.countries, releaseDate: item.releaseDate, firstAirDate: item.firstAirDate,
+            lastAirDate: item.lastAirDate, posterUrl: item.posterUrl, posterThumbhash: item.posterThumbhash,
+            backdropUrl: item.backdropUrl, backdropThumbhash: item.backdropThumbhash, logoUrl: item.logoUrl,
+            seasonCount: item.seasonCount, seriesId: item.seriesId, seriesTitle: item.seriesTitle,
+            seasonNumber: item.seasonNumber, episodeNumber: item.episodeNumber, episodeCount: item.episodeCount,
+            airDate: item.airDate, isSpecials: item.isSpecials, userData: item.userData,
+            versions: shown.versions, subtitles: shown.subtitles, intro: shown.intro, credits: shown.credits,
+            effectiveSubtitleMode: shown.effectiveSubtitleMode,
+            effectiveShowForcedSubtitles: shown.effectiveShowForcedSubtitles,
+            effectiveSubtitleTrackSignature: shown.effectiveSubtitleTrackSignature,
             overlaySummary: item.overlaySummary, pendingTranslationLanguage: item.pendingTranslationLanguage,
             videos: item.videos, extras: item.extras)
     }

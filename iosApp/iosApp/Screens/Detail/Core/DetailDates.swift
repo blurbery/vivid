@@ -1,12 +1,13 @@
 import Foundation
 
 /// Release and air dates as detail pages show them. The server sends a
-/// plain date or an ISO 8601 date-time; anything else is shown as sent.
+/// plain date or an ISO 8601 date-time; anything else is shown as sent,
+/// trimmed.
 enum DetailDateFormatting {
     static func longDate(_ raw: String?) -> String? {
         guard let trimmed = trimmedInput(raw) else { return nil }
-        guard let date = parse(trimmed) else { return trimmed }
-        return longFormatter.string(from: date)
+        guard let parsed = parse(trimmed) else { return trimmed }
+        return (parsed.isCalendarDay ? longDayFormatter : longFormatter).string(from: parsed.date)
     }
 
     /// Episode cards ask on every redraw, so results are kept by the input
@@ -17,7 +18,8 @@ enum DetailDateFormatting {
         if let kept = abbreviatedCache.object(forKey: key) { return kept.value }
         let result: String?
         if let trimmed = trimmedInput(raw) {
-            result = parse(trimmed).map { mediumFormatter.string(from: $0) } ?? trimmed
+            result = parse(trimmed).map { ($0.isCalendarDay ? mediumDayFormatter : mediumFormatter).string(from: $0.date) }
+                ?? trimmed
         } else {
             result = nil
         }
@@ -41,18 +43,29 @@ enum DetailDateFormatting {
         return trimmed
     }
 
-    /// The ISO 8601 forms read in GMT; the plain pattern reads in the
-    /// device's time zone.
-    private static func parse(_ text: String) -> Date? {
-        fullDateParser.date(from: text)
-            ?? dateTimeParser.date(from: text)
-            ?? fractionalDateTimeParser.date(from: text)
-            ?? plainDateParser.date(from: text)
+    /// A parsed value: a calendar day, or a moment with a time.
+    private struct ParsedDate {
+        let date: Date
+        let isCalendarDay: Bool
+    }
+
+    /// Date-times are read with their offset and shown in the device's time
+    /// zone. A plain date is a calendar day: it is read and shown in GMT, so
+    /// "2024-05-01" reads 1 May in every time zone.
+    private static func parse(_ text: String) -> ParsedDate? {
+        if let moment = dateTimeParser.date(from: text) ?? fractionalDateTimeParser.date(from: text) {
+            return ParsedDate(date: moment, isCalendarDay: false)
+        }
+        if let day = fullDateParser.date(from: text) ?? plainDateParser.date(from: text) {
+            return ParsedDate(date: day, isCalendarDay: true)
+        }
+        return nil
     }
 
     private static let fullDateParser: ISO8601DateFormatter = {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withFullDate]
+        parser.timeZone = .gmt
         return parser
     }()
 
@@ -71,24 +84,22 @@ enum DetailDateFormatting {
     private static let plainDateParser: DateFormatter = {
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = .current
+        parser.timeZone = .gmt
         parser.dateFormat = "yyyy-MM-dd"
         return parser
     }()
 
-    private static let longFormatter: DateFormatter = {
+    private static let longFormatter = dateFormatter(style: .long, timeZone: .current)
+    private static let mediumFormatter = dateFormatter(style: .medium, timeZone: .current)
+    private static let longDayFormatter = dateFormatter(style: .long, timeZone: .gmt)
+    private static let mediumDayFormatter = dateFormatter(style: .medium, timeZone: .gmt)
+
+    private static func dateFormatter(style: DateFormatter.Style, timeZone: TimeZone) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = .current
-        formatter.timeZone = .current
-        formatter.dateStyle = .long
+        formatter.timeZone = timeZone
+        formatter.dateStyle = style
         formatter.timeStyle = .none
         return formatter
-    }()
-
-    private static let mediumFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
+    }
 }
