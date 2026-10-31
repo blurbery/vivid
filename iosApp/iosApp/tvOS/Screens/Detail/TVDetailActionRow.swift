@@ -212,7 +212,7 @@ private struct TVDetailPlayButton: View {
 /// invisible control laid over it, which takes the presses and speaks for
 /// it.
 struct TVDetailCircleButton<Control: View>: View {
-    /// Never shown; keeps the circle catalogue keys in use (spec 4.21).
+    /// Never shown; keeps the circles' catalogue keys in use.
     let title: LocalizedStringKey
     let systemImage: String
     let isFocused: Bool
