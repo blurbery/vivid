@@ -329,7 +329,8 @@ final class HomeCollectionsStore {
             (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(CacheFile.self, from: $0) }
         }.value
         guard let cached, loadedScope == scope, collections.isEmpty else { return }
-        setCollections(cached.collections)
+        // Sorted again, so a list saved under an older order reads right.
+        setCollections(Self.sorted(cached.collections))
         loadedAt = cached.savedAt
         artworkExpiresAt = Self.artworkExpiry(of: cached.collections)
         status = .ready
