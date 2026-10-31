@@ -94,8 +94,7 @@ extension StartupContentPrefetcher {
         }
         switch row.sectionType.lowercased() {
         case "continue_watching", "in_progress", "next_up":
-            let backdrop = item.backdropUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return backdrop.isEmpty ? item.posterUrl : item.backdropUrl
+            return item.backdropUrl ?? item.posterUrl
         default:
             return item.posterUrl
         }

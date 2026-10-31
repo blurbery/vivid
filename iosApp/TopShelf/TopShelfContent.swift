@@ -6,7 +6,7 @@ import TVServices
 final class ContentProvider: TVTopShelfContentProvider {
     override func loadTopShelfContent() async -> (any TVTopShelfContent)? {
         let shared = SharedStorage.suite
-        let language = shared.string(forKey: SharedStorage.appLanguageKey).flatMap { $0.isEmpty ? nil : $0 }
+        let language = shared.string(forKey: SharedStorage.appLanguageKey)
         if let language {
             UserDefaults.standard.set([language], forKey: "AppleLanguages")
         } else {

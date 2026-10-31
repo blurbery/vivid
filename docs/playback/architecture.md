@@ -169,7 +169,7 @@ PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, d
 
 ## Diagnostics and dependencies
 
-- Debug autoplay launch arguments and their presentation helpers compile only with `DEBUG`; their console messages omit search text, titles, content IDs and raw errors. Setup and login test values come from local launch arguments/environment, not embedded maintainer credentials.
+- `DEBUG` builds read two setup switches from the local launch environment: `VIVID_SHOW_SERVER_SETUP` opens server setup at launch on iPhone and iPad, and `VIVID_SETUP_SERVER_URL` prefills the server setup address. Neither embeds maintainer credentials or server addresses.
 - Keep development logs local, redacted and bounded. On-device diagnostics reports are described in [App design](../app-design.md#diagnostics-reports); they include playback failures and recent essential events but are never uploaded automatically. Do not expose credentials, source URLs, paths or subtitle contents in logs or report fields.
 - Classify typed failures using stable kinds, with an unknown fallback, rather than matching localised error text.
 - Read the shared media dependency from [project.yml](../../iosApp/project.yml) and [project-ios.yml](../../iosApp/project-ios.yml), with exact revisions and provenance in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
