@@ -8,8 +8,10 @@ enum VividNavigationTitleDisplayMode {
     case large
 }
 
-/// Navigation bar, list and search settings that only exist on iPhone and
-/// iPad. Apple TV keeps each view as it is unless noted.
+/// Navigation, list, search and alert helpers for both apps. The navigation
+/// bar and status bar helpers only change iPhone and iPad and leave Apple TV
+/// views as they are. The list style and search field apply on Apple TV too
+/// (noted on each), and the resume alert is the same everywhere.
 extension View {
     func vividNavigationTitleDisplayMode(_ mode: VividNavigationTitleDisplayMode) -> some View {
         #if os(iOS)
@@ -70,7 +72,8 @@ extension View {
     }
 
     /// A search field that stays visible under the title. On iPhone and iPad
-    /// it has no Cancel button and doesn't dim the page while searching.
+    /// it has no Cancel button and doesn't dim the page while searching. On
+    /// Apple TV it's the standard search field with the same prompt.
     func vividSearchable(text: Binding<String>, prompt: String) -> some View {
         #if os(iOS)
         searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)

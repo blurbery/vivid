@@ -32,7 +32,9 @@ enum AuroraScrim {
 
 // MARK: - Eyebrow
 
-/// A small upper-case caption above a first-run title.
+/// A small upper-case caption above a first-run title, always centred.
+/// `centered` has no effect: every caller passes `true`, and the label stays
+/// so those calls compile unchanged.
 struct AuroraEyebrow: View {
     private let text: LocalizedStringKey
 
