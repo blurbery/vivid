@@ -73,8 +73,8 @@ struct MobileSeasonFacts: View {
         return values.prefix(3).joined(separator: ", ")
     }
 
-    /// Distinct names in order, the first three, then an ellipsis when there
-    /// are more.
+    /// Distinct names sorted in plain string order (not credit order), the
+    /// first three, then an ellipsis when there are more.
     private static func crewNames(_ crew: [CrewMember], jobs: Set<String>) -> String? {
         let names = Set(crew.filter { member in
             member.job.map { jobs.contains($0.lowercased()) } ?? false

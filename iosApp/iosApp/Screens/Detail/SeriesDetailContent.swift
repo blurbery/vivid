@@ -24,6 +24,7 @@ struct MobileSeriesPage: View {
     @State private var pendingPlay: PendingPlay?
     @State private var resumeEpisode: EpisodeListItem?
     @State private var tmdbScore: TMDbRatingResult?
+    @State private var similarTitles = MobileSimilarTitles()
     @Environment(AppRouter.self) private var router
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -172,8 +173,8 @@ struct MobileSeriesPage: View {
 
     private var playTitle: String {
         guard let episode = nextUpEpisode else { return String(localized: "Play") }
-        let season = MobileDetailControls.digits(episode.seasonNumber)
-        let number = MobileDetailControls.digits(episode.episodeNumber)
+        let season = String(episode.seasonNumber)
+        let number = String(episode.episodeNumber)
         return String(localized: "Play S\(season)·E\(number)")
     }
 
@@ -319,12 +320,13 @@ struct MobileSeriesPage: View {
                     onSelectPerson: navigation.openPerson
                 )
             }
-            MobileSimilarSection(contentId: contentId, detail: detail) { item in
+            MobileSimilarSection(titles: similarTitles) { item in
                 navigation.openItem(item.contentId)
             }
             mediaInformation
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .loadsSimilarTitles(similarTitles, contentId: contentId, detail: detail)
     }
 
     private var episodesSection: some View {
@@ -395,10 +397,11 @@ struct MobileSeriesPage: View {
         .padding(.horizontal, 16)
     }
 
-    /// "S1 · E2 [em dash] Title", without the title when there's none.
+    /// "S1 · E2 [em dash] Title", without the title when the title is nil.
+    /// An empty title still gets the dash.
     private static func episodeCaption(_ episode: EpisodeListItem) -> String {
-        let season = MobileDetailControls.digits(episode.seasonNumber)
-        let number = MobileDetailControls.digits(episode.episodeNumber)
+        let season = String(episode.seasonNumber)
+        let number = String(episode.episodeNumber)
         if let title = episode.title {
             return String(localized: "S\(season) · E\(number) \u{2014} \(title)")
         }

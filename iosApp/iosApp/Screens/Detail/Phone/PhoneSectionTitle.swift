@@ -9,11 +9,9 @@ struct MobileSectionHeader: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                title
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color.vividOnSurface)
-            }
+            title
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Color.vividOnSurface)
             Spacer(minLength: 8)
             if let trailing, !trailing.isEmpty {
                 Text(verbatim: trailing)

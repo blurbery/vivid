@@ -15,6 +15,7 @@ struct MobileMoviePage: View {
     @State private var showsDownloadOptions = false
     @State private var tmdbScore: TMDbRatingResult?
     @State private var collectionRow: MovieCollectionRowStore.Row?
+    @State private var similarTitles = MobileSimilarTitles()
     @Environment(AppRouter.self) private var router
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -148,8 +149,8 @@ struct MobileMoviePage: View {
 
     private var playTitle: String {
         if isEpisode, let season = detail.seasonNumber, let episode = detail.episodeNumber {
-            let seasonText = MobileDetailControls.digits(season)
-            let episodeText = MobileDetailControls.digits(episode)
+            let seasonText = String(season)
+            let episodeText = String(episode)
             return season == 0
                 ? String(localized: "Play E\(episodeText)")
                 : String(localized: "Play S\(seasonText)·E\(episodeText)")
@@ -316,7 +317,7 @@ struct MobileMoviePage: View {
                 )
             }
             if !isEpisode {
-                MobileSimilarSection(contentId: contentId, detail: detail) { item in
+                MobileSimilarSection(titles: similarTitles) { item in
                     navigation.openItem(item.contentId)
                 }
             }
@@ -332,6 +333,8 @@ struct MobileMoviePage: View {
             .padding(.horizontal, 16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Episodes have no More Like This.
+        .loadsSimilarTitles(similarTitles, contentId: contentId, detail: detail, isEnabled: !isEpisode)
     }
 
     private var episodesSection: some View {
@@ -363,7 +366,7 @@ struct MobileMoviePage: View {
     /// "Season 2", or "This Season" when the number isn't known.
     private var seasonHeading: String {
         if let number = model.selectedSeason?.seasonNumber ?? detail.seasonNumber, number > 0 {
-            return String(localized: "Season \(MobileDetailControls.digits(number))")
+            return String(localized: "Season \(String(number))")
         }
         return String(localized: "This Season")
     }

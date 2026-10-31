@@ -218,15 +218,10 @@ struct MobileDetailPage: View {
 
 /// The controls, menus and buttons the three page types share.
 enum MobileDetailControls {
-    /// Plain digits, for episode codes and play titles.
-    static func digits(_ number: Int) -> String {
-        String(number)
-    }
-
     /// "S1 E2" under a resuming Play button.
     static func episodeCode(season: Int, episode: Int) -> String {
         String(
-            localized: "S\(digits(season)) E\(digits(episode))",
+            localized: "S\(String(season)) E\(String(episode))",
             comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02"
         )
     }
@@ -246,7 +241,7 @@ enum MobileDetailControls {
     }
 }
 
-/// The Favorite button used in every page's More menu.
+/// The Favourite button used in every page's More menu.
 struct MobileFavoriteMenuButton: View {
     let isFavorite: Bool
     let toggle: () -> Void

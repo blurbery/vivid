@@ -35,47 +35,80 @@ struct SimilarPosterItem: Identifiable, Hashable, Codable {
     }
 }
 
+/// More Like This suggestions for a page. The page's below-fold stack, which
+/// is always on screen, runs the load, so it carries on whatever the section
+/// shows and can run again for a new server or profile after an empty
+/// result.
+@Observable @MainActor
+final class MobileSimilarTitles {
+    private(set) var isLoading = true
+    private(set) var items: [SimilarPosterItem] = []
+    @ObservationIgnored private var loadedKey: String?
+
+    func load(key: String, contentId: String, detail: ItemDetail) async {
+        guard key != loadedKey else { return }
+        isLoading = true
+        items = []
+        let suggestions = try? await TVLibrarySimilarityStore.shared.suggestions(contentId: contentId, sourceDetail: detail)
+        // A cancelled load leaves the key unloaded, so the next one runs.
+        guard !Task.isCancelled else { return }
+        items = suggestions ?? []
+        isLoading = false
+        loadedKey = key
+    }
+}
+
+extension View {
+    /// Loads More Like This for `contentId` while this view is on screen.
+    /// Attach it to a view that stays put, not to the section itself.
+    func loadsSimilarTitles(
+        _ titles: MobileSimilarTitles,
+        contentId: String,
+        detail: ItemDetail,
+        isEnabled: Bool = true
+    ) -> some View {
+        modifier(MobileSimilarTitlesLoader(titles: titles, contentId: contentId, detail: detail, isEnabled: isEnabled))
+    }
+}
+
+private struct MobileSimilarTitlesLoader: ViewModifier {
+    let titles: MobileSimilarTitles
+    let contentId: String
+    let detail: ItemDetail
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        let key = isEnabled ? TVLibrarySimilarityStore.shared.contextKey + "|" + contentId : nil
+        content.task(id: key) {
+            guard let key else { return }
+            await titles.load(key: key, contentId: contentId, detail: detail)
+        }
+    }
+}
+
 /// More Like This: library titles similar to this one. It shows a loading
 /// strip, then the rail, and nothing at all when there are no suggestions.
 struct MobileSimilarSection: View {
-    let contentId: String
-    let detail: ItemDetail
+    let titles: MobileSimilarTitles
     let onSelect: (SimilarPosterItem) -> Void
 
-    @State private var isLoading = true
-    @State private var items: [SimilarPosterItem] = []
-    @State private var loadedKey: String?
-
     var body: some View {
-        let key = TVLibrarySimilarityStore.shared.contextKey + "|" + contentId
-        if isLoading {
+        if titles.isLoading {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 MobilePosterPlaceholder()
             }
-            .task(id: key) { await load(key) }
-        } else if !items.isEmpty {
+        } else if !titles.items.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                MobilePosterRail(items: items, onSelect: onSelect)
+                MobilePosterRail(items: titles.items, onSelect: onSelect)
             }
-            .task(id: key) { await load(key) }
         }
     }
 
     private var header: some View {
         MobileSectionHeader(title: Text("More Like This"))
             .padding(.horizontal, 16)
-    }
-
-    private func load(_ key: String) async {
-        guard key != loadedKey else { return }
-        loadedKey = key
-        isLoading = true
-        items = []
-        let suggestions = try? await TVLibrarySimilarityStore.shared.suggestions(contentId: contentId, sourceDetail: detail)
-        items = suggestions ?? []
-        isLoading = false
     }
 }
 

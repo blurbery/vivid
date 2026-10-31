@@ -101,19 +101,25 @@ struct PhoneDetailTopChrome: View {
     }
 
     var body: some View {
-        let offset = scrollState.offset
+        // The body never reads the scroll offset: only the small fade views
+        // below do, so the layout, glass and button stay put while scrolling.
         let glassShown = showsScrollGlass
         ZStack(alignment: .top) {
             if glassShown {
-                glassStrip
-                    .opacity(MobileScrollChromeMetrics.smoothstep(offset, from: 200, to: 360))
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                scrollTitle(opacity: MobileScrollChromeMetrics.smoothstep(offset, from: 400, to: 480))
+                MobileScrollFade(scrollState: scrollState, curve: .strip) {
+                    MobileChromeGlassStrip(reduceTransparency: reduceTransparency)
+                        .equatable()
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                MobileScrollFade(scrollState: scrollState, curve: .title) {
+                    scrollTitle
+                }
+                .allowsHitTesting(false)
             }
             HStack {
                 if let leadingSystemName, controlCorner == nil {
-                    control(systemName: leadingSystemName, offset: offset, glassShown: glassShown)
+                    control(systemName: leadingSystemName, glassShown: glassShown)
                 }
                 Spacer(minLength: 20)
             }
@@ -121,7 +127,7 @@ struct PhoneDetailTopChrome: View {
             .padding(.trailing, 18)
             .padding(.top, 9)
             if let corner = controlCorner, let leadingSystemName {
-                control(systemName: leadingSystemName, offset: offset, glassShown: glassShown)
+                control(systemName: leadingSystemName, glassShown: glassShown)
                     .frame(width: 2 * PhoneDuo.ControlCorner.centreFromEdge)
                     .padding(.top, corner.top)
                     .frame(
@@ -133,13 +139,15 @@ struct PhoneDetailTopChrome: View {
             }
         }
         .onDuo { chrome in
+            // Measured within the safe area, so the proxy reports the insets
+            // the Duo's side strip shows up in.
             chrome.background {
                 GeometryReader { proxy in
                     Color.clear
-                        .onAppear { measureDuoPlacement(proxy) }
-                        .onChange(of: MobileChromeGeometry(proxy)) { measureDuoPlacement(proxy) }
+                        .onChange(of: MobileChromeGeometry(proxy), initial: true) {
+                            measureDuoPlacement(proxy)
+                        }
                 }
-                .ignoresSafeArea()
             }
         }
         .zIndex(20)
@@ -152,28 +160,7 @@ struct PhoneDetailTopChrome: View {
         if corner != controlCorner { controlCorner = corner }
     }
 
-    /// Fills the bar's 62 points and reaches up through the status bar.
-    private var glassStrip: some View {
-        Color.clear
-            .frame(maxWidth: .infinity)
-            .frame(height: VividTheme.topBarIconHitSize + 18)
-            .background(alignment: .bottom) {
-                stripFill.ignoresSafeArea(edges: .top)
-            }
-    }
-
-    @ViewBuilder
-    private var stripFill: some View {
-        if reduceTransparency {
-            Color(white: 0.16).opacity(0.98)
-        } else {
-            Color.clear
-                .vividGlass(in: Rectangle(), tint: .black.opacity(0.10))
-                .overlay(Color.white.opacity(0.025))
-        }
-    }
-
-    private func scrollTitle(opacity: CGFloat) -> some View {
+    private var scrollTitle: some View {
         Text(verbatim: title)
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(.white)
@@ -182,20 +169,17 @@ struct PhoneDetailTopChrome: View {
             .padding(.horizontal, 96)
             .frame(maxWidth: .infinity, minHeight: VividTheme.topBarIconHitSize)
             .padding(.top, 9)
-            .opacity(opacity)
-            .allowsHitTesting(false)
-            .accessibilityHidden(opacity < 0.5)
     }
 
-    private func control(systemName: String, offset: CGFloat, glassShown: Bool) -> some View {
-        let glassOpacity = glassShown ? 1 - MobileScrollChromeMetrics.smoothstep(offset, from: 150, to: 260) : 1
+    private func control(systemName: String, glassShown: Bool) -> some View {
         let size = VividTheme.topBarIconHitSize
         return Button(action: onLeadingTap) {
             ZStack {
-                Color.clear
-                    .frame(width: size, height: size)
-                    .vividGlass(in: Circle(), interactive: true)
-                    .opacity(glassOpacity)
+                // The glass fades out as the bar fades in, and only then.
+                MobileScrollFade(scrollState: scrollState, curve: glassShown ? .controlGlass : nil) {
+                    MobileChromeGlassCircle(size: size)
+                        .equatable()
+                }
                 Image(systemName: systemName)
                     .font(.system(size: systemName == "chevron.left" ? 17 : 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -205,6 +189,74 @@ struct PhoneDetailTopChrome: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(leadingAccessibilityLabel ?? String(localized: "Back"))
+    }
+}
+
+/// How the chrome's parts fade with the scroll offset.
+private enum MobileChromeFade {
+    case strip, title, controlGlass
+
+    func opacity(at offset: CGFloat) -> CGFloat {
+        switch self {
+        case .strip:
+            MobileScrollChromeMetrics.smoothstep(offset, from: 200, to: 360)
+        case .title:
+            MobileScrollChromeMetrics.smoothstep(offset, from: 400, to: 480)
+        case .controlGlass:
+            1 - MobileScrollChromeMetrics.smoothstep(offset, from: 150, to: 260)
+        }
+    }
+}
+
+/// The only part of the chrome that reads the scroll offset. It sets its
+/// content's opacity, and hides the title from VoiceOver while it's faint.
+/// With no curve it stays opaque and doesn't follow the scroll at all.
+private struct MobileScrollFade<Content: View>: View {
+    let scrollState: PhoneDetailScrollState
+    let curve: MobileChromeFade?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        let opacity = curve.map { $0.opacity(at: scrollState.offset) } ?? 1
+        content
+            .opacity(opacity)
+            .accessibilityHidden(curve == .title && opacity < 0.5)
+    }
+}
+
+/// The bar's 62 points, reaching up through the status bar.
+private struct MobileChromeGlassStrip: View, Equatable {
+    let reduceTransparency: Bool
+
+    var body: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: VividTheme.topBarIconHitSize + 18)
+            .background(alignment: .bottom) {
+                fill.ignoresSafeArea(edges: .top)
+            }
+    }
+
+    @ViewBuilder
+    private var fill: some View {
+        if reduceTransparency {
+            Color(white: 0.16).opacity(0.98)
+        } else {
+            Color.clear
+                .vividGlass(in: Rectangle(), tint: .black.opacity(0.10))
+                .overlay(Color.white.opacity(0.025))
+        }
+    }
+}
+
+/// The close or back control's own glass circle.
+private struct MobileChromeGlassCircle: View, Equatable {
+    let size: CGFloat
+
+    var body: some View {
+        Color.clear
+            .frame(width: size, height: size)
+            .vividGlass(in: Circle(), interactive: true)
     }
 }
 

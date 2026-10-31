@@ -285,6 +285,7 @@ private struct MobileTitleBlock: View {
                         .font(.system(size: 32, weight: .heavy))
                         .foregroundStyle(Color.vividOnSurface)
                         .lineLimit(2)
+                        .multilineTextAlignment(alignment.textAlignment)
                 }
                 Text(verbatim: content.title)
                     .font(.system(size: 20, weight: .semibold))

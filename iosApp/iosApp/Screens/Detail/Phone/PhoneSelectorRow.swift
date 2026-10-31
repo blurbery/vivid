@@ -152,8 +152,7 @@ struct MobilePlaybackSelectors: View {
         switch kind {
         case .edition:
             return DetailPlaybackFormatting.currentEdition(versions: versions, currentVersion: version)?.label
-                ?? Optional(version).map(PlaybackEditions.displayLabel(for:))
-                ?? String(localized: "Standard")
+                ?? PlaybackEditions.displayLabel(for: version)
         case .version:
             return DetailPlaybackFormatting.mobileVersionSummary(version)
         case .audio:

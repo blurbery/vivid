@@ -81,7 +81,7 @@ struct MobileSeasonPage: View {
 
     private var playTitle: String {
         guard let episode = nextUpEpisode else { return String(localized: "Play") }
-        return String(localized: "Play E\(MobileDetailControls.digits(episode.episodeNumber))")
+        return String(localized: "Play E\(String(episode.episodeNumber))")
     }
 
     private var actions: some View {
