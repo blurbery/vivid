@@ -79,10 +79,14 @@ extension DownloadManager {
 
     /// Queues again what a relaunch or a lost task left without a transfer.
     private func reconnectTransfers() async {
+        // A transfer started while the live list is read keeps its new task:
+        // records whose task changed during the wait are left alone.
+        let tasksBefore = file.records.mapValues(\.taskIdentifier)
         let live = await transfers.liveIdentifiers()
         var state = file
         var requeued = false
         for (id, before) in state.records {
+            if let task = tasksBefore[id], task != before.taskIdentifier { continue }
             var record = before
             // A recreated session reuses identifiers, so a stale one must go.
             if let task = record.taskIdentifier, !live.contains(task), !pausePending.contains(id) {

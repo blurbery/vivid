@@ -177,6 +177,13 @@ extension DownloadManager {
             reportFailure(of: record, stage: .preparing, error: error)
             runQueue()
             return
+        case _ where record.retryCount < 4 && Self.isTemporaryFailure(error):
+            // A dropped connection or a timed-out request is retried like a
+            // busy server; after the last try it fails as below.
+            record.retryCount += 1
+            file.records[id] = record
+            scheduleRetry(id, resumeData: nil, refreshesSignIn: false)
+            return
         default:
             record.localStatus = .failed
             switch status {
@@ -191,6 +198,12 @@ extension DownloadManager {
         }
         persist()
         runQueue()
+    }
+
+    /// Network drops, timeouts and an expired sign-in, as the kept failure
+    /// report classifies them. A cancellation never counts.
+    private static func isTemporaryFailure(_ error: Error) -> Bool {
+        DownloadFailureReport.classify(error) != nil && DownloadFailureReport.isRetryable(error)
     }
 
     // MARK: Artwork and subtitles

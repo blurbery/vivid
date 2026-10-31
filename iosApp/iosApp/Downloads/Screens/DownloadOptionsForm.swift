@@ -72,7 +72,7 @@ extension DownloadScreens {
                         VersionPage(
                             versions: versions,
                             lastVersionFileId: lastVersionFileId,
-                            storedQuality: quality,
+                            storedQuality: qualityUsed.rawValue,
                             isEmbyConversion: isEmbyConversion,
                             chosenFileId: $chosenFileId
                         )
@@ -204,7 +204,9 @@ extension DownloadScreens {
 
         private var footerLines: (warning: String?, note: String?, isEmpty: Bool) {
             var warning: String?
-            if !isEmbyConversion, quality == DownloadFormat.original.rawValue {
+            // The quality the download will use: a smaller stored preset the
+            // chosen version can't make still downloads the original.
+            if !isEmbyConversion, qualityUsed == .original {
                 warning = SizeEstimate.make(versions: versions, fileId: chosenFileId)?
                     .warning(available: DeviceStorage.read().available)
             }
