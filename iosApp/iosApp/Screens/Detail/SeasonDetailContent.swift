@@ -1,52 +1,39 @@
-#if !os(tvOS)
 import SwiftUI
 
-/// Phone season detail screen. Scoped to a single season of a series:
-/// the hero's eyebrow carries the parent-series title, the title line
-/// is the season's own ("Season 2" / "Specials"), and the body shows
-/// just this season's episode rail plus cast, details, and about.
-///
-/// Mirrors `TVSeasonDetailView` semantically — same next-up Play
-/// targeting, same season-level Mark Watched fan-out — sized for
-/// touch on a phone.
-struct SeasonDetailContent<BelowOverview: View>: View {
+#if !os(tvOS)
+/// The season page: the hero plays the season's next episode, then its
+/// episodes, cast and the season's details.
+struct MobileSeasonPage: View {
+    let contentId: String
     let detail: ItemDetail
-    let isFavorite: Bool
-    let inWatchlist: Bool
-    let isWatched: Bool
-    let seasons: [Season]
-    let selectedSeason: Season?
-    let episodes: [EpisodeListItem]
-    let episodesBySeason: [Int: [EpisodeListItem]]
-    let isLoadingEpisodes: Bool
-    let selectedNextUpFileId: Int?
-    let selectedNextUpAudioTrackIndex: Int?
-    let selectedNextUpSubtitleTrackIndex: Int?
-    let nextUpWatchDetail: WatchDetail?
-    let onPlayEpisode: (_ contentId: String, _ fileId: Int?, _ startFromBeginning: Bool) -> Void
-    let onEpisodeTap: (String) -> Void
-    let onSelectSeason: (Season) -> Void
-    let onSelectNextUpVersion: (Int?) -> Void
-    let onSelectNextUpAudioTrack: (Int?) -> Void
-    let onSelectNextUpSubtitleTrack: (Int?) -> Void
-    let onToggleFavorite: () -> Void
-    let onToggleWatchlist: () -> Void
-    let onToggleWatched: () -> Void
-    let onToggleSeriesWatched: () -> Void
-    let onPersonTap: (String) -> Void
-    let onNavigateToItem: (String) -> Void
-    /// On-view description-translation affordance, built at the detail call
-    /// site (which owns the view model) and rendered under the overview.
-    @ViewBuilder let belowOverview: () -> BelowOverview
+    let session: MobileDetailSession
+    let navigation: MobileDetailNavigation
 
+    @State private var playsWhenReady = false
+    @State private var showsResumeAlert = false
+    @Environment(AppRouter.self) private var router
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var showResumeDialog = false
-    @State private var playWhenEpisodeIsReady = false
+
+    private var model: ItemDetailViewModel { session.model }
+
+    private var nextUpEpisode: EpisodeListItem? {
+        MobileDetailSession.defaultEpisode(model.episodes)
+    }
+
+    /// The selected season, or else the one this page is for.
+    private var shownSeason: Season? {
+        model.selectedSeason ?? model.seasons.first { $0.seasonNumber == detail.seasonNumber }
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: heroToContentSpacing) {
-                hero
+            VStack(spacing: PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass) ? 32 : 16) {
+                MobileDetailHero(content: heroContent) {
+                    actions
+                } underOverview: {
+                    DescriptionTranslationView(viewModel: model, contentId: detail.contentId)
+                        .id(detail.contentId)
+                }
                 belowFold
             }
             .padding(.bottom, 40)
@@ -54,265 +41,222 @@ struct SeasonDetailContent<BelowOverview: View>: View {
         .ignoresSafeArea(edges: .top)
         .detailScrollDismissal()
         .vividResumePlaybackAlert(
-            isPresented: $showResumeDialog,
-            stoppedAt: resumeTimestamp
-        ) {
-            guard let nextUp = nextUpEpisode else { return }
-            onPlayEpisode(nextUp.contentId, selectedNextUpFileId, false)
-        } onRestart: {
-            guard let nextUp = nextUpEpisode else { return }
-            onPlayEpisode(nextUp.contentId, selectedNextUpFileId, true)
-        }
-        .onChange(of: nextUpEpisode?.contentId) { _, contentID in
-            guard playWhenEpisodeIsReady, contentID != nil,
-                  let episode = nextUpEpisode else { return }
-            playWhenEpisodeIsReady = false
-            handlePlayTap(for: episode)
-        }
-    }
-
-    private var heroToContentSpacing: CGFloat {
-        PhoneDuo.usesPhoneDetailLayout(horizontalSizeClass) ? 32 : 16
-    }
-
-    // MARK: - Hero
-
-    private var hero: some View {
-        PhoneDetailHero(
-            title: detail.title,
-            seriesTitle: nil,
-            logoUrl: nil,
-            posterUrl: detail.posterUrl,
-            posterThumbhash: detail.posterThumbhash,
-            backdropUrl: detail.backdropUrl,
-            backdropThumbhash: detail.backdropThumbhash,
-            eyebrow: detail.seriesTitle,
-            sourceTokens: PhoneHeroMetadata.seasonSourceTokens(
-                from: detail,
-                episodeCount: episodes.count
+            isPresented: $showsResumeAlert,
+            stoppedAt: MobileDetailControls.stoppedAt(
+                MobileDetailSession.displayResumePosition(nextUpEpisode?.userData)
             ),
-            ratingChip: nil,
-            overview: detail.overview,
-            factsLine: [],
-            overlayData: OverlayData.from(detail),
-            qualityBadges: PhoneHeroMetadata.sourceBadges(effectiveNextUpVersion),
-            actions: { actionStack },
-            belowOverview: belowOverview
+            onResume: {
+                if let episode = nextUpEpisode { play(episode, fromBeginning: false) }
+            },
+            onRestart: {
+                if let episode = nextUpEpisode { play(episode, fromBeginning: true) }
+            }
         )
+        .task(id: session.playbackEpisode(isSeries: false)?.contentId) {
+            await session.refreshNextUp(isSeries: false)
+        }
+        .onChange(of: nextUpEpisode?.contentId) { _, id in
+            guard playsWhenReady, id != nil, let episode = nextUpEpisode else { return }
+            playsWhenReady = false
+            playOrAskToResume(episode)
+        }
     }
 
-    @ViewBuilder
-    private var actionStack: some View {
+    // MARK: Hero
+
+    private var heroContent: MobileHeroContent {
+        var content = MobileHeroContent(title: detail.title)
+        content.posterUrl = detail.posterUrl
+        content.posterThumbhash = detail.posterThumbhash
+        content.backdropUrl = detail.backdropUrl
+        content.backdropThumbhash = detail.backdropThumbhash
+        content.eyebrow = detail.seriesTitle
+        content.sourceTokens = MobileHeroRules.seasonSourceTokens(detail, liveEpisodeCount: model.episodes.count)
+        content.overview = detail.overview
+        content.qualityBadges = MobileHeroRules.qualityBadges(version: session.effectiveNextUpVersion, summary: nil)
+        return content
+    }
+
+    // MARK: Actions
+
+    private var playTitle: String {
+        guard let episode = nextUpEpisode else { return String(localized: "Play") }
+        return String(localized: "Play E\(String(episode.episodeNumber))")
+    }
+
+    private var actions: some View {
         VStack(spacing: 12) {
             PhoneDetailPrimaryActions(stackedSpacing: 12) {
                 PhonePrimaryPillButton(
                     icon: "play.fill",
-                    title: nextUpEpisode.map(playButtonLabel) ?? String(localized: "Play"),
-                    action: handlePrimaryPlayTap,
+                    title: playTitle,
+                    action: playTapped,
                     fullWidth: true,
-                    resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { String(localized: "S\(String($0.seasonNumber)) E\(String($0.episodeNumber))", comment: "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02") })
+                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode)
                 )
             } selectors: {
-                PhoneDetailSelectorsPlacement { nextUpSelectors }
+                MobileSelectorsPlacement {
+                    nextUpSelectors
+                }
             } actions: {
-                labeledActionRow
+                PhoneLabeledActionRow {
+                    actionRow
+                }
             }
-            PhoneDetailSelectorsPlacement { nextUpSelectors }
+            MobileSelectorsPlacement {
+                nextUpSelectors
+            }
         }
         .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
     private var nextUpSelectors: some View {
-        if nextUpEpisode != nil, let effectiveNextUpVersion {
-            PhonePlaybackSelectorRow(
-                versions: nextUpVersions,
-                currentVersion: effectiveNextUpVersion,
-                selectedVersionFileId: selectedNextUpFileId,
-                selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
-                selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
-                onSelectVersion: onSelectNextUpVersion,
-                onSelectAudioTrack: onSelectNextUpAudioTrack,
-                onSelectSubtitleTrack: onSelectNextUpSubtitleTrack
+        if nextUpEpisode != nil, let version = session.effectiveNextUpVersion {
+            MobilePlaybackSelectors(
+                versions: session.nextUpDetail?.versions ?? [],
+                currentVersion: version,
+                chosenVersionId: session.nextUpVersionId,
+                chosenAudioIndex: session.nextUpAudioIndex,
+                onChooseVersion: { session.chooseNextUpVersion($0) },
+                onChooseAudio: { session.chooseNextUpAudio($0) }
             )
-        }
-    }
-
-    private func handlePlayTap(for episode: EpisodeListItem) {
-        if episode.userData?.isInProgress == true {
-            showResumeDialog = true
-        } else {
-            onPlayEpisode(episode.contentId, selectedNextUpFileId, false)
-        }
-    }
-
-    private func handlePrimaryPlayTap() {
-        guard let nextUpEpisode else {
-            playWhenEpisodeIsReady = true
-            return
-        }
-        handlePlayTap(for: nextUpEpisode)
-    }
-
-    private var labeledActionRow: some View {
-        PhoneLabeledActionRow {
-            PhoneLabeledAction(
-                icon: "heart",
-                iconActive: "heart.fill",
-                isActive: isFavorite,
-                label: String(localized: "Favorite"),
-                accessibilityLabelOverride: isFavorite ? String(localized: "Remove from favorites") : String(localized: "Add to favorites"),
-                action: onToggleFavorite
-            )
-            .movesToMoreInTVStyle()
-
-            PhoneLabeledAction(
-                icon: "bookmark",
-                iconActive: "bookmark.fill",
-                isActive: inWatchlist,
-                label: String(localized: "Watchlist"),
-                accessibilityLabelOverride: inWatchlist ? String(localized: "Remove from watchlist") : String(localized: "Add to watchlist"),
-                action: onToggleWatchlist
-            )
-
-            PhoneLabeledMenu(icon: "checkmark.circle", label: String(localized: "Watched")) {
-                watchedMenuButtons
-            }
-            .movesToMoreInTVStyle()
-
-            SeriesDownloadMenuButton(
-                detail: detail,
-                seasons: seasons,
-                selectedSeason: selectedSeason ?? seasons.first(where: { $0.seasonNumber == detail.seasonNumber }),
-                episodes: episodes,
-                episodesBySeason: episodesBySeason,
-                style: .labeled
-            )
-
-            PhoneTVMoreMenu {
-                Button(action: onToggleFavorite) {
-                    Label(
-                        isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
-                        systemImage: isFavorite ? "heart.fill" : "heart"
-                    )
-                }
-                watchedMenuButtons
-            }
         }
     }
 
     @ViewBuilder
-    private var watchedMenuButtons: some View {
-        Button(isWatched ? "Mark Season as Unwatched" : "Mark Season as Watched", action: onToggleWatched)
+    private var actionRow: some View {
+        MobileNamedAction(
+            icon: "heart",
+            activeIcon: "heart.fill",
+            isActive: model.isFavorite,
+            caption: "Favorite",
+            spokenLabel: model.isFavorite ? "Remove from favorites" : "Add to favorites"
+        ) {
+            Task { await model.toggleFavorite() }
+        }
+        .mobileMovesToMore()
+        MobileNamedAction(
+            icon: "bookmark",
+            activeIcon: "bookmark.fill",
+            isActive: model.inWatchlist,
+            caption: "Watchlist",
+            spokenLabel: model.inWatchlist ? "Remove from watchlist" : "Add to watchlist"
+        ) {
+            Task { await model.toggleWatchlist() }
+        }
+        MobileNamedMenu(icon: "checkmark.circle", caption: "Watched") {
+            seasonWatchedButtons
+        }
+        .mobileMovesToMore()
+        SeriesDownloadMenuButton(
+            detail: detail,
+            seasons: model.seasons,
+            selectedSeason: shownSeason,
+            episodes: model.episodes,
+            episodesBySeason: model.episodesBySeason,
+            style: .labeled
+        )
+        MobileMoreMenu {
+            MobileFavoriteMenuButton(isFavorite: model.isFavorite) {
+                Task { await model.toggleFavorite() }
+            }
+            seasonWatchedButtons
+        }
+    }
+
+    /// This season, then the whole series when the season belongs to one.
+    @ViewBuilder
+    private var seasonWatchedButtons: some View {
+        if model.isWatched {
+            Button("Mark Season as Unwatched") { Task { await model.toggleWatched() } }
+        } else {
+            Button("Mark Season as Watched") { Task { await model.toggleWatched() } }
+        }
         if detail.seriesId != nil {
-            Button(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true } ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleSeriesWatched)
+            if !model.seasons.isEmpty, model.seasons.allSatisfy({ $0.userData?.played == true }) {
+                Button("Mark Series as Unwatched") { Task { await model.toggleSeriesWatched() } }
+            } else {
+                Button("Mark Series as Watched") { Task { await model.toggleSeriesWatched() } }
+            }
         }
     }
 
-    private var nextUpEpisode: EpisodeListItem? {
-        if let inProgress = episodes.first(where: { $0.userData?.isInProgress == true }) {
-            return inProgress
+    private func playTapped() {
+        guard let episode = nextUpEpisode else {
+            playsWhenReady = true
+            return
         }
-        if let unwatched = episodes.first(where: { !($0.userData?.played ?? false) }) {
-            return unwatched
+        playOrAskToResume(episode)
+    }
+
+    private func playOrAskToResume(_ episode: EpisodeListItem) {
+        if episode.userData?.isInProgress == true {
+            showsResumeAlert = true
+        } else {
+            play(episode, fromBeginning: false)
         }
-        return episodes.first
     }
 
-    /// Show "Play E5" — the user picks resume vs. restart in the
-    /// confirmation dialog the button presents.
-    private func playButtonLabel(for episode: EpisodeListItem) -> String {
-        String(localized: "Play E\(String(episode.episodeNumber))")
-    }
-
-    private var resumeTimestamp: String {
-        guard let pos = nextUpResumePositionSeconds else { return "0:00" }
-        return PlayerTimeFormatter.formatHMS(pos)
-    }
-
-    private var nextUpResumePositionSeconds: Double? {
-        guard let pos = nextUpEpisode?.userData?.positionSeconds, pos > 30 else { return nil }
-        if let dur = nextUpEpisode?.userData?.durationSeconds, dur > 0, pos >= dur - 5 {
-            return nil
-        }
-        return pos
-    }
-
-    private var nextUpVersions: [FileVersion] {
-        nextUpWatchDetail?.versions ?? []
-    }
-
-    private var effectiveNextUpVersion: FileVersion? {
-        DetailVersionSelection.displayVersion(
-            versions: nextUpVersions,
-            selectedFileId: selectedNextUpFileId,
-            lastFileId: nextUpWatchDetail?.userData?.lastFileId,
-            preferredQualityId: PlayerSettings.shared.preferredQuality
+    private func play(_ episode: EpisodeListItem, fromBeginning: Bool) {
+        session.playEpisode(
+            episode.contentId,
+            fromBeginning: fromBeginning,
+            fileChoice: session.nextUpVersionId,
+            isSeries: false,
+            router: router
         )
     }
 
-    // MARK: - Below the fold
+    // MARK: Below the fold
 
     private var belowFold: some View {
         VStack(alignment: .leading, spacing: 36) {
             episodesSection
             if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
-                castSection(cast: detail.cast ?? [])
-            }
-            detailsSection.padding(.horizontal, VividTheme.safePadding)
-        }
-    }
-
-    @ViewBuilder
-    private var episodesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if !seasons.isEmpty {
-                PhoneSeasonChips(
-                    seasons: seasons,
-                    selected: selectedSeason,
-                    onSelect: onSelectSeason
+                MobileCastCrewSection(
+                    cast: detail.cast ?? [],
+                    crew: detail.crew ?? [],
+                    onSelectPerson: navigation.openPerson
                 )
             }
+            VStack(alignment: .leading, spacing: 14) {
+                MobileSectionHeader(title: Text("Details"))
+                MobileSeasonFacts(detail: detail)
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            PhoneSectionHeader(title: seasonEpisodeSectionTitle)
-                .padding(.horizontal, VividTheme.safePadding)
-
-            PhoneSeasonEpisodeBrowser(
-                seasons: seasons,
-                selectedSeason: selectedSeason,
-                episodes: episodes,
-                episodesBySeason: episodesBySeason,
-                isLoadingEpisodes: isLoadingEpisodes,
-                onSelectSeason: onSelectSeason,
-                onSelectEpisode: onEpisodeTap,
-                showsSeasonSelector: false,
+    private var episodesSection: some View {
+        let title = shownSeason.map { String(localized: "\($0.downloadDisplayName) Episodes") }
+            ?? String(localized: "Episodes")
+        return VStack(alignment: .leading, spacing: 14) {
+            if !model.seasons.isEmpty {
+                MobileSeasonChips(seasons: model.seasons, selectedSeason: model.selectedSeason, onSelect: openSeason)
+            }
+            MobileSectionHeader(title: Text(verbatim: title))
+                .padding(.horizontal, 16)
+            MobileEpisodeBrowser(
+                seasons: model.seasons,
+                selectedSeason: model.selectedSeason,
+                episodes: model.episodes,
+                episodesBySeason: model.episodesBySeason,
+                isLoading: model.isLoadingEpisodes,
+                onSelectSeason: openSeason,
+                onSelectEpisode: { episode in
+                    navigation.openItem(episode.contentId)
+                },
                 allowsSeasonPaging: false
             )
         }
     }
 
-    private var seasonEpisodeSectionTitle: String {
-        let season = selectedSeason ?? seasons.first(where: {
-            $0.seasonNumber == detail.seasonNumber
-        })
-        guard let season else { return String(localized: "Episodes") }
-        return String(localized: "\(season.downloadDisplayName) Episodes")
-    }
-
-    @ViewBuilder
-    private func castSection(cast: [CastMember]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            PhoneSectionHeader(title: "Cast & Crew")
-                .padding(.horizontal, VividTheme.safePadding)
-            PhoneCastRail(cast: cast, crew: detail.crew ?? [], onTap: onPersonTap)
-        }
-    }
-
-    private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            PhoneSectionHeader(title: "Details")
-            PhoneDetailFactsSection(detail: detail)
-        }
+    /// Another season opens its own page.
+    private func openSeason(_ season: Season) {
+        guard season.id != detail.contentId else { return }
+        navigation.openItem(season.contentId)
     }
 }
 #endif
