@@ -1,19 +1,27 @@
 import Foundation
 
-/// Minimal mirror of the server's `/api/v1/home/sections` response,
-/// trimmed to the fields the Top Shelf surface actually uses. We keep
-/// this separate from the main app's `Models.swift` so the extension
-/// doesn't compile the full DTO surface (and its supporting types).
+// Home and catalogue payloads the Top Shelf reads. Decoded with snake-case
+// key conversion. Foundation only: a CI check compiles this file on macOS
+// with the native Emby and Jellyfin client, cuts of the profile policy and
+// the saved-profile limit, and a test, so it can't depend on anything else in
+// the extension.
+
 struct TopShelfSectionsResponse: Decodable {
     let sections: [TopShelfSection]
 
-    enum CodingKeys: String, CodingKey { case sections }
+    init(sections: [TopShelfSection]) {
+        self.sections = sections
+    }
+}
 
-    init(sections: [TopShelfSection]) { self.sections = sections }
+extension TopShelfSectionsResponse {
+    private enum CodingKeys: String, CodingKey {
+        case sections
+    }
 
     init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        sections = try c.decodeIfPresent([TopShelfSection].self, forKey: .sections) ?? []
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sections = try container.decodeIfPresent([TopShelfSection].self, forKey: .sections) ?? []
     }
 }
 
@@ -38,26 +46,27 @@ struct TopShelfItem: Decodable {
     let posterUrl: String?
     let backdropUrl: String?
 
-    /// 0.0...1.0 or nil when we don't have both position and duration.
+    /// How far through the item is, from 0 to 1; nil without a position and
+    /// a positive duration.
     var playbackProgress: Double? {
-        guard let position = positionSeconds,
-              let duration = durationSeconds,
-              duration > 0 else { return nil }
-        return max(0, min(1, position / duration))
+        guard let positionSeconds, let durationSeconds, durationSeconds > 0 else { return nil }
+        return min(max(positionSeconds / durationSeconds, 0), 1)
     }
 }
 
-/// Subset of `/api/v1/catalog/series/{id}/seasons` we need. The main app
-/// decodes the full `Season` shape, but the extension only cares about
-/// matching a season number to its poster URL.
+/// A series' seasons, for episode posters.
 struct TopShelfSeasonsResponse: Decodable {
     let seasons: [TopShelfSeason]
+}
 
-    enum CodingKeys: String, CodingKey { case seasons }
+extension TopShelfSeasonsResponse {
+    private enum CodingKeys: String, CodingKey {
+        case seasons
+    }
 
     init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        seasons = try c.decodeIfPresent([TopShelfSeason].self, forKey: .seasons) ?? []
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        seasons = try container.decodeIfPresent([TopShelfSeason].self, forKey: .seasons) ?? []
     }
 }
 
@@ -66,7 +75,7 @@ struct TopShelfSeason: Decodable {
     let posterUrl: String?
 }
 
-/// Subset of `/api/v1/catalog/items/{id}` — only the poster URL.
+/// The one field the Top Shelf needs from a series' detail.
 struct TopShelfItemDetail: Decodable {
     let posterUrl: String?
 }
