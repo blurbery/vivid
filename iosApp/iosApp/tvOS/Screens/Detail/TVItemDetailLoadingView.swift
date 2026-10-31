@@ -46,7 +46,7 @@ struct TVItemDetailLoadingView: View {
             backdropUrl: seed?.backdropUrl,
             backdropThumbhash: seed?.backdropThumbhash,
             logoUrl: seed?.logoUrl,
-            title: seed?.title ?? ""
+            title: seedTitle ?? ""
         ) { showcaseHeight in
             skeletonEditorial(layout: .showcase(height: showcaseHeight))
                 .frame(height: showcaseHeight, alignment: .topLeading)

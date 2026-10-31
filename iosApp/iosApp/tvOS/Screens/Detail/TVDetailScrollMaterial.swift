@@ -11,14 +11,14 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
-
-/// Snaps focus-driven scrolls on the native movie and series pages to either
-/// the whole hero or the shelves at the top. Vivid decides "above the fold"
-/// from the original target, and snaps back to the top for small moves near
-/// it, so the header controls stay level with the fixed logo.
 struct TVDetailFoldSnapping: ScrollTargetBehavior {
     let showcaseHeight: CGFloat
 
+    /// Snaps focus-driven scrolls on the native movie and series pages to
+    /// either the whole hero or the shelves at the top. Vivid decides "above
+    /// the fold" from the original target, and snaps back to the top for
+    /// small moves near it, so the header controls stay level with the fixed
+    /// logo.
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
         let fold = showcaseHeight
         let startedAboveFold = context.originalTarget.rect.minY < fold / 2
