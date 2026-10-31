@@ -3,7 +3,10 @@
 
 Requires an already-booted simulator. Uses fake credentials and account updates;
 never launches, uninstalls or reads the installed Vivid app.
---source-ref <pre-fix-revision> with --expect-stall verifies the original failure.
+--source-ref <revision> reads the startup code from that revision instead of the
+working tree; it needs a revision with the root view in App/. --expect-stall expects
+the interrupted launch to stall. The original stall predates App/, so this script can
+no longer reproduce it.
 """
 import argparse
 import atexit
@@ -37,17 +40,15 @@ def read(relative):
             cwd=repo, text=True, timeout=15)
     return (root / relative).read_text()
 
-source=read('ContentView.swift')
-def between(start,end):
+view=read('App/ContentView.swift')
+def between(source,start,end):
  return source[source.index(start):source.index(end,source.index(start))]
-check=between('    private func checkInitialState() async {','    private func finishInitialStartupIfReady()')
-finish=between('    private func finishInitialStartupIfReady()', '    #if DEBUG\n    /// Dumps')
-launch=between('    @ViewBuilder\n    private var launchContent:', '    @ViewBuilder\n    private var authContent:')
-stable_task = '\n        .task(id: initialStateAttempt)' in source
-if stable_task:
- task=between('        .task(id: initialStateAttempt)', '        #if os(iOS) || os(tvOS)\n        .sheet')
-else:
- task=between('            .task(id: initialStateAttempt)', '\n\n        case .needsServerSetup')
+# The root model's launch state, splash hand-off and first-route check.
+model=between(read('App/AppRootModel.swift'),'@MainActor\n@Observable\nfinal class AppRootModel {','    // MARK: Appearance')+'}\n'
+# The root view's hand-off timing, startup task, identity layers, credential alert and splash.
+timing=between(view,'    private var router: AppRouter { model.router }','    var body: some View {')
+task=between(view,'            .task(id: model.startupAttempt)','            .sheet(isPresented: $model.showsCloudRestore)')
+layers=between(view,'    private var savedProfileKeyedContent: some View {','    // MARK: Routing')
 retry=read('Shared/SharedStorage.swift').split('struct KeychainReadFailure:')[1].split('struct SharedKeychain')[0]
 splash=read('tvOS/Components/VividStartupView.swift').replace('VividLoadingDots()', 'VividLoadingDots().onAppear { trace("dots visible") }.onDisappear { trace("dots hidden") }')
 dots=read('Screens/Player/PlayerBufferingCapsule.swift').split('struct VividLoadingDots: View {')[1].split('struct VividLoadingProgressStyle')[0]
@@ -105,44 +106,41 @@ actor TokenStore {
 enum Route: Hashable { case serverSetup }
 enum HTTPError: Error { case requestIdentityChanged }
 struct TVAppBackdrop: View { var body: some View { Color.black.ignoresSafeArea() } }
+struct VividAppBackdrop: View { var body: some View { Color.black.ignoresSafeArea() } }
+extension View {
+ // The harness never runs on the Duo, where PhoneDuo leaves every view as it is.
+ func onDuo(@ViewBuilder _ transform: (Self) -> some View) -> some View { self }
+}
 @MainActor enum StartupContentPrefetcher {
- static func prefetchForInitialRoute(_ state: AppRouter.AuthState) {}
+ static func prefetchForInitialRoute(_ state: AppRouter.AuthState) async -> Bool { true }
 }
 @MainActor enum LaunchTimeline {
  static func recordInitialStateCheckStarted() { trace("startup task entered") }
- static func recordInitialStateResolved(state: String) { trace("resolved "+state) }
- static func recordFirstContent(state: String) { trace("first content "+state) }
+ static func recordInitialStateResolved(_ state: AppRouter.AuthState) { trace("resolved "+state.rawValue) }
+ static func recordFirstContent(_ state: AppRouter.AuthState) { trace("first content "+state.rawValue) }
  static func recordSplashFinished() { trace("splash finished") }
 }
 struct Harness: View {
- @State private var router=AppRouter()
- @State private var didCompleteProviderSetup=true
- @State private var didStartInitialStateCheck=false
- @State private var initialStateAttempt=0
- @State private var showsCredentialReadError=false
- @State private var didFinishStartupSplash=false
- @State private var showsStartupOverlay=true
- @State private var pendingInitialAuthState: AppRouter.AuthState?
- @Environment(\.accessibilityReduceMotion) private var reduceStartupMotion
+ @State private var model=AppRootModel()
+ @Environment(\.accessibilityReduceMotion) private var reduceMotion
  var body: some View {
-  launchContent
-   .id(ServerRegistry.shared.activeServerId)
-   .id(TVSavedAccountStore.shared.contentRevision)
+  // ContentView's identity layers and startup task, cut below.
+  savedProfileKeyedContent
 __STARTUP_TASK__
-   .onChange(of: showsStartupOverlay) { _, value in trace("overlay \(value) route=\(router.authState.rawValue)") }
-   .onChange(of: didStartInitialStateCheck) { _, value in trace("started flag \(value)") }
-   .onChange(of: showsCredentialReadError) { _, value in trace("credential alert \(value)") }
+   .onChange(of: model.showsSplashOverlay) { _, value in trace("overlay \(value) route=\(router.authState.rawValue)") }
+   .onChange(of: model.isStartupCheckRunning) { _, value in trace("started flag \(value)") }
+   .onChange(of: model.showsCredentialAlert) { _, value in trace("credential alert \(value)") }
    .task {
     // Survives the subtree re-key, like ContentView's own State.
     Task { @MainActor in
      try? await Task.sleep(for:.seconds(2))
-     trace("FINAL route=\(router.authState.rawValue) overlay=\(showsStartupOverlay) started=\(didStartInitialStateCheck) pending=\(pendingInitialAuthState?.rawValue ?? "nil")")
+     trace("FINAL route=\(router.authState.rawValue) overlay=\(model.showsSplashOverlay) started=\(model.isStartupCheckRunning) pending=\(model.pendingInitialState?.rawValue ?? "nil")")
      try? await Task.sleep(for:.seconds(8))
-     trace("AFTER 10s route=\(router.authState.rawValue) overlay=\(showsStartupOverlay) started=\(didStartInitialStateCheck)")
+     trace("AFTER 10s route=\(router.authState.rawValue) overlay=\(model.showsSplashOverlay) started=\(model.isStartupCheckRunning)")
     }
    }
  }
- @ViewBuilder var authContent: some View {
+ @ViewBuilder var routedContent: some View {
   if router.authState == .loading {
    Color.black.ignoresSafeArea()
 '''
@@ -168,14 +166,18 @@ end=r'''
  var body: some Scene { WindowGroup { Harness() } }
 }
 '''
-if 'guard await StartupContentPrefetcher.prefetchForInitialRoute' in check:
-    preamble = preamble.replace(
-        'static func prefetchForInitialRoute(_ state: AppRouter.AuthState) {}',
-        'static func prefetchForInitialRoute(_ state: AppRouter.AuthState) async -> Bool { true }')
-
-# Use the original task modifier, launch gate, launch resolution and retry helper.
-text=preamble.replace("__STARTUP_TASK__",task if stable_task else "")+("" if stable_task else task)+end.split('@main')[0].replace('\n}\n','\n'+launch+check+finish+'\n}\n',1)+'@main'+end.split('@main')[1]+ '\nstruct KeychainReadFailure:'+retry+'\n'+splash+'\nstruct VividLoadingDots: View {'+dots+'\n'+read('tvOS/Components/VividLogoView.swift')
+# Splice the real startup task, hand-off timing, identity layers and root model into the harness.
+text=preamble.replace("__STARTUP_TASK__",task)+end.split('@main')[0].replace('\n}\n','\n'+timing+layers+'\n}\n',1)+model+'@main'+end.split('@main')[1]
 (out/'Repro.swift').write_text(text)
+# The retry helper, splash, loading dots and logo each go in a file of their own,
+# so a compile error names the file it came from.
+imports='import SwiftUI\nimport UIKit\nimport Security\n'
+sources={'KeychainReadFailure.swift':imports+'struct KeychainReadFailure:'+retry,
+         'VividStartupView.swift':imports+splash,
+         'VividLoadingDots.swift':imports+'struct VividLoadingDots: View {'+dots,
+         'VividLogoView.swift':imports+read('tvOS/Components/VividLogoView.swift')}
+for name, source in sources.items():
+    (out/name).write_text(source)
 app=out/'StartupRepro.app';app.mkdir(exist_ok=True)
 (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.codex.vivid-startup-repro','CFBundleName':'StartupRepro','CFBundleExecutable':'StartupRepro','CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'1.0','LSRequiresIPhoneOS':True,'UILaunchScreen':{},'UIApplicationSceneManifest':{'UIApplicationSupportsMultipleScenes':False}}))
 
@@ -199,7 +201,8 @@ sdk = subprocess.check_output(['xcrun', '--sdk', sdk_name, '--show-sdk-path'], t
 subprocess.run(['xcrun', '--sdk', sdk_name, 'swiftc',
                 '-module-cache-path', str(out / 'ModuleCache'),
                 '-target', f'arm64-apple-{args.platform}18.0-simulator', '-sdk', sdk,
-                '-parse-as-library', str(out / 'Repro.swift'), '-o', str(app / 'StartupRepro')],
+                '-parse-as-library', str(out / 'Repro.swift'), *(str(out / name) for name in sources),
+                '-o', str(app / 'StartupRepro')],
                check=True, timeout=120)
 if args.compile_only:
     print(f'PASS {args.platform}: extracted startup flow compiled')
