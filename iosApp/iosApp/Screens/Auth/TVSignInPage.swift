@@ -189,14 +189,14 @@ struct TVLoginView: View {
                 Button("Use a password instead") {
                     guard codeSignIn.canCancel else { return }
                     codeSignIn.cancel()
-                    moveFocus(to: .offer, afterTurns: 2)
+                    moveFocus(to: .offer)
                 }
                 .buttonStyle(AuroraGhostButtonStyle())
                 .focused($focusedTarget, equals: .usePassword)
             } else if let service = offeredService {
                 Button {
                     startCodeSignIn(service)
-                    moveFocus(to: .usePassword, afterTurns: 2)
+                    moveFocus(to: .usePassword)
                 } label: {
                     Text("Use \(service.title)")
                 }
@@ -219,16 +219,11 @@ struct TVLoginView: View {
         form.startCodeSignIn(service, with: codeSignIn, adding: nil, router: router)
     }
 
-    /// Moves focus after `turns` turns of the main actor, so the target
-    /// exists by then. A button that appears in the same update as the
-    /// panel swap needs two.
-    private func moveFocus(to target: Target, afterTurns turns: Int = 1) {
+    /// Moves focus two turns of the main actor later, so a target that
+    /// appears in the same update exists by then.
+    private func moveFocus(to target: Target) {
         Task { @MainActor in
-            if turns > 1 {
-                moveFocus(to: target, afterTurns: turns - 1)
-            } else {
-                focusedTarget = target
-            }
+            Task { @MainActor in focusedTarget = target }
         }
     }
 }

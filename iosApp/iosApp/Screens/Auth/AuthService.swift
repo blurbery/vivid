@@ -243,7 +243,7 @@ final class AuthService: @unchecked Sendable {
         }
         if rememberSelection,
            !launchPreferences.remember(profileID: profileId, requiresPIN: requiresPIN, accountEpoch: epoch, for: serverID) {
-            _ = await tokens.deactivateProfile(expectedAccount: nil, expectedProfileID: profileId)
+            _ = await tokens.deactivateProfile(expectedAccount: account, expectedProfileID: profileId)
             await client.endIdentityTransition(lease)
             throw ProfileTransitionError.accountEpochUnavailable
         }
