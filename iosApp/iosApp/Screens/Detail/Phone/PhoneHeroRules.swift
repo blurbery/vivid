@@ -206,10 +206,10 @@ enum MobileHeroRules {
                 badges.append(video.uppercased())
             }
         } else {
-            // The first value present wins, even a blank one, which then
-            // gives no video badge.
+            // A blank value is skipped, so a blank HDR mark never hides the
+            // file's label or the codec.
             let candidates: [String?] = [summary?.hdr, version.flatMap(versionVideoLabel), summary?.videoCodec]
-            if let video = candidates.lazy.compactMap({ $0 }).first {
+            if let video = candidates.lazy.compactMap({ $0 }).first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
                 badges.append(contentsOf: video.uppercased().split(separator: " ").map(String.init))
             }
         }
@@ -259,16 +259,16 @@ enum MobileHeroRules {
         }
         if text == "fhd" { return "1080P" }
 
-        // Each dimension comes from the first video track when it has one
-        // (a 0 counts), otherwise from the text. The text's parts are read as
-        // they are, so "1920 x 1080" gives nothing, and a lone number is a
-        // width.
+        // Each dimension comes from the first video track when it gives a
+        // positive value, otherwise from the text ("1920 x 1080" reads too).
+        // A lone number in the text is a width.
         let parts = text.replacingOccurrences(of: "×", with: "x").split(separator: "x")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
         let textWidth = parts.first.flatMap { Int($0) }
         let textHeight = parts.count == 2 ? Int(parts[1]) : nil
         let track = version.videoTracks?.first
-        let width = track?.width ?? textWidth ?? 0
-        let height = track?.height ?? textHeight ?? 0
+        let width = (track?.width).flatMap { $0 > 0 ? $0 : nil } ?? textWidth ?? 0
+        let height = (track?.height).flatMap { $0 > 0 ? $0 : nil } ?? textHeight ?? 0
 
         let heightClass: Int
         if width >= 7680 || height >= 4320 {
