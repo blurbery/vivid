@@ -1,7 +1,7 @@
 import Foundation
 
 /// Carries the most recent request Seerr accepted in this process, so open
-/// request screens can show its new state without fetching again.
+/// request screens can catch up with it.
 @MainActor
 @Observable
 final class RequestsEventBus {

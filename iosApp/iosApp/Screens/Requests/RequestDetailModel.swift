@@ -152,6 +152,6 @@ enum RequestMetaLine {
         if let rating = detail.voteAverage, rating > 0 {
             parts.append("TMDB " + rating.formatted(.number.precision(.fractionLength(1))))
         }
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 }

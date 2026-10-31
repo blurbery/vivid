@@ -54,14 +54,27 @@ final class RequestSearchSectionViewModel {
 struct RequestSearchSectionView: View {
     let viewModel: RequestSearchSectionViewModel
 
+    #if os(tvOS)
+    /// Kept here so emptying and refilling the results keeps the last measured width.
+    @State private var gridWidth: CGFloat = 1600
+    #endif
+
     var body: some View {
         if !viewModel.results.isEmpty {
-            RequestSearchSectionContent(viewModel: viewModel)
+            content
                 .onChange(of: RequestsEventBus.shared.latest) { _, record in
                     guard let record else { return }
                     viewModel.apply(record)
                 }
         }
+    }
+
+    private var content: some View {
+        #if os(tvOS)
+        RequestSearchSectionContent(viewModel: viewModel, gridWidth: $gridWidth)
+        #else
+        RequestSearchSectionContent(viewModel: viewModel)
+        #endif
     }
 }
 
@@ -69,6 +82,7 @@ private struct RequestSearchSectionContent: View {
     let viewModel: RequestSearchSectionViewModel
 
     #if os(tvOS)
+    @Binding var gridWidth: CGFloat
     private let sectionSpacing: CGFloat = 20
     #else
     private let sectionSpacing: CGFloat = 10
@@ -87,7 +101,7 @@ private struct RequestSearchSectionContent: View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             header
             #if os(tvOS)
-            RequestResultGrid(results: viewModel.results)
+            RequestResultGrid(results: viewModel.results, gridWidth: $gridWidth)
             #else
             RequestResultRail(results: viewModel.results)
             #endif
@@ -115,8 +129,7 @@ private struct RequestSearchSectionContent: View {
 /// Seven columns of result cards that exactly fill the grid's width.
 private struct RequestResultGrid: View {
     let results: [RequestMediaResult]
-
-    @State private var gridWidth: CGFloat = 1600
+    @Binding var gridWidth: CGFloat
 
     private let columnCount = 7
     private let columnSpacing: CGFloat = 40

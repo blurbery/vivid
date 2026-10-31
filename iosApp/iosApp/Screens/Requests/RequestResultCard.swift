@@ -107,7 +107,6 @@ struct RequestResultCard: View {
         .frame(width: cardWidth)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(.isButton)
         #endif
     }
 
@@ -134,8 +133,7 @@ struct RequestResultCard: View {
             }
             if let badge {
                 RequestStatusRibbon(badge: badge)
-                    .padding(.top, ribbonInset)
-                    .padding(.trailing, ribbonInset)
+                    .padding(ribbonInset)
             }
         }
         .frame(width: cardWidth, height: cardHeight)
