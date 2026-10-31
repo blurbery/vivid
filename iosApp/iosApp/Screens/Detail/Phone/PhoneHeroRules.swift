@@ -265,7 +265,7 @@ enum MobileHeroRules {
         // width.
         let parts = text.replacingOccurrences(of: "×", with: "x").split(separator: "x")
         let textWidth = parts.first.flatMap { Int($0) }
-        let textHeight = parts.count > 1 ? Int(parts[1]) : nil
+        let textHeight = parts.count == 2 ? Int(parts[1]) : nil
         let track = version.videoTracks?.first
         let width = track?.width ?? textWidth ?? 0
         let height = track?.height ?? textHeight ?? 0
