@@ -153,7 +153,7 @@ struct ForYouCollectionsGrid: View {
         }
 
         let ordered: (Entry, Entry) -> Bool = { lhs, rhs in
-            switch lhs.collection.name.localizedStandardCompare(rhs.collection.name) {
+            switch TitleSortOrder.compare(lhs.collection.name, rhs.collection.name) {
             case .orderedAscending: true
             case .orderedDescending: false
             case .orderedSame: lhs.collection.id < rhs.collection.id

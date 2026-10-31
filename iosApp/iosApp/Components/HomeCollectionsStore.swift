@@ -452,7 +452,7 @@ final class HomeCollectionsStore {
     }
 
     private static func precedes(_ lhs: LibraryCollection, _ rhs: LibraryCollection) -> Bool {
-        let order = lhs.name.localizedStandardCompare(rhs.name)
+        let order = TitleSortOrder.compare(lhs.name, rhs.name)
         return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
     }
 
