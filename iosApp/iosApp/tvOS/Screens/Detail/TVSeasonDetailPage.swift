@@ -33,7 +33,7 @@ struct TVSeasonDetailPage: View {
                             .id(TVDetailScrollAnchor.episodes)
                         if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
                             TVDetailSection(title: "Cast & Crew", spacing: Self.sectionSpacing) {
-                                TVDetailCastRail(cast: detail.cast ?? [], crew: detail.crew ?? [], onSelectPerson: actions.selectPerson)
+                                TVCastAndCrewRail(cast: detail.cast ?? [], crew: detail.crew ?? [], onSelectPerson: actions.selectPerson)
                             }
                         }
                         TVDetailSection(title: "Details", spacing: Self.sectionSpacing) {
@@ -111,7 +111,7 @@ struct TVSeasonDetailPage: View {
     // MARK: Hero
 
     private var hero: some View {
-        TVDetailHero(
+        TVDetailHeroPanel(
             layout: .standard(clipsToHeight: true),
             backdropUrl: detail.backdropUrl,
             backdropThumbhash: detail.backdropThumbhash,

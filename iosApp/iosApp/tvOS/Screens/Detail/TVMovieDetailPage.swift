@@ -135,7 +135,7 @@ struct TVMovieDetailPage: View {
             logoUrl: detail.logoUrl,
             title: detail.title
         ) { showcase in
-            TVDetailHero(layout: .showcase(height: showcase), creditLine: TVHeroMetadata.creditLine(detail)) {
+            TVDetailHeroPanel(layout: .showcase(height: showcase), creditLine: TVHeroMetadata.creditLine(detail)) {
                 TVDetailCompactPrimary(
                     title: detail.title,
                     logoUrl: detail.logoUrl,
@@ -259,7 +259,7 @@ struct TVMovieDetailPage: View {
         let treatment: TVDetailTitleTreatment = seriesTitle.map {
             .hierarchy(seriesTitle: $0, seriesLogoUrl: olderLogoUrl, episodeTitle: detail.title)
         } ?? .logo(url: olderLogoUrl, title: detail.title)
-        return TVDetailHero(
+        return TVDetailHeroPanel(
             layout: .standard(clipsToHeight: false),
             backdropUrl: detail.backdropUrl,
             backdropThumbhash: detail.backdropThumbhash,
@@ -343,7 +343,7 @@ struct TVMovieDetailPage: View {
     private func castSection(cast: [CastMember], crew: [CrewMember]) -> some View {
         if CastCrewGrouping.hasPeople(cast: cast, crew: crew) {
             TVDetailSection(title: "Cast & Crew") {
-                TVDetailCastRail(cast: cast, crew: crew, onSelectPerson: actions.selectPerson)
+                TVCastAndCrewRail(cast: cast, crew: crew, onSelectPerson: actions.selectPerson)
             }
         }
     }

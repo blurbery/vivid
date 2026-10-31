@@ -132,7 +132,7 @@ struct TVSeriesDetailPage: View {
     }
 
     private func hero(showcase: CGFloat, playback: PlaybackInputs) -> some View {
-        TVDetailHero(layout: .showcase(height: showcase), creditLine: TVHeroMetadata.creditLine(detail)) {
+        TVDetailHeroPanel(layout: .showcase(height: showcase), creditLine: TVHeroMetadata.creditLine(detail)) {
             TVDetailCompactPrimary(
                 title: detail.title,
                 logoUrl: detail.logoUrl,
@@ -243,7 +243,7 @@ struct TVSeriesDetailPage: View {
             TVDetailTrailersRail(entries: trailerEntries, onSelect: actions.selectTrailer)
             if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
                 TVDetailSection(title: "Cast & Crew") {
-                    TVDetailCastRail(cast: detail.cast ?? [], crew: detail.crew ?? [], onSelectPerson: actions.selectPerson)
+                    TVCastAndCrewRail(cast: detail.cast ?? [], crew: detail.crew ?? [], onSelectPerson: actions.selectPerson)
                 }
             }
             TVMoreLikeThisSection(sourceId: contentId, sourceDetail: detail, onSelect: actions.selectItem)

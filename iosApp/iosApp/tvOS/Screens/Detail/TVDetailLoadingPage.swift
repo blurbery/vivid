@@ -4,7 +4,7 @@ import SwiftUI
 /// The page shown while a title loads with nothing cached. It paints what
 /// the card already knew in the loaded page's positions, so the page settles
 /// in place. Nothing here takes focus.
-struct TVItemDetailLoadingView: View {
+struct TVDetailLoadingPage: View {
     let seed: TVItemDetailRouteSeed?
 
     private var seedTitle: String? {

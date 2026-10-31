@@ -50,7 +50,7 @@ struct TVDetailHeroLayout {
 
 /// The top of a detail page: optional backdrop artwork, the editorial block
 /// with its credit and summary line, and the action row.
-struct TVDetailHero<Primary: View, Summary: View, Actions: View>: View {
+struct TVDetailHeroPanel<Primary: View, Summary: View, Actions: View>: View {
     let layout: TVDetailHeroLayout
     var backdropUrl: String? = nil
     var backdropThumbhash: String? = nil

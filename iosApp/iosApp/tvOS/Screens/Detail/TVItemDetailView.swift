@@ -89,7 +89,7 @@ struct TVItemDetailView: View {
                 Task { await viewModel.loadDetail(contentId: contentId) }
             }
         } else {
-            TVItemDetailLoadingView(seed: seed)
+            TVDetailLoadingPage(seed: seed)
         }
     }
 

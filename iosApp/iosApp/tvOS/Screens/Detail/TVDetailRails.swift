@@ -36,7 +36,7 @@ struct TVDetailSectionHeader: View {
 // MARK: - Cast & Crew
 
 /// Directors, writers and cast, each group introduced by a vertical label.
-struct TVDetailCastRail: View {
+struct TVCastAndCrewRail: View {
     let cast: [CastMember]
     let crew: [CrewMember]
     let onSelectPerson: (String) -> Void
