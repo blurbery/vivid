@@ -615,16 +615,16 @@ final class AppHealthReportTests: XCTestCase {
 
     // MARK: - Sending
 
-    /// A `Retry-After` near the largest whole number once overflowed while the
-    /// message was worked out, crashing the settings screen.
+    /// Very large retry times still give whole minutes, rounded up, without
+    /// overflowing, right up to the largest whole number.
     func testHugeRetryTimeGivesWholeMinutesWithoutOverflow() {
         func message(_ seconds: Int) -> String { DiagnosticsUploader.Failure.rateLimited(retryAfter: seconds).message }
-        let largestWorkingBefore = message(9_223_372_036_854_775_748)
-        let firstOverflowingBefore = message(9_223_372_036_854_775_749)
+        let earlierInMinute = message(9_223_372_036_854_775_748)
+        let laterInMinute = message(9_223_372_036_854_775_749)
         let largest = message(Int.max)
-        XCTAssertFalse(firstOverflowingBefore.isEmpty)
+        XCTAssertFalse(laterInMinute.isEmpty)
         XCTAssertFalse(largest.isEmpty)
-        XCTAssertEqual(largestWorkingBefore, firstOverflowingBefore)
-        XCTAssertNotEqual(firstOverflowingBefore, largest)
+        XCTAssertEqual(earlierInMinute, laterInMinute)
+        XCTAssertNotEqual(laterInMinute, largest)
     }
 }

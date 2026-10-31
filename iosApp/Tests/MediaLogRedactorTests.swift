@@ -96,6 +96,10 @@ final class MediaLogRedactorTests: XCTestCase {
         expect("master copy of movie.mkv", absent: ["movie.mkv"])
     }
 
+    func testBareSchemeIsLeftAlone() {
+        XCTAssertEqual(MediaLogRedactor.sanitize("see https:// now"), "see https:// now")
+    }
+
     func testSanitizeIsIdempotent() {
         for (index, input) in Self.auditedSamples.enumerated() {
             let once = MediaLogRedactor.sanitize(input)

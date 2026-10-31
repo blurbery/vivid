@@ -20,10 +20,7 @@ enum MediaLogRedactor {
     /// True for a single name such as `Movie.mkv` that isn't a generic
     /// streaming file name such as `master.m3u8`.
     static func isMediaFileName(_ value: String) -> Bool {
-        guard !value.contains(where: \.isNewline),
-              let dot = value.lastIndex(of: "."), dot > value.startIndex,
-              Rules.mediaExtensions.contains(value[value.index(after: dot)...].lowercased())
-        else { return false }
+        guard !value.contains(where: \.isNewline), Rules.mediaFileName.firstMatch(in: value) != nil else { return false }
         return Rules.genericFileName.firstMatch(in: value) == nil
     }
 
@@ -82,6 +79,8 @@ enum MediaLogRedactor {
         static let mediaNameCharacter = "[A-Za-z0-9 &'()+,\\-.\\[\\]_%]"
 
         static let genericFileName = Rule("^" + genericStems + "\\." + extensionPattern + "$", "")
+        // Case-insensitive with Unicode case folding, as every rule here is.
+        static let mediaFileName = Rule("^.+\\." + extensionPattern + "$", "")
 
         static let credentials: [Rule] = [
             // C1: a credential name and its value.
@@ -92,7 +91,7 @@ enum MediaLogRedactor {
             // C3: bearer tokens.
             Rule("\\bBearer\\s+" + tokenCharacters + "{8,}", "Bearer [redacted]"),
             // C4: URLs with a scheme.
-            Rule("\\b(?:file|https?|smb|wss?)://[^\\s\"'<>]*", "[redacted-url]"),
+            Rule("\\b(?:file|https?|smb|wss?)://[^\\s\"'<>]+", "[redacted-url]"),
             // C5: a host and port followed by a path.
             Rule("(?:\\[[0-9a-f:]{2,}\\]|\\b\\d{1,3}(?:\\.\\d{1,3}){3}|\\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,})"
                  + ":\\d{1,5}/[^\\s\"'<>,;\\]}]*", "[redacted-url]"),

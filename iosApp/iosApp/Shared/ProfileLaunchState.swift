@@ -18,7 +18,7 @@ struct ProfileLaunchState: Codable, Equatable, Sendable {
     /// True once the app has been away for at least the behaviour's timeout.
     func awayIntervalHasExpired(at now: Date) -> Bool {
         guard let backgroundedAt, let timeout = behavior.awayTimeout else { return false }
-        return now >= backgroundedAt.addingTimeInterval(timeout)
+        return now.timeIntervalSince(backgroundedAt) >= timeout
     }
 
     /// Whether a cold launch has to show the profile picker, before any

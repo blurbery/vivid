@@ -83,11 +83,11 @@ enum SharedStorage {
     /// The team prefix older builds put in front of the bundle identifier to
     /// form their Keychain group.
     static let legacyTeamPrefix: String? = {
-        guard let group = keychainAccessGroup else {
-            storageLog.error("No shared Keychain access group, so no legacy team group")
+        guard let prefix = SharedKeychainPolicy.legacyTeamPrefix(forAccessGroup: keychainAccessGroup) else {
+            storageLog.error("No legacy team prefix can be derived from the shared Keychain access group")
             return nil
         }
-        return SharedKeychainPolicy.legacyTeamPrefix(forAccessGroup: group)
+        return prefix
     }()
 }
 
@@ -244,13 +244,13 @@ struct SharedKeychain {
         if fallbackApplies(to: status) {
             let local = write(data, account: account, group: nil)
             if local == errSecSuccess {
-                storageLog.notice("Stored \(account, privacy: .public) in the app's own Keychain")
+                storageLog.notice("Stored an item in the app's own Keychain")
                 return true
             }
-            storageLog.error("App Keychain write for \(account, privacy: .public) failed: \(local)")
+            storageLog.error("App Keychain write failed: \(local, privacy: .public)")
             return false
         }
-        storageLog.error("Keychain write for \(account, privacy: .public) failed: \(status)")
+        storageLog.error("Keychain write for \(account, privacy: .public) failed: \(status, privacy: .public)")
         return false
     }
 
@@ -268,7 +268,7 @@ struct SharedKeychain {
             case errSecSuccess: return localValue
             case errSecItemNotFound: return nil
             default:
-                storageLog.error("App Keychain read for \(account, privacy: .public) failed: \(localStatus)")
+                storageLog.error("App Keychain read failed: \(localStatus, privacy: .public)")
                 throw KeychainReadFailure(status: localStatus)
             }
         }
@@ -283,19 +283,19 @@ struct SharedKeychain {
             guard allowsAppLocalFallback, accessGroup != nil else { return true }
             let local = deleteItem(account, group: nil)
             if local == errSecSuccess || local == errSecItemNotFound { return true }
-            storageLog.error("App Keychain delete for \(account, privacy: .public) failed: \(local)")
+            storageLog.error("App Keychain delete failed: \(local, privacy: .public)")
             return false
         }
         if fallbackApplies(to: status) {
             let local = deleteItem(account, group: nil)
             if local == errSecSuccess || local == errSecItemNotFound {
-                storageLog.notice("Deleted \(account, privacy: .public) from the app's own Keychain")
+                storageLog.notice("Deleted an item from the app's own Keychain")
                 return true
             }
-            storageLog.error("App Keychain delete for \(account, privacy: .public) failed: \(local)")
+            storageLog.error("App Keychain delete failed: \(local, privacy: .public)")
             return false
         }
-        storageLog.error("Keychain delete for \(account, privacy: .public) failed: \(status)")
+        storageLog.error("Keychain delete for \(account, privacy: .public) failed: \(status, privacy: .public)")
         return false
     }
 
@@ -314,7 +314,7 @@ struct SharedKeychain {
             let status = SecItemDelete(baseQuery(group: group) as CFDictionary)
             if status == errSecSuccess || status == errSecItemNotFound { continue }
             if isConfigured, fallbackApplies(to: status) { continue }
-            storageLog.error("Keychain clean-up failed: \(status)")
+            storageLog.error("Keychain clean-up failed: \(status, privacy: .public)")
             succeeded = false
         }
         return succeeded

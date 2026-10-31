@@ -110,6 +110,19 @@ final class DiagnosticsRedactionTests: XCTestCase {
         XCTAssertTrue(sidecar.contains("count=2"))
     }
 
+    func testEmptyURLHostStaysEmpty() throws {
+        let rendered = try line("upgrade failed for https:///x")
+        XCTAssertTrue(rendered.contains("https:///x"))
+        XCTAssertFalse(rendered.contains("[host:"))
+    }
+
+    func testEscapedTokenValueRunsPastUnicodeLineSeparators() throws {
+        let secret = UUID().uuidString
+        let rendered = try line("body=\\\"token\\\":\\\"part\u{2028}\(secret)\\\"} end")
+        XCTAssertFalse(rendered.contains(secret))
+        XCTAssertTrue(rendered.contains("token=[redacted]"))
+    }
+
     func testCamelCaseTokenKeyValuesAreRedacted() throws {
         let rendered = try line("refresh accessToken=aaa.bbb.ccc refreshToken: ddd-eee-fff done")
         XCTAssertFalse(rendered.contains("aaa.bbb.ccc"))

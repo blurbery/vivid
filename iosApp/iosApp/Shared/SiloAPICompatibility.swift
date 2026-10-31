@@ -20,7 +20,7 @@ enum SiloAPICompatibility {
     }
 
     static func discoveryURL(for url: URL) -> URL? {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else { return nil }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         let path = components.percentEncodedPath
         guard let range = path.range(of: legacyPrefix) else { return nil }
         components.percentEncodedPath = String(path[..<range.lowerBound]) + "/api/v2/system/info"
@@ -296,9 +296,9 @@ enum SiloAPICompatibility {
     private static func progressItemInMilliseconds(_ item: [String: Any]) throws -> [String: Any] {
         var item = item
         for (seconds, milliseconds) in [("position", "position_ms"), ("duration", "duration_ms")] {
-            guard let value = item.removeValue(forKey: seconds) else { continue }
-            guard !(value is String), let number = value as? NSNumber else { continue }
-            let rounded = (number.doubleValue * 1_000).rounded(.toNearestOrAwayFromZero)
+            // Only a number that is exactly a double counts; Booleans read as 1 or 0.
+            guard let value = item.removeValue(forKey: seconds), let number = value as? Double else { continue }
+            let rounded = (number * 1_000).rounded(.toNearestOrAwayFromZero)
             guard rounded.isFinite, rounded >= 0, rounded < 9_223_372_036_854_775_808.0 else {
                 throw Failure.invalidDiscovery
             }
@@ -437,9 +437,10 @@ enum SiloAPICompatibility {
         if path.hasPrefix("/api/v1/downloads/subscriptions"), object["id"] != nil {
             object = ["subscription": object, "registered": 0]
         }
-        if path == "/api/v1/auth/device/poll", let tokens = object["tokens"] as? [String: Any] {
-            object["tokens"] = nil
-            object.merge(tokens) { _, token in token }
+        if path == "/api/v1/auth/device/poll", let tokens = object.removeValue(forKey: "tokens") {
+            if let tokens = tokens as? [String: Any] {
+                object.merge(tokens) { _, token in token }
+            }
         }
         return object
     }

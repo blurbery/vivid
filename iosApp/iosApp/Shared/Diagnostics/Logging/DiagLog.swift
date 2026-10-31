@@ -53,7 +53,12 @@ enum DiagLog {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let scheme = components.scheme
         else { return "[redacted_url]" }
-        let host = components.host.map { loopbackHosts.contains($0.lowercased()) ? $0 : hostToken($0) } ?? ""
+        let host: String
+        if let reported = components.host, !reported.isEmpty {
+            host = loopbackHosts.contains(reported.lowercased()) ? reported : hostToken(reported)
+        } else {
+            host = ""
+        }
         return scheme + "://" + host + redactedPath(components.percentEncodedPath)
     }
 
@@ -177,17 +182,6 @@ enum DiagLog {
         return true
     }
 
-    static func debug(
-        _ category: DiagnosticsLogCategory,
-        tag: String,
-        message: @autoclosure () -> String,
-        attrs: @autoclosure () -> [String: DiagLogAttributeValue] = [:]
-    ) {
-        #if DEBUG
-        write(level: .debug, category: category, tag: tag, message: message(), attrs: attrs())
-        #endif
-    }
-
     static func writeLocally(_ line: String) {
         #if DEBUG
         developmentLog.debug("\(line, privacy: .private)")
@@ -220,9 +214,9 @@ enum DiagLog {
         let regex: NSRegularExpression
         let template: String
 
-        init(_ pattern: String, _ template: String = "") {
+        init(_ pattern: String, _ template: String = "", caseSensitive: Bool = false) {
             // The patterns are fixed, so a failure here is a programming error.
-            regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            regex = try! NSRegularExpression(pattern: pattern, options: caseSensitive ? [] : [.caseInsensitive])
             self.template = template
         }
 
@@ -260,15 +254,19 @@ enum DiagLog {
             Rule("\\b(?:Set-)?Cookie\\s*[:=]\\s*[^\\r\\n]+", "Cookie: [redacted]"),
             // L4: bearer tokens.
             Rule("\\bBearer\\s+" + tokenCharacters + "{8,}", "Bearer [redacted]"),
-            // L5: tokens shaped like a JWT.
-            Rule("\\b[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b", "[redacted_token]"),
-            // L6: email addresses.
-            Rule("\\b[A-Za-z0-9%+\\-._]+@[A-Za-z0-9\\-.]+\\.[A-Za-z]{2,}\\b", "[redacted_email]"),
+            // L5: tokens shaped like a JWT. Case-sensitive, so only ASCII letters count.
+            Rule("\\b[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b", "[redacted_token]",
+                 caseSensitive: true),
+            // L6: email addresses, matched the same way.
+            Rule("\\b[A-Za-z0-9%+\\-._]+@[A-Za-z0-9\\-.]+\\.[A-Za-z]{2,}\\b", "[redacted_email]", caseSensitive: true),
             // L7: secret keys and their values, quoted or bare.
             Rule("(?:\\\\?['\"])?\\b(access_token|accessToken|api_key|apikey|email|jwt|key|login|profile_id|profileId|"
                  + "profile_token|profileToken|refresh_token|refreshToken|sig|signature|token|user|user_name|username)\\b"
                  + "(?:\\\\?['\"])?\\s*[:=]\\s*"
-                 + "(?:\"(?:\\\\.|[^\"\\\\\\r\\n])*\"|\\\\\".*\\\\\"|'[^'\\r\\n]*'|[^\\s&;,\\]}]+)",
+                 + "(?:\"(?:\\\\.|[^\"\\\\\\r\\n])*\""
+                 // Escaped quotes: each backslash pairs with the next character, to the last escaped quote.
+                 + "|\\\\\"(?:\\\\[^\\n\\x{0B}\\f\\r\\x{85}\\x{2028}\\x{2029}]|[^\\\\\\r\\n])*\\\\\""
+                 + "|'[^'\\r\\n]*'|[^\\s&;,\\]}]+)",
                  "$1=[redacted]"),
             // L8: shortened credentials in debug headers, such as `auth(…abc)`.
             Rule("\\b(access_token|accessToken|auth|profile_token|profileToken|refresh_token|refreshToken)"

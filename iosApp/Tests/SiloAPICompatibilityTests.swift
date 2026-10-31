@@ -245,6 +245,27 @@ final class SiloAPICompatibilityTests: XCTestCase {
         XCTAssertEqual((reply["user"] as? [String: Any])?["id"] as? Int, 42)
     }
 
+    func testDiscoveryURLIsBuiltFromTheURLsOwnText() throws {
+        let relative = try XCTUnwrap(URL(string: "api/v1/auth/setup", relativeTo: URL(string: "https://server.example/silo/")))
+        XCTAssertNil(SiloAPICompatibility.discoveryURL(for: relative))
+    }
+
+    func testDevicePollTokensThatAreNotAnObjectAreRemoved() throws {
+        let reply = try response(#"{"status":"pending","tokens":"later"}"#, path: "/api/v1/auth/device/poll")
+        XCTAssertNil(reply["tokens"])
+        XCTAssertEqual(reply["status"] as? String, "pending")
+    }
+
+    func testProgressSecondsThatAreNotExactlyADoubleAreDropped() throws {
+        let upload = try request(
+            "/api/v1/sync/progress", method: "POST",
+            body: #"{"items":[{"media_item_id":"movie:one","position":9007199254740993,"duration":60}]}"#)
+        let item = (try jsonBody(upload)["items"] as? [[String: Any]])?.first
+        XCTAssertNil(item?["position"])
+        XCTAssertNil(item?["position_ms"])
+        XCTAssertEqual(item?["duration_ms"] as? Int, 60_000)
+    }
+
     func testCatalogueAndEpisodeEnvelopes() throws {
         let catalogue = try response(
             #"{"items":[],"window_cursor":"window","page":{"has_more":true,"next_cursor":"next"}}"#, path: "/api/v1/catalog")
