@@ -61,23 +61,6 @@ struct OverlayData: Hashable {
         )
     }
 
-    static func from(_ detail: ItemDetail) -> OverlayData {
-        OverlayData(
-            summary: detail.overlaySummary,
-            ratingImdb: detail.ratingImdb,
-            ratingTmdb: detail.ratingTmdb,
-            ratingRtCritic: detail.ratingRtCritic,
-            ratingRtAudience: detail.ratingRtAudience,
-            contentRating: detail.contentRating,
-            year: detail.year,
-            runtime: detail.runtime,
-            originalLanguage: detail.originalLanguage,
-            studios: detail.studios,
-            networks: detail.networks,
-            showStatus: detail.showStatus
-        )
-    }
-
     private init(
         summary: OverlaySummary?,
         ratingImdb: Double?,

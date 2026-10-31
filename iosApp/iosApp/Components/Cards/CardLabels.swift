@@ -30,7 +30,7 @@ func episodeRailAccessibilityLabel(
 
 /// The episode code and title cards show under episode artwork.
 enum EpisodeCardCaption {
-    static func code(season: Int, episode: Int) -> String {
+    private static func code(season: Int, episode: Int) -> String {
         let seasonText = String(format: "%02ld", season)
         let episodeText = String(format: "%02ld", episode)
         return String(
@@ -43,7 +43,7 @@ enum EpisodeCardCaption {
         item.type.lowercased() == "episode"
     }
 
-    static func code(for item: SectionItem) -> String? {
+    private static func code(for item: SectionItem) -> String? {
         guard isEpisode(item), let season = item.seasonNumber, let episode = item.episodeNumber else { return nil }
         return code(season: season, episode: episode)
     }
