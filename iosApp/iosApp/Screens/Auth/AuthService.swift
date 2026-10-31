@@ -1,324 +1,255 @@
 import Foundation
 
-/// Thin service layer for auth / profile operations backed by the native
-/// Swift `HTTPClient`.
-///
-/// Shares the same token/profile storage as `VividAPI` via
-/// ``TokenStore/shared``. Server metadata lives in `ServerRegistry`; active
-/// profile identity is a separate current-user request scope coordinated with
-/// `ProfileLaunchPreferences`.
+/// Server checks, sign-in, session installation, viewing profiles and
+/// sign-out. Every change to the request identity holds the HTTP client's
+/// identity transition for its whole length and releases it on every exit.
 final class AuthService: @unchecked Sendable {
     static let shared = AuthService()
-    private let defaults = SharedDefaults.shared
-    private let serverIdentityResolver: ServerIdentityResolver
-    private let serverRegistry: ServerRegistry
-    private let launchPreferences: ProfileLaunchPreferences
 
     enum SignOutAuthorization: Equatable, Sendable {
         case allowed(account: RefreshAccountIdentity?)
         case refused
     }
 
+    private let identityResolver: ServerIdentityResolver
+    private let registry: ServerRegistry
+    private let launchPreferences: ProfileLaunchPreferences
+
     init(
         serverIdentityResolver: ServerIdentityResolver = ServerIdentityResolver(),
         serverRegistry: ServerRegistry = .shared,
         launchPreferences: ProfileLaunchPreferences = .shared
     ) {
-        self.serverIdentityResolver = serverIdentityResolver
-        self.serverRegistry = serverRegistry
+        self.identityResolver = serverIdentityResolver
+        self.registry = serverRegistry
         self.launchPreferences = launchPreferences
     }
 
-    // MARK: - Stored State Accessors
+    // MARK: State
 
-    /// Active server URL. Read-only: changing the active server goes
-    /// through `ServerRegistry.switchTo`, which mirrors the URL to the
-    /// legacy `UserDefaults["serverUrl"]` slot for sync readers.
     var serverUrl: String { ServerRegistry.shared.activeServerUrl }
 
-    /// Active request profile. Mutations must use the transition APIs below so
-    /// profile ID, verification proof, caches, diagnostics, and Top Shelf stay
-    /// on one identity boundary.
-    var profileId: String? { defaults.string(forKey: SharedStorage.profileIdKey) }
+    /// Read fresh on every access, so it is safe from any thread.
+    var profileId: String? { SharedDefaults.shared.string(forKey: SharedStorage.profileIdKey) }
 
     var hasServer: Bool { ServerRegistry.shared.hasActiveServer }
 
-    /// Sync check used by SwiftUI bodies and view-state gates. Reads the
-    /// active server's Keychain slot directly — Keychain APIs are
-    /// synchronous, so no actor hop is needed.
     var isLoggedIn: Bool {
-        guard let id = ServerRegistry.shared.activeServerId, !id.isEmpty else {
-            return false
-        }
-        return SharedKeychain(audience: SharedStorage.accountCredentialAudience)
-            .get(TokenStore.accessTokenKey(for: id)) != nil
+        guard let serverID = ServerRegistry.shared.activeServerId, !serverID.isEmpty else { return false }
+        let keychain = SharedKeychain(audience: SharedStorage.accountCredentialAudience)
+        return keychain.get(TokenStore.accessTokenKey(for: serverID)) != nil
     }
 
     var hasProfile: Bool { profileId != nil }
 
-    // MARK: - Server Check
+    // MARK: Servers
 
-    /// Probe a candidate server: set it as the active server URL,
-    /// identify it via native branding (with a legacy health fallback),
-    /// register the entry, and
-    /// return the setup status so the caller can decide between initial
-    /// setup and login.
-    ///
-    /// Candidate probes use their explicit URL and no active credentials.
-    /// Global registry/default/token routing changes only after setup status
-    /// succeeds. If both optional identity probes fail, the display name
-    /// falls back to the URL.
+    /// Finds the server at `address` without saving, switching or caching
+    /// anything.
+    func locateServer(at address: String, provider: MediaServerProvider) async throws -> ServerProbe {
+        let url = ServerRegistry.normalize(url: address)
+        let registryID = ServerRegistry.serverId(for: url)
+        switch provider {
+        case .jellyfin:
+            let name = try await JellyfinConnection.probe(serverURL: url)
+            try Task.checkCancellation()
+            return ServerProbe(provider: .jellyfin, url: url, id: "jellyfin:" + registryID, fetchedName: name, needsSetup: false)
+        case .emby:
+            let name = try await EmbyConnection.probe(serverURL: url)
+            try Task.checkCancellation()
+            return ServerProbe(provider: .emby, url: url, id: "emby:" + registryID, fetchedName: name, needsSetup: false)
+        case .silo:
+            let name = await identityResolver.fetchServerName(serverURL: url)
+            try Task.checkCancellation()
+            let status: SetupStatus = try await HTTPClient.shared.getUnauthenticated(serverURL: url, path: "/api/v1/auth/setup")
+            try Task.checkCancellation()
+            return ServerProbe(provider: .silo, url: url, id: registryID, fetchedName: name, needsSetup: status.needsSetup)
+        }
+    }
+
+    /// Finds the server, saves it and makes it the active one.
     func checkServer(url: String, provider: MediaServerProvider = .silo) async throws -> SetupStatus {
-        let server = try await probeServer(url: url, provider: provider)
-        let entry = ServerEntry(id: server.id, url: server.url, fetchedName: server.fetchedName,
-                                profileId: nil, lastUsedAt: Date())
-        guard serverRegistry.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
-        // Jellyfin and Emby always switch, as before; Silo only when it isn't
-        // already the active server.
-        if provider.usesNativeUser || serverRegistry.activeServerId != server.id {
-            guard await serverRegistry.switchTo(serverId: server.id) else {
-                throw ServerRegistryError.persistenceFailed
-            }
+        let server = try await locateServer(at: url, provider: provider)
+        let entry = ServerEntry(id: server.id, url: server.url, fetchedName: server.fetchedName, lastUsedAt: Date())
+        guard registry.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
+        if provider != .silo || registry.activeServerId != server.id {
+            guard await registry.switchTo(serverId: server.id) else { throw ServerRegistryError.persistenceFailed }
         }
         return SetupStatus(needsSetup: server.needsSetup)
     }
 
-    /// Finds the server at a candidate address without saving it or
-    /// switching to it. Adding a server from Settings uses this on its own,
-    /// so the current profile stays in use until the new sign-in works.
-    func probeServer(url: String, provider: MediaServerProvider = .silo) async throws -> ServerProbe {
-        let normalized = ServerRegistry.normalize(url: url)
-        if provider == .jellyfin {
-            let name = try await JellyfinConnection.probe(serverURL: normalized)
-            try Task.checkCancellation()
-            return ServerProbe(provider: provider, url: normalized, id: "jellyfin:" + ServerRegistry.serverId(for: normalized),
-                               fetchedName: name, needsSetup: false)
-        }
-        if provider == .emby {
-            let name = try await EmbyConnection.probe(serverURL: normalized)
-            try Task.checkCancellation()
-            return ServerProbe(provider: provider, url: normalized, id: "emby:" + ServerRegistry.serverId(for: normalized),
-                               fetchedName: name, needsSetup: false)
-        }
-
-        // Probe the candidate by explicit URL without touching the active
-        // defaults or credential slot. This prevents candidate discovery from
-        // exposing a global A/B routing mixture to unrelated requests.
-        let fetchedName = await serverIdentityResolver.fetchServerName(serverURL: normalized)
-        try Task.checkCancellation()
-
-        // A candidate counts only once it can serve setup status.
-        let status: SetupStatus = try await HTTPClient.shared.getUnauthenticated(
-            serverURL: normalized,
-            path: "/api/v1/auth/setup"
-        )
-        try Task.checkCancellation()
-        return ServerProbe(provider: provider, url: normalized, id: ServerRegistry.serverId(for: normalized),
-                           fetchedName: fetchedName, needsSetup: status.needsSetup)
-    }
-
-    /// Refreshes the active registry entry from the server's native branding.
-    /// The identity check prevents a slow response from one server renaming a
-    /// different server after the user switches destinations.
+    /// Renames the active Silo server, unless another server became active
+    /// while the name was on its way.
     func refreshActiveServerName() async {
-        guard let server = serverRegistry.activeServer else { return }
-        let serverId = server.id
-        guard MediaServerProvider.forServerID(serverId) == .silo else { return }
-        guard let name = await serverIdentityResolver.fetchServerName(serverURL: server.url),
-              serverRegistry.activeServerId == serverId else {
-            return
-        }
-        serverRegistry.updateFetchedName(for: serverId, fetchedName: name)
+        guard let serverID = registry.activeServerId, let server = registry.activeServer,
+              MediaServerProvider.forServerID(serverID) == .silo else { return }
+        let name = await identityResolver.fetchServerName(serverURL: server.url)
+        guard let name, registry.activeServerId == serverID else { return }
+        registry.updateFetchedName(for: serverID, fetchedName: name)
     }
 
-    // MARK: - Authentication
+    // MARK: Sign-in
 
-    /// - Parameter defersSiloSignInRecord: the sign-in form records a Silo
-    ///   sign-in once the chosen viewing profile is saved, for that saved
-    ///   profile's own identity, instead of here.
     func login(username: String, password: String, defersSiloSignInRecord: Bool = false) async throws {
-        guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
-            throw HTTPError.serverUrlNotConfigured
-        }
-        if MediaServerProvider.forServerID(expectedAccount.serverId) == .jellyfin {
-            let login = try await JellyfinConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
-            try await installJellyfinSession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
-            return
-        }
-        if MediaServerProvider.forServerID(expectedAccount.serverId) == .emby {
-            let login = try await EmbyConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
-            try await installEmbySession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
-            return
-        }
-        let response: LoginResponse = try await HTTPClient.shared.post(
-            "/api/v1/auth/login",
-            body: LoginRequest(username: username, password: password)
-        )
-        try await installSession(
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken,
-            expectedAccount: expectedAccount,
-            cacheAccountID: String(response.user.id)
-        )
-        #if os(tvOS) || os(iOS)
-        if !defersSiloSignInRecord {
-            await VividCloudAccountSync.shared.noteExplicitAuthentication(
-                serverID: expectedAccount.serverId, userID: String(response.user.id)
+        guard let account = await TokenStore.shared.refreshAccountIdentity() else { throw HTTPError.serverUrlNotConfigured }
+        switch MediaServerProvider.forServerID(account.serverId) {
+        case .jellyfin:
+            let session = try await JellyfinConnection.login(serverURL: account.serverURL, username: username, password: password)
+            try await installNativeSession(token: session.token, userID: session.userID,
+                                           accountID: JellyfinAdapter.numberID(session.userID), for: account)
+        case .emby:
+            let session = try await EmbyConnection.login(serverURL: account.serverURL, username: username, password: password)
+            try await installNativeSession(token: session.token, userID: session.userID,
+                                           accountID: EmbyAdapter.numberID(session.userID), for: account)
+        case .silo:
+            let reply: LoginResponse = try await HTTPClient.shared.post(
+                "/api/v1/auth/login", body: LoginRequest(username: username, password: password)
             )
+            let userID = String(reply.user.id)
+            try await installSession(accessToken: reply.accessToken, refreshToken: reply.refreshToken,
+                                     for: account, nativeUserID: nil, cacheAccountID: userID)
+            if !defersSiloSignInRecord { await noteSignIn(serverID: account.serverId, userID: userID) }
         }
+    }
+
+    /// Installs a Quick Connect session approved for `serverURL`, which must
+    /// still be the active Jellyfin server.
+    func installQuickConnectSession(_ login: JellyfinLogin, approvedAt serverURL: String) async throws {
+        let account = try await accountApproving(.jellyfin, at: serverURL)
+        try await installNativeSession(token: login.token, userID: login.userID,
+                                       accountID: JellyfinAdapter.numberID(login.userID), for: account)
+    }
+
+    /// Installs an Emby Connect session approved for `serverURL`, which must
+    /// still be the active Emby server.
+    func installEmbyConnectSession(_ login: EmbyLogin, approvedAt serverURL: String) async throws {
+        let account = try await accountApproving(.emby, at: serverURL)
+        try await installNativeSession(token: login.token, userID: login.userID,
+                                       accountID: EmbyAdapter.numberID(login.userID), for: account)
+    }
+
+    private func accountApproving(_ provider: MediaServerProvider, at serverURL: String) async throws -> RefreshAccountIdentity {
+        guard let account = await TokenStore.shared.refreshAccountIdentity() else { throw HTTPError.serverUrlNotConfigured }
+        guard MediaServerProvider.forServerID(account.serverId) == provider,
+              account.serverURL == ServerRegistry.normalize(url: serverURL) else { throw HTTPError.requestIdentityChanged }
+        return account
+    }
+
+    private func installNativeSession(token: String, userID: String, accountID: Int, for account: RefreshAccountIdentity) async throws {
+        let cacheAccountID = String(accountID)
+        try await installSession(accessToken: token, refreshToken: "", for: account,
+                                 nativeUserID: userID, cacheAccountID: cacheAccountID)
+        await noteSignIn(serverID: account.serverId, userID: cacheAccountID)
+    }
+
+    private func noteSignIn(serverID: String, userID: String) async {
+        #if os(iOS) || os(tvOS)
+        await VividCloudAccountSync.shared.noteExplicitAuthentication(serverID: serverID, userID: userID)
         #endif
     }
 
-    /// Signs in with a session Jellyfin approved through Quick Connect for
-    /// `serverURL`, provided that server is still the active one.
-    func login(jellyfinQuickConnect login: JellyfinLogin, serverURL: String) async throws {
-        guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
-            throw HTTPError.serverUrlNotConfigured
-        }
-        guard MediaServerProvider.forServerID(expectedAccount.serverId) == .jellyfin,
-              expectedAccount.serverURL == ServerRegistry.normalize(url: serverURL) else { throw HTTPError.requestIdentityChanged }
-        try await installJellyfinSession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
-    }
-
-    /// Signs in with an Emby session reached through Emby Connect for
-    /// `serverURL`, provided that server is still the active one.
-    func login(embyConnect login: EmbyLogin, serverURL: String) async throws {
-        guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
-            throw HTTPError.serverUrlNotConfigured
-        }
-        guard MediaServerProvider.forServerID(expectedAccount.serverId) == .emby,
-              expectedAccount.serverURL == ServerRegistry.normalize(url: serverURL) else { throw HTTPError.requestIdentityChanged }
-        try await installEmbySession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
-    }
-
-    private func installEmbySession(token: String, userID: String, expectedAccount: RefreshAccountIdentity) async throws {
-        let accountID = String(EmbyAdapter.numberID(userID))
-        try await installSession(accessToken: token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: userID, cacheAccountID: accountID)
-        #if os(tvOS) || os(iOS)
-        await VividCloudAccountSync.shared.noteExplicitAuthentication(serverID: expectedAccount.serverId, userID: accountID)
-        #endif
-    }
-
-    private func installJellyfinSession(token: String, userID: String, expectedAccount: RefreshAccountIdentity) async throws {
-        let accountID = String(JellyfinAdapter.numberID(userID))
-        try await installSession(accessToken: token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: userID, cacheAccountID: accountID)
-        #if os(tvOS) || os(iOS)
-        await VividCloudAccountSync.shared.noteExplicitAuthentication(serverID: expectedAccount.serverId, userID: accountID)
-        #endif
-    }
-
-    /// A login response establishes a brand-new session. Wipe every piece of
-    /// prior auth state before persisting the new tokens — no need to carry
-    /// `profileId` or `profileToken` across the boundary, and keeping them
-    /// just strands stale values that the server rejects.
-    func installSession(
-        accessToken: String,
-        refreshToken: String,
-        expectedAccount: RefreshAccountIdentity,
-        nativeUserID: String? = nil,
-        cacheAccountID: String? = nil
+    /// Replaces the active server's tokens with a new session that has no
+    /// profile yet. Refused when the account changed since `account` was read.
+    private func installSession(
+        accessToken: String, refreshToken: String, for account: RefreshAccountIdentity,
+        nativeUserID: String?, cacheAccountID: String?
     ) async throws {
-        guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
-            throw CancellationError()
-        }
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else { throw CancellationError() }
         guard !Task.isCancelled else {
-            await HTTPClient.shared.endIdentityTransition(transitionLease)
+            await client.endIdentityTransition(lease)
             throw CancellationError()
         }
-        await HTTPClient.shared.cancelInFlightRequests()
-        guard !Task.isCancelled,
-              await TokenStore.shared.refreshAccountIdentity() == expectedAccount else {
-            await HTTPClient.shared.endIdentityTransition(transitionLease)
-            if Task.isCancelled { throw CancellationError() }
+        await client.cancelInFlightRequests()
+        guard !Task.isCancelled else {
+            await client.endIdentityTransition(lease)
+            throw CancellationError()
+        }
+        guard await TokenStore.shared.refreshAccountIdentity() == account else {
+            await client.endIdentityTransition(lease)
             throw HTTPError.requestIdentityChanged
         }
-        if let serverID = serverRegistry.activeServerId {
-            launchPreferences.clearRememberedProfile(for: serverID)
-        }
+        if let serverID = registry.activeServerId { launchPreferences.clearRememberedProfile(for: serverID) }
         await TokenStore.shared.clearTokens()
-        await TokenStore.shared.saveTokens(
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-            nativeUserID: nativeUserID
-        )
-        VividCacheScope.recordAccount(cacheAccountID, serverID: expectedAccount.serverId)
-        await clearAllCaches()
-        await HTTPClient.shared.endIdentityTransition(transitionLease)
+        await TokenStore.shared.saveTokens(accessToken: accessToken, refreshToken: refreshToken, nativeUserID: nativeUserID)
+        VividCacheScope.recordAccount(cacheAccountID, serverID: account.serverId)
+        await clearCachesForServerChange()
+        await client.endIdentityTransition(lease)
     }
 
-    #if os(tvOS) || os(iOS)
+    #if os(iOS) || os(tvOS)
+    /// Switches to a saved account's server and session, and to its profile
+    /// when that can be entered without asking for a PIN.
     @MainActor
     func restoreTVAccount(_ session: TVSavedAccountSession, serverID: String, accountID: String) async throws {
-        guard let lease = await HTTPClient.shared.beginIdentityTransition() else { throw CancellationError() }
-        await HTTPClient.shared.cancelInFlightRequests()
-        clearAllCaches()
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else { throw CancellationError() }
+        await client.cancelInFlightRequests()
+        clearCachesForServerChange()
         await PosterImageCache.resetForAccountSwitch()
-        guard await serverRegistry.commitSwitchTo(serverId: serverID, holding: lease) else {
-            await HTTPClient.shared.endIdentityTransition(lease)
+        guard await registry.commitSwitchTo(serverId: serverID, holding: lease) else {
+            await client.endIdentityTransition(lease)
             throw ServerRegistryError.persistenceFailed
         }
+        let tokens = TokenStore.shared
         VividCacheScope.recordAccount(accountID, serverID: serverID)
         launchPreferences.clearRememberedProfile(for: serverID)
-        await TokenStore.shared.clearTokens()
-        await TokenStore.shared.saveTokens(accessToken: session.accessToken, refreshToken: session.refreshToken, nativeUserID: session.nativeUserID)
-        if let profile = session.profile,
-           !profile.hasPin || session.profileToken != nil,
-           let identity = await TokenStore.shared.refreshAccountIdentity(),
-           let epoch = await TokenStore.shared.getOrCreateAccountEpoch() {
-            let activated = await TokenStore.shared.activateProfile(
-                profileID: profile.id, profileToken: session.profileToken, expectedAccount: identity
-            )
-            if activated {
-                _ = launchPreferences.remember(profileID: profile.id, requiresPIN: profile.hasPin,
-                                               accountEpoch: epoch, for: serverID)
-            }
+        await tokens.clearTokens()
+        await tokens.saveTokens(accessToken: session.accessToken, refreshToken: session.refreshToken,
+                                nativeUserID: session.nativeUserID)
+        if let profile = session.profile, !profile.hasPin || session.profileToken != nil,
+           let account = await tokens.refreshAccountIdentity(),
+           let epoch = await tokens.getOrCreateAccountEpoch(),
+           await tokens.activateProfile(profileID: profile.id, profileToken: session.profileToken, expectedAccount: account) {
+            launchPreferences.remember(profileID: profile.id, requiresPIN: profile.hasPin, accountEpoch: epoch, for: serverID)
         }
-        clearAllCaches()
-        await HTTPClient.shared.endIdentityTransition(lease)
+        clearCachesForServerChange()
+        await client.endIdentityTransition(lease)
     }
     #endif
 
-    // MARK: - Profiles
+    // MARK: Profiles
 
     func getProfiles() async throws -> [UserProfile] {
         #if os(tvOS)
         let requestIdentity = await TokenStore.shared.refreshAccountIdentity()
-        #endif
         let profiles = try await VividAPI.shared.listProfiles()
-        #if os(tvOS)
-        // Top Shelf only personalises a Silo account with one viewing profile.
         await TopShelfProfileCounts.record(profiles.count, for: requestIdentity)
-        #endif
         return profiles
+        #else
+        return try await VividAPI.shared.listProfiles()
+        #endif
     }
 
-    func selectProfile(
-        profileId: String,
-        pin: String? = nil,
-        requiresPIN: Bool = false,
-        rememberSelection: Bool = true
-    ) async throws {
-        guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
-            throw ProfileTransitionError.noActiveAccount
+    func selectProfile(profileId: String, pin: String? = nil, requiresPIN: Bool = false, rememberSelection: Bool = true) async throws {
+        let tokens = TokenStore.shared
+        guard let account = await tokens.refreshAccountIdentity() else { throw ProfileTransitionError.noActiveAccount }
+        let proof = try await VividAPI.shared.verifyProfileSelection(profileId: profileId, pin: pin)
+        if requiresPIN, proof == nil { throw ProfileTransitionError.missingPINProof }
+        guard let serverID = registry.activeServerId else { throw ProfileTransitionError.noActiveServer }
+        guard let epoch = await tokens.getOrCreateAccountEpoch() else { throw ProfileTransitionError.accountEpochUnavailable }
+
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else { throw CancellationError() }
+        await client.cancelInFlightRequests()
+        var activated = false
+        if !Task.isCancelled {
+            activated = await tokens.activateProfile(profileID: profileId, profileToken: proof, expectedAccount: account)
         }
-        let profileToken = try await VividAPI.shared.verifyProfileSelection(
-            profileId: profileId,
-            pin: pin
-        )
-        if requiresPIN, profileToken == nil {
-            throw ProfileTransitionError.missingPINProof
+        guard activated else {
+            await client.endIdentityTransition(lease)
+            if Task.isCancelled { throw CancellationError() }
+            throw ProfileTransitionError.identityChanged
         }
-        try await activateProfile(
-            profileID: profileId,
-            profileToken: profileToken,
-            requiresPIN: requiresPIN,
-            rememberSelection: rememberSelection,
-            expectedAccount: expectedAccount
-        )
-        // Re-probe capabilities for the newly-selected profile. Fire and
-        // forget so profile navigation is never held behind an optional
-        // feature probe. Artwork-bearing API methods await the coalesced image
-        // probe at their own request boundary before dispatching.
+        if rememberSelection,
+           !launchPreferences.remember(profileID: profileId, requiresPIN: requiresPIN, accountEpoch: epoch, for: serverID) {
+            _ = await tokens.deactivateProfile(expectedAccount: account, expectedProfileID: profileId)
+            await client.endIdentityTransition(lease)
+            throw ProfileTransitionError.accountEpochUnavailable
+        }
+        await clearProfileCaches(keepingTrailerReturn: true)
+        await client.endIdentityTransition(lease)
+
         Task { @MainActor in
             await AICapabilities.shared.refresh()
             await ImageSizeCapability.shared.refresh()
@@ -327,337 +258,147 @@ final class AuthService: @unchecked Sendable {
         }
     }
 
-    /// Resolve the active server's launch policy. Returns `true` only when a
-    /// complete remembered identity was restored; callers otherwise present
-    /// Who's Watching while retaining the account session.
+    /// Enters the remembered profile at launch. True when a profile is now
+    /// active, false when one has to be chosen.
     func resolveActiveProfileForSession() async -> Bool {
-        guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
-            return false
-        }
-        await HTTPClient.shared.cancelInFlightRequests()
-        let resolved = await resolveActiveProfileForSession(holding: transitionLease)
-        await HTTPClient.shared.endIdentityTransition(transitionLease)
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else { return false }
+        await client.cancelInFlightRequests()
+        let resolved = await resolveActiveProfileForSession(holding: lease)
+        await client.endIdentityTransition(lease)
         return resolved
     }
 
-    /// Resolve launch policy while a server transition already owns the HTTP
-    /// identity gate. The gate stays closed until the destination's profile
-    /// ID and proof have been committed (or deliberately cleared).
-    func resolveActiveProfileForSession(
-        holding transitionLease: HTTPIdentityTransitionLease
-    ) async -> Bool {
-        guard await HTTPClient.shared.isIdentityTransitionActive(transitionLease) else {
-            return false
+    /// The same, for a caller that already holds the identity transition.
+    func resolveActiveProfileForSession(holding transitionLease: HTTPIdentityTransitionLease) async -> Bool {
+        let tokens = TokenStore.shared
+        guard await HTTPClient.shared.isIdentityTransitionActive(transitionLease),
+              let serverID = registry.activeServerId,
+              let account = await tokens.refreshAccountIdentity(),
+              let epoch = await tokens.getOrCreateAccountEpoch() else { return false }
+
+        let proof = await tokens.getProfileToken()
+        let knownIDs: Set<String>? = await MainActor.run {
+            ResponseCache.shared.get(CacheKey.profiles, as: [UserProfile].self).map { Set($0.map(\.id)) }
         }
-        guard let serverID = serverRegistry.activeServerId,
-              let expectedAccount = await TokenStore.shared.refreshAccountIdentity(),
-              let accountEpoch = await TokenStore.shared.getOrCreateAccountEpoch() else {
-            return false
-        }
-        let profileToken = await TokenStore.shared.getProfileToken()
-        let knownProfileIDs: Set<String>? = await MainActor.run {
-            ResponseCache.shared
-                .get(CacheKey.profiles, as: [UserProfile].self)
-                .map { Set($0.map(\.id)) }
-        }
-        let resolution = launchPreferences.resolution(
-            for: serverID,
-            accountEpoch: accountEpoch,
-            hasStoredProfileToken: profileToken != nil,
-            knownProfileIDs: knownProfileIDs
+        let decision = launchPreferences.resolution(
+            for: serverID, accountEpoch: epoch, hasStoredProfileToken: proof != nil, knownProfileIDs: knownIDs
         )
-
-        if case .needsSelection = resolution,
-           let remembered = launchPreferences.rememberedProfile(for: serverID),
-           knownProfileIDs?.contains(remembered.profileID) == false {
-            launchPreferences.clearRememberedProfile(for: serverID)
-        }
-
-        switch resolution {
+        switch decision {
         case .needsSelection:
-            let committed = await TokenStore.shared.deactivateProfile(
-                expectedAccount: expectedAccount
-            )
-            if committed {
-                // A cold trailer return may require the profile picker. Keep
-                // the record until the selected identity can validate it;
-                // explicit in-app profile changes clear it before this path.
-                await clearPerProfileCaches(preservingTrailerReturn: true)
-            }
-            return false
-
-        case .restore(let remembered):
-            let committed = await TokenStore.shared.activateProfile(
-                profileID: remembered.profileID,
-                profileToken: remembered.requiredPINAtSelection ? profileToken : nil,
-                expectedAccount: expectedAccount
-            )
-            if committed {
-                guard launchPreferences.clearBackgroundedAt() else {
-                    _ = await TokenStore.shared.deactivateProfile(
-                        expectedAccount: expectedAccount,
-                        expectedProfileID: remembered.profileID
-                    )
-                    await clearPerProfileCaches()
-                    return false
-                }
-                // This is launch restoration of the same remembered identity,
-                // not a profile boundary. Keep a matching trailer handoff
-                // alive until ContentView can consume it after authentication.
-                await clearPerProfileCaches(preservingTrailerReturn: true)
-                return true
-            } else {
-                _ = await TokenStore.shared.deactivateProfile(
-                    expectedAccount: expectedAccount
-                )
-                return false
-            }
-        }
-    }
-
-    /// Persist an explicit switch request before clearing request identity so
-    /// killing the app on the picker cannot make Automatic silently restore
-    /// the previous profile.
-    func beginExplicitProfileSelection() async -> Bool {
-
-        return await deactivateProfile(
-            preserveRememberedProfile: true,
-            markSelectionRequired: true
-        )
-    }
-
-    /// Clear active profile identity while retaining the account session.
-    /// This path owns the HTTP transition barrier for launch, explicit switch,
-    /// and profile-management cleanup.
-    func deactivateProfile(
-        preserveRememberedProfile: Bool,
-        markSelectionRequired: Bool = false,
-        expectedProfileID: String? = nil
-    ) async -> Bool {
-        if let expectedProfileID, profileId != expectedProfileID { return false }
-        let serverID = serverRegistry.activeServerId
-        let expectedAccount = await TokenStore.shared.refreshAccountIdentity()
-        let removedRememberedProfile = preserveRememberedProfile
-            ? nil
-            : launchPreferences.rememberedProfile(for: serverID)
-
-        if markSelectionRequired, let serverID {
-            guard launchPreferences.markSelectionRequired(for: serverID) else {
-                return false
-            }
-        }
-        if !preserveRememberedProfile, let serverID {
-            launchPreferences.clearRememberedProfile(for: serverID)
-        }
-
-        guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
-            if markSelectionRequired, let serverID {
-                launchPreferences.clearSelectionRequired(for: serverID)
-            }
-            restoreRememberedProfile(removedRememberedProfile, for: serverID)
-            return false
-        }
-        await HTTPClient.shared.cancelInFlightRequests()
-        let committed = await TokenStore.shared.deactivateProfile(
-            expectedAccount: expectedAccount,
-            expectedProfileID: expectedProfileID
-        )
-        if committed {
-            await clearPerProfileCaches()
-        } else if markSelectionRequired, let serverID {
-            launchPreferences.clearSelectionRequired(for: serverID)
-        }
-        if !committed {
-            restoreRememberedProfile(removedRememberedProfile, for: serverID)
-        }
-        await HTTPClient.shared.endIdentityTransition(transitionLease)
-        return committed
-    }
-
-    private func activateProfile(
-        profileID: String,
-        profileToken: String?,
-        requiresPIN: Bool,
-        rememberSelection: Bool,
-        expectedAccount: RefreshAccountIdentity
-    ) async throws {
-        guard let serverID = serverRegistry.activeServerId else {
-            throw ProfileTransitionError.noActiveServer
-        }
-        guard let accountEpoch = await TokenStore.shared.getOrCreateAccountEpoch() else {
-            throw ProfileTransitionError.accountEpochUnavailable
-        }
-        guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
-            throw CancellationError()
-        }
-        await HTTPClient.shared.cancelInFlightRequests()
-        guard !Task.isCancelled,
-              await TokenStore.shared.activateProfile(
-                profileID: profileID,
-                profileToken: profileToken,
-                expectedAccount: expectedAccount
-              ) else {
-            await HTTPClient.shared.endIdentityTransition(transitionLease)
-            if Task.isCancelled { throw CancellationError() }
-            throw ProfileTransitionError.identityChanged
-        }
-        if rememberSelection {
-            guard launchPreferences.remember(
-                profileID: profileID,
-                requiresPIN: requiresPIN,
-                accountEpoch: accountEpoch,
-                for: serverID
-            ) else {
-                _ = await TokenStore.shared.deactivateProfile(
-                    expectedAccount: expectedAccount,
-                    expectedProfileID: profileID
-                )
-                await HTTPClient.shared.endIdentityTransition(transitionLease)
-                throw ProfileTransitionError.accountEpochUnavailable
-            }
-        }
-        // Preserve a cold trailer return through the picker. Once the router
-        // becomes authenticated, ContentView consumes it and the identity
-        // policy either restores the matching page or rejects the record.
-        // Explicit profile switches already clear it during deactivation.
-        await clearPerProfileCaches(preservingTrailerReturn: true)
-        await HTTPClient.shared.endIdentityTransition(transitionLease)
-    }
-
-    private func restoreRememberedProfile(
-        _ remembered: RememberedProfile?,
-        for serverID: String?
-    ) {
-        guard let remembered, let serverID else { return }
-        launchPreferences.remember(
-            profileID: remembered.profileID,
-            requiresPIN: remembered.requiredPINAtSelection,
-            accountEpoch: remembered.accountEpoch,
-            for: serverID
-        )
-    }
-
-    /// Reconcile a fresh account-level profile list with the current request
-    /// identity. A removed profile returns to Who's Watching without touching
-    /// the still-valid account tokens.
-    func reconcileAvailableProfiles(_ profiles: [UserProfile]) async {
-        guard let activeProfileID = profileId,
-              !profiles.contains(where: { $0.id == activeProfileID }) else {
-            return
-        }
-        await recoverFromInvalidProfile(expectedProfileID: activeProfileID)
-    }
-
-    /// Recover from the server's profile-specific 403/404 responses. The
-    /// expected ID prevents a late failed request from clearing a profile the
-    /// user selected after that request started.
-    func recoverFromInvalidProfile(expectedProfileID: String) async {
-        guard profileId == expectedProfileID else { return }
-        let serverID = serverRegistry.activeServerId
-        let expectedAccount = await TokenStore.shared.refreshAccountIdentity()
-        guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
-            return
-        }
-        await HTTPClient.shared.cancelInFlightRequests()
-        let committed = await TokenStore.shared.deactivateProfile(
-            expectedAccount: expectedAccount,
-            expectedProfileID: expectedProfileID
-        )
-        if committed {
-            if let serverID {
+            if let remembered = launchPreferences.rememberedProfile(for: serverID),
+               let knownIDs, !knownIDs.contains(remembered.profileID) {
                 launchPreferences.clearRememberedProfile(for: serverID)
             }
-            await clearPerProfileCaches()
+            if await tokens.deactivateProfile(expectedAccount: account) {
+                await clearProfileCaches(keepingTrailerReturn: true)
+            }
+            return false
+        case .restore(let remembered):
+            let activated = await tokens.activateProfile(
+                profileID: remembered.profileID,
+                profileToken: remembered.requiredPINAtSelection ? proof : nil,
+                expectedAccount: account
+            )
+            guard activated else {
+                _ = await tokens.deactivateProfile(expectedAccount: account)
+                return false
+            }
+            guard launchPreferences.clearBackgroundedAt() else {
+                _ = await tokens.deactivateProfile(expectedAccount: account, expectedProfileID: remembered.profileID)
+                await clearProfileCaches(keepingTrailerReturn: false)
+                return false
+            }
+            await clearProfileCaches(keepingTrailerReturn: true)
+            return true
         }
-        await HTTPClient.shared.endIdentityTransition(transitionLease)
-        guard committed else { return }
+    }
+
+    /// Leaves the profile so another can be chosen, keeping the account.
+    func beginExplicitProfileSelection() async -> Bool {
+        await deactivateProfile(preserveRememberedProfile: true, markSelectionRequired: true)
+    }
+
+    func deactivateProfile(preserveRememberedProfile: Bool, markSelectionRequired: Bool = false, expectedProfileID: String? = nil) async -> Bool {
+        if let expectedProfileID, expectedProfileID != profileId { return false }
+
+        // The intent is saved before waiting for the transition, so it
+        // survives Vivid being closed partway through.
+        let serverID = registry.activeServerId
+        let account = await TokenStore.shared.refreshAccountIdentity()
+        let keptProfile = preserveRememberedProfile ? nil : launchPreferences.rememberedProfile(for: serverID)
+        if markSelectionRequired, let serverID, !launchPreferences.markSelectionRequired(for: serverID) { return false }
+        if !preserveRememberedProfile, let serverID { launchPreferences.clearRememberedProfile(for: serverID) }
+
+        func undo() {
+            if markSelectionRequired, let serverID { launchPreferences.clearSelectionRequired(for: serverID) }
+            if let keptProfile, let serverID {
+                launchPreferences.remember(profileID: keptProfile.profileID, requiresPIN: keptProfile.requiredPINAtSelection,
+                                           accountEpoch: keptProfile.accountEpoch, for: serverID)
+            }
+        }
+
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else {
+            undo()
+            return false
+        }
+        await client.cancelInFlightRequests()
+        guard await TokenStore.shared.deactivateProfile(expectedAccount: account, expectedProfileID: expectedProfileID) else {
+            undo()
+            await client.endIdentityTransition(lease)
+            return false
+        }
+        await clearProfileCaches(keepingTrailerReturn: false)
+        await client.endIdentityTransition(lease)
+        return true
+    }
+
+    /// Leaves the current profile when it is no longer in the account's list.
+    func reconcileAvailableProfiles(_ profiles: [UserProfile]) async {
+        guard let current = profileId, !profiles.contains(where: { $0.id == current }) else { return }
+        await recoverFromInvalidProfile(expectedProfileID: current)
+    }
+
+    /// Leaves a profile the server no longer accepts and asks for another.
+    func recoverFromInvalidProfile(expectedProfileID: String) async {
+        guard profileId == expectedProfileID else { return }
+        let serverID = registry.activeServerId
+        let account = await TokenStore.shared.refreshAccountIdentity()
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else { return }
+        await client.cancelInFlightRequests()
+        let left = await TokenStore.shared.deactivateProfile(expectedAccount: account, expectedProfileID: expectedProfileID)
+        if left {
+            if let serverID { launchPreferences.clearRememberedProfile(for: serverID) }
+            await clearProfileCaches(keepingTrailerReturn: false)
+        }
+        await client.endIdentityTransition(lease)
+        guard left else { return }
         await MainActor.run {
-            NotificationCenter.default.post(
-                name: .vividProfileSelectionRequired,
-                object: expectedProfileID
-            )
+            NotificationCenter.default.post(name: .vividProfileSelectionRequired, object: expectedProfileID)
         }
     }
 
-    /// Drop every cached response that's profile-scoped. Called while
-    /// restoring or changing profile identity so userData (watched, favorites,
-    /// watchlist, home recommendations) doesn't leak between accounts.
-    @MainActor
-    private func clearPerProfileCaches(preservingTrailerReturn: Bool = false) {
-        StartupContentPrefetcher.resetProfileScopedPrefetches()
-        for prefix in CacheKey.perProfilePrefixes {
-            ResponseCache.shared.removeAll(withPrefix: prefix)
-        }
-        // Profiles are account-scoped and are the offline source for Who's
-        // Watching. Keep that list across profile transitions; server/account
-        // boundaries still clear it through `clearAllCaches()`.
-        // Overlay prefs are user-scoped on the server (not profile-scoped),
-        // so a profile switch within one account doesn't strictly require
-        // a re-fetch. We still clear: (a) freshness — a remote web edit
-        // between switches would otherwise serve stale prefs until app
-        // restart; (b) defensive — if the server ever moves overlays to
-        // a per-profile scope, this path keeps working.
-        OverlayPrefsStore.shared.clear()
-        // Profile's preferred subtitle language drives detail-page track
-        // ordering; drop it so the next profile re-hydrates its own.
-        ProfilePrefsStore.shared.clear()
-        // Server-wide AI capability + per-user ASR quota are reset on every
-        // profile switch; `selectProfile` re-fetches after the switch lands.
-        AICapabilities.shared.reset()
-        ImageSizeCapability.shared.reset()
-        RequestsFeatureStore.shared.reset()
-        CurrentProfileStore.shared.reset()
-        RequestsEventBus.shared.reset()
-        #if os(tvOS)
-        ItemDetailCache.shared.clearAll()
-        if !preservingTrailerReturn {
-            // The identity check in TrailerReturnPolicy already refuses a record
-            // across identities; deleting here keeps the outgoing identity's
-            // browsing out of plaintext defaults on a shared device.
-            TVTrailerReturnStore.shared.clear()
-        }
-        #endif
-    }
+    // MARK: Device sign-in
 
-    // MARK: - Device Login (QR sign-in)
-
-    func startDeviceLogin(deviceName: String, devicePlatform: String) async throws -> DeviceLoginStartResponse {
-        try await HTTPClient.shared.post(
-            "/api/v1/auth/device/start",
-            body: DeviceLoginStartRequest(
-                deviceName: deviceName,
-                devicePlatform: devicePlatform
-            )
-        )
-    }
-
-    /// Poll the pairing row for status. Terminal statuses (approved /
-    /// denied / expired / consumed) return HTTP 200 with a status field;
-    /// a 404 means the row no longer exists (cleaned up post-expiry).
-    func pollDeviceLogin(deviceCode: String) async throws -> DeviceLoginPollResponse {
-        try await HTTPClient.shared.post(
-            "/api/v1/auth/device/poll",
-            body: DeviceLoginPollRequest(deviceCode: deviceCode)
-        )
-    }
-
-    /// A new login session for the signed-in Silo account, approved by the
-    /// active session through device sign-in. A household member's saved
-    /// profile gets its own session this way, without the password, so
-    /// signing one saved profile out never signs out another.
+    /// A second Silo session for this device, approved by the active one.
     func approvedSiloSession() async throws -> (accessToken: String, refreshToken: String) {
+        let client = HTTPClient.shared
         let device = AppleDeviceIdentity.current
-        let start = try await startDeviceLogin(deviceName: device.name, devicePlatform: device.platform)
-        try await HTTPClient.shared.postVoid(
-            "/api/v1/auth/device/approve",
-            body: DeviceLoginDecisionRequest(code: start.userCode)
+        let start: DeviceLoginStartResponse = try await client.post(
+            "/api/v1/auth/device/start",
+            body: DeviceLoginStartRequest(deviceName: device.name, devicePlatform: device.platform)
         )
-        for _ in 0..<5 {
-            let poll = try await pollDeviceLogin(deviceCode: start.deviceCode)
+        try await client.postVoid("/api/v1/auth/device/approve", body: DeviceLoginDecisionRequest(code: start.userCode))
+        for _ in 1...5 {
+            let poll: DeviceLoginPollResponse = try await client.post(
+                "/api/v1/auth/device/poll", body: DeviceLoginPollRequest(deviceCode: start.deviceCode)
+            )
             switch DeviceLoginStatus(raw: poll.status) {
             case .approved:
-                guard let access = poll.accessToken, let refresh = poll.refreshToken else { throw HTTPError.invalidResponse }
-                return (access, refresh)
+                guard let accessToken = poll.accessToken, let refreshToken = poll.refreshToken else { throw HTTPError.invalidResponse }
+                return (accessToken, refreshToken)
             case .pending:
                 try await Task.sleep(for: .seconds(max(1, poll.pollAfter ?? 1)))
             default:
@@ -667,90 +408,79 @@ final class AuthService: @unchecked Sendable {
         throw HTTPError.invalidResponse
     }
 
-    // MARK: - Sign Out
+    // MARK: Sign-out
 
-    /// Sign out of the active server. Keeps the registry entry (URL +
-    /// display name) so the user can log back in without re-adding the
-    /// server. Call `ServerRegistry.shared.remove(serverId:)` to fully
-    /// forget a server instead.
-    @discardableResult
-    func signOut() async -> Bool {
-        let signingOutServerId = ServerRegistry.shared.activeServerId
-        let signingOutAuth = await TokenStore.shared.captureOrdinaryRequestAuth()
-        let authorization = Self.signOutAuthorization(
-            activeServerId: signingOutServerId,
-            capturedAuth: signingOutAuth
-        )
-        guard case .allowed(let signingOutAccount) = authorization else {
-            return false
-        }
-        // Best-effort server-side logout; never block sign-out on a
-        // server-side error, since the client wants to end the session
-        // regardless.
-        if let signingOutAccount {
-            do {
-                try await HTTPClient.shared.postVoid(
-                    "/api/v1/auth/logout",
-                    expectedAccount: signingOutAccount
-                )
-            } catch {
-                // Swallow; the captured account check below still prevents
-                // clearing a server selected while logout was in flight.
-            }
-        }
-        guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
-            return false
-        }
-        guard !Task.isCancelled else {
-            await HTTPClient.shared.endIdentityTransition(transitionLease)
-            return false
-        }
-        await HTTPClient.shared.cancelInFlightRequests()
-        guard !Task.isCancelled,
-              ServerRegistry.shared.activeServerId == signingOutServerId,
-              await TokenStore.shared.refreshAccountIdentity() == signingOutAccount else {
-            await HTTPClient.shared.endIdentityTransition(transitionLease)
-            return false
-        }
-        if let signingOutServerId {
-            await ServerRegistry.shared.signOut(
-                serverId: signingOutServerId
-            )
-        } else {
-            await TokenStore.shared.clearTokens()
-        }
-        await clearAllCaches()
-        await HTTPClient.shared.endIdentityTransition(transitionLease)
-        return true
-    }
-
-    /// Decide whether a captured credential can authorize local sign-out.
-    /// Missing capture data is allowed so a damaged URL/defaults mirror cannot
-    /// strand Keychain credentials.
-    static func signOutAuthorization(
-        activeServerId: String?,
-        capturedAuth: CapturedOrdinaryRequestAuth?
-    ) -> SignOutAuthorization {
-        guard let activeServerId, !activeServerId.isEmpty else {
-            return .allowed(account: capturedAuth?.account)
-        }
-        guard let capturedAuth else {
-            return .allowed(account: nil)
-        }
-        guard capturedAuth.credentialOwner == .persistentServer(
-            serverId: activeServerId
-        ), capturedAuth.account.serverId == activeServerId else {
-            return .refused
-        }
+    static func signOutAuthorization(activeServerId: String?, capturedAuth: CapturedOrdinaryRequestAuth?) -> SignOutAuthorization {
+        guard let activeServerId, !activeServerId.isEmpty else { return .allowed(account: capturedAuth?.account) }
+        guard let capturedAuth else { return .allowed(account: nil) }
+        guard capturedAuth.credentialOwner == .persistentServer(serverId: activeServerId),
+              capturedAuth.account.serverId == activeServerId else { return .refused }
         return .allowed(account: capturedAuth.account)
     }
 
-    /// Wipe every cached response. Sign-out boundary: tokens are gone,
-    /// the next session must start clean.
+    @discardableResult
+    func signOut() async -> Bool {
+        let shared = ServerRegistry.shared
+        let serverID = shared.activeServerId
+        let captured = await TokenStore.shared.captureOrdinaryRequestAuth()
+        guard case .allowed(let account) = Self.signOutAuthorization(activeServerId: serverID, capturedAuth: captured) else { return false }
+        if let account {
+            try? await HTTPClient.shared.postVoid("/api/v1/auth/logout", expectedAccount: account)
+        }
+
+        let client = HTTPClient.shared
+        guard let lease = await client.beginIdentityTransition() else { return false }
+        guard !Task.isCancelled else {
+            await client.endIdentityTransition(lease)
+            return false
+        }
+        await client.cancelInFlightRequests()
+        guard !Task.isCancelled, shared.activeServerId == serverID,
+              await TokenStore.shared.refreshAccountIdentity() == account else {
+            await client.endIdentityTransition(lease)
+            return false
+        }
+        if let serverID {
+            await shared.signOut(serverId: serverID)
+        } else {
+            await TokenStore.shared.clearTokens()
+        }
+        await clearCachesForServerChange()
+        await client.endIdentityTransition(lease)
+        return true
+    }
+
+    // MARK: Cache boundaries
+
+    /// Everything cached for the previous server, account or profile.
     @MainActor
-    private func clearAllCaches() {
+    func clearCachesForServerChange() {
         StartupContentPrefetcher.resetAllPrefetches()
         ResponseCache.shared.clearAll()
+        resetPreferenceStores()
+        #if os(tvOS)
+        ItemDetailCache.shared.clearAll()
+        TVTrailerReturnStore.shared.clear()
+        #endif
+    }
+
+    /// Everything cached for the previous profile. The account's profile
+    /// list stays.
+    @MainActor
+    private func clearProfileCaches(keepingTrailerReturn: Bool) {
+        StartupContentPrefetcher.resetProfileScopedPrefetches()
+        for prefix in CacheKey.perProfilePrefixes {
+            ResponseCache.shared.removeAll(withPrefix: prefix)
+        }
+        resetPreferenceStores()
+        #if os(tvOS)
+        ItemDetailCache.shared.clearAll()
+        if !keepingTrailerReturn { TVTrailerReturnStore.shared.clear() }
+        #endif
+    }
+
+    @MainActor
+    private func resetPreferenceStores() {
         OverlayPrefsStore.shared.clear()
         ProfilePrefsStore.shared.clear()
         AICapabilities.shared.reset()
@@ -758,20 +488,5 @@ final class AuthService: @unchecked Sendable {
         RequestsFeatureStore.shared.reset()
         CurrentProfileStore.shared.reset()
         RequestsEventBus.shared.reset()
-        #if os(tvOS)
-        ItemDetailCache.shared.clearAll()
-        // The identity check in TrailerReturnPolicy already refuses a record
-        // across identities; deleting here keeps the outgoing identity's
-        // browsing out of plaintext defaults on a shared device.
-        TVTrailerReturnStore.shared.clear()
-        #endif
-    }
-
-    /// A server switch is the same hard identity boundary as sign-out for
-    /// process-wide response and prefetch caches, even when both servers are
-    /// already authenticated and the router's auth state does not change.
-    @MainActor
-    func clearCachesForServerChange() {
-        clearAllCaches()
     }
 }
