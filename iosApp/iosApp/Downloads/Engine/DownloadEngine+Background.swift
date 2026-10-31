@@ -29,7 +29,7 @@ enum DownloadBackgroundRefresh {
             try BGTaskScheduler.shared.submit(request)
         } catch {
             // The simulator, or Background App Refresh turned off.
-            DownloadEngine.log.debug("Couldn't schedule the downloads refresh: \(error.localizedDescription, privacy: .public)")
+            DownloadEngine.log.debug("Couldn't schedule the downloads refresh: \(error.localizedDescription, privacy: .private)")
         }
     }
 
