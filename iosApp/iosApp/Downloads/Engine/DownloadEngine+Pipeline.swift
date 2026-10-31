@@ -178,9 +178,10 @@ extension DownloadManager {
             runQueue()
             return
         case _ where record.retryCount < 4 && Self.isTemporaryFailure(error):
-            // A dropped connection or a timed-out request is retried like a
-            // busy server, and an expired sign-in is refreshed first, as a
-            // transfer's is; after the last try it fails as below.
+            // A dropped connection, a timed-out request or a sign-in error is
+            // retried like a busy server. Only an HTTP 401 refreshes the Silo
+            // sign-in first, as for a transfer. After the last try it fails
+            // as below.
             record.retryCount += 1
             file.records[id] = record
             scheduleRetry(id, resumeData: nil, refreshesSignIn: status == 401)
