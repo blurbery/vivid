@@ -159,8 +159,7 @@ struct TVDetailLoadingPage: View {
             TVDetailCompactHeading(
                 tokens: [token],
                 genres: seed?.genre.map { [$0] } ?? [],
-                // Passed as the seed gives it, spaces and all.
-                contentRating: seed?.contentRating
+                contentRating: TVHeroMetadata.contentRating(seed?.contentRating)
             )
             .frame(height: 36, alignment: .leading)
             .padding(.top, 10)

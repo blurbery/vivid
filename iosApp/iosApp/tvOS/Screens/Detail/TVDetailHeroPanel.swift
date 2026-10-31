@@ -173,9 +173,7 @@ struct TVDetailCompactPrimary<Below: View>: View {
                 .padding(.top, 10)
 
             VStack(alignment: .leading, spacing: 4) {
-                if let overview, !overview.isEmpty {
-                    TVDetailSynopsisSlot(overview: overview, isCompact: true, isEnabled: synopsisEnabled, focus: focus)
-                }
+                TVDetailSynopsisSlot(overview: overview, isCompact: true, isEnabled: synopsisEnabled, focus: focus)
                 below()
             }
             .frame(height: 140, alignment: .topLeading)
@@ -213,9 +211,7 @@ struct TVDetailStandardPrimary<Below: View>: View {
                 .frame(height: 160, alignment: .bottomLeading)
                 .padding(.top, eyebrow == nil ? 0 : 2)
             metadata
-            if let overview, !overview.isEmpty {
-                TVDetailSynopsisSlot(overview: overview, isCompact: false, isEnabled: synopsisEnabled, focus: focus)
-            }
+            TVDetailSynopsisSlot(overview: overview, isCompact: false, isEnabled: synopsisEnabled, focus: focus)
             below()
         }
         .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .leading)
@@ -234,17 +230,19 @@ struct TVDetailStandardPrimary<Below: View>: View {
     }
 }
 
-/// The 112-point synopsis slot. Without an overview it is left out, so the
-/// slot and its spacing collapse.
+/// The 112-point synopsis slot, kept empty without an overview so the rows
+/// below keep their fixed positions.
 private struct TVDetailSynopsisSlot: View {
-    let overview: String
+    let overview: String?
     let isCompact: Bool
     let isEnabled: Bool
     var focus: FocusState<TVDetailHeroFocus?>.Binding
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            TVDetailSynopsisButton(overview: overview, isCompact: isCompact, isEnabled: isEnabled, focus: focus)
+            if let overview, !overview.isEmpty {
+                TVDetailSynopsisButton(overview: overview, isCompact: isCompact, isEnabled: isEnabled, focus: focus)
+            }
         }
         .frame(height: 112, alignment: .topLeading)
         .clipped()

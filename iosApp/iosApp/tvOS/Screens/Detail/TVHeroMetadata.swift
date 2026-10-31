@@ -132,9 +132,11 @@ enum TVHeroMetadata {
                 badges.append(label.uppercased())
             }
         } else {
-            // The first value present wins, even a blank one, which then
-            // gives no video badge.
-            let text = summary?.hdr ?? version.flatMap(videoLabel) ?? summary?.videoCodec
+            // A blank value is skipped, so a blank HDR mark never hides the
+            // file's label or the codec.
+            let text = nonEmpty(summary?.hdr)
+                ?? version.flatMap(videoLabel)
+                ?? nonEmpty(summary?.videoCodec)
             if let text {
                 badges.append(contentsOf: text.uppercased().split(separator: " ").map(String.init))
             }
@@ -173,6 +175,11 @@ enum TVHeroMetadata {
         return summary?.audio?.range(of: "atmos", options: .caseInsensitive) != nil
     }
 
+    private static func nonEmpty(_ text: String?) -> String? {
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
     /// The file's resolution as a tier label such as "2160P", read from its
     /// text or, failing that, from its dimensions.
     static func resolutionLabel(_ version: FileVersion) -> String? {
@@ -185,11 +192,13 @@ enum TVHeroMetadata {
         }
         if text == "fhd" { return "1080P" }
 
-        // The parts are read as they are, so "1920 x 1080" gives nothing.
+        // Each dimension comes from the first video track when it gives a
+        // positive value, otherwise from the text ("1920 x 1080" reads too).
         let parts = text.split(whereSeparator: { $0 == "x" || $0 == "\u{00D7}" })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
         let track = version.videoTracks?.first
-        let width = track?.width ?? parts.first.flatMap { Int($0) } ?? 0
-        let height = track?.height ?? (parts.count == 2 ? Int(parts[1]) : nil) ?? 0
+        let width = (track?.width).flatMap { $0 > 0 ? $0 : nil } ?? parts.first.flatMap { Int($0) } ?? 0
+        let height = (track?.height).flatMap { $0 > 0 ? $0 : nil } ?? (parts.count == 2 ? Int(parts[1]) : nil) ?? 0
 
         let tier: Int
         if width >= 7680 || height >= 4320 {
