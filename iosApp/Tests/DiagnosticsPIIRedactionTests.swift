@@ -1,6 +1,8 @@
 import XCTest
 @testable import Vivid
 
+/// Personal and secret values must never reach a rendered diagnostics line,
+/// however they are spelt or wrapped.
 final class DiagnosticsPIIRedactionTests: XCTestCase {
     override func setUp() {
         super.setUp()
@@ -12,85 +14,67 @@ final class DiagnosticsPIIRedactionTests: XCTestCase {
         super.tearDown()
     }
 
-    private func rendered(_ message: String) throws -> String {
+    private func line(_ message: String, file: StaticString = #filePath, line: UInt = #line) throws -> String {
         try XCTUnwrap(
-            DiagLog.renderedLine(level: .info, category: .other, tag: "Test", message: message)
-        )
+            DiagLog.renderedLine(level: .info, category: .lifecycle, tag: "Test", message: message),
+            file: file, line: line)
     }
 
-    func testUppercaseURLSchemeAndBracketedIPv6AreRedacted() throws {
-        let accessKey = ["access", "token"].joined(separator: "_")
-        let apiKey = ["api", "key"].joined(separator: "_")
-        let accessValue = UUID().uuidString
-        let apiKeyValue = UUID().uuidString
-        let uppercase = try rendered("request HTTPS://Media.Example.com/path?\(accessKey)=\(accessValue)")
-        XCTAssertFalse(uppercase.localizedCaseInsensitiveContains("media.example.com"))
-        XCTAssertFalse(uppercase.contains(accessValue))
-        XCTAssertTrue(uppercase.contains("[host:"))
+    private func secretKey(_ parts: String...) -> String { parts.joined(separator: "_") }
 
-        let ipv6 = try rendered("request https://[2001:db8::1234]/path?\(apiKey)=\(apiKeyValue)")
-        XCTAssertFalse(ipv6.contains("2001:db8::1234"))
-        XCTAssertFalse(ipv6.contains(apiKeyValue))
-        XCTAssertTrue(ipv6.contains("[host:"))
+    func testUppercaseURLSchemeAndBracketedIPv6AreRedacted() throws {
+        let token = UUID().uuidString
+        let first = try line("request HTTPS://Media.Example.com/path?\(secretKey("access", "token"))=\(token)")
+        XCTAssertFalse(first.lowercased().contains("media.example.com"))
+        XCTAssertFalse(first.contains(token))
+        XCTAssertTrue(first.contains("[host:"))
+
+        let key = UUID().uuidString
+        let second = try line("request https://[2001:db8::1234]/path?\(secretKey("api", "key"))=\(key)")
+        XCTAssertFalse(second.contains("2001:db8::1234"))
+        XCTAssertFalse(second.contains(key))
+        XCTAssertTrue(second.contains("[host:"))
     }
 
     func testQuotedAndEscapedJSONSecretsAreRedacted() throws {
-        let accessKey = ["access", "token"].joined(separator: "_")
-        let apiKey = ["api", "key"].joined(separator: "_")
-        let refreshKey = ["refresh", "token"].joined(separator: "_")
-        let userKey = ["user", "name"].joined(separator: "")
-        let mailKey = ["e", "mail"].joined()
-        let accessValue = UUID().uuidString
-        let apiKeyValue = UUID().uuidString
-        let usernameValue = UUID().uuidString + "\"" + UUID().uuidString
-        let refreshValue = UUID().uuidString
-        let emailValue = "\(UUID().uuidString)@example.org"
-        let rawPayload = try JSONSerialization.data(withJSONObject: [
-            accessKey: accessValue,
-            apiKey: apiKeyValue,
-            userKey: usernameValue,
+        let access = UUID().uuidString
+        let apiKey = UUID().uuidString
+        let username = UUID().uuidString + "\"" + UUID().uuidString
+        let quoted = try JSONSerialization.data(withJSONObject: [
+            secretKey("access", "token"): access,
+            secretKey("api", "key"): apiKey,
+            "username": username,
         ])
-        let rawBody = try XCTUnwrap(String(data: rawPayload, encoding: .utf8))
-        let rawJSON = try rendered("body=\(rawBody)")
-        XCTAssertFalse(rawJSON.contains(accessValue))
-        XCTAssertFalse(rawJSON.contains(apiKeyValue))
-        XCTAssertFalse(rawJSON.contains(usernameValue))
+        let first = try line("body=" + String(decoding: quoted, as: UTF8.self))
+        for value in [access, apiKey, username] {
+            XCTAssertFalse(first.contains(value))
+        }
 
-        let escapedPayload = try JSONSerialization.data(withJSONObject: [
-            refreshKey: refreshValue,
-            mailKey: emailValue,
-        ])
-        let escapedBody = try XCTUnwrap(String(data: escapedPayload, encoding: .utf8))
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let escapedJSON = try rendered("error body=\(escapedBody)")
-        XCTAssertFalse(escapedJSON.contains(refreshValue))
-        XCTAssertFalse(escapedJSON.contains(emailValue))
+        let refresh = UUID().uuidString
+        let email = UUID().uuidString + "@example.org"
+        let escaped = String(decoding: try JSONSerialization.data(withJSONObject: [
+            secretKey("refresh", "token"): refresh,
+            "email": email,
+        ]), as: UTF8.self).replacingOccurrences(of: "\"", with: "\\\"")
+        let second = try line("error body=" + escaped)
+        XCTAssertFalse(second.contains(refresh))
+        XCTAssertFalse(second.contains(email))
     }
 
     func testHTTPErrorDescriptionNeverContainsURLOrResponseBody() throws {
-        let invalidURL = String(describing: HTTPError.invalidURL("https://private.example/api"))
-        XCTAssertEqual(invalidURL, "invalid_url")
-
-        let accessKey = ["access", "token"].joined(separator: "_")
-        let mailKey = ["e", "mail"].joined()
-        let accessValue = UUID().uuidString
-        let emailValue = "\(UUID().uuidString)@example.org"
-        let payload = try JSONSerialization.data(withJSONObject: [
-            accessKey: accessValue,
-            mailKey: emailValue,
-        ])
-        let body = try XCTUnwrap(String(data: payload, encoding: .utf8))
-        let response = HTTPError.http(statusCode: 401, body: body)
-        XCTAssertEqual(String(describing: response), "http_error(status: 401)")
-
-        let line = try XCTUnwrap(DiagLog.renderedLine(
-            level: .error,
-            category: .playback,
-            tag: "HTTP",
-            message: "request failed",
-            attrs: ["reason": .error(response)]
-        ))
-        XCTAssertFalse(line.contains(accessValue))
-        XCTAssertFalse(line.contains(emailValue))
+        XCTAssertEqual(String(describing: HTTPError.invalidURL("https://private.example/api")), "invalid_url")
+        let token = UUID().uuidString
+        let email = UUID().uuidString + "@example.org"
+        let body = String(decoding: try JSONSerialization.data(withJSONObject: [
+            secretKey("access", "token"): token,
+            "email": email,
+        ]), as: UTF8.self)
+        let error = HTTPError.http(statusCode: 401, body: body)
+        XCTAssertEqual(String(describing: error), "http_error(status: 401)")
+        let rendered = try XCTUnwrap(DiagLog.renderedLine(
+            level: .error, category: .playback, tag: "HTTP", message: "request failed",
+            attrs: ["reason": .error(error)]))
+        XCTAssertFalse(rendered.contains(token))
+        XCTAssertFalse(rendered.contains(email))
     }
 }

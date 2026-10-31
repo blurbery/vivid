@@ -1,247 +1,155 @@
 import XCTest
 @testable import Vivid
 
-/// Online playback may trust Vivid's load-time probe; downloads must retain
-/// enough bounded evidence to be safe without a server replan.
+/// Streaming, downloads and the device profile describe decoding with the
+/// same vocabulary, and each device claims only what it should.
 final class AppleDecodeCapabilitiesTests: XCTestCase {
+    private typealias Capabilities = AppleDecodeCapabilities
 
-    // MARK: - The surfaces agree
+    private var engineVideoCodecs: [String] { Capabilities.streamingVideoCodecs(for: .vividDeclared) }
+    private var engineAudioCodecs: [String] { Capabilities.streamingAudioCodecs(for: .vividDeclared) }
+    private var engineContainers: [String] { Capabilities.streamingContainers(for: .vividDeclared) }
+    private var attestedVideoCodecs: [String] { Capabilities.streamingVideoCodecs(for: .platformAttested) }
+    private var bareAudioContainers: [String] { Array(Capabilities.containers.suffix(5)) }
+
+    private func softwareEntries() -> [String: PlaybackV3VideoDecodeCapability] {
+        Dictionary(uniqueKeysWithValues: DownloadCaps.current().videoDecode.filter { !$0.hardware }.map { ($0.codec, $0) })
+    }
 
     func testV3SnapshotReportsTheSharedVocabulary() {
+        let mode = Capabilities.streamingVideoCapabilityMode
         let capabilities = ApplePlaybackV3Capabilities.snapshot().capabilities
-        XCTAssertEqual(capabilities.codecsAudio, AppleDecodeCapabilities.streamingAudioCodecs)
-        XCTAssertEqual(capabilities.containers, AppleDecodeCapabilities.streamingContainers)
-        XCTAssertEqual(capabilities.codecsVideo, AppleDecodeCapabilities.streamingVideoCodecs)
+        XCTAssertEqual(capabilities.codecsAudio, Capabilities.streamingAudioCodecs(for: mode))
+        XCTAssertEqual(capabilities.containers, Capabilities.streamingContainers(for: mode))
+        XCTAssertEqual(capabilities.codecsVideo, Capabilities.streamingVideoCodecs(for: mode))
     }
 
     func testDownloadCapsReportTheSharedVocabulary() {
         let caps = DownloadCaps.current()
-        XCTAssertEqual(caps.codecsAudio, AppleDecodeCapabilities.audioCodecs)
-        XCTAssertEqual(caps.containers, AppleDecodeCapabilities.containers)
-        XCTAssertEqual(caps.codecsVideo, AppleDecodeCapabilities.hardwareVideoCodecs)
+        XCTAssertEqual(caps.codecsAudio, Capabilities.audioCodecs)
+        XCTAssertEqual(caps.containers, Capabilities.containers)
+        XCTAssertEqual(caps.codecsVideo, Capabilities.hardwareVideoCodecs)
         XCTAssertEqual(caps.maxResolution, "1080p")
-        XCTAssertEqual(caps.videoEvidence, PlaybackProtocolV3.Evidence.platformAttested)
-        XCTAssertEqual(
-            caps.videoDecode,
-            AppleDecodeCapabilities.playbackV3VideoDecodeAttestation()
-        )
-        XCTAssertEqual(caps.clientFeatures, [PlaybackProtocolV3.softwareVideoDecodeFeature])
-        XCTAssertTrue(
-            Set(AppleDecodeCapabilities.softwareVideoCodecs).isDisjoint(
-                with: Set(caps.codecsVideo)
-            )
-        )
+        XCTAssertEqual(caps.videoEvidence, "platform_attested")
+        XCTAssertEqual(caps.videoDecode, AppleDecodeCapabilities.playbackV3VideoDecodeAttestation())
+        XCTAssertEqual(caps.clientFeatures, ["software_video_decode_v1"])
+        XCTAssertTrue(Set(caps.codecsVideo).isDisjoint(with: ["av1", "vp9", "mpeg2video", "vc1"]))
     }
 
     func testDownloadSoftwareClaimsRetainTheirOwnBounds() {
-        let software = Dictionary(
-            uniqueKeysWithValues: DownloadCaps.current().videoDecode
-                .filter { !$0.hardware }
-                .map { ($0.codec, [$0.maxWidth, $0.maxHeight, Int($0.maxFrameRate), $0.maxBitrateKbps]) }
-        )
-        XCTAssertEqual(software["h264"], [1_920, 1_080, 30, 10_000])
-        XCTAssertEqual(software["av1"], [1_920, 1_080, 30, 3_000])
-        XCTAssertEqual(software["vp9"], [1_920, 1_080, 30, 3_000])
-        XCTAssertEqual(software["mpeg2video"], [720, 480, 31, 7_000])
-        XCTAssertEqual(software["vc1"], [1_920, 1_080, 30, 32_000])
+        let bounds = softwareEntries().mapValues { [$0.maxWidth, $0.maxHeight, Int($0.maxFrameRate), $0.maxBitrateKbps] }
+        XCTAssertEqual(bounds["h264"], [1_920, 1_080, 30, 10_000])
+        XCTAssertEqual(bounds["av1"], [1_920, 1_080, 30, 3_000])
+        XCTAssertEqual(bounds["vp9"], [1_920, 1_080, 30, 3_000])
+        XCTAssertEqual(bounds["mpeg2video"], [720, 480, 31, 7_000])
+        XCTAssertEqual(bounds["vc1"], [1_920, 1_080, 30, 32_000])
     }
 
     func testSoftwareClaimsStayWithinTheExercisedProfilesAndBitDepths() {
-        let software = Dictionary(
-            uniqueKeysWithValues: DownloadCaps.current().videoDecode
-                .filter { !$0.hardware }
-                .map { ($0.codec, ($0.profiles, $0.bitDepths)) }
-        )
-        XCTAssertEqual(software["h264"]?.0, ["high 10"])
-        XCTAssertEqual(software["h264"]?.1, [10])
-        XCTAssertEqual(software["av1"]?.0, ["main"])
-        XCTAssertEqual(software["av1"]?.1, [10])
-        XCTAssertEqual(software["vp9"]?.0, ["profile 0"])
-        XCTAssertEqual(software["vp9"]?.1, [8])
-        XCTAssertEqual(software["mpeg2video"]?.0, ["main"])
-        XCTAssertEqual(software["mpeg2video"]?.1, [8])
-        XCTAssertEqual(software["vc1"]?.0, ["advanced"])
-        XCTAssertEqual(software["vc1"]?.1, [8])
+        let entries = softwareEntries()
+        let expected: [(String, [String], [Int])] = [
+            ("h264", ["high 10"], [10]),
+            ("av1", ["main"], [10]),
+            ("vp9", ["profile 0"], [8]),
+            ("mpeg2video", ["main"], [8]),
+            ("vc1", ["advanced"], [8]),
+        ]
+        for (codec, profiles, bitDepths) in expected {
+            XCTAssertEqual(entries[codec]?.profiles, profiles, codec)
+            XCTAssertEqual(entries[codec]?.bitDepths, bitDepths, codec)
+        }
     }
 
     func testDownloadSoftwareEvidenceUsesTheServerWireKeys() throws {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
-        let object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: encoder.encode(DownloadCaps.current()))
-                as? [String: Any]
-        )
-        XCTAssertEqual(
-            object["client_features"] as? [String],
-            [PlaybackProtocolV3.softwareVideoDecodeFeature]
-        )
-        XCTAssertEqual(
-            object["video_evidence"] as? String,
-            PlaybackProtocolV3.Evidence.platformAttested
-        )
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(DownloadCaps.current())) as? [String: Any])
+        XCTAssertEqual(object["client_features"] as? [String], ["software_video_decode_v1"])
+        XCTAssertEqual(object["video_evidence"] as? String, "platform_attested")
         XCTAssertNotNil(object["video_decode"] as? [[String: Any]])
         XCTAssertNil(object["clientFeatures"])
         XCTAssertNil(object["videoDecode"])
     }
 
     func testConservativeStreamingAndDownloadsShareAudioCodecs() {
-        let v3 = Set(ApplePlaybackV3Capabilities.snapshot(
-            videoCapabilityMode: .platformAttested
-        ).capabilities.codecsAudio)
-        let downloads = Set(DownloadCaps.current().codecsAudio)
-        XCTAssertEqual(v3, downloads)
-        XCTAssertEqual(v3, Set(AppleDecodeCapabilities.audioCodecs))
+        let streaming = Set(ApplePlaybackV3Capabilities.snapshot(videoCapabilityMode: .platformAttested).capabilities.codecsAudio)
+        XCTAssertEqual(streaming, Set(DownloadCaps.current().codecsAudio))
+        XCTAssertEqual(streaming, Set(Capabilities.audioCodecs))
     }
 
     func testBareAudioContainersReachTheFlatAndOriginalHTTPClaims() throws {
-        let expected = Set(["mp3", "m4a", "aac", "flac", "wav"])
-        XCTAssertEqual(Set(AppleDecodeCapabilities.audioContainers), expected)
-        XCTAssertTrue(expected.isSubset(of: Set(AppleDecodeCapabilities.containers)))
-
-        let originalHTTP = try XCTUnwrap(
-            ApplePlaybackV3Capabilities.snapshot(
-                videoCapabilityMode: .platformAttested
-            ).context.deliveries[
-                PlaybackProtocolV3.DeliveryClass.originalHTTP
-            ]
-        )
-        XCTAssertTrue(expected.isSubset(of: Set(originalHTTP.containers)))
-        XCTAssertFalse(originalHTTP.containers.contains("ogg"))
+        let bare = Set(bareAudioContainers)
+        XCTAssertEqual(bare, ["mp3", "m4a", "aac", "flac", "wav"])
+        XCTAssertTrue(bare.isSubset(of: Capabilities.containers))
+        let snapshot = ApplePlaybackV3Capabilities.snapshot(videoCapabilityMode: .platformAttested)
+        let original = try XCTUnwrap(snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.originalHTTP])
+        XCTAssertTrue(bare.isSubset(of: original.containers))
+        XCTAssertFalse(original.containers.contains("ogg"))
     }
 
     func testAppleTV4KUsesTheVividBuildDeclaration() throws {
-        let snapshot = ApplePlaybackV3Capabilities.snapshot(
-            videoCapabilityMode: .vividDeclared
-        )
-        XCTAssertEqual(snapshot.capabilities.videoEvidence, PlaybackProtocolV3.Evidence.declared)
-        XCTAssertEqual(snapshot.capabilities.videoDecode, [])
-        XCTAssertEqual(
-            snapshot.capabilities.codecsVideoHardware,
-            AppleDecodeCapabilities.hardwareVideoCodecs
-        )
-        XCTAssertEqual(
-            snapshot.capabilities.codecsVideo,
-            AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs
-        )
-        XCTAssertEqual(
-            snapshot.capabilities.codecsAudio,
-            AppleDecodeCapabilities.vividOriginalHTTPAudioCodecs
-        )
-        XCTAssertEqual(
-            snapshot.capabilities.containers,
-            AppleDecodeCapabilities.vividOriginalHTTPContainers
-        )
-        XCTAssertEqual(snapshot.capabilities.maxResolution, "2160p")
+        let snapshot = ApplePlaybackV3Capabilities.snapshot(videoCapabilityMode: .vividDeclared)
+        let capabilities = snapshot.capabilities
+        XCTAssertEqual(capabilities.videoEvidence, "declared")
+        XCTAssertTrue(capabilities.videoDecode.isEmpty)
+        XCTAssertEqual(capabilities.codecsVideoHardware, Capabilities.hardwareVideoCodecs)
+        XCTAssertEqual(capabilities.codecsVideo, engineVideoCodecs)
+        XCTAssertEqual(capabilities.codecsAudio, engineAudioCodecs)
+        XCTAssertEqual(capabilities.containers, engineContainers)
+        XCTAssertEqual(capabilities.maxResolution, "2160p")
 
-        let originalHTTP = try XCTUnwrap(
-            snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.originalHTTP]
-        )
-        XCTAssertEqual(
-            originalHTTP.videoCodecs,
-            AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs
-        )
-        XCTAssertEqual(
-            originalHTTP.audioDecodeCodecs,
-            AppleDecodeCapabilities.vividOriginalHTTPAudioCodecs
-        )
-        XCTAssertEqual(
-            originalHTTP.containers,
-            AppleDecodeCapabilities.vividOriginalHTTPContainers
-        )
-        XCTAssertTrue(
-            originalHTTP.validatedClaims.contains(
-                PlaybackProtocolV3.clientManagedDynamicRangeClaim
-            ),
-            "The Vivid original-file executor must declare that display adaptation happens after delivery."
-        )
-        XCTAssertTrue(
-            originalHTTP.validatedClaims.contains(
-                PlaybackProtocolV3.clientSelectedAudioTrackClaim
-            ),
-            "The Vivid original-file executor maps the plan's selected audio ordinal to an exact stream before opening non-default audio."
-        )
+        let original = try XCTUnwrap(snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.originalHTTP])
+        XCTAssertEqual(original.videoCodecs, engineVideoCodecs)
+        XCTAssertEqual(original.audioDecodeCodecs, engineAudioCodecs)
+        XCTAssertEqual(original.containers, engineContainers)
+        XCTAssertTrue(original.validatedClaims.contains(PlaybackProtocolV3.clientManagedDynamicRangeClaim))
+        XCTAssertTrue(original.validatedClaims.contains(PlaybackProtocolV3.clientSelectedAudioTrackClaim))
 
-        let progressive = try XCTUnwrap(
-            snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.progressive]
-        )
-        XCTAssertEqual(progressive.videoCodecs, AppleDecodeCapabilities.packagedVideoCodecs)
+        let progressive = try XCTUnwrap(snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.progressive])
+        XCTAssertEqual(progressive.videoCodecs, Capabilities.packagedVideoCodecs)
         XCTAssertEqual(progressive.containers, ["mp4", "mov", "m4v"])
         XCTAssertEqual(progressive.audioDecodeCodecs, ["aac", "ac3", "eac3", "alac", "mp3"])
 
-        let hls = try XCTUnwrap(
-            snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.hls]
-        )
-        XCTAssertEqual(hls.videoCodecs, AppleDecodeCapabilities.packagedVideoCodecs)
+        let hls = try XCTUnwrap(snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.hls])
+        XCTAssertEqual(hls.videoCodecs, Capabilities.packagedVideoCodecs)
         XCTAssertEqual(hls.containers, ["hls", "mpegts", "fmp4", "mp4"])
         XCTAssertEqual(hls.audioDecodeCodecs, ["aac", "ac3", "eac3"])
     }
 
     func testConservativeSnapshotDoesNotClaimClientManagedDynamicRange() throws {
-        let conservativeOriginal = try XCTUnwrap(
-            ApplePlaybackV3Capabilities.snapshot(
-                videoCapabilityMode: .platformAttested
-            ).context.deliveries[PlaybackProtocolV3.DeliveryClass.originalHTTP]
-        )
-        XCTAssertFalse(
-            conservativeOriginal.validatedClaims.contains(
-                PlaybackProtocolV3.clientManagedDynamicRangeClaim
-            )
-        )
-        XCTAssertFalse(
-            conservativeOriginal.validatedClaims.contains(
-                PlaybackProtocolV3.clientSelectedAudioTrackClaim
-            )
-        )
-
+        let snapshot = ApplePlaybackV3Capabilities.snapshot(videoCapabilityMode: .platformAttested)
+        let original = try XCTUnwrap(snapshot.context.deliveries[PlaybackProtocolV3.DeliveryClass.originalHTTP])
+        XCTAssertFalse(original.validatedClaims.contains(PlaybackProtocolV3.clientManagedDynamicRangeClaim))
+        XCTAssertFalse(original.validatedClaims.contains(PlaybackProtocolV3.clientSelectedAudioTrackClaim))
     }
 
     func testVividDeclarationKeepsV3WireShapeWithoutDetailedPredictions() throws {
-        let capabilities = ApplePlaybackV3Capabilities.snapshot(
-            videoCapabilityMode: .vividDeclared
-        ).capabilities
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
-        let object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: encoder.encode(capabilities))
-                as? [String: Any]
-        )
-
-        XCTAssertEqual(
-            object["video_evidence"] as? String,
-            PlaybackProtocolV3.Evidence.declared
-        )
-        XCTAssertEqual((object["video_decode"] as? [[String: Any]])?.count, 0)
-        XCTAssertEqual(
-            object["codecs_video"] as? [String],
-            AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs
-        )
+        let capabilities = ApplePlaybackV3Capabilities.snapshot(videoCapabilityMode: .vividDeclared).capabilities
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(capabilities)) as? [String: Any])
+        XCTAssertEqual(object["video_evidence"] as? String, "declared")
+        XCTAssertEqual((object["video_decode"] as? [Any])?.count, 0)
+        XCTAssertEqual(object["codecs_video"] as? [String], engineVideoCodecs)
         XCTAssertNil(object["videoEvidence"])
         XCTAssertNil(object["videoDecode"])
     }
 
     func testEngineDeclarationCoversPinnedVividFFmpegManifest() {
-        let video = Set(AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs)
-        let audio = Set(AppleDecodeCapabilities.vividOriginalHTTPAudioCodecs)
-        let containers = Set(AppleDecodeCapabilities.vividOriginalHTTPContainers)
-
-        XCTAssertEqual(video, Set([
-            "h264", "hevc", "av1", "vp9", "vp8", "mpeg4", "mpeg2video", "vc1",
-            "qtrle", "msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3",
-        ]))
-        XCTAssertEqual(audio, Set([
-            "aac", "ac3", "eac3", "mp3", "mp2", "flac", "opus", "vorbis", "alac",
-            "truehd", "mlp", "dts", "dca", "dts-hd", "dtshd", "pcm", "pcm_s16le",
-            "pcm_s24le", "pcm_f32le", "pcm_bluray",
-        ]))
-        XCTAssertEqual(containers, Set([
-            "mp4", "m4v", "mov", "mkv", "matroska", "avi", "mpegts", "ts", "m2ts",
-            "mts", "3gp", "3g2", "mpeg", "vob", "ogg", "webm", "flv", "mp3", "aac",
-            "m4a", "flac", "alac", "wav", "opus",
-        ]))
+        XCTAssertEqual(Set(engineVideoCodecs), [
+            "h264", "hevc", "av1", "vp9", "vp8", "mpeg4", "mpeg2video", "vc1", "qtrle",
+            "msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3",
+        ])
+        XCTAssertEqual(Set(engineAudioCodecs), [
+            "aac", "ac3", "eac3", "mp3", "mp2", "flac", "opus", "vorbis", "alac", "truehd",
+            "mlp", "dts", "dca", "dts-hd", "dtshd", "pcm", "pcm_s16le", "pcm_s24le", "pcm_f32le", "pcm_bluray",
+        ])
+        let containers = Set(engineContainers)
+        XCTAssertEqual(containers, [
+            "mp4", "m4v", "mov", "mkv", "matroska", "avi", "mpegts", "ts", "m2ts", "mts", "3gp", "3g2",
+            "mpeg", "vob", "ogg", "webm", "flv", "mp3", "aac", "m4a", "flac", "alac", "wav", "opus",
+        ])
         XCTAssertFalse(containers.contains("asf"))
-        // The scanner normalizes MPEG program streams (`.mpg`/`.vob`) to
-        // `mpeg`; without that token DVD-class sources could never take
-        // `original_http` despite the mpeg2video claim above.
         XCTAssertTrue(containers.contains("mpeg"))
     }
 
@@ -255,28 +163,20 @@ final class AppleDecodeCapabilitiesTests: XCTestCase {
 
     func testLucidPhonesAndTabletsDeclareTheirOriginalFilePipeline() {
         for machine in ["iPhone19,1", "iPad16,6"] {
-            XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
-                isTVOS: false, isSimulator: false, machineIdentifier: machine, usesLucid: true), .vividDeclared)
-            XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
-                isTVOS: false, isSimulator: true, machineIdentifier: machine, usesLucid: true), .platformAttested)
-            XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
-                isTVOS: false, isSimulator: false, machineIdentifier: machine, usesLucid: false), .platformAttested)
+            XCTAssertEqual(Capabilities.streamingVideoCapabilityModeForDevice(
+                isTVOS: false, isSimulator: false, machineIdentifier: machine, usesLucid: true), .vividDeclared, machine)
+            XCTAssertEqual(Capabilities.streamingVideoCapabilityModeForDevice(
+                isTVOS: false, isSimulator: true, machineIdentifier: machine, usesLucid: true), .platformAttested, machine)
+            XCTAssertEqual(Capabilities.streamingVideoCapabilityModeForDevice(
+                isTVOS: false, isSimulator: false, machineIdentifier: machine, usesLucid: false), .platformAttested, machine)
         }
-        XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
+        XCTAssertEqual(Capabilities.streamingVideoCapabilityModeForDevice(
             isTVOS: true, isSimulator: false, machineIdentifier: "AppleTV5,3", usesLucid: true), .platformAttested)
     }
 
     func testStreamingPolicyTrustsAppleTV4KButNotAppleTVHDOrSimulators() {
-        func mode(
-            _ isTVOS: Bool,
-            _ isSimulator: Bool,
-            _ machineIdentifier: String
-        ) -> AppleDecodeCapabilities.StreamingVideoCapabilityMode {
-            AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
-                isTVOS: isTVOS,
-                isSimulator: isSimulator,
-                machineIdentifier: machineIdentifier
-            )
+        func mode(_ isTVOS: Bool, _ isSimulator: Bool, _ machine: String) -> AppleDecodeCapabilities.StreamingVideoCapabilityMode {
+            Capabilities.streamingVideoCapabilityModeForDevice(isTVOS: isTVOS, isSimulator: isSimulator, machineIdentifier: machine)
         }
         XCTAssertEqual(mode(true, false, "AppleTV5,3"), .platformAttested)
         XCTAssertEqual(mode(true, false, "AppleTV6,2"), .vividDeclared)
@@ -288,47 +188,35 @@ final class AppleDecodeCapabilitiesTests: XCTestCase {
         XCTAssertEqual(mode(true, false, "unknown"), .platformAttested)
     }
 
-    // MARK: - The vocabulary itself
-
     func testDeviceListsCoverTheFormatsTheStackDecodes() {
-        // Asserted on the lists directly, since the test host is a simulator
-        // and would otherwise only ever see the conservative claim.
-        let audio = AppleDecodeCapabilities.audioCodecs
-        let containers = AppleDecodeCapabilities.containers
-        XCTAssertTrue(containers.contains("mkv"))
-        XCTAssertTrue(containers.contains("mp4"))
-        XCTAssertTrue(containers.contains("mp3"))
-        XCTAssertTrue(containers.contains("flac"))
-        XCTAssertTrue(containers.contains("wav"))
-        // Both spellings of the aliased containers, or a server that recorded
-        // the other one reads as unsupported.
+        let containers = Capabilities.containers
+        for container in ["mkv", "mp4", "mp3", "flac", "wav"] {
+            XCTAssertTrue(containers.contains(container), container)
+        }
         XCTAssertEqual(containers.contains("mkv"), containers.contains("matroska"))
         XCTAssertEqual(containers.contains("ts"), containers.contains("mpegts"))
-        XCTAssertTrue(audio.contains("aac"))
-        XCTAssertTrue(audio.contains("flac"))
+        XCTAssertTrue(Capabilities.audioCodecs.contains("aac"))
+        XCTAssertTrue(Capabilities.audioCodecs.contains("flac"))
     }
 
     func testHardwareCodecsAreASubsetOfClaimedCodecs() {
-        let hardware = Set(AppleDecodeCapabilities.hardwareVideoCodecs)
-        XCTAssertTrue(hardware.isSubset(of: Set(AppleDecodeCapabilities.attestedVideoCodecs)))
-        XCTAssertTrue(hardware.isSubset(of: Set(AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs)))
+        let hardware = Set(Capabilities.hardwareVideoCodecs)
+        XCTAssertTrue(hardware.isSubset(of: attestedVideoCodecs))
+        XCTAssertTrue(hardware.isSubset(of: engineVideoCodecs))
     }
 
     func testDecodeEntriesNameTheDecoderTheyActuallyUse() {
-        for entry in AppleDecodeCapabilities.videoDecodeAttestation() {
-            XCTAssertEqual(entry.hardware ? "VideoToolbox" : (entry.codec == "av1" ? "dav1d" : "libavcodec"), entry.decoderName)
+        for entry in Capabilities.videoDecodeAttestation() {
+            let expected = entry.hardware ? "VideoToolbox" : (entry.codec == "av1" ? "dav1d" : "libavcodec")
+            XCTAssertEqual(entry.decoderName, expected, entry.codec)
         }
     }
 
-    // MARK: - Simulator claim
-
     func testSimulatorClaimStaysConservative() throws {
-        try XCTSkipUnless(AppleDecodeCapabilities.isSimulator)
-        XCTAssertEqual(
-            AppleDecodeCapabilities.streamingVideoCodecs,
-            ["h264", "av1", "vp9", "mpeg2video", "vc1"]
-        )
-        XCTAssertEqual(AppleDecodeCapabilities.maxResolution, "1080p")
+        try XCTSkipUnless(Capabilities.isSimulator, "Only the simulator build has the conservative claim")
+        XCTAssertEqual(Capabilities.streamingVideoCodecs(for: Capabilities.streamingVideoCapabilityMode),
+                       ["h264", "av1", "vp9", "mpeg2video", "vc1"])
+        XCTAssertEqual(Capabilities.streamingMaxResolutionToken(for: .platformAttested), "1080p")
         XCTAssertFalse(DownloadCaps.current().hdr)
         XCTAssertEqual(DownloadCaps.current().audioPassthroughCodecs, [])
     }

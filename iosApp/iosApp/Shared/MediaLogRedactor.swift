@@ -1,188 +1,128 @@
 import Foundation
 
-/// Last-mile privacy boundary for public playback OSLog fields.
-///
-/// Vivid and AVFoundation error descriptions can include the source URL,
-/// local file path, or request headers. Product code may retain the original
-/// message for typed recovery and UI, but anything deliberately marked public
-/// in OSLog passes through this bounded redactor first.
-///
-/// Every rule is idempotent: applying `sanitize` to its own output is a no-op.
-/// Rules that consume a value therefore refuse to start on `[`, a quote, or
-/// whitespace, which is exactly how each replacement token begins or is
-/// introduced, so no rule can re-consume another rule's `[redacted…]` marker.
+/// Cleans text that playback code writes to the unified log as public:
+/// credentials, URLs, file paths and media titles are replaced with
+/// hyphenated markers. Stateless and safe on any thread.
 enum MediaLogRedactor {
-    private static let workingInputLimit = 16_384
-
-    private struct Rule {
-        let regex: NSRegularExpression
-        let replacement: String
-
-        init(_ pattern: String, replacement: String) {
-            regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-            self.replacement = replacement
-        }
-    }
-
-    // MARK: - Shared pattern fragments
-
-    /// Container and subtitle extensions that mark a token as a media filename.
-    private static let mediaExtensions = "m3u8|mpd|mkv|mp4|m4v|mov|avi|webm|wmv|ts|m2ts|mts|m4s"
-        + "|mp3|m4a|aac|ac3|eac3|flac|alac|wav|ogg|opus"
-        + "|srt|ass|ssa|vtt|sub|idx|sup|pgs"
-
-    /// Streaming filenames fixed by the protocol rather than chosen by a user.
-    /// `master.m3u8` or `init.mp4` name a manifest position, not a title, so
-    /// redacting them costs playback debugging without buying any privacy.
-    private static let genericMediaStems =
-        "master|index|manifest|playlist|prog_index|init|main|stream|chunk|segment|media|output"
-
-    /// Filesystem roots an Apple client can legitimately reference. `~` covers
-    /// the tilde-abbreviated home paths that `FileManager` descriptions emit.
-    private static let pathRoot = #"(?:~|/(?:private|var|Users|Volumes|tmp|Library|Applications"#
-        + #"|System|Network|Developer|opt|usr|etc|mnt|home|data))"#
-
-    /// Credential-bearing key names, matched case-insensitively as a substring
-    /// of the surrounding header or parameter name (`X-Silo-Auth`, `st`, …).
-    private static let credentialKey =
-        #"[a-z0-9_-]*(?:authorization|auth|cookie|token|secret|credential|api[-_]?key|session)[a-z0-9_-]*"#
-
-    /// A value run that may not open with `[`, a quote, or whitespace. This is
-    /// what keeps the credential rules idempotent: `token=[redacted]` and
-    /// `token: "[redacted]"` both fail to re-match however the optional quote
-    /// and whitespace in the separator backtrack.
-    private static let opaqueValue = #"[^\s,;\]\}\r\n\["'][^,\]\}\r\n]*"#
-
-    // MARK: - Rule groups
-
-    private static let credentialAndURLRules: [Rule] = [
-        Rule(
-            #"\b(\#(credentialKey))(["']?\s*[:=]\s*["']?)\#(opaqueValue)"#,
-            replacement: "$1$2[redacted]"
-        ),
-        Rule(
-            #"\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key)\s*[:=]\s*\#(opaqueValue)"#,
-            replacement: "$1=[redacted]"
-        ),
-        Rule(
-            #"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"#,
-            replacement: "Bearer [redacted]"
-        ),
-        Rule(
-            #"\b(?:https?|wss?|file|smb)://[^\s'"<>]+"#,
-            replacement: "[redacted-url]"
-        ),
-        // Scheme-less `host:port/path`. Vivid and AVFoundation both log
-        // origins without a scheme. The trailing `/` is required so ordinary
-        // `File.swift:42` source references are not mistaken for an origin.
-        Rule(
-            #"(?:\[[0-9a-f:]{2,}\]|\b\d{1,3}(?:\.\d{1,3}){3}|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})"#
-                + #":\d{1,5}/[^\s'"<>,;\]\}]*"#,
-            replacement: "[redacted-url]"
-        ),
-        // Space-delimited credential headers (`X-Emby-Token 9f83ba21c0de44aa`).
-        // The value must be long and contain a digit so ordinary prose after a
-        // credential-shaped word ("session started successfully") survives.
-        Rule(
-            #"\b(\#(credentialKey))\s+(?:Bearer\s+)?(?=[A-Za-z0-9._~+/=-]*\d)[A-Za-z0-9._~+/=-]{12,}"#,
-            replacement: "$1 [redacted]"
-        ),
-    ]
-
-    /// Filesystem and media-identity rules, shared with `DiagnosticsRedactor`
-    /// so the diagnostics ring covers the same ground as the OSLog boundary.
-    private static let filesystemAndMediaRules: [Rule] = [
-        Rule(
-            #"(["'])\#(pathRoot)/[^\r\n]*?\1"#,
-            replacement: "$1[redacted-path]$1"
-        ),
-        Rule(
-            #"\#(pathRoot)/[^\r\n,;\]\}]*?\.(?:\#(mediaExtensions))\b"#,
-            replacement: "[redacted-path]"
-        ),
-        Rule(
-            #"(^|[\s=:'"])\#(pathRoot)/[^\s,'"\]\}]+"#,
-            replacement: "$1[redacted-path]"
-        ),
-        // UNC shares leak the server and share name alongside the title.
-        Rule(
-            #"\\\\[A-Za-z0-9._$-]+\\[^\s'"<>,;]*"#,
-            replacement: "[redacted-path]"
-        ),
-        // Bare media filenames. The match may neither start inside nor span a
-        // `[redacted…]` marker, so `playing [redacted-url] Movie.mkv` loses
-        // only the filename instead of collapsing the whole line.
-        Rule(
-            #"(?<![A-Za-z0-9._~-])(?!redacted[a-z0-9-]*\])"#
-                + #"(?!(?:\#(genericMediaStems))\.(?:\#(mediaExtensions))\b)"#
-                + #"[A-Za-z0-9](?:(?!\[redacted)[A-Za-z0-9 _().,'&%+\-\[\]]){0,240}\.(?:\#(mediaExtensions))\b"#,
-            replacement: "[redacted-media-name]"
-        ),
-    ]
-
-    private static let trailingCredentialRules: [Rule] = [
-        Rule(
-            #"\b(st|token|access_token|profile_token|refresh_token|auth|authorization|signature|sig|jwt|credential|api_key)"#
-                + #"\s*=\s*[^&\s,;\]\}\[][^&\s,;\]\}]*"#,
-            replacement: "$1=[redacted]"
-        ),
-        Rule(
-            #"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"#,
-            replacement: "[redacted-token]"
-        ),
-    ]
-
-    private static let rules: [Rule] =
-        credentialAndURLRules + filesystemAndMediaRules + trailingCredentialRules
-
-    /// Anchored form of the bare-media-name rule, used to classify a single URL
-    /// path component. Generic manifest names are deliberately preserved.
-    private static let mediaFilenameRegex = try! NSRegularExpression(
-        pattern: #"\A(?!(?:\#(genericMediaStems))\.(?:\#(mediaExtensions))\z).+\.(?:\#(mediaExtensions))\z"#,
-        options: [.caseInsensitive]
-    )
-
-    // MARK: - Entry points
-
     static func sanitize(_ value: String, maxLength: Int = 1_024) -> String {
-        let boundedMaxLength = max(0, maxLength)
-        let redacted = apply(rules, to: value)
-        guard redacted.count > boundedMaxLength else { return redacted }
-        guard boundedMaxLength > 3 else { return String(redacted.prefix(boundedMaxLength)) }
-        return String(redacted.prefix(boundedMaxLength - 3)) + "..."
+        bounded(redact(value), to: maxLength)
     }
 
     static func sanitize(_ error: any Error, maxLength: Int = 1_024) -> String {
         sanitize(String(describing: error), maxLength: maxLength)
     }
 
-    /// Applies only the filesystem-path and media-filename rules, leaving URL
-    /// and credential handling to the caller. `DiagnosticsRedactor` composes
-    /// this because its URL treatment (hashed host, surviving API path) is
-    /// deliberately different from the OSLog boundary's blanket redaction.
-    static func sanitizeFilesystemAndMediaIdentity(_ value: String) -> String {
-        apply(filesystemAndMediaRules, to: value)
+    /// Only the file-system and media-name rules, with no output bound.
+    static func redactFileSystemOnly(_ value: String) -> String {
+        Rules.fileSystem.reduce(prebounded(value)) { $1.apply(to: $0) }
     }
 
-    /// True when a single filename or URL path component names user media
-    /// rather than a protocol-fixed manifest or segment.
-    static func isMediaFilenameComponent(_ component: String) -> Bool {
-        let range = NSRange(location: 0, length: (component as NSString).length)
-        return mediaFilenameRegex.firstMatch(in: component, options: [], range: range) != nil
+    /// True for a single name such as `Movie.mkv` that isn't a generic
+    /// streaming file name such as `master.m3u8`.
+    static func isMediaFileName(_ value: String) -> Bool {
+        guard !value.contains(where: \.isNewline), Rules.mediaFileName.firstMatch(in: value) != nil else { return false }
+        return Rules.genericFileName.firstMatch(in: value) == nil
     }
 
-    private static func apply(_ rules: [Rule], to value: String) -> String {
-        let workingPrefix = value.prefix(workingInputLimit + 1)
-        let workingValue = workingPrefix.count > workingInputLimit
-            ? String(workingPrefix.prefix(workingInputLimit))
-            : value
-        return rules.reduce(workingValue) { partial, rule in
-            let range = NSRange(partial.startIndex..<partial.endIndex, in: partial)
-            return rule.regex.stringByReplacingMatches(
-                in: partial,
-                range: range,
-                withTemplate: rule.replacement
-            )
+    // MARK: - Private
+
+    private static let inputLimit = 16_384
+
+    private static func prebounded(_ value: String) -> String {
+        value.count > inputLimit ? String(value.prefix(inputLimit)) : value
+    }
+
+    private static func redact(_ value: String) -> String {
+        Rules.all.reduce(prebounded(value)) { $1.apply(to: $0) }
+    }
+
+    private static func bounded(_ value: String, to maxLength: Int) -> String {
+        let limit = max(0, maxLength)
+        guard value.count > limit else { return value }
+        guard limit > 3 else { return String(value.prefix(limit)) }
+        return String(value.prefix(limit - 3)) + "..."
+    }
+
+    private struct Rule {
+        let regex: NSRegularExpression
+        let template: String
+
+        init(_ pattern: String, _ template: String) {
+            // The patterns are fixed, so a failure here is a programming error.
+            regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            self.template = template
         }
+
+        func apply(to text: String) -> String {
+            regex.stringByReplacingMatches(
+                in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
+        }
+
+        func firstMatch(in text: String) -> NSTextCheckingResult? {
+            regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
+        }
+    }
+
+    private enum Rules {
+        static let mediaExtensions: Set<String> = [
+            "aac", "ac3", "alac", "ass", "avi", "eac3", "flac", "idx", "m2ts", "m3u8", "m4a", "m4s", "m4v",
+            "mkv", "mov", "mp3", "mp4", "mpd", "mts", "ogg", "opus", "pgs", "srt", "ssa", "sub", "sup",
+            "ts", "vtt", "wav", "webm", "wmv",
+        ]
+        static let extensionPattern = "(?:" + mediaExtensions.sorted().joined(separator: "|") + ")"
+        static let genericStems = "(?:chunk|index|init|main|manifest|master|media|output|playlist|prog_index|segment|stream)"
+        static let pathRoot = "(?:~|/(?:Applications|data|Developer|etc|home|Library|mnt|Network|opt|private|System|tmp|Users|usr|var|Volumes))/"
+        static let credentialWord = "(?:api[-_]?key|auth|authorization|cookie|credential|secret|session|token)"
+        static let nameRun = "\\b[A-Za-z0-9_-]*?" + credentialWord + "[A-Za-z0-9_-]*"
+        static let opaqueValue = "[^\\s,;\\[\\]}\"'][^,\\]}\\r\\n]*"
+        static let tokenCharacters = "[A-Za-z0-9+\\-./=_~]"
+        static let mediaNameCharacter = "[A-Za-z0-9 &'()+,\\-.\\[\\]_%]"
+
+        static let genericFileName = Rule("^" + genericStems + "\\." + extensionPattern + "$", "")
+        // Case-insensitive with Unicode case folding, as every rule here is.
+        static let mediaFileName = Rule("^.+\\." + extensionPattern + "$", "")
+
+        static let credentials: [Rule] = [
+            // C1: a credential name and its value.
+            Rule("(" + nameRun + "['\"]?\\s*[:=]\\s*['\"]?)" + opaqueValue, "$1[redacted]"),
+            // C2: well-known credential headers.
+            Rule("\\b(api-key|authorization|cookie|proxy-authorization|set-cookie|x-api-key)\\b\\s*[:=]\\s*" + opaqueValue,
+                 "$1=[redacted]"),
+            // C3: bearer tokens.
+            Rule("\\bBearer\\s+" + tokenCharacters + "{8,}", "Bearer [redacted]"),
+            // C4: URLs with a scheme.
+            Rule("\\b(?:file|https?|smb|wss?)://[^\\s\"'<>]+", "[redacted-url]"),
+            // C5: a host and port followed by a path.
+            Rule("(?:\\[[0-9a-f:]{2,}\\]|\\b\\d{1,3}(?:\\.\\d{1,3}){3}|\\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,})"
+                 + ":\\d{1,5}/[^\\s\"'<>,;\\]}]*", "[redacted-url]"),
+            // C6: a credential name followed by a space and a long value.
+            Rule("(" + nameRun + ")\\s+(?:bearer\\s+)?(?=" + tokenCharacters + "*\\d)" + tokenCharacters + "{12,}(?!"
+                 + tokenCharacters + ")", "$1 [redacted]"),
+        ]
+
+        static let fileSystem: [Rule] = [
+            // F1: a quoted path.
+            Rule("([\"'])" + pathRoot + "[^\\r\\n]*?\\1", "$1[redacted-path]$1"),
+            // F2: a path ending in a media file.
+            Rule(pathRoot + "[^\\r\\n,;\\]}]*?\\." + extensionPattern + "\\b", "[redacted-path]"),
+            // F3: a path after a space, separator or quote.
+            Rule("(^|[\\s=:\"'])" + pathRoot + "[^\\s,\"'\\]}]+", "$1[redacted-path]"),
+            // F4: a network share.
+            Rule("\\\\\\\\[A-Za-z0-9$._-]+\\\\[^\\s\"'<>,;]*", "[redacted-path]"),
+            // F5: a bare media file name, with any words in front of it on the line.
+            Rule("(?<![A-Za-z0-9._~-])(?!" + genericStems + "\\." + extensionPattern + "\\b)(?!redacted[A-Za-z0-9-]*\\])"
+                 + "[A-Za-z0-9](?:(?!\\[redacted)" + mediaNameCharacter + "){0,240}\\." + extensionPattern + "\\b",
+                 "[redacted-media-name]"),
+        ]
+
+        static let trailing: [Rule] = [
+            // T1: credential query parameters.
+            Rule("\\b(access_token|api_key|auth|authorization|credential|jwt|profile_token|refresh_token|sig|signature|st|token)"
+                 + "\\s*=\\s*[^&\\s,;\\[\\]}][^&\\s,;\\]}]*", "$1=[redacted]"),
+            // T2: tokens shaped like a JWT.
+            Rule("\\b[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b", "[redacted-token]"),
+        ]
+
+        static let all = credentials + fileSystem + trailing
     }
 }

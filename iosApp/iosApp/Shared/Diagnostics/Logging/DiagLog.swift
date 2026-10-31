@@ -1,457 +1,276 @@
-#if os(iOS) || os(tvOS)
 import Foundation
 import OSLog
 
-enum DiagLogAttributeValue {
-    case string(String)
-    case int(Int)
-    case double(Double)
-    case bool(Bool)
-    case url(URL)
-    case error(any Error)
-}
-
+/// Turns a log call into one redacted JSON line, for the debug build's local
+/// log and for the recent-events trail. Nothing here sends anything anywhere.
 enum DiagLog {
-    typealias Category = DiagnosticsLogCategory
-
+    /// Identifies this process's lines. Made on first use.
     static let captureSessionID = UUID().uuidString.lowercased()
-    private static let logger = Logger(subsystem: "com.blurbery.vivid", category: "Development")
 
-    /// Registers a server hostname to be replaced with its hashed token in
-    /// every future log line, even when it appears outside URL syntax.
+    // MARK: - Sensitive hosts
+
+    private static let loopbackHosts: Set<String> = ["localhost", "127.0.0.1", "::1", "[::1]"]
+    private static let hostLock = NSLock()
+    nonisolated(unsafe) private static var sensitiveHosts: [String] = []
+
+    /// Hashes this host wherever it appears in later lines, even outside a URL.
     static func registerSensitiveHost(_ host: String) {
-        DiagnosticsRedactor.registerSensitiveHost(host)
-    }
-
-    /// Test hook: clears the registered sensitive hosts. The registry is
-    /// process-wide, so a test that registers a pathological host must reset it
-    /// afterward or the host leaks into later tests' redaction output.
-    static func resetSensitiveHostsForTesting() {
-        DiagnosticsRedactor.resetSensitiveHostsForTesting()
-    }
-
-    /// Free text run through the same redaction as log lines, for callers that
-    /// keep their own records (the on-device health reports).
-    static func sanitizedText(_ value: String, maxLength: Int) -> String {
-        DiagnosticsRedactor.sanitize(value, maxLength: maxLength)
-    }
-
-    static func d(_ category: Category, _ tag: String, _ message: String, _ attrs: [String: DiagLogAttributeValue] = [:]) {
-        append(level: .debug, category: category, tag: tag, message: message, attrs: attrs)
-    }
-
-    static func i(_ category: Category, _ tag: String, _ message: String, _ attrs: [String: DiagLogAttributeValue] = [:]) {
-        append(level: .info, category: category, tag: tag, message: message, attrs: attrs)
-    }
-
-    static func w(_ category: Category, _ tag: String, _ message: String, _ attrs: [String: DiagLogAttributeValue] = [:]) {
-        append(level: .warning, category: category, tag: tag, message: message, attrs: attrs)
-    }
-
-    static func e(_ category: Category, _ tag: String, _ message: String, _ attrs: [String: DiagLogAttributeValue] = [:]) {
-        append(level: .error, category: category, tag: tag, message: message, attrs: attrs)
-    }
-
-    static func renderedLine(
-        level: DiagnosticsLogLevel,
-        category: Category,
-        tag: String,
-        message: String,
-        attrs: [String: DiagLogAttributeValue] = [:],
-        timestamp: Date = Date(),
-        captureSessionID: String = DiagLog.captureSessionID
-    ) -> String? {
-        let line = DiagnosticsLogLine(
-            ts: DiagnosticsTimestamp.string(from: timestamp),
-            run: captureSessionID,
-            lvl: level,
-            cat: category,
-            tag: DiagnosticsRedactor.sanitize(tag, maxLength: 128),
-            msg: DiagnosticsRedactor.sanitize(message, maxLength: 2048),
-            attrs: renderAttrs(attrs, category: category)
-        )
-        do {
-            try line.validate()
-            let data = try DiagnosticsJSONCoding.makeEncoder().encode(line)
-            return String(data: data, encoding: .utf8)
-        } catch {
-            assertionFailure("Invalid diagnostics log line: \(error)")
-            return nil
-        }
-    }
-
-    private static func append(
-        level: DiagnosticsLogLevel,
-        category: Category,
-        tag: String,
-        message: String,
-        attrs: [String: DiagLogAttributeValue]
-    ) {
-        guard let line = renderedLine(level: level, category: category, tag: tag, message: message, attrs: attrs) else {
-            return
-        }
-        writeLocalLine(line)
-    }
-
-    static func writeLocalLine(_ line: String) {
-        #if DEBUG
-        logger.debug("\(line, privacy: .private)")
-        #endif
-    }
-
-    private static func renderAttrs(_ attrs: [String: DiagLogAttributeValue], category: Category) -> [String: DiagnosticsJSONValue] {
-        var rendered: [String: DiagnosticsJSONValue] = [:]
-        for (key, value) in attrs {
-            guard let expectedType = DiagLogAttributeRegistry.type(for: key, category: category) else {
-                DiagLogAttributeRegistry.reject("Unregistered diagnostics attribute \(category.rawValue).\(key)")
-                continue
-            }
-            guard expectedType.accepts(value) else {
-                DiagLogAttributeRegistry.reject("Diagnostics attribute \(category.rawValue).\(key) has wrong value type")
-                continue
-            }
-            rendered[key] = value.diagnosticsJSONValue
-        }
-        return rendered
-    }
-}
-
-// Typed attributes for Vivid’s local development logs.
-enum DiagLogAttributeRegistry {
-    enum ValueType: Equatable {
-        case string
-        case integer
-        case number
-        case bool
-
-        func accepts(_ value: DiagLogAttributeValue) -> Bool {
-            switch (self, value) {
-            case (.string, .string), (.string, .url), (.string, .error):
-                return true
-            case (.integer, .int):
-                return true
-            case (.number, .int), (.number, .double):
-                return true
-            case (.bool, .bool):
-                return true
-            default:
-                return false
-            }
-        }
-    }
-
-    static let registry: [DiagnosticsLogCategory: [String: ValueType]] = [
-        .playback: [
-            "sink": .string,
-            "fmt": .string,
-            "decoder": .string,
-            "width": .integer,
-            "height": .integer,
-            "hdr_mode": .string,
-            "bitrate_kbps": .integer,
-            "dropped_frames": .integer,
-            "audio_underruns": .integer,
-            "session_id": .string,
-            "play_method": .string,
-            "reason": .string,
-            "position_ms": .integer,
-        ],
-        .focus: [
-            "target": .string,
-            "action": .string,
-        ],
-        .network: [
-            "method": .string,
-            "path": .string,
-            "status": .integer,
-            "duration_ms": .integer,
-            "outcome": .string,
-            "error_code": .string,
-            "attempt": .integer,
-        ],
-        .lifecycle: [
-            "state": .string,
-            "phase": .string,
-            "duration_ms": .integer,
-            "outcome": .string,
-            "reason": .string,
-            "launch_type": .string,
-        ],
-        .crash: [
-            "fingerprint": .string,
-            "source": .string,
-        ],
-    ]
-
-    static func type(for key: String, category: DiagnosticsLogCategory) -> ValueType? {
-        registry[category]?[key]
-    }
-
-    static func reject(_ message: String) {
-        #if DEBUG
-        assertionFailure(message)
-        #endif
-    }
-}
-
-private extension DiagLogAttributeValue {
-    var diagnosticsJSONValue: DiagnosticsJSONValue {
-        switch self {
-        case .string(let value):
-            return .string(DiagnosticsRedactor.sanitize(value, maxLength: 512))
-        case .int(let value):
-            return .int(value)
-        case .double(let value):
-            return .double(value)
-        case .bool(let value):
-            return .bool(value)
-        case .url(let value):
-            return .string(DiagnosticsRedactor.normalizedURLString(value))
-        case .error(let value):
-            return .string(DiagnosticsRedactor.sanitizedError(value))
-        }
-    }
-}
-
-private enum DiagnosticsRedactor {
-    private static let urlRegex = try! NSRegularExpression(
-        pattern: #"(?:https?|wss?)://[A-Za-z0-9._~:/?#@!$&'()*+,;=%\[\]-]+"#,
-        options: [.caseInsensitive]
-    )
-    private static let emailRegex = try! NSRegularExpression(
-        pattern: #"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#,
-        options: []
-    )
-    private static let authorizationRegex = try! NSRegularExpression(
-        pattern: #"(?i)\bAuthorization\s*[:=]\s*(?:Bearer|Basic)?\s*[A-Za-z0-9._~+/=-]+"#,
-        options: []
-    )
-    private static let cookieRegex = try! NSRegularExpression(
-        pattern: #"(?i)\b(?:Cookie|Set-Cookie)\s*[:=]\s*[^\r\n]+"#,
-        options: []
-    )
-    private static let bearerRegex = try! NSRegularExpression(
-        pattern: #"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"#,
-        options: []
-    )
-    private static let jwtRegex = try! NSRegularExpression(
-        pattern: #"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"#,
-        options: []
-    )
-    private static let secretKeyValueRegex = try! NSRegularExpression(
-        // Accept plain key=value as well as raw or escaped JSON strings. Error
-        // descriptions often quote their associated response bodies, so a
-        // closing quote between the key and colon must not bypass redaction.
-        pattern: #"(?i)(?:\\?[\"'])?\b(access_token|accessToken|profile_token|profileToken|refresh_token|refreshToken|profile_id|profileId|token|jwt|signature|sig|api_key|apikey|key|username|user_name|login|email|user)\b(?:\\?[\"'])?\s*[:=]\s*(?:\"(?:\\.|[^\"\\\r\n])*\"|\\\"(?:\\.|[^\\\r\n])*\\\"|'[^'\r\n]*'|[^\s&;,}\]]+)"#,
-        options: []
-    )
-    // Defense in depth for legacy or third-party messages that wrap token
-    // suffixes in parentheses instead of using key=value syntax.
-    private static let tokenWrapperRegex = try! NSRegularExpression(
-        pattern: #"(?i)\b(auth|accessToken|access_token|profileToken|profile_token|refreshToken|refresh_token)\(…?[^)\r\n]*\)"#,
-        options: []
-    )
-    // URL path components that are opaque handles rather than API vocabulary:
-    // bare 32-hex item ids, dashed UUIDs, and long base64url blobs. Short,
-    // wordy components (`api`, `v1`, `card_overlays`) stay literal so the log
-    // line still says which endpoint was involved.
-    private static let opaqueIdentifierRegex = try! NSRegularExpression(
-        pattern: #"\A(?:[0-9a-f]{32}"#
-            + #"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#
-            + #"|[A-Za-z0-9_-]{22,})\z"#,
-        options: [.caseInsensitive]
-    )
-
-    // The active/remembered server hostnames, registered by ServerRegistry.
-    // These are the identifiers most likely to leak as bare text (outside
-    // URL syntax), and matching known strings avoids false positives that a
-    // generic domain regex would hit (bundle ids, file names, versions).
-    private static let knownHostsLock = NSLock()
-    private static var knownSensitiveHosts: [String] = []
-
-    static func registerSensitiveHost(_ host: String) {
-        let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty, !isLoopbackHost(normalized) else { return }
-        knownHostsLock.lock()
-        defer { knownHostsLock.unlock() }
-        if !knownSensitiveHosts.contains(normalized) {
-            // Longest first so "media.example.com" wins over "example.com".
-            knownSensitiveHosts.append(normalized)
-            knownSensitiveHosts.sort { $0.count > $1.count }
+        let normalised = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalised.isEmpty, !loopbackHosts.contains(normalised) else { return }
+        hostLock.withLock {
+            guard !sensitiveHosts.contains(normalised) else { return }
+            sensitiveHosts.append(normalised)
+            sensitiveHosts.sort { $0.count > $1.count }
         }
     }
 
     static func resetSensitiveHostsForTesting() {
-        knownHostsLock.lock()
-        knownSensitiveHosts.removeAll()
-        knownHostsLock.unlock()
-    }
-
-    private static func isLoopbackHost(_ host: String) -> Bool {
-        host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+        hostLock.withLock { sensitiveHosts.removeAll() }
     }
 
     private static func hostToken(_ host: String) -> String {
         "[host:" + DiagnosticsSHA256.shortHex(data: Data(host.lowercased().utf8), count: 12) + "]"
     }
 
-    private static func replaceKnownHosts(in value: String) -> String {
-        knownHostsLock.lock()
-        let hosts = knownSensitiveHosts
-        knownHostsLock.unlock()
-        guard !hosts.isEmpty else { return value }
-        // Single forward pass over the original text. At each position we try
-        // the registered hosts (already sorted longest-first, so the longest
-        // match wins) and, on a match, emit that host's token and jump past the
-        // matched span. Emitted tokens are appended to `result` and never
-        // re-scanned, so a host that is a substring of its own replacement
-        // token — e.g. "host" inside "[host:…]" — cannot re-match and spin the
-        // way an in-place `while range` replace would.
-        var result = ""
-        var index = value.startIndex
-        while index < value.endIndex {
-            var matched = false
-            for host in hosts {
-                guard let end = value.index(index, offsetBy: host.count, limitedBy: value.endIndex) else {
-                    continue
-                }
-                // `host` is normalized to lowercase at registration; compare a
-                // lowercased candidate of equal length for a case-insensitive
-                // match. Hosts are non-empty, so `index` always advances.
-                if value[index..<end].lowercased() == host {
-                    result += hostToken(host)
-                    index = end
-                    matched = true
-                    break
-                }
-            }
-            if !matched {
-                result.append(value[index])
-                index = value.index(after: index)
-            }
+    // MARK: - Sanitising
+
+    static func sanitizedText(_ value: String, maxLength: Int) -> String {
+        var text = redactURLs(in: value)
+        for rule in Rules.textRules {
+            text = rule.apply(to: text)
         }
-        return result
-    }
-
-    static func sanitizedError(_ error: any Error) -> String {
-        // HTTPError intentionally retains response bodies for typed callers,
-        // but those bodies are never safe diagnostic text. Its description is
-        // a body-free summary; UI-facing localizedDescription remains intact.
-        let rawMessage: String
-        if let httpError = error as? HTTPError {
-            rawMessage = httpError.description
-        } else {
-            let message = (error as NSError).localizedDescription
-            let fallback = String(describing: error)
-            rawMessage = message.isEmpty ? fallback : message
-        }
-        let typedMessage = "\(String(reflecting: Swift.type(of: error))): \(rawMessage)"
-        return sanitize(typedMessage, maxLength: 512)
-    }
-
-    static func sanitize(_ value: String, maxLength: Int) -> String {
-        let urlNormalized = replaceURLs(in: value)
-        var result = replaceMatches(in: urlNormalized, regex: authorizationRegex, replacement: "Authorization: [redacted]")
-        result = replaceMatches(in: result, regex: cookieRegex, replacement: "Cookie: [redacted]")
-        result = replaceMatches(in: result, regex: bearerRegex, replacement: "Bearer [redacted]")
-        result = replaceMatches(in: result, regex: jwtRegex, replacement: "[redacted_token]")
-        result = replaceMatches(in: result, regex: emailRegex, replacement: "[redacted_email]")
-        result = replaceSecretKeyValues(in: result)
-        result = replaceMatches(in: result, regex: tokenWrapperRegex, replacement: "$1(…[redacted])")
-        result = replaceKnownHosts(in: result)
-        // Filesystem paths and bare media filenames are the one class this
-        // layer never covered on its own, and every DiagTrace, breadcrumb, and
-        // early-boot line lands here. Compose the OSLog boundary's rules for
-        // that class only: its URL and credential rules are deliberately not
-        // reused, because hashing the host while keeping the API path is what
-        // makes these lines correlatable.
-        result = houseStyleMarkers(MediaLogRedactor.sanitizeFilesystemAndMediaIdentity(result))
-        return trim(result, maxLength: maxLength)
-    }
-
-    static func normalizedURLString(_ url: URL) -> String {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let scheme = components.scheme else {
-            return "[redacted_url]"
-        }
-        // Drop credentials, port, query, and fragment; hash the host so log
-        // lines stay correlatable without exposing the server's domain.
-        // Loopback hosts carry no PII and stay literal for playback debugging.
-        let host = components.host ?? ""
-        let renderedHost = host.isEmpty || isLoopbackHost(host.lowercased()) ? host : hostToken(host)
-        return scheme + "://" + renderedHost + redactedPath(components.percentEncodedPath)
-    }
-
-    /// Hashing the host is not enough: `/Videos/<id>/Movie.Name.2019.mkv` names
-    /// the title and the item outright. Redact per component so the API shape
-    /// of the path survives while media names and opaque handles do not.
-    private static func redactedPath(_ percentEncodedPath: String) -> String {
-        guard percentEncodedPath.contains("/") else { return percentEncodedPath }
-        return percentEncodedPath
-            .split(separator: "/", omittingEmptySubsequences: false)
-            .map { component -> String in
-                let text = String(component)
-                if MediaLogRedactor.isMediaFilenameComponent(text) { return "[redacted_media_name]" }
-                if isOpaqueIdentifier(text) { return "[redacted_id]" }
-                return text
-            }
-            .joined(separator: "/")
-    }
-
-    private static func houseStyleMarkers(_ value: String) -> String {
-        value
+        text = replaceSensitiveHosts(in: text)
+        text = MediaLogRedactor.redactFileSystemOnly(text)
             .replacingOccurrences(of: "[redacted-path]", with: "[redacted_path]")
             .replacingOccurrences(of: "[redacted-media-name]", with: "[redacted_media_name]")
+        guard text.count > maxLength else { return text }
+        return String(text.prefix(maxLength - 3)) + "..."
     }
 
-    private static func isOpaqueIdentifier(_ component: String) -> Bool {
-        let range = NSRange(location: 0, length: (component as NSString).length)
-        return opaqueIdentifierRegex.firstMatch(in: component, options: [], range: range) != nil
+    /// The scheme, a hashed host and the path with identifiers and media names
+    /// replaced. User, password, port, query and fragment are left out.
+    static func normalisedURL(_ url: URL) -> String {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme
+        else { return "[redacted_url]" }
+        let host: String
+        if let reported = components.host, !reported.isEmpty {
+            host = loopbackHosts.contains(reported.lowercased()) ? reported : hostToken(reported)
+        } else {
+            host = ""
+        }
+        return scheme + "://" + host + redactedPath(components.percentEncodedPath)
     }
 
-    private static func replaceURLs(in value: String) -> String {
-        let source = value as NSString
-        let matches = urlRegex.matches(in: value, range: NSRange(location: 0, length: source.length))
-        var result = value
-        for match in matches.reversed() {
-            let raw = source.substring(with: match.range)
-            let (candidate, suffix) = splitTrailingPunctuation(raw)
-            let normalized = URL(string: candidate).map(normalizedURLString) ?? "[redacted_url]"
-            result = (result as NSString).replacingCharacters(in: match.range, with: normalized + suffix)
+    private static func redactedPath(_ path: String) -> String {
+        guard path.contains("/") else { return path }
+        return path.split(separator: "/", omittingEmptySubsequences: false).map { piece -> String in
+            let piece = String(piece)
+            if MediaLogRedactor.isMediaFileName(piece) { return "[redacted_media_name]" }
+            if piece.count >= 22, piece.allSatisfy(isIdentifierCharacter) { return "[redacted_id]" }
+            return piece
+        }.joined(separator: "/")
+    }
+
+    private static func isIdentifierCharacter(_ character: Character) -> Bool {
+        character.isASCII && (character.isLetter || character.isNumber || character == "_" || character == "-")
+    }
+
+    static func errorText(_ error: any Error) -> String {
+        let raw: String
+        if let error = error as? HTTPError {
+            raw = error.description
+        } else {
+            let description = (error as NSError).localizedDescription
+            raw = description.isEmpty ? String(describing: error) : description
+        }
+        return sanitizedText(String(reflecting: type(of: error)) + ": " + raw, maxLength: 512)
+    }
+
+    private static func redactURLs(in text: String) -> String {
+        Rules.url.replacingMatches(in: text) { match in
+            var candidate = Substring(match)
+            var trailing = ""
+            while let last = candidate.last, ".,)]".contains(last) {
+                trailing.insert(last, at: trailing.startIndex)
+                candidate.removeLast()
+            }
+            guard let url = URL(string: String(candidate)) else { return "[redacted_url]" + trailing }
+            return normalisedURL(url) + trailing
+        }
+    }
+
+    /// One pass from left to right. Replacements are never scanned again.
+    private static func replaceSensitiveHosts(in text: String) -> String {
+        let hosts = hostLock.withLock { sensitiveHosts }
+        guard !hosts.isEmpty else { return text }
+        let characters = Array(text)
+        let lowered = characters.map { $0.lowercased() }
+        let patterns = hosts.map { (characters: Array($0).map(String.init), token: hostToken($0)) }
+        var result = ""
+        var index = 0
+        scan: while index < characters.count {
+            for pattern in patterns where index + pattern.characters.count <= characters.count {
+                if lowered[index..<(index + pattern.characters.count)].elementsEqual(pattern.characters) {
+                    result += pattern.token
+                    index += pattern.characters.count
+                    continue scan
+                }
+            }
+            result.append(characters[index])
+            index += 1
         }
         return result
     }
 
-    private static func splitTrailingPunctuation(_ value: String) -> (String, String) {
-        var candidate = value
-        var suffix = ""
-        while let last = candidate.last, [".", ",", ")", "]"].contains(String(last)) {
-            suffix.insert(last, at: suffix.startIndex)
-            candidate.removeLast()
+    // MARK: - Lines
+
+    static func renderedLine(
+        level: DiagnosticsLogLevel,
+        category: DiagnosticsLogCategory,
+        tag: String,
+        message: String,
+        attrs: [String: DiagLogAttributeValue] = [:],
+        timestamp: Date = Date(),
+        captureSessionID: String = DiagLog.captureSessionID
+    ) -> String? {
+        var rendered: [String: DiagnosticsJSONValue] = [:]
+        for (key, value) in attrs {
+            guard let value = DiagnosticsAttributeRegistry.accepted(value, key: key, category: category) else { continue }
+            switch value {
+            case .string(let text): rendered[key] = .string(sanitizedText(text, maxLength: 512))
+            case .url(let url): rendered[key] = .string(normalisedURL(url))
+            case .error(let error): rendered[key] = .string(errorText(error))
+            case .int(let number): rendered[key] = .int(number)
+            case .double, .bool: continue
+            }
         }
-        return (candidate, suffix)
-    }
-
-    private static func replaceMatches(in value: String, regex: NSRegularExpression, replacement: String) -> String {
-        let range = NSRange(location: 0, length: (value as NSString).length)
-        return regex.stringByReplacingMatches(in: value, options: [], range: range, withTemplate: replacement)
-    }
-
-    private static func replaceSecretKeyValues(in value: String) -> String {
-        let range = NSRange(location: 0, length: (value as NSString).length)
-        return secretKeyValueRegex.stringByReplacingMatches(
-            in: value,
-            options: [],
-            range: range,
-            withTemplate: "$1=[redacted]"
+        let line = DiagnosticsLogLine(
+            ts: timestampText(timestamp),
+            run: captureSessionID,
+            lvl: level,
+            cat: category,
+            tag: sanitizedText(tag, maxLength: 128),
+            msg: sanitizedText(message, maxLength: 2_048),
+            attrs: rendered
         )
+        guard line.isComplete else {
+            assertionFailure("Diagnostics line is missing its time, run, tag or message")
+            return nil
+        }
+        guard let data = try? encoder.encode(line), let text = String(data: data, encoding: .utf8) else {
+            assertionFailure("Diagnostics line could not be encoded")
+            return nil
+        }
+        return text
     }
 
-    private static func trim(_ value: String, maxLength: Int) -> String {
-        guard value.count > maxLength else {
-            return value
+    /// Builds the line now and writes it to the debug build's local log.
+    @discardableResult
+    static func write(
+        level: DiagnosticsLogLevel,
+        category: DiagnosticsLogCategory,
+        tag: String,
+        message: String,
+        attrs: [String: DiagLogAttributeValue] = [:],
+        timestamp: Date = Date()
+    ) -> Bool {
+        guard let line = renderedLine(
+            level: level, category: category, tag: tag, message: message, attrs: attrs, timestamp: timestamp)
+        else { return false }
+        writeLocally(line)
+        return true
+    }
+
+    static func writeLocally(_ line: String) {
+        #if DEBUG
+        developmentLog.debug("\(line, privacy: .private)")
+        #endif
+    }
+
+    #if DEBUG
+    private static let developmentLog = Logger(subsystem: "com.blurbery.vivid", category: "Development")
+    #endif
+
+    private static let encoder = DiagnosticsLogLine.makeEncoder()
+
+    private static let timestampLock = NSLock()
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        return formatter
+    }()
+
+    private static func timestampText(_ date: Date) -> String {
+        timestampLock.withLock { timestampFormatter.string(from: date) }
+    }
+
+    // MARK: - Rules
+
+    private struct Rule {
+        let regex: NSRegularExpression
+        let template: String
+
+        init(_ pattern: String, _ template: String = "", caseSensitive: Bool = false) {
+            // The patterns are fixed, so a failure here is a programming error.
+            regex = try! NSRegularExpression(pattern: pattern, options: caseSensitive ? [] : [.caseInsensitive])
+            self.template = template
         }
-        return String(value.prefix(maxLength - 3)) + "..."
+
+        func apply(to text: String) -> String {
+            regex.stringByReplacingMatches(
+                in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
+        }
+
+        func replacingMatches(in text: String, with replacement: (String) -> String) -> String {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            guard !matches.isEmpty else { return text }
+            var result = ""
+            var cursor = text.startIndex
+            for match in matches {
+                guard let range = Range(match.range, in: text) else { continue }
+                result += text[cursor..<range.lowerBound]
+                result += replacement(String(text[range]))
+                cursor = range.upperBound
+            }
+            result += text[cursor...]
+            return result
+        }
+    }
+
+    private enum Rules {
+        static let tokenCharacters = "[A-Za-z0-9+\\-./=_~]"
+
+        // L1: a URL, wherever its scheme starts.
+        static let url = Rule("(?:https?|wss?)://[A-Za-z0-9\\-._~:/?#\\[\\]@!$&'()*+,;=%]+")
+
+        static let textRules: [Rule] = [
+            // L2: an authorisation header and its credential.
+            Rule("\\bAuthorization\\s*[:=]\\s*(?:(?:Bearer|Basic)\\s*)?" + tokenCharacters + "+", "Authorization: [redacted]"),
+            // L3: cookies, to the end of the line.
+            Rule("\\b(?:Set-)?Cookie\\s*[:=]\\s*[^\\r\\n]+", "Cookie: [redacted]"),
+            // L4: bearer tokens.
+            Rule("\\bBearer\\s+" + tokenCharacters + "{8,}", "Bearer [redacted]"),
+            // L5: tokens shaped like a JWT. Case-sensitive, so only ASCII letters count.
+            Rule("\\b[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b", "[redacted_token]",
+                 caseSensitive: true),
+            // L6: email addresses, matched the same way.
+            Rule("\\b[A-Za-z0-9%+\\-._]+@[A-Za-z0-9\\-.]+\\.[A-Za-z]{2,}\\b", "[redacted_email]", caseSensitive: true),
+            // L7: secret keys and their values, quoted or bare.
+            Rule("(?:\\\\?['\"])?\\b(access_token|accessToken|api_key|apikey|email|jwt|key|login|profile_id|profileId|"
+                 + "profile_token|profileToken|refresh_token|refreshToken|sig|signature|token|user|user_name|username)\\b"
+                 + "(?:\\\\?['\"])?\\s*[:=]\\s*"
+                 + "(?:\"(?:\\\\.|[^\"\\\\\\r\\n])*\""
+                 // Escaped quotes: each backslash pairs with the next character, to the last escaped quote.
+                 + "|\\\\\"(?:\\\\[^\\n\\x{0B}\\f\\r\\x{85}\\x{2028}\\x{2029}]|[^\\\\\\r\\n])*\\\\\""
+                 + "|'[^'\\r\\n]*'|[^\\s&;,\\]}]+)",
+                 "$1=[redacted]"),
+            // L8: shortened credentials in debug headers, such as `auth(…abc)`.
+            Rule("\\b(access_token|accessToken|auth|profile_token|profileToken|refresh_token|refreshToken)"
+                 + "\\(\u{2026}?[^)\\r\\n]*\\)", "$1(\u{2026}[redacted])"),
+        ]
     }
 }
-#endif

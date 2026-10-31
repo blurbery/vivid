@@ -1,70 +1,74 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
-#if os(iOS) || os(tvOS)
 import Foundation
 
-/// The optional "What happened?" text a tester adds before sending. It goes
-/// out as written, apart from trimming, removing control and text-direction
-/// characters, and the relay's limit of 500 characters (Unicode scalars, which
-/// the relay counts as code points).
+/// The note a person may add to a report, within the relay's rules.
 enum DiagnosticsNote {
+    /// Counted in Unicode scalars, as the relay counts them.
     static let maxCharacters = 500
 
-    /// Keeps typing within the limit.
+    private static let directionControls: [ClosedRange<UInt32>] = [0x202A...0x202E, 0x2066...0x2069]
+
     static func limited(_ text: String) -> String {
         guard text.unicodeScalars.count > maxCharacters else { return text }
         return String(String.UnicodeScalarView(text.unicodeScalars.prefix(maxCharacters)))
     }
 
-    /// The note as sent, or nil when there's nothing to send.
+    /// Line breaks and tabs kept, other control and direction characters
+    /// removed, cut to the limit and trimmed. Nil when nothing is left.
     static func cleaned(_ text: String) -> String? {
-        let scalars = text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars.filter { scalar in
-            if scalar == "\n" || scalar == "\t" { return true }
-            if scalar.properties.generalCategory == .control { return false }
-            return !(0x202A...0x202E).contains(scalar.value) && !(0x2066...0x2069).contains(scalar.value)
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars {
+            if scalar.properties.generalCategory == .control, scalar != "\n", scalar != "\t" { continue }
+            if directionControls.contains(where: { $0.contains(scalar.value) }) { continue }
+            scalars.append(scalar)
         }
-        let trimmed = limited(String(String.UnicodeScalarView(scalars))).trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        let note = limited(String(scalars)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return note.isEmpty ? nil : note
     }
 }
 
-/// Sends a diagnostics file the person chose to send to Vivid's diagnostics
-/// relay, which keeps a copy for 30 days and emails it to
-/// diagnostics@vividapp.co. The body is exactly the JSON shown as "what is
-/// sent", plus any note the person wrote; nothing else about the device or
-/// account is added.
+/// Sends a report the person chose to share to Vivid's diagnostics relay.
 enum DiagnosticsUploader {
     enum Kind: String {
-        case playback, problems
+        case playback
+        case problems
     }
 
     enum Failure: Error, Equatable {
-        /// No connection, or the relay couldn't be reached.
         case offline
-        /// Too many sends; try again after this many seconds.
         case rateLimited(retryAfter: Int)
-        /// The relay is busy or unavailable; try again later.
         case unavailable
-        /// The relay refused the file. Retrying won't help.
         case rejected
 
         var message: String {
             switch self {
-            case .offline: return String(localized: "Vivid couldn't reach the diagnostics service. Check the connection and try again.")
+            case .offline:
+                String(localized: "Vivid couldn't reach the diagnostics service. Check the connection and try again.")
             case .rateLimited(let seconds):
-                let minutes = max(1, (seconds + 59) / 60)
-                return String(localized: "Too many reports were sent just now. Try again in \(minutes) min.")
-            case .unavailable: return String(localized: "The diagnostics service is busy. Try again later.")
-            case .rejected: return String(localized: "The diagnostics service couldn't accept this report.")
+                String(localized: "Too many reports were sent just now. Try again in \(Self.wholeMinutes(seconds)) min.")
+            case .unavailable:
+                String(localized: "The diagnostics service is busy. Try again later.")
+            case .rejected:
+                String(localized: "The diagnostics service couldn't accept this report.")
             }
         }
 
         var canRetry: Bool { self != .rejected }
+
+        /// Minutes rounded up, at least one, without overflowing for any value.
+        private static func wholeMinutes(_ seconds: Int) -> Int {
+            guard seconds > 0 else { return 1 }
+            let (minutes, remainder) = seconds.quotientAndRemainder(dividingBy: 60)
+            return remainder == 0 ? minutes : minutes + 1
+        }
     }
 
     static let baseURL = URL(string: "https://diagnostics.vividapp.co/v1/reports/")!
 
-    /// No cookies, cache or stored credentials.
+    private static let rejectedStatuses: Set<Int> = [400, 404, 405, 413, 415]
+    private static let defaultRetryAfter = 60
+
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
@@ -73,8 +77,7 @@ enum DiagnosticsUploader {
         return URLSession(configuration: configuration)
     }()
 
-    /// Sends the file and returns the relay's reference, such as VR-7K2M9Q.
-    /// Throws a `Failure`.
+    /// The relay's reference for the report. Throws only `Failure`.
     static func send(_ data: Data, kind: Kind) async throws -> String {
         var request = URLRequest(url: baseURL.appendingPathComponent(kind.rawValue))
         request.httpMethod = "POST"
@@ -88,34 +91,39 @@ enum DiagnosticsUploader {
             throw Failure.offline
         }
         guard let http = response as? HTTPURLResponse else { throw Failure.unavailable }
-        switch outcome(status: http.statusCode, body: body, retryAfter: http.value(forHTTPHeaderField: "Retry-After")) {
-        case .success(let reference): return reference
-        case .failure(let failure): throw failure
-        }
+        let retryAfter = http.value(forHTTPHeaderField: "Retry-After")
+        return try outcome(status: http.statusCode, body: body, retryAfter: retryAfter).get()
     }
 
-    /// The relay's reply as a reference or a failure. Only a 200 with a
-    /// well-formed reference counts as sent.
     static func outcome(status: Int, body: Data, retryAfter: String?) -> Result<String, Failure> {
         switch status {
         case 200:
-            struct Reply: Decodable { let reference: String }
-            guard let reference = try? JSONDecoder().decode(Reply.self, from: body).reference,
-                  reference.range(of: #"^VR-[0-9A-Z]{6}$"#, options: .regularExpression) != nil else {
+            guard let reply = try? JSONDecoder().decode(Reply.self, from: body), isReference(reply.reference) else {
                 return .failure(.unavailable)
             }
-            return .success(reference)
+            return .success(reply.reference)
         case 429:
-            return .failure(.rateLimited(retryAfter: retryAfter.flatMap(Int.init) ?? 60))
-        case 400, 404, 405, 413, 415:
+            return .failure(.rateLimited(retryAfter: retryAfter.flatMap { Int($0) } ?? defaultRetryAfter))
+        case _ where rejectedStatuses.contains(status):
             return .failure(.rejected)
         default:
             return .failure(.unavailable)
         }
     }
+
+    private struct Reply: Decodable {
+        let reference: String
+    }
+
+    /// `VR-` and six digits or capital letters, nothing else.
+    private static func isReference(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        guard scalars.count == 9, value.hasPrefix("VR-") else { return false }
+        return scalars[3...].allSatisfy { ("0"..."9").contains($0) || ("A"..."Z").contains($0) }
+    }
 }
 
-/// Where a send stands, for the Send buttons.
+/// The state of a send button.
 enum DiagnosticsSendStatus: Equatable {
     case idle
     case sending
@@ -126,11 +134,10 @@ enum DiagnosticsSendStatus: Equatable {
 
     var detail: String? {
         switch self {
-        case .idle: return nil
-        case .sending: return String(localized: "Sending…")
-        case .sent(let reference): return String(localized: "Sent. Reference \(reference).")
-        case .failed(let failure): return failure.message
+        case .idle: nil
+        case .sending: String(localized: "Sending\u{2026}")
+        case .sent(let reference): String(localized: "Sent. Reference \(reference).")
+        case .failed(let failure): failure.message
         }
     }
 }
-#endif

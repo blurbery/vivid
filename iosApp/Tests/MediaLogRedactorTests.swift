@@ -1,23 +1,21 @@
 import XCTest
 @testable import Vivid
 
+/// Playback text written to the unified log keeps its metrics but loses
+/// credentials, origins, paths and media titles.
 final class MediaLogRedactorTests: XCTestCase {
-    /// Every line the leak audit found, plus the cases already pinned below.
-    /// Shared so the idempotency property covers exactly what the rules claim.
-    private static let auditedSamples: [String] = [
-        "load url=https://media.example/stream?id=4&st=secret-token "
-            + "fallback=file:///private/var/mobile/movie.mkv rate=1.000 frames=42",
-        "Authorization: Bearer header-secret, Cookie=session=cookie-secret "
-            + "token=plain-secret path=/Users/person/Movies/title.mkv",
-        #"headers=["X-Profile-Token": "profile-secret", "X-Silo-Auth": "auth-secret"] frames=42"#,
-        #"cache="/var/mobile/Containers/Data/Downloads/Show Name S01E01.mkv" sidecar=Movie Title (2024).en.srt retries=3"#,
+    private static let auditedSamples = [
+        "load url=https://media.example/stream?id=4&st=secret-token fallback=file:///private/var/mobile/movie.mkv rate=1.000 frames=42",
+        "Authorization: Bearer header-secret, Cookie=session=cookie-secret token=plain-secret path=/Users/person/Movies/title.mkv",
+        "headers=[\"X-Profile-Token\": \"profile-secret\", \"X-Silo-Auth\": \"auth-secret\"] frames=42",
+        "cache=\"/var/mobile/Containers/Data/Downloads/Show Name S01E01.mkv\" sidecar=Movie Title (2024).en.srt retries=3",
         "Authorization: Bearer abc",
         "token=short",
         "headers X-Emby-Token 9f83ba21c0de44aa77b1 device=tvos",
         "origin silo.example.com:8096/Videos/abc/Movie.Name.2019.mkv?k=1",
         "origin 192.168.1.42:8096/Videos/abc/Movie.mkv",
         "origin [2001:db8::1]:8096/Videos/abc/Movie.mkv",
-        #"path=\\media-nas\Movies\Show Name S01E01.mkv"#,
+        "path=\\\\media-nas\\Movies\\Show Name S01E01.mkv",
         "cache ~/Documents/Silo/Show Name S02E03.mkv loaded",
         "cache /Library/Caches/com.silo/Downloads/title.mkv loaded",
         "playing [redacted-url] Movie.mkv",
@@ -26,162 +24,101 @@ final class MediaLogRedactorTests: XCTestCase {
         "refresh accessToken=aaa.bbb.ccc done",
     ]
 
-    func testRedactsRemoteAndLocalMediaIdentityWithoutDroppingMetrics() {
-        let source = "load url=https://media.example/stream?id=4&st=secret-token "
-            + "fallback=file:///private/var/mobile/movie.mkv rate=1.000 frames=42"
-        let redacted = MediaLogRedactor.sanitize(source)
+    private func sample(_ number: Int) -> String { Self.auditedSamples[number - 1] }
 
-        XCTAssertFalse(redacted.contains("media.example"))
-        XCTAssertFalse(redacted.contains("secret-token"))
-        XCTAssertFalse(redacted.contains("movie.mkv"))
-        XCTAssertTrue(redacted.contains("rate=1.000"))
-        XCTAssertTrue(redacted.contains("frames=42"))
+    private func expect(
+        _ input: String, absent: [String] = [], present: [String] = [],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let output = MediaLogRedactor.sanitize(input)
+        for text in absent {
+            XCTAssertFalse(output.contains(text), "\(text) leaked in \(output)", file: file, line: line)
+        }
+        for text in present {
+            XCTAssertTrue(output.contains(text), "\(text) missing from \(output)", file: file, line: line)
+        }
+    }
+
+    func testRedactsRemoteAndLocalMediaIdentityWithoutDroppingMetrics() {
+        expect(sample(1), absent: ["media.example", "secret-token", "movie.mkv"], present: ["rate=1.000", "frames=42"])
     }
 
     func testRedactsHeadersBareTokensAndFilesystemPaths() {
-        let source = "Authorization: Bearer header-secret, Cookie=session=cookie-secret "
-            + "token=plain-secret path=/Users/person/Movies/title.mkv"
-        let redacted = MediaLogRedactor.sanitize(source)
-
-        for secret in ["header-secret", "cookie-secret", "plain-secret", "person", "title.mkv"] {
-            XCTAssertFalse(redacted.contains(secret))
-        }
+        expect(sample(2), absent: ["header-secret", "cookie-secret", "plain-secret", "person", "title.mkv"])
     }
 
     func testRedactsCustomCredentialHeadersWithoutDroppingLaterTelemetry() {
-        let source = #"headers=["X-Profile-Token": "profile-secret", "X-Silo-Auth": "auth-secret", "X_Profile_Token": "underscore-secret"] frames=42 rate=1.000"#
-        let redacted = MediaLogRedactor.sanitize(source)
-
-        XCTAssertFalse(redacted.contains("profile-secret"))
-        XCTAssertFalse(redacted.contains("auth-secret"))
-        XCTAssertFalse(redacted.contains("underscore-secret"))
-        XCTAssertTrue(redacted.contains("frames=42"))
-        XCTAssertTrue(redacted.contains("rate=1.000"))
+        expect(
+            "headers=[\"X-Profile-Token\": \"profile-secret\", \"X-Silo-Auth\": \"auth-secret\", "
+                + "\"X_Profile_Token\": \"underscore-secret\"] frames=42 rate=1.000",
+            absent: ["profile-secret", "auth-secret", "underscore-secret"],
+            present: ["frames=42", "rate=1.000"])
     }
 
     func testRedactsSpacedPathsAndBareMediaNamesWithoutDroppingTelemetry() {
-        let source = #"cache="/var/mobile/Containers/Data/Downloads/Show Name S01E01.mkv" sidecar=Movie Title (2024).en.srt retries=3"#
-        let redacted = MediaLogRedactor.sanitize(source)
-
-        for secret in ["Show Name", "S01E01", "Movie Title", "2024", ".mkv", ".srt"] {
-            XCTAssertFalse(redacted.contains(secret))
-        }
-        XCTAssertTrue(redacted.contains("retries=3"))
+        expect(sample(4), absent: ["Show Name", "S01E01", "Movie Title", "2024", ".mkv", ".srt"], present: ["retries=3"])
     }
 
-    // MARK: - Audited leaks
-
-    /// Jellyfin-compatible clients send `X-Emby-Token` with a space, not `:`,
-    /// so the key/value rules never saw it.
     func testRedactsSpaceDelimitedCredentialHeaders() {
-        let redacted = MediaLogRedactor.sanitize("headers X-Emby-Token 9f83ba21c0de44aa77b1 device=tvos")
-
-        XCTAssertFalse(redacted.contains("9f83ba21c0de44aa77b1"))
-        XCTAssertTrue(redacted.contains("[redacted]"))
-        XCTAssertTrue(redacted.contains("device=tvos"))
+        expect(sample(7), absent: ["9f83ba21c0de44aa77b1"], present: ["[redacted]", "device=tvos"])
     }
 
-    /// Prose that merely follows a credential-shaped word is not a credential;
-    /// redacting it would cost telemetry without buying privacy.
     func testSpaceDelimitedRuleLeavesOrdinaryProseIntact() {
-        let redacted = MediaLogRedactor.sanitize("session started successfully after 3 retries")
-        XCTAssertEqual(redacted, "session started successfully after 3 retries")
+        XCTAssertEqual(MediaLogRedactor.sanitize(sample(16)), sample(16))
     }
 
     func testRedactsSchemeLessOriginsWithPaths() {
-        let host = MediaLogRedactor.sanitize("origin silo.example.com:8096/Videos/abc/Movie.Name.2019.mkv?k=1")
-        XCTAssertFalse(host.contains("silo.example.com"))
-        XCTAssertFalse(host.contains("Movie.Name.2019"))
-
-        let ipv4 = MediaLogRedactor.sanitize("origin 192.168.1.42:8096/Videos/abc/Movie.mkv")
-        XCTAssertFalse(ipv4.contains("192.168.1.42"))
-        XCTAssertFalse(ipv4.contains("Movie.mkv"))
-
-        let ipv6 = MediaLogRedactor.sanitize("origin [2001:db8::1]:8096/Videos/abc/Movie.mkv")
-        XCTAssertFalse(ipv6.contains("2001:db8"))
-        XCTAssertFalse(ipv6.contains("Movie.mkv"))
+        expect(sample(8), absent: ["silo.example.com", "Movie.Name.2019"])
+        expect(sample(9), absent: ["192.168.1.42", "Movie.mkv"])
+        expect(sample(10), absent: ["2001:db8", "Movie.mkv"])
     }
 
-    /// A bare `File.swift:42` source reference is not an origin; requiring a
-    /// path after the port is what keeps the scheme-less rule from eating it.
     func testSchemeLessOriginRuleLeavesSourceReferencesIntact() {
-        let redacted = MediaLogRedactor.sanitize("DiagLog.swift:42 assertion rate=1.000")
-        XCTAssertEqual(redacted, "DiagLog.swift:42 assertion rate=1.000")
+        let reference = "DiagLog.swift:42 assertion rate=1.000"
+        XCTAssertEqual(MediaLogRedactor.sanitize(reference), reference)
     }
 
     func testRedactsCachesAndTildeHomePaths() {
-        let caches = MediaLogRedactor.sanitize("cache /Library/Caches/com.silo/Downloads/title.mkv loaded")
-        XCTAssertFalse(caches.contains("title.mkv"))
-        XCTAssertFalse(caches.contains("/Library/Caches"))
-        XCTAssertTrue(caches.contains("loaded"))
-
-        let home = MediaLogRedactor.sanitize("cache ~/Documents/Silo/Show Name S02E03.mkv loaded")
-        XCTAssertFalse(home.contains("Show Name"))
-        XCTAssertFalse(home.contains("S02E03"))
-        XCTAssertFalse(home.contains("~/Documents"))
-        XCTAssertTrue(home.contains("loaded"))
+        expect(sample(13), absent: ["title.mkv", "/Library/Caches"], present: ["loaded"])
+        expect(sample(12), absent: ["Show Name", "S02E03", "~/Documents"], present: ["loaded"])
     }
 
     func testRedactsUNCSharesIncludingServerAndShareName() {
-        let redacted = MediaLogRedactor.sanitize(#"path=\\media-nas\Movies\Show Name S01E01.mkv"#)
-
-        for secret in ["media-nas", "Movies", "Show Name", "S01E01"] {
-            XCTAssertFalse(redacted.contains(secret))
-        }
-        XCTAssertTrue(redacted.contains("[redacted-path]"))
+        expect(sample(11), absent: ["media-nas", "Movies", "Show Name", "S01E01"], present: ["[redacted-path]"])
     }
 
-    /// The media-name rule used to start at the first word of the line and run
-    /// through an already-inserted marker, collapsing everything.
     func testMediaNameRuleReplacesOnlyTheFilenameToken() {
-        let redacted = MediaLogRedactor.sanitize("playing [redacted-url] Movie.mkv")
-
-        XCTAssertEqual(redacted, "playing [redacted-url] [redacted-media-name]")
+        XCTAssertEqual(MediaLogRedactor.sanitize(sample(14)), "playing [redacted-url] [redacted-media-name]")
     }
 
-    /// `master.m3u8` names a manifest position, not a title. A user-chosen name
-    /// that merely begins with the same word still goes.
     func testGenericManifestNamesSurviveButUserTitlesDoNot() {
-        let manifest = MediaLogRedactor.sanitize("hls ready url=master.m3u8 seq=4")
-        XCTAssertTrue(manifest.contains("master.m3u8"))
-        XCTAssertTrue(manifest.contains("seq=4"))
-
-        let title = MediaLogRedactor.sanitize("master copy of movie.mkv")
-        XCTAssertFalse(title.contains("movie.mkv"))
+        expect(sample(15), present: ["master.m3u8", "seq=4"])
+        expect("master copy of movie.mkv", absent: ["movie.mkv"])
     }
 
-    /// Redaction is a projection: applying it twice must change nothing.
+    func testBareSchemeIsLeftAlone() {
+        XCTAssertEqual(MediaLogRedactor.sanitize("see https:// now"), "see https:// now")
+    }
+
     func testSanitizeIsIdempotent() {
-        for source in Self.auditedSamples {
-            let once = MediaLogRedactor.sanitize(source)
-            let twice = MediaLogRedactor.sanitize(once)
-            XCTAssertEqual(once, twice, "not idempotent for: \(source)")
+        for (index, input) in Self.auditedSamples.enumerated() {
+            let once = MediaLogRedactor.sanitize(input)
+            XCTAssertEqual(MediaLogRedactor.sanitize(once), once, "sample \(index + 1): \(input)")
         }
     }
 
-    /// Rules 2 and 9 used to re-match rule 1's own output, so a single pass
-    /// over `Authorization: Bearer abc` already yielded `[redacted]]]` — one
-    /// stray bracket per rule that re-consumed the marker.
     func testRedactionMarkerDoesNotAccreteBrackets() {
-        let header = MediaLogRedactor.sanitize("Authorization: Bearer abc")
-        XCTAssertEqual(header, "Authorization: [redacted]")
-
-        let query = MediaLogRedactor.sanitize("open url?token=abc123, retries=1")
-        XCTAssertEqual(query, "open url?token=[redacted], retries=1")
+        XCTAssertEqual(MediaLogRedactor.sanitize(sample(5)), "Authorization: [redacted]")
+        XCTAssertEqual(MediaLogRedactor.sanitize("open url?token=abc123, retries=1"), "open url?token=[redacted], retries=1")
     }
 
     func testBoundsUntrustedErrorText() {
-        XCTAssertLessThanOrEqual(
-            MediaLogRedactor.sanitize(String(repeating: "x", count: 10_000), maxLength: 128).count,
-            128
-        )
+        XCTAssertLessThanOrEqual(MediaLogRedactor.sanitize(String(repeating: "x", count: 10_000), maxLength: 128).count, 128)
         XCTAssertEqual(MediaLogRedactor.sanitize("secret", maxLength: 2).count, 2)
     }
 
     func testPreboundsPathologicalInputBeforeRegexRedaction() {
-        let source = String(repeating: "a", count: 100_000)
-            + " token=secret-that-must-not-reach-output"
-
-        XCTAssertLessThanOrEqual(MediaLogRedactor.sanitize(source).count, 1_024)
+        let input = String(repeating: "a", count: 100_000) + " token=secret-that-must-not-reach-output"
+        XCTAssertLessThanOrEqual(MediaLogRedactor.sanitize(input).count, 1_024)
     }
 }

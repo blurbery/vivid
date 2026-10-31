@@ -1,48 +1,51 @@
 import Foundation
 
+/// Decides whether the Top Shelf may show one viewer's own rows. It shows them
+/// only when there's no doubt about who is watching.
 enum TopShelfProfilePolicy {
-    private struct SavedAccount: Decodable {
+    /// The parts of a saved account row this policy reads. Other keys the
+    /// account store writes are ignored.
+    private struct SavedAccountRow: Decodable {
         let id: String
         let serverID: String
         let requiresLogin: Bool
         let pinEnabled: Bool?
     }
 
+    /// True only for a single saved account that is the active one, is signed
+    /// in and has no PIN of any kind.
     static func allowsSavedAccountContent(
-        accountsData: Data?, activeAccountID: String?, serverID: String?,
+        accountsData: Data?,
+        activeAccountID: String?,
+        serverID: String?,
         hasStoredPIN: (String) -> Bool
     ) -> Bool {
         guard let accountsData,
-              let accounts = try? JSONDecoder().decode([SavedAccount].self, from: accountsData),
-              accounts.count == 1, let account = accounts.first,
-              account.id == activeAccountID, account.serverID == serverID,
-              !account.requiresLogin, account.pinEnabled != true,
-              !hasStoredPIN(account.id) else { return false }
-        return true
+              let rows = try? JSONDecoder().decode([SavedAccountRow].self, from: accountsData),
+              rows.count == 1, let row = rows.first,
+              row.id == activeAccountID, row.serverID == serverID,
+              !row.requiresLogin, row.pinEnabled != true
+        else { return false }
+        return !hasStoredPIN(row.id)
     }
 
+    /// How many viewing profiles a Silo account had when it was last checked.
     struct ViewingProfileCount: Codable, Equatable {
         let count: Int
         let accountEpoch: String
     }
 
-    /// A Silo account with several viewing profiles has no single owner for
-    /// the shelf, so only a recorded count of one, for the current account
-    /// session, allows personalised rows. Emby and Jellyfin sign in as one
-    /// native user, which is already the profile.
-    static func allowsViewingProfileCount(
-        countsData: Data?, serverID: String?, accountEpoch: String?
-    ) -> Bool {
+    /// Emby and Jellyfin accounts have no viewing profiles to choose between.
+    /// A Silo account must be known to have exactly one, under this account.
+    static func allowsViewingProfileCount(countsData: Data?, serverID: String?, accountEpoch: String?) -> Bool {
         guard let serverID else { return false }
         if serverID.hasPrefix("emby:") || serverID.hasPrefix("jellyfin:") { return true }
-        guard let accountEpoch,
-              let countsData,
+        guard let accountEpoch, let countsData,
               let counts = try? JSONDecoder().decode([String: ViewingProfileCount].self, from: countsData),
-              let recorded = counts[serverID],
-              recorded.accountEpoch == accountEpoch else { return false }
-        return recorded.count == 1
+              let entry = counts[serverID]
+        else { return false }
+        return entry.accountEpoch == accountEpoch && entry.count == 1
     }
-
 
     static func allowsPersonalizedContent(
         state: ProfileLaunchState,
@@ -52,17 +55,14 @@ enum TopShelfProfilePolicy {
         hasStoredProfileToken: Bool,
         now: Date = .now
     ) -> Bool {
-        guard let serverID,
-              let activeProfileID,
+        guard let serverID, let activeProfileID,
               let remembered = state.rememberedByServerID[serverID],
               state.behavior != .askEveryLaunch,
               !state.requiresSelectionAfterBackground(at: now),
               !state.selectionRequiredServerIDs.contains(serverID),
               remembered.profileID == activeProfileID,
-              remembered.accountEpoch == accountEpoch,
-              !remembered.requiredPINAtSelection || hasStoredProfileToken else {
-            return false
-        }
-        return true
+              let accountEpoch, remembered.accountEpoch == accountEpoch
+        else { return false }
+        return !remembered.requiredPINAtSelection || hasStoredProfileToken
     }
 }

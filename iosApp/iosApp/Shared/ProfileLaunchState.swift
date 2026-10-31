@@ -1,13 +1,38 @@
 import Foundation
 
+/// The saved profile-launch choices. Stored as JSON under
+/// `SharedStorage.profileLaunchStateKey` and read by the Top Shelf extension.
 struct ProfileLaunchState: Codable, Equatable, Sendable {
     var behavior: ProfileLaunchBehavior = .automatic
     var rememberedByServerID: [String: RememberedProfile] = [:]
     var selectionRequiredServerIDs: Set<String> = []
-    /// The start of the current interval away from Vivid. Persisting this in
-    /// the current device-user domain makes timed policies independent of
-    /// whether the process survives in the background.
     var backgroundedAt: Date? = nil
+
+    static func load(from defaults: SharedDefaults) -> ProfileLaunchState {
+        guard let data = defaults.data(forKey: SharedStorage.profileLaunchStateKey),
+              let state = try? JSONDecoder().decode(ProfileLaunchState.self, from: data)
+        else { return ProfileLaunchState() }
+        return state
+    }
+
+    /// True once the app has been away for at least the behaviour's timeout.
+    func awayIntervalHasExpired(at now: Date) -> Bool {
+        guard let backgroundedAt, let timeout = behavior.awayTimeout else { return false }
+        return now.timeIntervalSince(backgroundedAt) >= timeout
+    }
+
+    /// Whether a cold launch has to show the profile picker, before any
+    /// per-server rule is considered.
+    func requiresSelectionAtLaunch(at now: Date) -> Bool {
+        behavior == .askEveryLaunch || awayIntervalHasExpired(at: now)
+    }
+
+    /// Whether returning from the background has to show the profile picker.
+    /// It never does without a background marker.
+    func requiresSelectionAfterBackground(at now: Date = .now) -> Bool {
+        guard backgroundedAt != nil else { return false }
+        return behavior == .askEveryLaunch || awayIntervalHasExpired(at: now)
+    }
 
     func resolution(
         for serverID: String,
@@ -19,45 +44,11 @@ struct ProfileLaunchState: Codable, Equatable, Sendable {
         guard !requiresSelectionAtLaunch(at: now),
               !selectionRequiredServerIDs.contains(serverID),
               let remembered = rememberedByServerID[serverID],
-              let accountEpoch,
-              remembered.accountEpoch == accountEpoch,
+              let accountEpoch, accountEpoch == remembered.accountEpoch,
               !remembered.profileID.isEmpty,
-              knownProfileIDs?.contains(remembered.profileID) != false,
-              !remembered.requiredPINAtSelection || hasStoredProfileToken else {
-            return .needsSelection
-        }
+              knownProfileIDs?.contains(remembered.profileID) ?? true,
+              !remembered.requiredPINAtSelection || hasStoredProfileToken
+        else { return .needsSelection }
         return .restore(remembered)
-    }
-
-    /// Cold starts preserve the original Every Time contract even when the
-    /// previous process never recorded a background transition. Timed modes
-    /// only expire when a persisted away interval has actually elapsed.
-    func requiresSelectionAtLaunch(at now: Date = .now) -> Bool {
-        if behavior == .askEveryLaunch { return true }
-        return hasExpiredAwayInterval(at: now)
-    }
-
-    /// Warm foreground returns require an actual background marker, avoiding
-    /// false locks for inactive-only interruptions such as system prompts.
-    func requiresSelectionAfterBackground(at now: Date = .now) -> Bool {
-        guard backgroundedAt != nil else { return false }
-        if behavior == .askEveryLaunch { return true }
-        return hasExpiredAwayInterval(at: now)
-    }
-
-    static func load(from defaults: SharedDefaults) -> ProfileLaunchState {
-        guard let data = defaults.data(forKey: SharedStorage.profileLaunchStateKey),
-              let decoded = try? JSONDecoder().decode(ProfileLaunchState.self, from: data) else {
-            return ProfileLaunchState()
-        }
-        return decoded
-    }
-
-    private func hasExpiredAwayInterval(at now: Date) -> Bool {
-        guard let backgroundedAt,
-              let timeout = behavior.awayTimeout else {
-            return false
-        }
-        return now.timeIntervalSince(backgroundedAt) >= timeout
     }
 }

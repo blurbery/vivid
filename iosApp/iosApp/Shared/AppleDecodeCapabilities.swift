@@ -2,6 +2,7 @@ import CoreMedia
 import Foundation
 import VideoToolbox
 
+/// One video decoder the device can use, sent to servers as playback evidence.
 struct AppleVideoDecodeCapability: Equatable, Sendable {
     let codec: String
     let decoderName: String?
@@ -15,342 +16,222 @@ struct AppleVideoDecodeCapability: Equatable, Sendable {
     let hardware: Bool
 }
 
-/// What the pinned Apple playback stack can actually open, stated once.
-///
-/// Online playback and persistent downloads deliberately use different
-/// policies. Vivid probes each online source and chooses its native or
-/// libavcodec path at load time, so supported Apple TV 4K hardware reports the
-/// pinned engine/build manifest without predicting profiles, bit depths, or
-/// performance in app code. Downloads have no server replan available when
-/// they are played offline, so they retain the bounded platform attestation.
-///
-/// This is intentionally the only codec/container inventory in the app. Wire
-/// surfaces may narrow it for their delivery contract, but must not recreate
-/// their own decoder tables.
+/// What this build and device can decode. The lists go to servers exactly as
+/// written, so their order matters.
 enum AppleDecodeCapabilities {
     enum StreamingVideoCapabilityMode: Equatable {
+        /// Vivid's own engine declares everything it plays.
         case vividDeclared
+        /// Only what the platform attests, for devices whose engine claim
+        /// isn't trusted.
         case platformAttested
     }
 
-    #if targetEnvironment(simulator)
-    static let isSimulator = true
-    #else
-    static let isSimulator = false
-    #endif
+    static let isSimulator: Bool = {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }()
 
     static let machineIdentifier: String = {
-        var systemInfo = utsname()
-        uname(&systemInfo)
-        return withUnsafeBytes(of: &systemInfo.machine) { raw in
-            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+        var system = utsname()
+        uname(&system)
+        return withUnsafeBytes(of: &system.machine) { bytes in
+            String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
         }
     }()
 
-    /// Keep the optimistic engine declaration off Apple TV HD. It has much
-    /// less software-decode headroom than every Apple TV 4K generation and no
-    /// online performance signal exists yet that can trigger a typed replan.
+    private static let isTVOSBuild: Bool = {
+        #if os(tvOS)
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    private static let appleTVHD = "AppleTV5,3"
+
     static func streamingVideoCapabilityModeForDevice(
         isTVOS: Bool,
         isSimulator: Bool,
         machineIdentifier: String,
         usesLucid: Bool = false
     ) -> StreamingVideoCapabilityMode {
-        if usesLucid, !isTVOS, !isSimulator,
-           machineIdentifier.hasPrefix("iPhone") || machineIdentifier.hasPrefix("iPad") {
-            return .vividDeclared
+        if isSimulator { return .platformAttested }
+        if isTVOS {
+            let trusted = machineIdentifier.hasPrefix("AppleTV") && machineIdentifier != appleTVHD
+            return trusted ? .vividDeclared : .platformAttested
         }
-        guard isTVOS,
-              !isSimulator,
-              machineIdentifier.hasPrefix("AppleTV"),
-              machineIdentifier != "AppleTV5,3" else {
-            return .platformAttested
-        }
-        return .vividDeclared
+        let phoneOrTablet = machineIdentifier.hasPrefix("iPhone") || machineIdentifier.hasPrefix("iPad")
+        return usesLucid && phoneOrTablet ? .vividDeclared : .platformAttested
     }
 
     static var streamingVideoCapabilityMode: StreamingVideoCapabilityMode {
-        #if os(tvOS)
-        let isTVOS = true
-        #else
-        let isTVOS = false
-        #endif
-        let usesLucid = true
-        return streamingVideoCapabilityModeForDevice(
-            isTVOS: isTVOS,
+        streamingVideoCapabilityModeForDevice(
+            isTVOS: isTVOSBuild,
             isSimulator: isSimulator,
             machineIdentifier: machineIdentifier,
-            usesLucid: usesLucid
+            usesLucid: true
         )
     }
 
-    private static var isAppleTVHD: Bool {
-        machineIdentifier == "AppleTV5,3"
-    }
+    // MARK: - Lists
 
-    /// The narrower, fixture-bounded software set retained for downloads and
-    /// conservative streaming clients. H.264 High 10 is added as a separate
-    /// detailed entry below because ordinary H.264 is also hardware-backed.
-    static let softwareVideoCodecs = ["av1", "vp9", "mpeg2video", "vc1"]
-
-    /// Original-file codec vocabulary advertised by the Lucid adapter.
-    /// Decoder availability does not establish support for every profile or output route.
-    static let vividOriginalHTTPVideoCodecs = [
-        "h264", "hevc", "av1", "vp9", "vp8", "mpeg4", "mpeg2video", "vc1",
-        "qtrle", "msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3"
+    private static let engineVideoCodecs = [
+        "h264", "hevc", "av1", "vp9", "vp8", "mpeg4", "mpeg2video", "vc1", "qtrle",
+        "msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3",
     ]
-
-    /// Server-packaged progressive/HLS routes remain on their native codec
-    /// vocabulary. The software claims above describe Vivid's original-file
-    /// path and must not silently broaden a receiver/native-HLS contract.
-    static let packagedVideoCodecs = hardwareVideoCodecs
-
-    /// Audio codecs the client decodes. The simulator keeps the conservative
-    /// subset it was aligned to alongside its H.264-only video claim, rather
-    /// than the device's full list.
-    static let audioCodecs: [String] = isSimulator
-        ? ["aac", "ac3", "eac3", "mp3", "opus", "flac"]
-        : [
-            "aac", "ac3", "eac3", "dts", "truehd", "flac", "alac", "mp3",
-            "opus", "vorbis", "pcm", "pcm_s16le", "pcm_s24le"
-        ]
-
-    /// Audio decoders present in the same Vivid/FFmpeg build. Aliases are
-    /// intentional because scanners do not all spell DTS-HD or PCM alike.
-    /// `pcm_bluray` is the Blu-ray LPCM decoder the media core ships for M2TS;
-    /// `pcm_dvd` stays absent because the build does not enable it.
-    static let vividOriginalHTTPAudioCodecs = [
-        "aac", "ac3", "eac3", "mp3", "mp2", "flac", "opus", "vorbis", "alac",
-        "truehd", "mlp", "dts", "dca", "dts-hd", "dtshd", "pcm", "pcm_s16le",
-        "pcm_s24le", "pcm_f32le", "pcm_bluray"
+    private static let engineAudioCodecs = [
+        "aac", "ac3", "eac3", "mp3", "mp2", "flac", "opus", "vorbis", "alac", "truehd",
+        "mlp", "dts", "dca", "dts-hd", "dtshd", "pcm", "pcm_s16le", "pcm_s24le", "pcm_f32le", "pcm_bluray",
     ]
-
-    /// Video containers the client demuxes. Both spellings of the two aliased
-    /// ones (`mkv`/`matroska`, `ts`/`mpegts`) are listed: the server sends
-    /// whichever its scanner recorded, and a claim it cannot match reads as
-    /// "unsupported".
-    static let videoContainers: [String] = isSimulator
-        ? ["mp4", "mov", "m4v", "mkv", "matroska", "ts", "m2ts", "mpegts"]
-        : ["mp4", "mov", "m4v", "mkv", "matroska", "webm", "avi", "ts", "m2ts", "mpegts"]
-
-    /// Bare audio containers proven by the Vivid audio fixture matrix.
-    /// The scanner currently normalizes M4A to `mp4`, but the alias remains
-    /// available for independently scanned metadata.
-    ///
-    /// Vivid supports additional containers, including Ogg. They stay out of
-    /// the conservative/download vocabulary; online Apple TV 4K playback uses
-    /// the engine manifest below and relies on its per-source probe.
-    static let audioContainers = ["mp3", "m4a", "aac", "flac", "wav"]
-
-    /// Demuxers used by the pinned Vivid build for online original HTTP.
-    /// Silo's scanner records MPEG program streams (`.mpg`/`.vob`) as `mpeg`,
-    /// so that token is what carries the media core’s `mpegps` demuxer claim.
-    /// ASF/WMV stays absent even though WMV elementary streams in Matroska are
-    /// supported; the declared capability set does not include the corresponding container path.
-    private static let vividVideoContainers = [
-        "mp4", "m4v", "mov", "mkv", "matroska", "avi", "mpegts", "ts", "m2ts",
-        "mts", "3gp", "3g2", "mpeg", "vob", "ogg", "webm", "flv"
+    private static let engineContainers = [
+        "mp4", "m4v", "mov", "mkv", "matroska", "avi", "mpegts", "ts", "m2ts", "mts", "3gp", "3g2",
+        "mpeg", "vob", "ogg", "webm", "flv", "mp3", "aac", "m4a", "flac", "alac", "wav", "opus",
     ]
-    private static let vividAudioContainers = [
-        "mp3", "aac", "m4a", "flac", "alac", "wav", "opus", "ogg"
-    ]
+    private static let bareAudioContainers = ["mp3", "m4a", "aac", "flac", "wav"]
 
-    static let vividOriginalHTTPContainers: [String] = {
+    #if targetEnvironment(simulator)
+    static let audioCodecs = ["aac", "ac3", "eac3", "mp3", "opus", "flac"]
+    static let containers = ["mp4", "mov", "m4v", "mkv", "matroska", "ts", "m2ts", "mpegts"] + bareAudioContainers
+    #else
+    static let audioCodecs = [
+        "aac", "ac3", "eac3", "dts", "truehd", "flac", "alac", "mp3", "opus", "vorbis", "pcm", "pcm_s16le", "pcm_s24le",
+    ]
+    static let containers = ["mp4", "mov", "m4v", "mkv", "matroska", "webm", "avi", "ts", "m2ts", "mpegts"] + bareAudioContainers
+    #endif
+
+    static let hardwareVideoCodecs: [String] = videoDecodeAttestation().filter(\.hardware).map(\.codec)
+    static let packagedVideoCodecs: [String] = hardwareVideoCodecs
+
+    /// Every attested codec once, in attestation order.
+    private static var attestedVideoCodecs: [String] {
         var seen = Set<String>()
-        return (vividVideoContainers + vividAudioContainers).filter {
-            seen.insert($0).inserted
-        }
-    }()
-
-    /// The full direct-play container vocabulary used by flat capability
-    /// surfaces and by the `original_http` V3 delivery.
-    static let containers = videoContainers + audioContainers
+        return videoDecodeAttestation().map(\.codec).filter { seen.insert($0).inserted }
+    }
 
     static func streamingVideoCodecs(for mode: StreamingVideoCapabilityMode) -> [String] {
         switch mode {
-        case .vividDeclared:
-            return vividOriginalHTTPVideoCodecs
-        case .platformAttested:
-            return attestedVideoCodecs
+        case .vividDeclared: engineVideoCodecs
+        case .platformAttested: attestedVideoCodecs
         }
     }
 
     static func streamingAudioCodecs(for mode: StreamingVideoCapabilityMode) -> [String] {
-        mode == .vividDeclared
-            ? vividOriginalHTTPAudioCodecs
-            : audioCodecs
+        switch mode {
+        case .vividDeclared: engineAudioCodecs
+        case .platformAttested: audioCodecs
+        }
     }
 
     static func streamingContainers(for mode: StreamingVideoCapabilityMode) -> [String] {
-        mode == .vividDeclared
-            ? vividOriginalHTTPContainers
-            : containers
+        switch mode {
+        case .vividDeclared: engineContainers
+        case .platformAttested: containers
+        }
     }
-
-    static var streamingVideoCodecs: [String] {
-        streamingVideoCodecs(for: streamingVideoCapabilityMode)
-    }
-
-    static var streamingAudioCodecs: [String] {
-        streamingAudioCodecs(for: streamingVideoCapabilityMode)
-    }
-
-    static var streamingContainers: [String] {
-        streamingContainers(for: streamingVideoCapabilityMode)
-    }
-
-    /// The conservative resolution ceiling, or nil for "no client-imposed
-    /// cap". The simulator and Apple TV HD stop at 1080p; other device
-    /// surfaces retain the existing 2160p fallback token.
-    static var maxResolution: String? {
-        isSimulator || isAppleTVHD ? "1080p" : nil
-    }
-
-    /// `maxResolution` for surfaces that need it spelled out rather than left
-    /// open — the V3 snapshot's per-codec decode entries pair it with
-    /// explicit pixel dimensions, so "no cap" has nothing to mean there.
-    static var maxResolutionToken: String { maxResolution ?? "2160p" }
 
     static func streamingMaxResolutionToken(for mode: StreamingVideoCapabilityMode) -> String {
-        mode == .vividDeclared ? "2160p" : maxResolutionToken
+        switch mode {
+        case .vividDeclared: "2160p"
+        case .platformAttested: resolutionCeiling ?? "2160p"
+        }
     }
 
-    static var streamingMaxResolutionToken: String {
-        streamingMaxResolutionToken(for: streamingVideoCapabilityMode)
+    // MARK: - Ceilings
+
+    private static var isConstrainedDevice: Bool {
+        isSimulator || machineIdentifier == appleTVHD
     }
 
-    static var maxDecodeWidth: Int { maxDecodeHeight >= 2_160 ? 3_840 : 1_920 }
-    static var maxDecodeHeight: Int { isSimulator || isAppleTVHD ? 1_080 : 2_160 }
+    /// Nil means no ceiling.
+    private static var resolutionCeiling: String? {
+        isConstrainedDevice ? "1080p" : nil
+    }
 
-    /// The hardware attestations VideoToolbox supplies, followed by the
-    /// narrower software envelopes proven with Vivid fixtures. This is the
-    /// persistent-download safety contract and the fallback for Apple TV HD,
-    /// simulators, iOS, and macOS; online Apple TV 4K playback does not send
-    /// these predictions.
+    static var decodeHeight: Int { isConstrainedDevice ? 1_080 : 2_160 }
+    static var decodeWidth: Int { decodeHeight >= 2_160 ? 3_840 : 1_920 }
+
+    // MARK: - Attestation
+
+    private static let attestation: [AppleVideoDecodeCapability] = makeAttestation()
+
     static func videoDecodeAttestation() -> [AppleVideoDecodeCapability] {
-        videoDecodeAttestationValue
+        attestation
     }
 
-    private static let videoDecodeAttestationValue = makeVideoDecodeAttestation()
-
-    private static func makeVideoDecodeAttestation() -> [AppleVideoDecodeCapability] {
-        let codecTypes: [(String, CMVideoCodecType)] = [
-            ("h264", kCMVideoCodecType_H264),
-            ("hevc", kCMVideoCodecType_HEVC)
-        ]
-        let hardwareCapabilities: [AppleVideoDecodeCapability] = codecTypes.compactMap { codec, codecType in
-            guard hardwareDecodeSupported(codecType) else {
-                return nil
-            }
-            return AppleVideoDecodeCapability(
-                codec: codec,
-                decoderName: "VideoToolbox",
-                profiles: [],
-                levels: [],
-                bitDepths: codec == "hevc" ? [8, 10] : [8],
-                maxWidth: maxDecodeWidth,
-                maxHeight: maxDecodeHeight,
-                maxFrameRate: 60,
-                maxBitrateKbps: maxDecodeHeight >= 2_160 ? 120_000 : 25_000,
-                hardware: true
-            )
+    private static func makeAttestation() -> [AppleVideoDecodeCapability] {
+        let width = decodeWidth
+        let height = decodeHeight
+        let bitrate = height >= 2_160 ? 120_000 : 25_000
+        var entries: [AppleVideoDecodeCapability] = []
+        for (codec, bitDepths, type) in [("h264", [8], kCMVideoCodecType_H264), ("hevc", [8, 10], kCMVideoCodecType_HEVC)]
+        where hasHardwareDecoder(codec: codec, type: type) {
+            entries.append(AppleVideoDecodeCapability(
+                codec: codec, decoderName: "VideoToolbox", profiles: [], levels: [], bitDepths: bitDepths,
+                maxWidth: width, maxHeight: height, maxFrameRate: 60, maxBitrateKbps: bitrate, hardware: true))
         }
-        let softwareCapabilities: [(
-            codec: String, decoder: String, profiles: [String], bitDepths: [Int],
-            maxWidth: Int, maxHeight: Int, maxFrameRate: Double, maxBitrateKbps: Int
-        )] = [
-            ("h264", "libavcodec", ["high 10"], [10], 1_920, 1_080, 30, 10_000),
-            ("av1", "dav1d", ["main"], [10], 1_920, 1_080, 30, 3_000),
-            ("vp9", "libavcodec", ["profile 0"], [8], 1_920, 1_080, 30, 3_000),
-            // The exercised NTSC fixture reports 30.303 fps.
-            ("mpeg2video", "libavcodec", ["main"], [8], 720, 480, 31, 7_000),
-            ("vc1", "libavcodec", ["advanced"], [8], 1_920, 1_080, 30, 32_000),
-        ]
-        return hardwareCapabilities + softwareCapabilities.map { capability in
-            AppleVideoDecodeCapability(
-                codec: capability.codec,
-                decoderName: capability.decoder,
-                profiles: capability.profiles,
-                levels: [],
-                bitDepths: capability.bitDepths,
-                maxWidth: capability.maxWidth,
-                maxHeight: capability.maxHeight,
-                maxFrameRate: capability.maxFrameRate,
-                maxBitrateKbps: capability.maxBitrateKbps,
-                hardware: false
-            )
-        }
+        entries += softwareDecoders
+        return entries
     }
 
-    static let hardwareVideoCodecs = videoDecodeAttestationValue.filter(\.hardware).map(\.codec)
-
-    static let attestedVideoCodecs: [String] = {
-        var seen = Set<String>()
-        return videoDecodeAttestationValue.map(\.codec).filter {
-            seen.insert($0).inserted
-        }
-    }()
-
-    private static func hardwareDecodeSupported(_ codecType: CMVideoCodecType) -> Bool {
+    private static func hasHardwareDecoder(codec: String, type: CMVideoCodecType) -> Bool {
         #if targetEnvironment(simulator)
-        // The simulator answers for the host GPU, not a shippable device.
-        return codecType == kCMVideoCodecType_H264
+        return codec == "h264"
         #else
-        return VTIsHardwareDecodeSupported(codecType)
+        return VTIsHardwareDecodeSupported(type)
         #endif
+    }
+
+    private static let softwareDecoders: [AppleVideoDecodeCapability] = [
+        software("h264", decoder: "libavcodec", profile: "high 10", bitDepth: 10, width: 1_920, height: 1_080, frameRate: 30, kbps: 10_000),
+        software("av1", decoder: "dav1d", profile: "main", bitDepth: 10, width: 1_920, height: 1_080, frameRate: 30, kbps: 3_000),
+        software("vp9", decoder: "libavcodec", profile: "profile 0", bitDepth: 8, width: 1_920, height: 1_080, frameRate: 30, kbps: 3_000),
+        software("mpeg2video", decoder: "libavcodec", profile: "main", bitDepth: 8, width: 720, height: 480, frameRate: 31, kbps: 7_000),
+        software("vc1", decoder: "libavcodec", profile: "advanced", bitDepth: 8, width: 1_920, height: 1_080, frameRate: 30, kbps: 32_000),
+    ]
+
+    private static func software(
+        _ codec: String, decoder: String, profile: String, bitDepth: Int,
+        width: Int, height: Int, frameRate: Double, kbps: Int
+    ) -> AppleVideoDecodeCapability {
+        AppleVideoDecodeCapability(
+            codec: codec, decoderName: decoder, profiles: [profile], levels: [], bitDepths: [bitDepth],
+            maxWidth: width, maxHeight: height, maxFrameRate: frameRate, maxBitrateKbps: kbps, hardware: false)
     }
 }
 
-/// The video half of the `DeviceProfile` Emby and Jellyfin both read from a
-/// PlaybackInfo request. Each core still builds and sends its own request;
-/// this only states what this device can decode, in that shared vocabulary.
-///
-/// Devices on the Vivid declaration (Apple TV 4K, iPhone and iPad) keep the
-/// cores' existing direct-play list with no device ceiling, because Vivid's
-/// load-time probe picks native or software decode there. Platform-attested
-/// devices (Apple TV HD and the simulators) only claim what
-/// `AppleDecodeCapabilities.videoDecodeAttestation()` covers, each codec
-/// within its own envelope, under the device's decode ceiling, so the server
-/// transcodes anything larger to H.264 HLS instead of leaving a weak CPU to
-/// software-decode it.
+/// The video limits sent in Emby and Jellyfin PlaybackInfo requests. Devices
+/// whose engine claim is trusted send the plain codec list; the others send
+/// one envelope per codec from their attestation.
 struct DeviceProfileVideoLimits: Equatable, Sendable {
-    struct CodecEnvelope: Equatable, Sendable {
+    struct Envelope: Equatable, Sendable {
         let codec: String
-        let maxWidth: Int
-        let maxHeight: Int
-        let maxFrameRate: Double
-        let maxBitDepth: Int
-        /// The attested profiles, empty when any profile is accepted.
-        /// Jellyfin matches profile names without regard to case.
+        let width: Int
+        let height: Int
+        let frameRate: Double
+        let bitDepth: Int
         let profiles: [String]
-        /// Only software envelopes carry a bitrate ceiling. Hardware decode
-        /// copes with ordinary remux bitrates, which the server already
-        /// bounds through `MaxStreamingBitrate`.
-        let maxBitrate: Int?
+        /// Bits per second. Nil for a hardware decoder.
+        let bitrate: Int?
     }
 
     let videoCodecs: [String]
     let maxWidth: Int?
     let maxHeight: Int?
-    let codecEnvelopes: [CodecEnvelope]
+    let envelopes: [Envelope]
 
-    /// The Emby and Jellyfin direct-play vocabulary. It narrows
-    /// `AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs`, and the
-    /// attested profile only narrows it further.
-    static let directPlayVideoCodecs = ["h264", "hevc", "av1", "mpeg2video", "vp9"]
+    private static let directPlayCodecs = ["h264", "hevc", "av1", "mpeg2video", "vp9"]
 
-    static let declared = DeviceProfileVideoLimits(
-        videoCodecs: directPlayVideoCodecs,
-        maxWidth: nil,
-        maxHeight: nil,
-        codecEnvelopes: []
-    )
+    static let declared = DeviceProfileVideoLimits(videoCodecs: directPlayCodecs, maxWidth: nil, maxHeight: nil, envelopes: [])
 
     static let current = make(
         mode: AppleDecodeCapabilities.streamingVideoCapabilityMode,
         attestation: AppleDecodeCapabilities.videoDecodeAttestation(),
-        maxWidth: AppleDecodeCapabilities.maxDecodeWidth,
-        maxHeight: AppleDecodeCapabilities.maxDecodeHeight
+        maxWidth: AppleDecodeCapabilities.decodeWidth,
+        maxHeight: AppleDecodeCapabilities.decodeHeight
     )
 
     static func make(
@@ -360,74 +241,62 @@ struct DeviceProfileVideoLimits: Equatable, Sendable {
         maxHeight: Int
     ) -> DeviceProfileVideoLimits {
         guard mode == .platformAttested else { return declared }
-        let envelopes: [CodecEnvelope] = directPlayVideoCodecs.compactMap { codec in
+        let envelopes = directPlayCodecs.compactMap { codec -> Envelope? in
             let entries = attestation.filter { $0.codec == codec }
-            // Conditions in one codec profile all have to hold, so a profile
-            // cannot also describe a narrower software envelope beside the
-            // hardware one. The hardware envelope wins and H.264 High 10
-            // transcodes.
             guard let entry = entries.first(where: \.hardware) ?? entries.first else { return nil }
-            return CodecEnvelope(
+            return Envelope(
                 codec: codec,
-                maxWidth: min(entry.maxWidth, maxWidth),
-                maxHeight: min(entry.maxHeight, maxHeight),
-                maxFrameRate: entry.maxFrameRate,
-                maxBitDepth: entry.bitDepths.max() ?? 8,
+                width: min(entry.maxWidth, maxWidth),
+                height: min(entry.maxHeight, maxHeight),
+                frameRate: entry.maxFrameRate,
+                bitDepth: entry.bitDepths.max() ?? 8,
                 profiles: entry.profiles,
-                maxBitrate: entry.hardware ? nil : entry.maxBitrateKbps * 1_000
+                bitrate: entry.hardware ? nil : entry.maxBitrateKbps * 1_000
             )
         }
         return DeviceProfileVideoLimits(
-            videoCodecs: envelopes.map(\.codec),
-            maxWidth: maxWidth,
-            maxHeight: maxHeight,
-            codecEnvelopes: envelopes
-        )
+            videoCodecs: envelopes.map(\.codec), maxWidth: maxWidth, maxHeight: maxHeight, envelopes: envelopes)
     }
 
-    /// The height a request may direct play or transcode to: the lower of the
-    /// device ceiling and the selected quality's resolution.
+    /// The lower of the device ceiling and the chosen quality, when either is set.
     func effectiveMaxHeight(qualityHeight: Int?) -> Int? {
         [maxHeight, qualityHeight].compactMap { $0 }.min()
     }
 
-    /// `CodecProfiles` for the request. One profile without a codec carries
-    /// the overall ceiling, then each attested codec carries its envelope.
-    /// With no device ceiling and no quality cap this is empty.
     func codecProfiles(qualityHeight: Int?) -> [[String: Any]] {
+        var profiles: [[String: Any]] = []
         var overall: [[String: Any]] = []
-        if let maxWidth { overall.append(Self.condition("Width", maxWidth)) }
+        if let maxWidth { overall.append(Self.limit("Width", String(maxWidth))) }
         if let height = effectiveMaxHeight(qualityHeight: qualityHeight) {
-            overall.append(Self.condition("Height", height))
+            overall.append(Self.limit("Height", String(height)))
         }
-        var profiles: [[String: Any]] = overall.isEmpty ? [] : [["Type": "Video", "Conditions": overall]]
-        for envelope in codecEnvelopes {
+        if !overall.isEmpty { profiles.append(["Type": "Video", "Conditions": overall]) }
+        for envelope in envelopes {
             var conditions = [
-                Self.condition("Width", envelope.maxWidth),
-                Self.condition("Height", envelope.maxHeight),
-                Self.condition("VideoFramerate", envelope.maxFrameRate),
-                Self.condition("VideoBitDepth", envelope.maxBitDepth)
+                Self.limit("Width", String(envelope.width)),
+                Self.limit("Height", String(envelope.height)),
+                Self.limit("VideoFramerate", Self.frameRateText(envelope.frameRate)),
+                Self.limit("VideoBitDepth", String(envelope.bitDepth)),
             ]
-            if let maxBitrate = envelope.maxBitrate {
-                conditions.append(Self.condition("VideoBitrate", maxBitrate))
-            }
+            if let bitrate = envelope.bitrate { conditions.append(Self.limit("VideoBitrate", String(bitrate))) }
             if !envelope.profiles.isEmpty {
-                conditions.append(["Condition": "EqualsAny", "Property": "VideoProfile",
-                                   "Value": envelope.profiles.joined(separator: "|"), "IsRequired": false])
+                conditions.append([
+                    "Condition": "EqualsAny",
+                    "Property": "VideoProfile",
+                    "Value": envelope.profiles.joined(separator: "|"),
+                    "IsRequired": false,
+                ])
             }
             profiles.append(["Type": "Video", "Codec": envelope.codec, "Conditions": conditions])
         }
         return profiles
     }
 
-    /// Unknown stream values still pass (`IsRequired` false), as the quality
-    /// cap always has.
-    private static func condition(_ property: String, _ value: Int) -> [String: Any] {
-        ["Condition": "LessThanEqual", "Property": property, "Value": String(value), "IsRequired": false]
+    private static func limit(_ property: String, _ value: String) -> [String: Any] {
+        ["Condition": "LessThanEqual", "Property": property, "Value": value, "IsRequired": false]
     }
 
-    private static func condition(_ property: String, _ value: Double) -> [String: Any] {
-        let text = value.rounded() == value ? String(Int(value)) : String(value)
-        return ["Condition": "LessThanEqual", "Property": property, "Value": text, "IsRequired": false]
+    private static func frameRateText(_ rate: Double) -> String {
+        rate.rounded(.towardZero) == rate ? String(Int(rate)) : String(rate)
     }
 }

@@ -2,201 +2,121 @@ import Foundation
 import OSLog
 import Security
 
-/// Cross-process storage used by the main app and the Top Shelf extension.
-///
-/// The Top Shelf extension runs in its own sandbox, so tokens and server
-/// coordinates must be reachable from both sides:
-/// - `UserDefaults(suiteName:)` backed by an App Group for preferences.
-/// - Keychain items tagged with a shared `kSecAttrAccessGroup` for tokens.
-///
-/// The "topshelf" keychain accounts hold a mirrored copy of the *active*
-/// server's access token + profile token under stable, server-independent
-/// keys. The extension doesn't know the active server's ID, so it reads
-/// these fixed-name slots instead of reconstructing the registry scheme.
+private let storageLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app", category: "SharedStorage")
+
+/// Storage shared by the apps and the Top Shelf extension: the App Group
+/// defaults, the shared Keychain and every key either side reads. Installed
+/// apps already hold values under these names, so none of them may change.
 enum SharedStorage {
-    /// Must match the `com.apple.security.application-groups` entitlement
-    /// on both the main app and the extension.
-    static let appGroup = "group.com.blurbery.vivid"
-
-    /// Must match the `keychain-access-groups` entitlement on both sides.
-    /// Resolved from a build-expanded Info.plist value so personal-team
-    /// and paid-team builds can both read the same group they were signed for.
-    static let keychainAccessGroup = RuntimeConfiguration.sharedKeychainAccessGroup
-
-    /// Shared Keychain service name. Same on both sides.
+    static let appGroupIdentifier = "group.com.blurbery.vivid"
     static let keychainService = "com.blurbery.vivid"
+    static let sharedKeychainGroup = "com.blurbery.vivid.shared"
 
-    // Account credentials belong to the selected native Apple TV user,
-    // just like saved account cards and viewing-profile preferences.
     static let accountCredentialAudience: KeychainAudience = .currentUser
 
-    /// Stable account names for the mirrored active-server tokens.
     static let mirroredAccessTokenAccount = "com.blurbery.vivid.topshelf.accessToken"
     static let mirroredProfileTokenAccount = "com.blurbery.vivid.topshelf.profileToken"
-
-    /// Storage used by the push registration earlier builds shipped. Vivid
-    /// no longer registers for push; `TokenStore` keeps deleting any
-    /// leftover token and its metadata on the same events as before.
     static let applePushDisplayTokenAccount = "com.blurbery.vivid.push.displayToken"
     static let applePushDisplayTokenExpiresAtKey = "applePush.displayTokenExpiresAt"
     static let applePushDisplayTokenServerIdKey = "applePush.displayTokenServerId"
 
-    static func accessTokenAccount(for serverID: String) -> String {
-        "com.blurbery.vivid.\(serverID).accessToken"
+    static func accessTokenAccount(for serverID: String) -> String { serverAccount(serverID, "accessToken") }
+    static func refreshTokenAccount(for serverID: String) -> String { serverAccount(serverID, "refreshToken") }
+    static func profileTokenAccount(for serverID: String) -> String { serverAccount(serverID, "profileToken") }
+    static func accountEpochAccount(for serverID: String) -> String { serverAccount(serverID, "accountEpoch") }
+
+    private static func serverAccount(_ serverID: String, _ name: String) -> String {
+        "com.blurbery.vivid." + serverID + "." + name
     }
 
-    static func refreshTokenAccount(for serverID: String) -> String {
-        "com.blurbery.vivid.\(serverID).refreshToken"
-    }
-
-    static func profileTokenAccount(for serverID: String) -> String {
-        "com.blurbery.vivid.\(serverID).profileToken"
-    }
-
-    static func accountEpochAccount(for serverID: String) -> String {
-        "com.blurbery.vivid.\(serverID).accountEpoch"
-    }
-
-    /// UserDefaults keys shared between the app and the Top Shelf
-    /// extension. Centralised here so the extension, `AuthService`,
-    /// `TokenStore`, and `ServerRegistry` can't drift.
     static let serverUrlKey = "serverUrl"
     static let activeServerIdKey = "activeServerId"
     static let profileIdKey = "profileId"
     static let profileLaunchStateKey = "profileLaunchState.v1"
     static let savedAccountsKey = "vivid.accounts.v1"
     static let activeSavedAccountKey = "vivid.activeAccount.v1"
-    /// Silo viewing-profile counts by server, recorded by the app whenever it
-    /// reads the profile list. Top Shelf stays static unless there is one.
     static let viewingProfileCountsKey = "vivid.viewingProfileCounts.v1"
-
-    /// Breadcrumb keys the Top Shelf extension writes after each run.
-    /// The main app prints these on launch so device builds without a log
-    /// stream attached to the extension process can still see what
-    /// happened the last time tvOS invoked us.
     static let topShelfLastStatusKey = "topShelf.lastStatus"
     static let topShelfLastRunAtKey = "topShelf.lastRunAt"
-    /// The language chosen in Settings > General, or nothing for the device
-    /// language. Top Shelf copies it into its own `AppleLanguages`.
     static let appLanguageKey = "vivid.appLanguage.v1"
 
-    /// UserDefaults instance backed by the App Group suite. Callers that
-    /// need per-process fallback behaviour should use `SharedDefaults`
-    /// instead of touching this directly.
+    /// The App Group defaults, or the standard defaults when the group can't
+    /// be opened. Each read makes a new instance.
     static var suite: UserDefaults {
-        UserDefaults(suiteName: appGroup) ?? .standard
-    }
-}
-
-enum SideloadKeychainFallbackPolicy {
-    private static let canonicalAccessGroup = "com.blurbery.vivid.shared"
-
-    static func isEnabled(buildChannel: String, isPreIOS26: Bool) -> Bool {
-        buildChannel == "sideload" && isPreIOS26
+        UserDefaults(suiteName: appGroupIdentifier) ?? .standard
     }
 
-    static func resolvedAccessGroup(
-        from configuredValue: String,
-        allowsUnprefixedSideloadGroup: Bool
-    ) -> String? {
-        if configuredValue.hasSuffix(".\(canonicalAccessGroup)") {
-            return configuredValue
-        }
-        if allowsUnprefixedSideloadGroup,
-           configuredValue == canonicalAccessGroup {
-            return configuredValue
-        }
-        return nil
-    }
+    // MARK: - Configuration from the Info.plist, worked out once
 
-    static func teamPrefix(from resolvedAccessGroup: String) -> String? {
-        let sharedGroupSuffix = ".\(canonicalAccessGroup)"
-        guard resolvedAccessGroup.hasSuffix(sharedGroupSuffix) else { return nil }
-        return String(resolvedAccessGroup.dropLast(sharedGroupSuffix.count)) + "."
-    }
-}
-
-private enum RuntimeConfiguration {
-    private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
-        category: "RuntimeConfiguration"
-    )
-
-    /// Third-party re-signers commonly cannot preserve Vivid's shared
-    /// Keychain entitlement. On legacy iOS, keep core authentication usable
-    /// by allowing the explicitly stamped sideload build to use the app's
-    /// implicit Keychain group when Security reports that exact mismatch.
-    /// Release/dev builds, iOS 26+, tvOS, and macOS retain the shared-only
-    /// behavior.
-    static let allowsAppLocalKeychainFallback: Bool = {
-        #if os(iOS) && !DEBUG
-        let rawChannel = Bundle.main.object(forInfoDictionaryKey: "VividBuildChannel") as? String
-        let buildChannel = rawChannel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let isPreIOS26: Bool
-        if #available(iOS 26.0, *) {
-            isPreIOS26 = false
-        } else {
-            isPreIOS26 = true
-        }
-        return SideloadKeychainFallbackPolicy.isEnabled(
-            buildChannel: buildChannel,
-            isPreIOS26: isPreIOS26
-        )
-        #else
+    /// Only an unsigned sideload on a system older than iOS 26 may keep
+    /// Keychain items outside the shared group.
+    static let allowsAppLocalFallback: Bool = {
+        #if os(tvOS) || DEBUG
         return false
+        #else
+        let channel = Bundle.main.object(forInfoDictionaryKey: "VividBuildChannel") as? String
+        let iOS26 = OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)
+        return SharedKeychainPolicy.allowsAppLocalFallback(
+            buildChannel: channel,
+            isOlderThanIOS26: !ProcessInfo.processInfo.isOperatingSystemAtLeast(iOS26)
+        )
         #endif
     }()
 
-    static let sharedKeychainAccessGroup: String? = {
-        guard let group = Bundle.main.object(
-            forInfoDictionaryKey: "VividKeychainAccessGroup"
-        ) as? String else {
-            logger.error("Missing VividKeychainAccessGroup Info.plist value; shared auth tokens may not persist.")
-            return nil
+    static let keychainAccessGroup: String? = {
+        let value = Bundle.main.object(forInfoDictionaryKey: "VividKeychainAccessGroup") as? String
+        let group = SharedKeychainPolicy.acceptedAccessGroup(value, allowsBareGroup: allowsAppLocalFallback)
+        if group == nil {
+            storageLog.error("The Info.plist has no usable shared Keychain access group")
         }
-        if let resolved = SideloadKeychainFallbackPolicy.resolvedAccessGroup(
-            from: group,
-            allowsUnprefixedSideloadGroup: allowsAppLocalKeychainFallback
-        ) {
-            return resolved
-        }
-        logger.error("Unexpected VividKeychainAccessGroup value: \(group, privacy: .public)")
-        return nil
+        return group
     }()
 
     static let usesUserIndependentKeychain: Bool = {
-        if let value = Bundle.main.object(
-            forInfoDictionaryKey: "VividUsesUserIndependentKeychain"
-        ) as? Bool {
-            return value
+        switch Bundle.main.object(forInfoDictionaryKey: "VividUsesUserIndependentKeychain") {
+        case let flag as Bool: return flag
+        case let text as String: return ["1", "true", "yes"].contains(text.lowercased())
+        default: return false
         }
-        guard let value = Bundle.main.object(
-            forInfoDictionaryKey: "VividUsesUserIndependentKeychain"
-        ) as? String else {
-            return false
-        }
-        return ["1", "true", "yes"].contains(value.lowercased())
     }()
 
+    /// The team prefix older builds put in front of the bundle identifier to
+    /// form their Keychain group.
     static let legacyTeamPrefix: String? = {
-        if let group = sharedKeychainAccessGroup,
-           let prefix = SideloadKeychainFallbackPolicy.teamPrefix(from: group) {
-            return prefix
+        guard let prefix = SharedKeychainPolicy.legacyTeamPrefix(forAccessGroup: keychainAccessGroup) else {
+            storageLog.error("No legacy team prefix can be derived from the shared Keychain access group")
+            return nil
         }
-        logger.error("Could not derive team prefix from VividKeychainAccessGroup; legacy keychain migration will only try the default access group.")
-        return nil
+        return prefix
     }()
 }
 
-/// Wrapper around the App Group `UserDefaults` that mirrors every write
-/// back to `UserDefaults.standard`. Legacy readers (AuthService,
-/// SettingsViewModel, ProfileAvatarView) that still read `.standard`
-/// directly keep working; the Top Shelf extension sees the same values
-/// via the App Group suite.
-///
-/// Reads prefer the suite and fall back to `.standard` so the first
-/// launch after the upgrade transparently uses pre-existing values until
-/// the next write mirrors them forward.
+/// The rules behind the shared Keychain configuration, kept apart from the
+/// Info.plist so they can be checked directly.
+enum SharedKeychainPolicy {
+    private static let sharedGroupSuffix = "." + SharedStorage.sharedKeychainGroup
+
+    static func allowsAppLocalFallback(buildChannel: String?, isOlderThanIOS26: Bool) -> Bool {
+        buildChannel?.trimmingCharacters(in: .whitespacesAndNewlines) == "sideload" && isOlderThanIOS26
+    }
+
+    /// A team-prefixed shared group, or the bare group an unsigned archive
+    /// carries when that is allowed.
+    static func acceptedAccessGroup(_ value: String?, allowsBareGroup: Bool) -> String? {
+        guard let value else { return nil }
+        if value.hasSuffix(sharedGroupSuffix) { return value }
+        if allowsBareGroup, value == SharedStorage.sharedKeychainGroup { return value }
+        return nil
+    }
+
+    static func legacyTeamPrefix(forAccessGroup group: String?) -> String? {
+        guard let group, group.hasSuffix(sharedGroupSuffix) else { return nil }
+        return String(group.dropLast(sharedGroupSuffix.count)) + "."
+    }
+}
+
+/// Reads prefer the App Group and fall back to the standard defaults; writes
+/// go to both.
 struct SharedDefaults: @unchecked Sendable {
     static let shared = SharedDefaults()
 
@@ -217,8 +137,7 @@ struct SharedDefaults: @unchecked Sendable {
     }
 
     func bool(forKey key: String) -> Bool {
-        if suite.object(forKey: key) != nil { return suite.bool(forKey: key) }
-        return standard.bool(forKey: key)
+        suite.object(forKey: key) != nil ? suite.bool(forKey: key) : standard.bool(forKey: key)
     }
 
     func containsObject(forKey key: String) -> Bool {
@@ -226,12 +145,12 @@ struct SharedDefaults: @unchecked Sendable {
     }
 
     func set(_ value: String?, forKey key: String) {
-        if let value {
-            suite.set(value, forKey: key)
-            standard.set(value, forKey: key)
-        } else {
+        guard let value else {
             removeObject(forKey: key)
+            return
         }
+        suite.set(value, forKey: key)
+        standard.set(value, forKey: key)
     }
 
     func set(_ value: Data, forKey key: String) {
@@ -250,58 +169,57 @@ struct SharedDefaults: @unchecked Sendable {
     }
 }
 
+/// A Keychain read that failed for a reason other than a missing item.
 struct KeychainReadFailure: Error, Equatable {
     let status: OSStatus
 
+    /// The Keychain is briefly unavailable, for example before first unlock.
+    var isTemporary: Bool {
+        status == errSecInteractionNotAllowed || status == errSecNotAvailable
+    }
+
+    /// Runs `operation` up to three times while it fails with a temporary
+    /// status, waiting between attempts. Any other error ends it at once.
     static func retryTemporaryRead<Value>(
         wait: () async throws -> Void = { try await Task.sleep(for: .milliseconds(250)) },
         operation: () async throws -> Value
     ) async throws -> Value {
-        for attempt in 0...2 {
+        var attempt = 1
+        while true {
             try Task.checkCancellation()
-            do { return try await operation() }
-            catch let failure as KeychainReadFailure {
-                guard attempt < 2,
-                      failure.status == errSecInteractionNotAllowed || failure.status == errSecNotAvailable else {
-                    throw failure
-                }
+            do {
+                return try await operation()
+            } catch let failure as KeychainReadFailure where failure.isTemporary && attempt < 3 {
                 try await wait()
+                attempt += 1
             }
         }
-        preconditionFailure("Bounded retry must return or throw")
     }
 }
 
-/// Minimal Keychain reader/writer targeted at the shared access group.
-/// Used by both the main app (via `TokenStore`) and the Top Shelf
-/// extension. Items are stored as generic passwords with accessibility
-/// `AfterFirstUnlock` so the extension can read them when tvOS launches
-/// it on the Home Screen (i.e. before any user interaction with the app).
+/// Generic-password items under one service. Items don't sync.
 struct SharedKeychain {
-    private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
-        category: "SharedKeychain"
-    )
-
-    private let readItem: (([String: Any]) -> (OSStatus, Data?))?
     let service: String
     let accessGroup: String?
     let audience: KeychainAudience
     let usesUserIndependentKeychain: Bool
     let allowsAppLocalFallback: Bool
+    private let readItem: (([String: Any]) -> (OSStatus, Data?))?
 
-    init(service: String = SharedStorage.keychainService,
-         accessGroup: String? = SharedStorage.keychainAccessGroup,
-         audience: KeychainAudience = .currentUser,
-         usesUserIndependentKeychain: Bool = RuntimeConfiguration.usesUserIndependentKeychain,
-         allowsAppLocalFallback: Bool = RuntimeConfiguration.allowsAppLocalKeychainFallback,
-         readItem: (([String: Any]) -> (OSStatus, Data?))? = nil) {
-        self.readItem = readItem
+    init(
+        service: String = SharedStorage.keychainService,
+        accessGroup: String? = SharedStorage.keychainAccessGroup,
+        audience: KeychainAudience = .currentUser,
+        usesUserIndependentKeychain: Bool = SharedStorage.usesUserIndependentKeychain,
+        allowsAppLocalFallback: Bool = SharedStorage.allowsAppLocalFallback,
+        readItem: (([String: Any]) -> (OSStatus, Data?))? = nil
+    ) {
         self.service = service
         self.accessGroup = accessGroup
         self.audience = audience
         self.usesUserIndependentKeychain = usesUserIndependentKeychain
         self.allowsAppLocalFallback = allowsAppLocalFallback
+        self.readItem = readItem
     }
 
     func withAudience(_ audience: KeychainAudience) -> SharedKeychain {
@@ -315,27 +233,24 @@ struct SharedKeychain {
         )
     }
 
-    /// Returns `true` when the value was successfully written. Callers
-    /// performing a destructive migration (deleting a legacy copy after
-    /// a successful re-save) must gate the delete on this return value.
     @discardableResult
     func set(_ value: String, for account: String) -> Bool {
         guard let data = value.data(using: .utf8) else {
-            Self.logger.error("Failed to encode keychain value for account \(account, privacy: .public).")
+            storageLog.error("Keychain value for \(account, privacy: .public) is not UTF-8")
             return false
         }
-        let status = write(data, for: account, accessGroup: accessGroup)
+        let status = write(data, account: account, group: accessGroup)
         if status == errSecSuccess { return true }
-        if shouldUseAppLocalFallback(for: status) {
-            let fallbackStatus = write(data, for: account, accessGroup: nil)
-            if fallbackStatus == errSecSuccess {
-                Self.logger.notice("Shared Keychain entitlement unavailable; wrote app-local value.")
+        if fallbackApplies(to: status) {
+            let local = write(data, account: account, group: nil)
+            if local == errSecSuccess {
+                storageLog.notice("Stored an item in the app's own Keychain")
                 return true
             }
-            Self.logger.error("App-local Keychain fallback write failed: status=\(fallbackStatus, privacy: .public)")
+            storageLog.error("App Keychain write failed: \(local, privacy: .public)")
             return false
         }
-        Self.logger.error("Keychain write failed for account \(account, privacy: .public): status=\(status, privacy: .public)")
+        storageLog.error("Keychain write for \(account, privacy: .public) failed: \(status, privacy: .public)")
         return false
     }
 
@@ -343,203 +258,111 @@ struct SharedKeychain {
         try? getChecked(account)
     }
 
-    /// Missing items are nil; unavailable or unreadable storage is an error.
+    /// Nil only when the item doesn't exist. Every other failure throws.
     func getChecked(_ account: String) throws -> String? {
-        let configuredRead = readResult(account: account, accessGroup: accessGroup)
-        if let found = configuredRead.value {
-            return found
-        }
-        if shouldUseAppLocalFallback(for: configuredRead.status) {
-            let fallbackRead = readResult(account: account, accessGroup: nil)
-            if fallbackRead.status != errSecSuccess,
-               fallbackRead.status != errSecItemNotFound {
-                Self.logger.error("App-local Keychain fallback read failed: status=\(fallbackRead.status, privacy: .public)")
-            }
-            // The app-local group is the active store for this build. Return
-            // directly instead of passing through legacy migration, which
-            // would otherwise delete the same value it just found.
-            guard fallbackRead.status == errSecSuccess || fallbackRead.status == errSecItemNotFound else {
-                throw KeychainReadFailure(status: fallbackRead.status)
-            }
-            return fallbackRead.value
-        }
-        guard configuredRead.status == errSecItemNotFound else {
-            throw KeychainReadFailure(status: configuredRead.status)
-        }
-        #if os(tvOS)
-        // Account credentials written before Runs-as-Current-User were stored
-        // in the ordinary persona Keychain. Copy them into the shared account
-        // audience only after a verified write, then retire that one legacy
-        // copy. Profile tokens never take this path because their audience is
-        // intentionally current-user scoped.
-        if audience == .userIndependent {
-            let legacyKeychain = withAudience(.currentUser)
-            if let legacy = try legacyKeychain.getChecked(account) {
-                if set(legacy, for: account) {
-                    legacyKeychain.delete(account)
-                }
-                return legacy
+        let (status, value) = read(account, group: accessGroup)
+        if status == errSecSuccess { return value }
+        if fallbackApplies(to: status) {
+            let (localStatus, localValue) = read(account, group: nil)
+            switch localStatus {
+            case errSecSuccess: return localValue
+            case errSecItemNotFound: return nil
+            default:
+                storageLog.error("App Keychain read failed: \(localStatus, privacy: .public)")
+                throw KeychainReadFailure(status: localStatus)
             }
         }
-        #endif
-        // Transparent migration: pre-access-group entries live in the
-        // app's bundle-id-based default access group. Once the app has
-        // a `keychain-access-groups` entitlement, SecItemCopyMatching
-        // with no `kSecAttrAccessGroup` does *not* always unify across
-        // the default group and the entitlement groups on tvOS, so we
-        // have to try each candidate access group explicitly.
-        guard accessGroup != nil else { return nil }
-        for candidate in Self.legacyFallbackAccessGroups() {
-            let candidateRead = readResult(account: account, accessGroup: candidate)
-            guard candidateRead.status == errSecSuccess || candidateRead.status == errSecItemNotFound else {
-                throw KeychainReadFailure(status: candidateRead.status)
-            }
-            guard let legacy = candidateRead.value else { continue }
-            // Only retire the legacy entry once the shared-access-group
-            // write confirms. If the write fails, leave legacy in place.
-            if set(legacy, for: account) {
-                deleteLegacy(account: account, accessGroup: candidate)
-            }
-            return legacy
-        }
-        return nil
-    }
-
-    /// Candidate access groups we may have stored items in before the
-    /// shared keychain group was added: the unified-search default
-    /// (`nil`, which should in theory see items in any group the app
-    /// can access), and the bundle's implicit access group derived from
-    /// the team prefix + current bundle id. Computing the second at
-    /// runtime keeps us correct across iOS / tvOS / debug / release.
-    private static func legacyFallbackAccessGroups() -> [String?] {
-        var groups: [String?] = [nil]
-        if let bundleId = Bundle.main.bundleIdentifier,
-           let teamPrefix = RuntimeConfiguration.legacyTeamPrefix {
-            groups.append(teamPrefix + bundleId)
-        }
-        return groups
+        guard status == errSecItemNotFound else { throw KeychainReadFailure(status: status) }
+        return try migrateFromLegacyLocation(account)
     }
 
     @discardableResult
     func delete(_ account: String) -> Bool {
-        let status = deleteStatus(account: account, accessGroup: accessGroup)
+        let status = deleteItem(account, group: accessGroup)
         if status == errSecSuccess || status == errSecItemNotFound {
             guard allowsAppLocalFallback, accessGroup != nil else { return true }
-            let cleanupStatus = deleteStatus(account: account, accessGroup: nil)
-            if cleanupStatus == errSecSuccess || cleanupStatus == errSecItemNotFound {
-                return true
-            }
-            Self.logger.error("App-local Keychain cleanup failed: status=\(cleanupStatus, privacy: .public)")
+            let local = deleteItem(account, group: nil)
+            if local == errSecSuccess || local == errSecItemNotFound { return true }
+            storageLog.error("App Keychain delete failed: \(local, privacy: .public)")
             return false
         }
-        if shouldUseAppLocalFallback(for: status) {
-            let fallbackStatus = deleteStatus(account: account, accessGroup: nil)
-            if fallbackStatus == errSecSuccess || fallbackStatus == errSecItemNotFound {
-                Self.logger.notice("Shared Keychain entitlement unavailable; deleted app-local value.")
+        if fallbackApplies(to: status) {
+            let local = deleteItem(account, group: nil)
+            if local == errSecSuccess || local == errSecItemNotFound {
+                storageLog.notice("Deleted an item from the app's own Keychain")
                 return true
             }
-            Self.logger.error("App-local Keychain fallback delete failed: status=\(fallbackStatus, privacy: .public)")
+            storageLog.error("App Keychain delete failed: \(local, privacy: .public)")
             return false
         }
-        Self.logger.error("Keychain delete failed for account \(account, privacy: .public): status=\(status, privacy: .public)")
+        storageLog.error("Keychain delete for \(account, privacy: .public) failed: \(status, privacy: .public)")
         return false
     }
 
-    /// Removes every Vivid item in this Keychain audience. App containers and
-    /// UserDefaults are removed by iOS/tvOS when the app is uninstalled, but
-    /// Keychain items survive unless the app clears them on the next install.
+    /// Removes every item of this service from each place this keychain may
+    /// have used. False when any of them failed.
     @discardableResult
-    func deleteAll() -> Bool {
+    func deleteAllItems() -> Bool {
+        var groups: [String?] = [accessGroup]
+        if accessGroup != nil { groups += legacyGroups }
+        if allowsAppLocalFallback { groups.append(nil) }
+        var visited: [String?] = []
         var succeeded = true
-        var candidates = [accessGroup]
-        if accessGroup != nil {
-            candidates.append(contentsOf: Self.legacyFallbackAccessGroups())
-        }
-        if allowsAppLocalFallback { candidates.append(nil) }
-
-        var seen = Set<String>()
-        for candidate in candidates {
-            let identity = candidate ?? "<default>"
-            guard seen.insert(identity).inserted else { continue }
-            var query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-            ]
-            if let candidate { query[kSecAttrAccessGroup as String] = candidate }
-            #if os(tvOS)
-            if audience == .userIndependent, usesUserIndependentKeychain {
-                query[kSecUseUserIndependentKeychain as String] = kCFBooleanTrue
-            }
-            #endif
-            let status = SecItemDelete(query as CFDictionary)
-            if status != errSecSuccess, status != errSecItemNotFound,
-               !(shouldUseAppLocalFallback(for: status) && candidate == accessGroup) {
-                succeeded = false
-                Self.logger.error("Keychain service cleanup failed: status=\(status, privacy: .public)")
-            }
+        for group in groups where !visited.contains(group) {
+            let isConfigured = visited.isEmpty
+            visited.append(group)
+            let status = SecItemDelete(baseQuery(group: group) as CFDictionary)
+            if status == errSecSuccess || status == errSecItemNotFound { continue }
+            if isConfigured, fallbackApplies(to: status) { continue }
+            storageLog.error("Keychain clean-up failed: \(status, privacy: .public)")
+            succeeded = false
         }
         return succeeded
     }
 
     // MARK: - Private
 
-    private func readResult(account: String, accessGroup: String?) -> (status: OSStatus, value: String?) {
-        var query = baseQuery(account: account, accessGroup: accessGroup)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        let status: OSStatus
-        let data: Data?
-        if let readItem {
-            (status, data) = readItem(query)
-        } else {
-            status = SecItemCopyMatching(query as CFDictionary, &result)
-            data = result as? Data
+    /// The older places an item may still be: no group, then the team-prefixed
+    /// bundle group earlier builds used.
+    private var legacyGroups: [String?] {
+        var groups: [String?] = [nil]
+        if let prefix = SharedStorage.legacyTeamPrefix, let bundleID = Bundle.main.bundleIdentifier {
+            groups.append(prefix + bundleID)
         }
-        guard status == errSecSuccess else { return (status, nil) }
-        guard let data, let value = String(data: data, encoding: .utf8) else {
-            return (errSecDecode, nil)
+        return groups
+    }
+
+    private func fallbackApplies(to status: OSStatus) -> Bool {
+        allowsAppLocalFallback && accessGroup != nil && status == errSecMissingEntitlement
+    }
+
+    private func migrateFromLegacyLocation(_ account: String) throws -> String? {
+        #if os(tvOS)
+        if audience == .userIndependent {
+            let personal = withAudience(.currentUser)
+            if let value = try personal.getChecked(account) {
+                if set(value, for: account) { personal.delete(account) }
+                return value
+            }
         }
-        return (status, value)
+        #endif
+        guard accessGroup != nil else { return nil }
+        for group in legacyGroups {
+            let (status, value) = read(account, group: group)
+            if status == errSecItemNotFound { continue }
+            guard status == errSecSuccess, let value else { throw KeychainReadFailure(status: status) }
+            if set(value, for: account) { _ = deleteItem(account, group: group) }
+            return value
+        }
+        return nil
     }
 
-    private func write(_ data: Data, for account: String, accessGroup: String?) -> OSStatus {
-        var query = baseQuery(account: account, accessGroup: accessGroup)
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-        ]
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        guard updateStatus == errSecItemNotFound else { return updateStatus }
-        query.merge(attributes) { _, new in new }
-        return SecItemAdd(query as CFDictionary, nil)
-    }
-
-    private func deleteStatus(account: String, accessGroup: String?) -> OSStatus {
-        let query = baseQuery(account: account, accessGroup: accessGroup)
-        return SecItemDelete(query as CFDictionary)
-    }
-
-    private func shouldUseAppLocalFallback(for status: OSStatus) -> Bool {
-        allowsAppLocalFallback
-            && accessGroup != nil
-            && status == errSecMissingEntitlement
-    }
-
-    private func deleteLegacy(account: String, accessGroup: String?) {
-        let query = baseQuery(account: account, accessGroup: accessGroup)
-        SecItemDelete(query as CFDictionary)
-    }
-
-    private func baseQuery(account: String, accessGroup: String?) -> [String: Any] {
+    private func baseQuery(group: String?) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
         ]
-        if let accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
-        }
+        if let group { query[kSecAttrAccessGroup as String] = group }
         #if os(tvOS)
         if audience == .userIndependent, usesUserIndependentKeychain {
             query[kSecUseUserIndependentKeychain as String] = kCFBooleanTrue
@@ -547,35 +370,68 @@ struct SharedKeychain {
         #endif
         return query
     }
+
+    private func itemQuery(_ account: String, group: String?) -> [String: Any] {
+        var query = baseQuery(group: group)
+        query[kSecAttrAccount as String] = account
+        return query
+    }
+
+    private func read(_ account: String, group: String?) -> (OSStatus, String?) {
+        var query = itemQuery(account, group: group)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let status: OSStatus
+        let data: Data?
+        if let readItem {
+            (status, data) = readItem(query)
+        } else {
+            var result: CFTypeRef?
+            status = SecItemCopyMatching(query as CFDictionary, &result)
+            data = result as? Data
+        }
+        guard status == errSecSuccess else { return (status, nil) }
+        guard let data, let value = String(data: data, encoding: .utf8) else { return (errSecDecode, nil) }
+        return (errSecSuccess, value)
+    }
+
+    private func write(_ data: Data, account: String, group: String?) -> OSStatus {
+        let query = itemQuery(account, group: group)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        guard status == errSecItemNotFound else { return status }
+        return SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil)
+    }
+
+    private func deleteItem(_ account: String, group: String?) -> OSStatus {
+        SecItemDelete(itemQuery(account, group: group) as CFDictionary)
+    }
 }
 
-/// Detects a real reinstall without wiping credentials during the update that
-/// first introduces the marker. Existing Vivid defaults identify an upgrade;
-/// a missing marker and no Vivid defaults identify a fresh app container.
+/// A clean install must not pick up Keychain items left by an earlier install,
+/// because the Keychain outlives the app.
 enum FreshInstallLocalData {
-    private static let markerKey = "vivid.installationMarker.v1"
+    private static let installationMarkerKey = "vivid.installationMarker.v1"
+    private static let earlierInstallKeys: Set<String> = [
+        "serverUrl", "activeServerId", "profileId", "vivid.accounts.v1", "vivid.didCompleteProviderSetup",
+    ]
 
+    /// Call before anything reads a credential.
     static func prepare() {
         let defaults = UserDefaults.standard
-        guard defaults.string(forKey: markerKey) == nil else { return }
-
-        let knownExistingKeys: Set<String> = [
-            SharedStorage.serverUrlKey,
-            SharedStorage.activeServerIdKey,
-            SharedStorage.profileIdKey,
-            "vivid.accounts.v1",
-            "vivid.didCompleteProviderSetup",
-        ]
-        let existingInstall = defaults.dictionaryRepresentation().keys.contains {
-            $0.hasPrefix("vivid.") || knownExistingKeys.contains($0)
+        guard defaults.string(forKey: installationMarkerKey) == nil else { return }
+        let hasEarlierInstall = defaults.dictionaryRepresentation().keys.contains { key in
+            key.hasPrefix("vivid.") || earlierInstallKeys.contains(key)
         }
-
-        if !existingInstall {
-            _ = SharedKeychain(audience: .currentUser).deleteAll()
+        if !hasEarlierInstall {
+            SharedKeychain(audience: .currentUser).deleteAllItems()
             #if os(tvOS)
-            _ = SharedKeychain(audience: .userIndependent).deleteAll()
+            SharedKeychain(audience: .userIndependent).deleteAllItems()
             #endif
         }
-        defaults.set(UUID().uuidString, forKey: markerKey)
+        defaults.set(UUID().uuidString, forKey: installationMarkerKey)
     }
 }

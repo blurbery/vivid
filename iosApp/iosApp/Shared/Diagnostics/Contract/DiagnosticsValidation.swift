@@ -1,99 +1,81 @@
-#if os(iOS) || os(tvOS)
 import Foundation
 
-enum DiagnosticsValidationError: Error, Equatable, CustomStringConvertible {
-    case invalidField(String)
+/// The attributes each category may carry. Anything else is dropped from the
+/// line, and stops a debug build so the caller gets fixed.
+enum DiagnosticsAttributeRegistry {
+    enum Kind {
+        case text
+        case integer
 
-    var description: String {
-        switch self {
-        case .invalidField(let field):
-            return "Invalid diagnostics field: \(field)"
+        func accepts(_ value: DiagLogAttributeValue) -> Bool {
+            switch (self, value) {
+            case (.text, .string), (.text, .url), (.text, .error), (.integer, .int): true
+            default: false
+            }
         }
+    }
+
+    static let keys: [DiagnosticsLogCategory: [String: Kind]] = [
+        .playback: [
+            "play_method": .text,
+            "position_ms": .integer,
+            "reason": .text,
+            "session_id": .text,
+            "sink": .text,
+        ],
+        .focus: [
+            "action": .text,
+            "target": .text,
+        ],
+        .network: [
+            "attempt": .integer,
+            "duration_ms": .integer,
+            "error_code": .text,
+            "method": .text,
+            "outcome": .text,
+            "path": .text,
+            "status": .integer,
+        ],
+        .lifecycle: [
+            "duration_ms": .integer,
+            "launch_type": .text,
+            "outcome": .text,
+            "phase": .text,
+            "reason": .text,
+            "state": .text,
+        ],
+        .crash: [
+            "source": .text,
+        ],
+    ]
+
+    /// The value when it is registered for the category with the right kind.
+    static func accepted(
+        _ value: DiagLogAttributeValue,
+        key: String,
+        category: DiagnosticsLogCategory
+    ) -> DiagLogAttributeValue? {
+        guard let kind = keys[category]?[key] else {
+            assertionFailure("Unregistered diagnostics attribute \(category.rawValue).\(key)")
+            return nil
+        }
+        guard kind.accepts(value) else {
+            assertionFailure("Diagnostics attribute \(category.rawValue).\(key) has wrong value type")
+            return nil
+        }
+        return value
     }
 }
 
-enum DiagnosticsJSONCoding {
+extension DiagnosticsLogLine {
+    /// Compact JSON with sorted keys and unescaped slashes.
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return encoder
     }
 
-    static func makeDecoder() -> JSONDecoder {
-        JSONDecoder()
+    var isComplete: Bool {
+        !ts.isEmpty && !run.isEmpty && !tag.isEmpty && !msg.isEmpty
     }
 }
-
-enum DiagnosticsTimestamp {
-    private static let lock = NSLock()
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-        return formatter
-    }()
-
-    static func string(from date: Date) -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        return formatter.string(from: date)
-    }
-}
-
-enum DiagnosticsJSONValue: Codable, Equatable {
-    case string(String)
-    case int(Int)
-    case double(Double)
-    case bool(Bool)
-    case null
-    case array([DiagnosticsJSONValue])
-    case object([String: DiagnosticsJSONValue])
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let value = try? container.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? container.decode(Int.self) {
-            self = .int(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .double(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
-        } else if let value = try? container.decode([DiagnosticsJSONValue].self) {
-            self = .array(value)
-        } else {
-            self = .object(try container.decode([String: DiagnosticsJSONValue].self))
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .string(let value):
-            try container.encode(value)
-        case .int(let value):
-            try container.encode(value)
-        case .double(let value):
-            try container.encode(value)
-        case .bool(let value):
-            try container.encode(value)
-        case .null:
-            try container.encodeNil()
-        case .array(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
-        }
-    }
-}
-
-extension String {
-    var diagnosticsIsNonEmpty: Bool {
-        !isEmpty
-    }
-}
-#endif

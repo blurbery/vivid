@@ -423,7 +423,7 @@ final class VividCloudPreferences {
 
     func capture(accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {
         let started = DispatchTime.now()
-        defer { Self.recordSlowCapture(milliseconds: LaunchTimeline.milliseconds(since: started), accounts: accounts.count) }
+        defer { Self.recordSlowCapture(milliseconds: LaunchTimeline.milliseconds(since: started)) }
         try load()
         var values: [String: Data] = [:]
         let keys = defaultsKeys(accounts: accounts)
@@ -464,7 +464,7 @@ final class VividCloudPreferences {
     /// Capture reads Keychain and both settings stores on the main thread, so
     /// a slow pass is logged where a freeze report will show it.
     private static let slowCaptureThresholdMs = 250
-    private static func recordSlowCapture(milliseconds: Int, accounts: Int) {
+    private static func recordSlowCapture(milliseconds: Int) {
         guard milliseconds >= slowCaptureThresholdMs else { return }
         DiagTrace.breadcrumb(
             .essential,
@@ -472,7 +472,7 @@ final class VividCloudPreferences {
             category: .lifecycle,
             tag: "CloudPreferences",
             message: "preference capture slow",
-            attrs: ["duration_ms": .int(milliseconds), "accounts": .int(accounts)]
+            attrs: ["duration_ms": .int(milliseconds)]
         )
     }
     func reconcile(_ remote: [String: VividCloudPreference], accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {

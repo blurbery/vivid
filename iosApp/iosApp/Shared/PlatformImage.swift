@@ -1,24 +1,16 @@
-#if canImport(UIKit)
-import UIKit
-#endif
 import SwiftUI
+import UIKit
 
-#if canImport(UIKit)
 typealias PlatformImage = UIImage
-#endif
 
 extension Image {
     init(platformImage: PlatformImage) {
-        #if canImport(UIKit)
         self.init(uiImage: platformImage)
-        #endif
     }
 }
 
 extension PlatformImage {
     static func vividImage(cgImage: CGImage) -> PlatformImage {
-        #if canImport(UIKit)
-        return PlatformImage(cgImage: cgImage)
-        #endif
+        UIImage(cgImage: cgImage)
     }
 }
