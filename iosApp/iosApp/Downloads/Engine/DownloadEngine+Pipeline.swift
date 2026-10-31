@@ -179,10 +179,11 @@ extension DownloadManager {
             return
         case _ where record.retryCount < 4 && Self.isTemporaryFailure(error):
             // A dropped connection or a timed-out request is retried like a
-            // busy server; after the last try it fails as below.
+            // busy server, and an expired sign-in is refreshed first, as a
+            // transfer's is; after the last try it fails as below.
             record.retryCount += 1
             file.records[id] = record
-            scheduleRetry(id, resumeData: nil, refreshesSignIn: false)
+            scheduleRetry(id, resumeData: nil, refreshesSignIn: status == 401)
             return
         default:
             record.localStatus = .failed
