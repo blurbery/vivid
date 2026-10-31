@@ -189,14 +189,14 @@ struct TVLoginView: View {
                 Button("Use a password instead") {
                     guard codeSignIn.canCancel else { return }
                     codeSignIn.cancel()
-                    moveFocus(to: .offer)
+                    moveFocus(to: .offer, afterTurns: 2)
                 }
                 .buttonStyle(AuroraGhostButtonStyle())
                 .focused($focusedTarget, equals: .usePassword)
             } else if let service = offeredService {
                 Button {
                     startCodeSignIn(service)
-                    moveFocus(to: .usePassword)
+                    moveFocus(to: .usePassword, afterTurns: 2)
                 } label: {
                     Text("Use \(service.title)")
                 }
@@ -219,10 +219,44 @@ struct TVLoginView: View {
         form.startCodeSignIn(service, with: codeSignIn, adding: nil, router: router)
     }
 
-    /// Moves focus once the current update has finished, so the target
-    /// exists by then.
-    private func moveFocus(to target: Target) {
-        Task { @MainActor in focusedTarget = target }
+    /// Moves focus after `turns` turns of the main actor, so the target
+    /// exists by then. A button that appears in the same update as the
+    /// panel swap needs two.
+    private func moveFocus(to target: Target, afterTurns turns: Int = 1) {
+        Task { @MainActor in
+            if turns > 1 {
+                moveFocus(to: target, afterTurns: turns - 1)
+            } else {
+                focusedTarget = target
+            }
+        }
+    }
+}
+
+/// An Apple TV form field's caption: uppercase, monospaced and quiet.
+private struct TVFieldLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.system(size: 15, weight: .semibold, design: .monospaced))
+            .tracking(2)
+            .foregroundStyle(Color.auroraInkTertiary)
+    }
+}
+
+/// A rose error line under the form.
+private struct TVFormMessage: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(Color.requestRose)
+            Text(text)
+                .font(.vividCaption)
+                .foregroundStyle(Color.requestRose)
+        }
     }
 }
 

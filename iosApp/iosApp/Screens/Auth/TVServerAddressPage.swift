@@ -104,7 +104,7 @@ struct TVServerSetupView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if let message = form.message {
-                TVFormMessage(text: message, wraps: true)
+                TVFormMessage(text: message)
                     .transition(.opacity)
             }
             Spacer(minLength: 0)
@@ -177,7 +177,7 @@ struct TVServerSetupView: View {
 }
 
 /// An Apple TV form field's caption: uppercase, monospaced and quiet.
-struct TVFieldLabel: View {
+private struct TVFieldLabel: View {
     let text: String
 
     var body: some View {
@@ -188,27 +188,19 @@ struct TVFieldLabel: View {
     }
 }
 
-/// A rose error line under an Apple TV form.
-struct TVFormMessage: View {
+/// A rose error line under the form, wrapping onto more lines as needed.
+private struct TVFormMessage: View {
     let text: String
-    var wraps = false
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(Color.requestRose)
-            if wraps {
-                messageText.fixedSize(horizontal: false, vertical: true)
-            } else {
-                messageText
-            }
+            Text(text)
+                .font(.vividCaption)
+                .foregroundStyle(Color.requestRose)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var messageText: some View {
-        Text(text)
-            .font(.vividCaption)
-            .foregroundStyle(Color.requestRose)
     }
 }
 #endif

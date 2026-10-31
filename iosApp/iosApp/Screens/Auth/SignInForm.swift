@@ -8,9 +8,11 @@ final class SignInForm {
     var password = ""
     private(set) var isBusy = false
     var message: String?
+    #if os(iOS)
     /// Set while the Add Server sign-in page is off screen, so a credential
     /// check that finishes then is dropped.
     var hasLeftPage = false
+    #endif
 
     private func credentialsProblem(for provider: MediaServerProvider) -> String? {
         if username.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -38,12 +40,14 @@ final class SignInForm {
                 if provider == .silo {
                     try await AuthService.shared.login(username: username, password: password, defersSiloSignInRecord: true)
                     self.password = ""
+                    #if os(iOS) || os(tvOS)
                     TVSavedAccountStore.shared.beginProfileChoice()
+                    #endif
                 } else {
                     try await AuthService.shared.login(username: username, password: password)
                     self.password = ""
                 }
-                await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
+                await prepareHome(router: router)
             } catch {
                 message = error.localizedDescription
             }
@@ -71,7 +75,7 @@ final class SignInForm {
                     return error.localizedDescription
                 }
                 self.password = ""
-                await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
+                await self.prepareHome(router: router)
                 return nil
             }
         case .embyConnect:
@@ -82,10 +86,17 @@ final class SignInForm {
                     return error.localizedDescription
                 }
                 self.password = ""
-                await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
+                await self.prepareHome(router: router)
                 return nil
             }
         }
+    }
+
+    /// Hands a first-run sign-in over to profile entry and Home preparation.
+    private func prepareHome(router: AppRouter) async {
+        #if os(iOS) || os(tvOS)
+        await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
+        #endif
     }
 
     #if os(iOS)
@@ -118,7 +129,7 @@ final class SignInForm {
                     if added { self.password = "" } else { message = store.error }
                 }
             } catch {
-                message = error.localizedDescription
+                if !hasLeftPage { message = error.localizedDescription }
             }
             isBusy = false
         }

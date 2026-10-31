@@ -45,8 +45,10 @@ final class ServerAddressForm {
     var showsAdvanced = false
     private(set) var isBusy = false
     var message: String?
+    #if os(iOS)
     /// The server Find located, shown as the next page.
     var foundServer: ServerProbe?
+    #endif
 
     private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app", category: "ServerSetup")
 
@@ -62,7 +64,9 @@ final class ServerAddressForm {
                 try await AuthService.shared.checkServer(url: candidate, provider: provider)
             }
             if let status {
+                #if os(iOS) || os(tvOS)
                 TVSavedAccountStore.shared.noteChosenServer()
+                #endif
                 router.resetToLogin()
                 if status.needsSetup { router.navigate(to: .serverNeedsSetup) }
             }
@@ -70,6 +74,7 @@ final class ServerAddressForm {
         }
     }
 
+    #if os(iOS)
     /// Add Server: finds the server without saving anything.
     func find() {
         guard !isBusy, let candidates = checkedCandidates() else { return }
@@ -90,6 +95,7 @@ final class ServerAddressForm {
             isBusy = false
         }
     }
+    #endif
 
     private func checkedCandidates() -> [String]? {
         let result = Self.candidates(
