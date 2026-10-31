@@ -24,11 +24,16 @@ Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership). Refer
     <tr><th align="left">Area</th><th align="left" width="10000">Current implementation</th></tr>
   </thead>
   <tbody>
-    <tr><td>Colours</td><td><a href="../iosApp/iosApp/Theme/Colors.swift">Colors.swift</a></td></tr>
-    <tr><td>Layout and motion tokens</td><td><a href="../iosApp/iosApp/Theme/VividTheme.swift">VividTheme.swift</a></td></tr>
-    <tr><td>Type</td><td><a href="../iosApp/iosApp/Theme/Typography.swift">Typography.swift</a></td></tr>
-    <tr><td>Button styles</td><td><a href="../iosApp/iosApp/Theme/VividButtonStyles.swift">VividButtonStyles.swift</a></td></tr>
-    <tr><td>First-run components</td><td><a href="../iosApp/iosApp/DesignSystem/Aurora/AuroraStyle.swift">AuroraStyle.swift</a></td></tr>
+    <tr><td>Colours</td><td><a href="../iosApp/iosApp/DesignSystem/Tokens/VividColours.swift">VividColours.swift</a></td></tr>
+    <tr><td>Layout and motion tokens</td><td><a href="../iosApp/iosApp/DesignSystem/Tokens/VividLayoutTokens.swift">VividLayoutTokens.swift</a></td></tr>
+    <tr><td>Type</td><td><a href="../iosApp/iosApp/DesignSystem/Tokens/VividFonts.swift">VividFonts.swift</a></td></tr>
+    <tr><td>Button styles</td><td><a href="../iosApp/iosApp/DesignSystem/Controls/VividButtonStyling.swift">VividButtonStyling.swift</a></td></tr>
+    <tr><td>First-run components</td><td><a href="../iosApp/iosApp/DesignSystem/FirstRun/FirstRunControls.swift">FirstRunControls.swift</a>, with the fields in <a href="../iosApp/iosApp/DesignSystem/FirstRun/FirstRunTextField.swift">FirstRunTextField.swift</a> (iPhone and iPad) and <a href="../iosApp/iosApp/DesignSystem/FirstRun/FirstRunInputField.swift">FirstRunInputField.swift</a> (Apple TV)</td></tr>
+    <tr><td>Glass surfaces</td><td><a href="../iosApp/iosApp/DesignSystem/Surfaces/GlassSurfaces.swift">GlassSurfaces.swift</a></td></tr>
+    <tr><td>Page backgrounds</td><td><a href="../iosApp/iosApp/DesignSystem/Surfaces/PageCanvas.swift">PageCanvas.swift</a></td></tr>
+    <tr><td>Page chrome and tab bar scroll state</td><td><a href="../iosApp/iosApp/DesignSystem/Surfaces/PageChromeScroll.swift">PageChromeScroll.swift</a></td></tr>
+    <tr><td>Media rails and Apple TV Home rows</td><td><a href="../iosApp/iosApp/DesignSystem/Layout/MediaRails.swift">MediaRails.swift</a>, <a href="../iosApp/iosApp/DesignSystem/Layout/TVHomeRows.swift">TVHomeRows.swift</a></td></tr>
+    <tr><td>Navigation, list, search and alert helpers</td><td><a href="../iosApp/iosApp/DesignSystem/Navigation/NavigationModifiers.swift">NavigationModifiers.swift</a></td></tr>
     <tr><td>Vivid identity</td><td><a href="branding/README.md">Branding guide</a></td></tr>
   </tbody>
 </table>
