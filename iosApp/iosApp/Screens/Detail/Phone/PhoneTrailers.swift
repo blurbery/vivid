@@ -8,7 +8,9 @@ struct MobileTrailersSection: View {
 
     @State private var tmdb = TVTMDbStore.shared
     @State private var videos: [ItemVideo] = []
-    @State private var isLoading = false
+    // Starts as loading, so the first frame shows the spinner rather than
+    // "No trailers available".
+    @State private var isLoading = true
     @State private var didFail = false
     @State private var retryCount = 0
     @State private var pendingTrailer: TrailerRailEntry?

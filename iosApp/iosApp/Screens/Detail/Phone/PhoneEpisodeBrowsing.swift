@@ -96,7 +96,10 @@ private struct MobileSeasonPager: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 0) {
+            // Built as they come into view. Each page takes its natural
+            // height, then the pager's width; the clipped frame below cuts
+            // anything taller than the estimate.
+            LazyHStack(alignment: .top, spacing: 0) {
                 ForEach(seasons) { season in
                     MobileEpisodePage(
                         episodes: page(for: season),
@@ -108,7 +111,8 @@ private struct MobileSeasonPager: View {
                         onSelect: onSelectEpisode,
                         onPlay: nil
                     )
-                    .frame(width: width, alignment: .top)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .containerRelativeFrame(.horizontal, alignment: .top)
                     .id(season.id)
                 }
             }
@@ -148,7 +152,9 @@ private struct MobileSeasonPager: View {
     }
 
     private var estimatedHeight: CGFloat {
-        guard let season = seasons.first(where: { $0.id == visibleSeasonId }) else { return 72 }
+        // Before the pager reports a page: the chosen season, then the first.
+        guard let season = seasons.first(where: { $0.id == visibleSeasonId }) ?? selectedSeason ?? seasons.first
+        else { return 72 }
         let count: Int
         if let cached = episodesBySeason[season.seasonNumber] {
             count = cached.count

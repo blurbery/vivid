@@ -99,6 +99,7 @@ struct MobilePlaybackSelectors: View {
             HStack(spacing: 6) {
                 ForEach(kinds, id: \.self) { kind in
                     control(kind, version: version)
+                        .frame(maxWidth: .infinity)
                 }
             }
         }

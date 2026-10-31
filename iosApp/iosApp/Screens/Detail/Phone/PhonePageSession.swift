@@ -211,6 +211,9 @@ final class MobileDetailSession {
         let needsCatalogue = !isShowing
 
         guard let identity = await TokenStore.shared.captureOrdinaryRequestAuth() else { return }
+        // A newer refresh or leaving the page while the sign-in was read
+        // sends nothing.
+        guard !Task.isCancelled, generation == nextUpGeneration else { return }
 
         var hasPlaybackDetail = false
         var abandoned = false
@@ -265,8 +268,9 @@ final class MobileDetailSession {
             let key = CacheKey.itemWatchDetail(neighbourId)
             if cache.get(key, as: WatchDetail.self) != nil { continue }
             let fetched = try? await MetadataRequestPool.shared.watchDetail(contentId: neighbourId)
-            guard await isCurrent(generation, identity: identity) else { return }
+            // A failed fetch is skipped before the sign-in is checked again.
             guard let fetched else { continue }
+            guard await isCurrent(generation, identity: identity) else { return }
             guard fetched.contentId == neighbourId else { return }
             cache.set(fetched, for: key)
         }

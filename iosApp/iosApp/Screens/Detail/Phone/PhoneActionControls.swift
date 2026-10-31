@@ -70,8 +70,8 @@ struct PhonePrimaryPillButton: View {
             Button(action: action) {
                 label
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
                     .frame(maxWidth: fullWidth ? .infinity : nil)
+                    .padding(.horizontal, 24)
                     .frame(height: 52)
                     .vividGlass(in: shape, tint: .black.opacity(0.26), interactive: true)
                     .overlay {
@@ -139,20 +139,22 @@ struct PhoneDetailPrimaryActions<Play: View, Selectors: View, Actions: View>: Vi
                 actions()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } else if PhoneDuo.usesWideDetailLayout(horizontalSizeClass) {
+        } else {
+            // One layout that switches, so a Duo fold or unfold moves Play and
+            // the actions rather than rebuilding them (an open menu stays open).
+            let sharesRow = PhoneDuo.usesWideDetailLayout(horizontalSizeClass)
+            let layout = sharesRow
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: PhoneLabeledActionMetrics.rowSpacing))
+                : AnyLayout(VStackLayout(alignment: .center, spacing: stackedSpacing))
             VStack(spacing: PhoneLabeledActionMetrics.rowSpacing) {
-                HStack(alignment: .top, spacing: PhoneLabeledActionMetrics.rowSpacing) {
+                layout {
                     play()
                     actions()
-                        .environment(\.phoneDetailActionsShareRow, true)
+                        .environment(\.phoneDetailActionsShareRow, sharesRow)
                 }
-                MobileActionRule()
-            }
-        } else {
-            VStack(alignment: .center, spacing: stackedSpacing) {
-                play()
-                actions()
-                    .environment(\.phoneDetailActionsShareRow, false)
+                if sharesRow {
+                    MobileActionRule()
+                }
             }
         }
     }

@@ -372,11 +372,9 @@ struct MobileSeriesPage: View {
 
     private func chooseEpisode(_ episode: EpisodeListItem) {
         pendingPlay = nil
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            session.selectedEpisodeId = episode.contentId
-        }
+        // A plain assignment: no animation wraps it, and the card border's
+        // own ease-out still runs.
+        session.selectedEpisodeId = episode.contentId
     }
 
     private var mediaInformation: some View {
