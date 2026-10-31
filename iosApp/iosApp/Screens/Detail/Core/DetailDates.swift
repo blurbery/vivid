@@ -6,8 +6,8 @@ import Foundation
 enum DetailDateFormatting {
     static func longDate(_ raw: String?) -> String? {
         guard let trimmed = trimmedInput(raw) else { return nil }
-        guard let parsed = parse(trimmed) else { return trimmed }
-        return (parsed.isCalendarDay ? longDayFormatter : longFormatter).string(from: parsed.date)
+        guard let day = parse(trimmed) else { return trimmed }
+        return longFormatter.string(from: day)
     }
 
     /// Episode cards ask on every redraw, so results are kept by the input
@@ -18,8 +18,7 @@ enum DetailDateFormatting {
         if let kept = abbreviatedCache.object(forKey: key) { return kept.value }
         let result: String?
         if let trimmed = trimmedInput(raw) {
-            result = parse(trimmed).map { ($0.isCalendarDay ? mediumDayFormatter : mediumFormatter).string(from: $0.date) }
-                ?? trimmed
+            result = parse(trimmed).map { mediumFormatter.string(from: $0) } ?? trimmed
         } else {
             result = nil
         }
@@ -43,41 +42,19 @@ enum DetailDateFormatting {
         return trimmed
     }
 
-    /// A parsed value: a calendar day, or a moment with a time.
-    private struct ParsedDate {
-        let date: Date
-        let isCalendarDay: Bool
-    }
-
-    /// Date-times are read with their offset and shown in the device's time
-    /// zone. A plain date is a calendar day: it is read and shown in GMT, so
-    /// "2024-05-01" reads 1 May in every time zone.
-    private static func parse(_ text: String) -> ParsedDate? {
-        if let moment = dateTimeParser.date(from: text) ?? fractionalDateTimeParser.date(from: text) {
-            return ParsedDate(date: moment, isCalendarDay: false)
-        }
-        if let day = fullDateParser.date(from: text) ?? plainDateParser.date(from: text) {
-            return ParsedDate(date: day, isCalendarDay: true)
-        }
-        return nil
+    /// Every value is shown as the calendar day the server wrote. A
+    /// date-time is cut to its date part, and both are read and shown in GMT,
+    /// so "2024-05-01" and "2024-05-01T23:30:00Z" read 1 May in every time
+    /// zone (Emby and Jellyfin send premiere dates as midnight GMT
+    /// date-times).
+    private static func parse(_ text: String) -> Date? {
+        fullDateParser.date(from: text) ?? plainDateParser.date(from: text)
     }
 
     private static let fullDateParser: ISO8601DateFormatter = {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withFullDate]
         parser.timeZone = .gmt
-        return parser
-    }()
-
-    private static let dateTimeParser: ISO8601DateFormatter = {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime]
-        return parser
-    }()
-
-    private static let fractionalDateTimeParser: ISO8601DateFormatter = {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return parser
     }()
 
@@ -89,15 +66,13 @@ enum DetailDateFormatting {
         return parser
     }()
 
-    private static let longFormatter = dateFormatter(style: .long, timeZone: .current)
-    private static let mediumFormatter = dateFormatter(style: .medium, timeZone: .current)
-    private static let longDayFormatter = dateFormatter(style: .long, timeZone: .gmt)
-    private static let mediumDayFormatter = dateFormatter(style: .medium, timeZone: .gmt)
+    private static let longFormatter = dateFormatter(style: .long)
+    private static let mediumFormatter = dateFormatter(style: .medium)
 
-    private static func dateFormatter(style: DateFormatter.Style, timeZone: TimeZone) -> DateFormatter {
+    private static func dateFormatter(style: DateFormatter.Style) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = .current
-        formatter.timeZone = timeZone
+        formatter.timeZone = .gmt
         formatter.dateStyle = style
         formatter.timeStyle = .none
         return formatter
