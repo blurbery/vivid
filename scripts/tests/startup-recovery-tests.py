@@ -48,7 +48,7 @@ if stable_task:
  task=between('        .task(id: initialStateAttempt)', '        #if os(iOS) || os(tvOS)\n        .sheet')
 else:
  task=between('            .task(id: initialStateAttempt)', '\n\n        case .needsServerSetup')
-retry=read('Shared/SharedStorage.swift').split('struct KeychainReadFailure:')[1].split('/// Minimal Keychain')[0]
+retry=read('Shared/SharedStorage.swift').split('struct KeychainReadFailure:')[1].split('struct SharedKeychain')[0]
 splash=read('tvOS/Components/VividStartupView.swift').replace('VividLoadingDots()', 'VividLoadingDots().onAppear { trace("dots visible") }.onDisappear { trace("dots hidden") }')
 dots=read('Screens/Player/PlayerBufferingCapsule.swift').split('struct VividLoadingDots: View {')[1].split('struct VividLoadingProgressStyle')[0]
 preamble=r'''

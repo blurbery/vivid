@@ -472,7 +472,7 @@ final class VividCloudPreferences {
             category: .lifecycle,
             tag: "CloudPreferences",
             message: "preference capture slow",
-            attrs: ["duration_ms": .int(milliseconds), "accounts": .int(accounts)]
+            attrs: ["duration_ms": .int(milliseconds)]
         )
     }
     func reconcile(_ remote: [String: VividCloudPreference], accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {
