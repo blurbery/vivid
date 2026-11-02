@@ -438,6 +438,7 @@ private struct HomeSpotlight: View {
         let count = slides.count
         let selectedIndex = slideIndex(selection, count: count)
         let selected = slides[selectedIndex]
+        let art = HomeSeriesBackdrops.shared.art(for: selected.item)
         let tags = count > 1 ? Array(-1...count) : [0]
         return VStack(spacing: 0) {
             TabView(selection: $selection) {
@@ -454,14 +455,14 @@ private struct HomeSpotlight: View {
         }
         .background(alignment: .top) {
             SpotlightArtworkSurface(
-                url: selected.item.backdropUrl ?? selected.item.posterUrl,
-                thumbhash: selected.item.backdropThumbhash,
+                url: art.url.isEmpty ? nil : art.url,
+                thumbhash: art.thumbhash,
                 height: height,
                 topInset: topInset,
                 scrollSpace: scrollSpace,
                 fixedSpace: fixedSpace
             )
-            .id(selected.item.backdropUrl ?? selected.item.contentId)
+            .id(art.url.isEmpty ? selected.item.contentId : art.url)
             .transition(.opacity)
             .allowsHitTesting(false)
             .onDuo { $0.ignoresSafeArea(.container, edges: .horizontal) }
@@ -476,6 +477,11 @@ private struct HomeSpotlight: View {
         }
         .onDisappear { isOnScreen = false }
         .onChange(of: slides.map(\.id)) { selection = 0 }
+        // Slides can come from rows Home hides, so look up their series
+        // backgrounds here as well as in the rows.
+        .task(id: slides.map(\.id)) {
+            await HomeSeriesBackdrops.shared.keepPrepared(slides.map(\.item))
+        }
         .onChange(of: selectedIndex) {
             cycleStart = Date()
             if pausedAt != nil { pausedAt = cycleStart }
