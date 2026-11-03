@@ -13,8 +13,11 @@ struct TVMarqueeContent: Equatable {
     let backdropUrl: String?
     let fallbackArtworkUrl: String?
 
-    /// `rowId` and `rowTitle` are accepted for callers' sake and not used.
-    init(item: SectionItem, rowId: String? = nil, rowTitle: String) {
+    /// `backdropUrl` is the background to show: for an episode, its series
+    /// background once known, the same as Home's Continue Watching and Next
+    /// Up cards. `rowId` and `rowTitle` are accepted for callers' sake and
+    /// not used.
+    init(item: SectionItem, backdropUrl: String?, rowId: String? = nil, rowTitle: String) {
         let isEpisode = item.type.lowercased() == "episode"
         var parts: [String] = []
         if isEpisode {
@@ -37,7 +40,7 @@ struct TVMarqueeContent: Equatable {
 
         title = isEpisode ? (item.seriesTitle ?? item.title) : item.title
         contentRatingBadge = item.contentRating.flatMap { $0.isEmpty ? nil : $0.uppercased() }
-        backdropUrl = item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 }
+        self.backdropUrl = backdropUrl.flatMap { $0.isEmpty ? nil : $0 }
         fallbackArtworkUrl = item.posterUrl.flatMap { $0.isEmpty ? nil : $0 }
     }
 

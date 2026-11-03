@@ -362,7 +362,9 @@ final class TVHomeMetadataCache {
             strings += row.section.items.compactMap { $0.posterUrl }
         }
         for slide in value.spotlight {
-            strings += [slide.item.backdropUrl, slide.item.posterUrl, slide.item.logoUrl].compactMap { $0 }
+            // The background the spotlight shows, series backgrounds included.
+            strings += [HomeSeriesBackdrops.shared.art(for: slide.item).url, slide.item.posterUrl, slide.item.logoUrl]
+                .compactMap { $0 }.filter { !$0.isEmpty }
             #if os(iOS)
             strings += [value.details[slide.id]?.backdropUrl].compactMap { $0 }
             #endif
@@ -452,7 +454,7 @@ final class TVHomeMetadataCache {
             let base = MediaServerProvider.active == .silo
                 ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
             for slide in snapshot.spotlight {
-                for raw in [slide.item.backdropUrl].compactMap({ $0 }) {
+                for raw in [slide.content.backdropUrl].compactMap({ $0 }) {
                     guard urls.insert(raw).inserted else { continue }
                     guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
                     guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base) else { continue }

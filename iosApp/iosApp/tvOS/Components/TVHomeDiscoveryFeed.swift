@@ -1009,6 +1009,11 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = nil
             readyPositions = readyPositions.filter { ids.contains($0.value) }
         }
+        // Slides can come from rows Home hides, so look up their series
+        // backgrounds here as well as in the rows.
+        .task(id: slides.map(\.id)) {
+            await HomeSeriesBackdrops.shared.keepPrepared(slides.map(\.item))
+        }
         .task(id: rotationKey) {
             guard canRotate else { return }
             let remaining = max(0, 6 - elapsedCycle(at: Date()))

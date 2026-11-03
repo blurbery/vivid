@@ -148,8 +148,9 @@ struct TVHomeSpotlightSlide: Identifiable, Codable, Equatable {
     let rowTitle: String
     var id: String { item.contentId }
     #if os(tvOS)
-    var content: TVMarqueeContent {
-        TVMarqueeContent(item: item, rowId: rowID, rowTitle: rowTitle)
+    @MainActor var content: TVMarqueeContent {
+        TVMarqueeContent(item: item, backdropUrl: HomeSeriesBackdrops.shared.art(for: item).url,
+                         rowId: rowID, rowTitle: rowTitle)
     }
     #endif
 }
