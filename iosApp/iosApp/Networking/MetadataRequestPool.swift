@@ -1,156 +1,125 @@
 import Foundation
 
-/// Joins callers that are waiting for the same value at the same time.
+/// Lets callers asking for the same thing at the same moment share one
+/// request.
 ///
-/// This isn't a cache: a finished flight is removed, failures can be retried
-/// straight away, and code that needs a fresh server read (mutations,
-/// polling) can keep calling `VividAPI` directly.
+/// Nothing is kept once a request finishes, so this is not a cache: the next
+/// caller starts a new request, a failure can be retried at once, and code
+/// that must see the server's latest answer (writes, polling) goes straight
+/// to `VividAPI` instead.
 actor MetadataSingleFlight<Key: Hashable & Sendable, Value> {
-    private struct Flight {
-        let task: Task<Value, Error>
-        var waiters: Set<UUID>
+    /// One running request and the callers waiting on it. Each caller holds
+    /// a ticket, so a cancellation only ever withdraws the caller it belongs
+    /// to, even if a newer request has since started under the same key.
+    private struct Shared {
+        let work: Task<Value, Error>
+        var tickets: Set<UUID> = []
     }
 
-    private var flights: [Key: Flight] = [:]
+    private var inFlight: [Key: Shared] = [:]
 
     func value(
         for key: Key,
         operation: @escaping () async throws -> Value
     ) async throws -> Value {
         try Task.checkCancellation()
-
-        let waiterID = UUID()
-        let task: Task<Value, Error>
-        if var flight = flights[key] {
-            flight.waiters.insert(waiterID)
-            flights[key] = flight
-            task = flight.task
-        } else {
-            let newTask = Task { try await operation() }
-            flights[key] = Flight(task: newTask, waiters: [waiterID])
-            task = newTask
-        }
-
-        let result = await withTaskCancellationHandler {
-            await task.result
+        let ticket = UUID()
+        let work = join(key, ticket: ticket, startingWith: operation)
+        let outcome = await withTaskCancellationHandler {
+            await work.result
         } onCancel: {
-            Task { await self.cancelWaiter(waiterID, for: key) }
+            Task { await self.leave(key, ticket: ticket, stoppingWorkIfLast: true) }
         }
-
-        finishWaiter(waiterID, for: key)
+        leave(key, ticket: ticket, stoppingWorkIfLast: false)
         try Task.checkCancellation()
-        return try result.get()
+        return try outcome.get()
     }
 
-    /// A shared request outlives one screen going away while another still
-    /// wants it; once the last waiter has gone, the work is stopped. Matching
-    /// on the waiter's ID keeps a late cancellation from removing a newer
-    /// flight for the same key.
-    private func cancelWaiter(_ waiterID: UUID, for key: Key) {
-        guard var flight = flights[key], flight.waiters.remove(waiterID) != nil else {
-            return
-        }
-        if flight.waiters.isEmpty {
-            flights.removeValue(forKey: key)
-            flight.task.cancel()
-        } else {
-            flights[key] = flight
-        }
+    private func join(
+        _ key: Key,
+        ticket: UUID,
+        startingWith operation: @escaping () async throws -> Value
+    ) -> Task<Value, Error> {
+        var shared = inFlight[key] ?? Shared(work: Task { try await operation() })
+        shared.tickets.insert(ticket)
+        inFlight[key] = shared
+        return shared.work
     }
 
-    private func finishWaiter(_ waiterID: UUID, for key: Key) {
-        guard var flight = flights[key], flight.waiters.remove(waiterID) != nil else {
+    /// Withdraws one caller. A request keeps running while anyone still
+    /// waits for it; when a cancelled caller was the last one, it's stopped.
+    private func leave(_ key: Key, ticket: UUID, stoppingWorkIfLast: Bool) {
+        guard var shared = inFlight[key], shared.tickets.remove(ticket) != nil else { return }
+        guard shared.tickets.isEmpty else {
+            inFlight[key] = shared
             return
         }
-        if flight.waiters.isEmpty {
-            flights.removeValue(forKey: key)
-        } else {
-            flights[key] = flight
+        inFlight[key] = nil
+        if stoppingWorkIfLast {
+            shared.work.cancel()
         }
     }
 }
 
-/// Shared flights for everyday metadata reads, used where callers opt in.
+/// Shared requests for the everyday metadata reads that opt in.
 ///
-/// Keys include the account's credential generation (not the credential
-/// itself) and the profile, so a request made after a profile or server
-/// switch never joins one sent for the previous identity. Callers whose
-/// freshness depends on an outside revision pass it as the item detail's
-/// `freshnessDiscriminator`; mutation pollers call `VividAPI` directly.
+/// Every key carries the signed-in account (its credential generation, never
+/// the credential) and the profile, so nothing asked for after a server or
+/// profile switch joins a request made for the previous one. An item detail
+/// whose freshness depends on something outside it passes that revision as
+/// `freshnessDiscriminator`. Pollers waiting on a write call `VividAPI`
+/// directly.
 final class MetadataRequestPool: @unchecked Sendable {
     static let shared = MetadataRequestPool()
 
-    private struct RequestScope: Hashable, Sendable {
-        let account: RefreshAccountIdentity?
-        let profileID: String?
+    /// A request target tied to the identity it was asked for.
+    private struct Scoped<Target: Hashable & Sendable>: Hashable, Sendable {
+        let identity: RefreshAccountIdentity?
+        let profile: String?
+        let target: Target
     }
 
-    private struct ItemDetailKey: Hashable, Sendable {
-        let scope: RequestScope
+    private struct DetailTarget: Hashable, Sendable {
         let contentID: String
-        let freshnessDiscriminator: String?
+        let revision: String?
     }
 
-    private struct SeasonsKey: Hashable, Sendable {
-        let scope: RequestScope
+    private struct SeasonTarget: Hashable, Sendable {
         let seriesID: String
+        let season: Int
     }
 
-    private struct EpisodesKey: Hashable, Sendable {
-        let scope: RequestScope
-        let seriesID: String
-        let seasonNumber: Int
-    }
-
-    private struct WatchDetailKey: Hashable, Sendable {
-        let scope: RequestScope
-        let contentID: String
-    }
-
-    private let itemDetailFlights = MetadataSingleFlight<ItemDetailKey, ItemDetail>()
-    private let seasonsFlights = MetadataSingleFlight<SeasonsKey, SeasonsResponse>()
-    private let episodesFlights = MetadataSingleFlight<EpisodesKey, EpisodesResponse>()
-    private let watchDetailFlights = MetadataSingleFlight<WatchDetailKey, WatchDetail>()
+    private let details = MetadataSingleFlight<Scoped<DetailTarget>, ItemDetail>()
+    private let seasonLists = MetadataSingleFlight<Scoped<String>, SeasonsResponse>()
+    private let episodeLists = MetadataSingleFlight<Scoped<SeasonTarget>, EpisodesResponse>()
+    private let watchDetails = MetadataSingleFlight<Scoped<String>, WatchDetail>()
 
     private init() {}
 
-    func itemDetail(
-        contentId: String,
-        freshnessDiscriminator: String? = nil
-    ) async throws -> ItemDetail {
-        let key = ItemDetailKey(
-            scope: await requestScope(),
-            contentID: contentId,
-            freshnessDiscriminator: freshnessDiscriminator
-        )
-        return try await itemDetailFlights.value(for: key) {
-            try await VividAPI.shared.itemDetail(contentId: contentId)
-        }
+    func itemDetail(contentId: String, freshnessDiscriminator: String? = nil) async throws -> ItemDetail {
+        let key = await scoped(DetailTarget(contentID: contentId, revision: freshnessDiscriminator))
+        return try await details.value(for: key) { try await VividAPI.shared.itemDetail(contentId: contentId) }
     }
 
     func seasons(seriesId: String) async throws -> SeasonsResponse {
-        let key = SeasonsKey(scope: await requestScope(), seriesID: seriesId)
-        return try await seasonsFlights.value(for: key) {
-            try await VividAPI.shared.seasons(seriesId: seriesId)
-        }
+        let key = await scoped(seriesId)
+        return try await seasonLists.value(for: key) { try await VividAPI.shared.seasons(seriesId: seriesId) }
     }
 
     func episodes(seriesId: String, seasonNumber: Int) async throws -> EpisodesResponse {
-        let key = EpisodesKey(scope: await requestScope(), seriesID: seriesId, seasonNumber: seasonNumber)
-        return try await episodesFlights.value(for: key) {
+        let key = await scoped(SeasonTarget(seriesID: seriesId, season: seasonNumber))
+        return try await episodeLists.value(for: key) {
             try await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: seasonNumber)
         }
     }
 
     func watchDetail(contentId: String) async throws -> WatchDetail {
-        let key = WatchDetailKey(scope: await requestScope(), contentID: contentId)
-        return try await watchDetailFlights.value(for: key) {
-            try await VividAPI.shared.watchDetail(contentId: contentId)
-        }
+        let key = await scoped(contentId)
+        return try await watchDetails.value(for: key) { try await VividAPI.shared.watchDetail(contentId: contentId) }
     }
 
-    private func requestScope() async -> RequestScope {
-        let auth = await TokenStore.shared.captureOrdinaryRequestAuth()
-        return RequestScope(account: auth?.account, profileID: auth?.profileId)
+    private func scoped<Target: Hashable & Sendable>(_ target: Target) async -> Scoped<Target> {
+        let signIn = await TokenStore.shared.captureOrdinaryRequestAuth()
+        return Scoped(identity: signIn?.account, profile: signIn?.profileId, target: target)
     }
 }
