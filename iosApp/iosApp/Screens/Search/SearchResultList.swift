@@ -6,16 +6,17 @@ import Foundation
 /// stands, so the grid never shifts under focus on Apple TV.
 struct SearchResultList {
     private(set) var items: [BrowseItem] = []
-    private var positions: [String: Int] = [:]
+    /// Where each shown title is in `items`, by content ID.
+    private var indexByID: [String: Int] = [:]
 
     var isEmpty: Bool { items.isEmpty }
 
-    func contains(_ contentId: String) -> Bool { positions[contentId] != nil }
+    func contains(_ contentId: String) -> Bool { indexByID[contentId] != nil }
 
     /// Adds the titles that aren't shown yet, at the end.
     mutating func append(_ cards: [BrowseItem]) {
-        for card in cards where positions[card.contentId] == nil {
-            positions[card.contentId] = items.count
+        for card in cards where indexByID[card.contentId] == nil {
+            indexByID[card.contentId] = items.count
             items.append(card)
         }
     }
@@ -31,7 +32,8 @@ struct SearchResultList {
     /// leaving out titles that aren't shown.
     mutating func replace(_ cards: [BrowseItem]) {
         for card in cards {
-            if let position = positions[card.contentId] { items[position] = card }
+            guard let index = indexByID[card.contentId] else { continue }
+            items[index] = card
         }
     }
 }

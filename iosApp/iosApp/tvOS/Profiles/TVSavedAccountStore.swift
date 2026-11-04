@@ -1,294 +1,18 @@
 #if os(tvOS) || os(iOS)
 import Foundation
 import CryptoKit
-import CloudKit
-import OSLog
 #if os(tvOS)
 import TVServices
 #endif
 
-struct TVSavedAccount: Codable, Identifiable, Hashable {
-    let id: String
-    let serverID: String
-    let userID: String
-    var username: String
-    var profile: UserProfile?
-    var requiresLogin: Bool
-    var pinEnabled: Bool? = nil
-    /// The Silo viewing profile this saved profile always enters, for a
-    /// household member other than the account's primary profile. Nil keeps
-    /// the original behaviour (the primary, or only, profile) and the original
-    /// identity, so existing saved profiles are unchanged.
-    var siloProfileID: String? = nil
-    /// The name this saved profile shows for its server, set from the Server
-    /// row in Settings > Servers. Each profile keeps its own, so two profiles
-    /// on one server can name it differently. Nil shows the server's own label.
-    var serverName: String? = nil
-
-    /// The label under this saved profile when it has no server name: "Emby"
-    /// or "Jellyfin", or the Silo server's own name.
-    var defaultServerLabel: String {
-        let provider = MediaServerProvider.forServerID(serverID)
-        if provider.usesNativeUser { return provider.name }
-        return ServerRegistry.shared.entry(with: serverID)?.displayName ?? String(localized: "Media server")
-    }
-
-    /// A typed server name with surrounding spaces removed, or nil when it's
-    /// blank, which shows the server's own label again.
-    static func serverName(from input: String?) -> String? {
-        let name = input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? nil : name
-    }
-
-    /// A Silo saved profile is labelled with its viewing profile's name in
-    /// Silo, the primary profile included, since that name is chosen there
-    /// and isn't the sign-in username. An unbound card uses the name only
-    /// when it holds the primary profile. Emby and Jellyfin, or a Silo
-    /// profile not loaded yet, keep the username.
-    var displayName: String { siloProfileName ?? username }
-
-    /// The Silo viewing profile's name this saved profile shows, if any.
-    var siloProfileName: String? {
-        guard MediaServerProvider.forServerID(serverID) == .silo, let profile,
-              siloProfileID == nil ? profile.isPrimary : profile.id == siloProfileID else { return nil }
-        let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
-    }
-}
-
-/// Which Silo viewing profile a saved profile binds to.
-enum SiloProfileBinding {
-    /// Nil for the primary profile, or the account's only profile, so those
-    /// keep the original saved-profile identity. Any other household member
-    /// gets its own saved profile. Emby and Jellyfin never bind.
-    static func binding(for profile: UserProfile, profileCount: Int, serverID: String) -> String? {
-        guard MediaServerProvider.forServerID(serverID) == .silo,
-              !profile.isPrimary, profileCount > 1 else { return nil }
-        return profile.id
-    }
-
-    /// Whether `profileID` is the live profile a saved profile may capture.
-    /// A bound profile only ever captures its own Silo profile.
-    static func accepts(_ account: TVSavedAccount, profileID: String?) -> Bool {
-        guard let bound = account.siloProfileID else { return true }
-        return bound == profileID
-    }
-}
-
-struct TVSavedAccountSession: Codable {
-    let accessToken: String
-    let refreshToken: String
-    let profile: UserProfile?
-    let profileToken: String?
-    var nativeUserID: String? = nil
-}
-
-struct VividCloudAccountEnvelope: Codable {
-    var account: TVSavedAccount
-    var session: TVSavedAccountSession?
-    var server: ServerEntry
-    var pinRecord: String?
-    var updatedAt: Date
-    var authenticatedAt: Date? = nil
-}
-
-struct VividCloudAccountTombstone: Codable {
-    var deletedAt: Date
-}
-
-struct VividCloudAccountVault: Codable {
-    var schemaVersion = 1
-    var preferences: [String: VividCloudPreference]? = nil
-    var accounts: [String: VividCloudAccountEnvelope] = [:]
-    var tombstones: [String: VividCloudAccountTombstone] = [:]
-    var serverTombstones: [String: VividCloudAccountTombstone]? = nil
-
-    mutating func applyServerDeletions(local: [String: VividCloudAccountEnvelope], authentications: [String: Date]) {
-        let candidates = accounts.merging(local) { existing, _ in existing }
-        for (identity, envelope) in candidates {
-            guard let deletion = serverTombstones?[envelope.server.id] else { continue }
-            let authenticatedAt = [envelope.authenticatedAt, authentications[identity]].compactMap { $0 }.max()
-            guard VividCloudDeletionPolicy.tombstoneWins(
-                deletedAt: deletion.deletedAt, explicitAuthenticationAt: authenticatedAt
-            ) else { continue }
-            if tombstones[identity].map({ $0.deletedAt >= deletion.deletedAt }) != true {
-                tombstones[identity] = deletion
-            }
-        }
-    }
-}
-
-fileprivate struct VividCloudApplyResult {
-    var activeAccountDeleted = false
-    var activeSessionInvalidated = false
-    var orphanedServerIDs: Set<String> = []
-}
-
-enum VividCloudAccountIdentity {
-    static func key(serverID: String, userID: String, siloProfileID: String? = nil) -> String {
-        var raw = "\(serverID)\u{0}\(userID)"
-        if let siloProfileID { raw += "\u{0}\(siloProfileID)" }
-        return SHA256.hash(data: Data(raw.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
-
-    static func key(for account: TVSavedAccount) -> String {
-        key(serverID: account.serverID, userID: account.userID, siloProfileID: account.siloProfileID)
-    }
-}
-
-/// Saved profiles bound to a Silo household member sync in their own iCloud
-/// record. Older Vivid builds read only the original record, and they would
-/// merge two saved profiles for one login into one (or duplicate them on every
-/// sync), so the original record keeps exactly the profiles it always held.
-enum VividCloudVaultPartition {
-    /// One vault for the sync logic: the original record plus the household
-    /// members' record. Tombstones, server deletions and preferences only ever
-    /// live in the original record.
-    static func combined(main: VividCloudAccountVault, profiles: VividCloudAccountVault) -> VividCloudAccountVault {
-        var vault = main
-        for (identity, envelope) in profiles.accounts
-        where envelope.account.siloProfileID != nil && vault.accounts[identity] == nil {
-            vault.accounts[identity] = envelope
-        }
-        return vault
-    }
-
-    /// Splits a combined vault back into the two records.
-    static func split(_ vault: VividCloudAccountVault) -> (main: VividCloudAccountVault, profiles: VividCloudAccountVault) {
-        var main = vault
-        main.accounts = vault.accounts.filter { $0.value.account.siloProfileID == nil }
-        var profiles = VividCloudAccountVault()
-        profiles.accounts = vault.accounts.filter { $0.value.account.siloProfileID != nil }
-        return (main, profiles)
-    }
-}
-
-/// Saved-profile order in iCloud. `accountOrder` keeps only the profiles an
-/// older build knows about, in the same form it writes, so devices on
-/// different builds agree on it instead of rewriting it on every sync.
-/// `accountOrder.profiles` adds household members, and exists only while one
-/// is saved.
-enum VividCloudAccountOrder {
-    static let legacyKey = "accountOrder"
-    static let fullKey = "accountOrder.profiles"
-
-    static func values(for accounts: [TVSavedAccount]) -> (legacy: [String], full: [String]?) {
-        let legacy = accounts.filter { $0.siloProfileID == nil }.map { VividCloudAccountIdentity.key(for: $0) }
-        guard accounts.contains(where: { $0.siloProfileID != nil }) else { return (legacy, nil) }
-        return (legacy, accounts.map { VividCloudAccountIdentity.key(for: $0) })
-    }
-
-    /// The full order positions every profile. The legacy order, which an
-    /// older build may have changed since, then decides the order of the
-    /// original profiles within the places they hold.
-    static func resolved(identities: [String], legacyIdentities: Set<String>,
-                         legacy: [String]?, full: [String]?) -> [String] {
-        var result = VividCloudPreferencePolicy.ordered(identities, preferred: full ?? legacy ?? [])
-        guard let legacy else { return result }
-        let slots = result.indices.filter { legacyIdentities.contains(result[$0]) }
-        let reordered = VividCloudPreferencePolicy.ordered(slots.map { result[$0] }, preferred: legacy)
-        for (slot, identity) in zip(slots, reordered) { result[slot] = identity }
-        return result
-    }
-}
-
-enum VividCloudDeletionPolicy {
-    static func canRemoveServer(_ serverID: String, remainingAccounts: [TVSavedAccount]) -> Bool {
-        !remainingAccounts.contains { $0.serverID == serverID }
-    }
-
-    /// A tombstone always wins over routine local state. It can be retired
-    /// only by a credential entry that happened after the deletion.
-    static func tombstoneWins(deletedAt: Date, explicitAuthenticationAt: Date?) -> Bool {
-        guard let explicitAuthenticationAt else { return true }
-        return explicitAuthenticationAt <= deletedAt
-    }
-}
-
-/// A sign-in its server has already accepted. Adding a server checks the
-/// password before Vivid starts switching to it, so a wrong one stays on the
-/// sign-in screen.
-enum VerifiedServerLogin {
-    case silo(LoginResponse)
-    case jellyfin(JellyfinLogin)
-    case emby(EmbyLogin)
-
-    /// Signs in at `serverURL` without saving anything or switching servers.
-    static func signIn(serverURL: String, provider: MediaServerProvider,
-                       username: String, password: String) async throws -> Self {
-        switch provider {
-        case .jellyfin:
-            let session = try await JellyfinConnection.login(serverURL: serverURL, username: username, password: password)
-            return .jellyfin(JellyfinLogin(token: session.token, userID: session.userID, username: username))
-        case .emby:
-            let session = try await EmbyConnection.login(serverURL: serverURL, username: username, password: password)
-            return .emby(EmbyLogin(token: session.token, userID: session.userID, username: username))
-        case .silo:
-            return .silo(try await HTTPClient.shared.loginSavedAccount(serverURL: serverURL, username: username, password: password))
-        }
-    }
-
-    /// The session to save, with the server's own user ID for Jellyfin and Emby.
-    var response: (login: LoginResponse, nativeUserID: String?) {
-        switch self {
-        case .silo(let login):
-            return (login, nil)
-        case .jellyfin(let result):
-            return (LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil)),
-                    result.userID)
-        case .emby(let result):
-            return (LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                user:AuthUser(id:EmbyAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil)),
-                    result.userID)
-        }
-    }
-}
-
-enum VividCloudRestorePolicy {
-    /// iCloud sync leaves the active server alone while the person is signing
-    /// in to a server they chose, until a saved profile on it is active.
-    /// Restoring another saved profile would switch servers under them and
-    /// rebuild the sign-in screen, losing what they typed, for example after
-    /// leaving Vivid to copy a password.
-    static func keepsChosenServer(chosenServerID: String?, activeServerID: String?,
-                                  activeAccountServerID: String?) -> Bool {
-        guard let chosenServerID, chosenServerID == activeServerID else { return false }
-        return activeAccountServerID != chosenServerID
-    }
-}
-
-enum TVAccountRoute: Hashable {
-    case editor(String?)
-}
-
-/// The Silo viewing profile login preparation should enter.
-enum SiloProfileTarget: Equatable {
-    /// A saved profile bound to this household member.
-    case bound(String)
-    /// The account's primary (or only) profile, as before.
-    case primary
-    /// A new saved profile: the member is chosen when there is more than one.
-    case choose
-}
-
-/// A sign-in that becomes a new saved profile once its Silo viewing profile
-/// is chosen. While it is pending, no saved profile owns the live session, so
-/// routine capture and iCloud sync wait instead of saving or replacing it.
-struct PendingSiloProfileChoice: Equatable {
-    let serverID: String
-    /// The viewing profile that was entered, once there is one.
-    var profile: UserProfile? = nil
-    /// The saved-profile binding for `profile` (see ``SiloProfileBinding``).
-    var binding: String? = nil
-}
-
+/// The saved profiles on this device (or this native Apple TV user): their
+/// list, the active one, their sessions and PINs in the Keychain, signing in,
+/// switching, signing out and deleting, and the hooks iCloud sync uses.
 @Observable
 @MainActor
 final class TVSavedAccountStore {
     static let shared = TVSavedAccountStore()
+
     private(set) var accounts: [TVSavedAccount] = []
     private(set) var activeID: String? {
         didSet {
@@ -311,11 +35,14 @@ final class TVSavedAccountStore {
     /// Until the person signs in, sync still imports saved profiles but
     /// neither chooses one nor restores its session: either would rebuild
     /// the setup screen under them and lose what they typed. Never saved, so
-    /// the next launch restores as before.
-    fileprivate var holdsCloudRestore = false
+    /// the next launch restores as before. Only iCloud sync and
+    /// ``resumeCloudRestore()`` change it.
+    var holdsCloudRestore = false
     /// A sync is restoring the active saved profile's session.
-    fileprivate var isRestoringCloudSession = false
+    private(set) var isRestoringCloudSession = false
     private(set) var contentRevision = UUID()
+    /// The user last read for a credential generation, so leaving a profile
+    /// can save it without waiting for its server.
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     /// Saved profiles per device, or per native Apple TV user.
     static let maximumAccounts = 8
@@ -323,16 +50,21 @@ final class TVSavedAccountStore {
         accounts.count < Self.maximumAccounts
     }
     var error: String?
+    /// The saved profile whose PIN was just entered, until it is selected.
     private var unlockedID: String?
     private let defaults = SharedDefaults.shared
     private let keychain = SharedKeychain(audience: .currentUser)
     private let listKey = SharedStorage.savedAccountsKey
     private let activeKey = SharedStorage.activeSavedAccountKey
     private let modificationDatesKey = "vivid.accountModificationDates.v1"
+    private let backgroundedAtKey = "vivid.accounts.backgroundedAt"
+    /// When each saved profile last changed on this device, which decides
+    /// whether an iCloud copy is newer.
     private var modificationDates: [String: Date] = [:]
 
     init() {
-        if let data = defaults.data(forKey: listKey), let values = try? JSONDecoder().decode([TVSavedAccount].self, from: data) {
+        if let data = defaults.data(forKey: listKey),
+           let values = try? JSONDecoder().decode([TVSavedAccount].self, from: data) {
             accounts = values
         }
         if let data = defaults.data(forKey: modificationDatesKey),
@@ -340,16 +72,19 @@ final class TVSavedAccountStore {
             modificationDates = values
         }
         activeID = defaults.string(forKey: activeKey)
+        // Profiles saved before change dates were kept count as changed now.
+        let undated = accounts.filter { modificationDates[$0.id] == nil }
+        guard !undated.isEmpty else { return }
         let now = Date()
-        var seededDates = false
-        for account in accounts where modificationDates[account.id] == nil {
-            modificationDates[account.id] = now
-            seededDates = true
-        }
-        if seededDates { persist() }
+        for account in undated { modificationDates[account.id] = now }
+        persist()
     }
 
     var activeAccount: TVSavedAccount? { accounts.first { $0.id == activeID } }
+
+    private func accountIndex(_ id: String) -> Int? { accounts.firstIndex { $0.id == id } }
+
+    // MARK: Chosen server and first-launch hold
 
     /// The person chose the registry's active server, to sign in to or to use.
     func noteChosenServer() {
@@ -371,18 +106,29 @@ final class TVSavedAccountStore {
                                                   activeAccountServerID: activeAccount?.serverID)
     }
 
+    // MARK: Storage
+
     private func sessionKey(_ id: String) -> String { "vivid.account.\(id).session.v1" }
+    private func pinKey(_ id: String) -> String { "vivid.account.\(id).pin.v1" }
 
     private func saveSession(_ session: TVSavedAccountSession, id: String) throws {
-        let data = try JSONEncoder().encode(session)
-        guard let string = String(data: data, encoding: .utf8), keychain.set(string, for: sessionKey(id)) else {
-            throw ServerRegistryError.persistenceFailed
-        }
+        guard writeJSON(session, to: sessionKey(id)) else { throw ServerRegistryError.persistenceFailed }
     }
 
     private func session(_ id: String) -> TVSavedAccountSession? {
-        guard let string = keychain.get(sessionKey(id)), let data = string.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(TVSavedAccountSession.self, from: data)
+        readJSON(TVSavedAccountSession.self, from: sessionKey(id))
+    }
+
+    /// Keychain items hold their JSON as a UTF-8 string.
+    private func readJSON<Value: Decodable>(_ type: Value.Type, from key: String) -> Value? {
+        guard let string = keychain.get(key), let data = string.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private func writeJSON<Value: Encodable>(_ value: Value, to key: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(value),
+              let string = String(data: data, encoding: .utf8) else { return false }
+        return keychain.set(string, for: key)
     }
 
     private func persist() {
@@ -400,63 +146,92 @@ final class TVSavedAccountStore {
         modificationDates[id] = date
     }
 
+    /// Saves a local change to one profile and shares it through iCloud.
+    private func commitChange(to id: String) {
+        markAccountChanged(id)
+        persist()
+        Task { await VividCloudAccountSync.shared.synchronize() }
+    }
+
+    // MARK: PIN
+
     private struct PINRecord: Codable {
         let salt: String
         let digest: String
         var failures: Int = 0
         var blockedUntil: Date?
     }
-    private func pinKey(_ id: String) -> String { "vivid.account.\(id).pin.v1" }
+
+    private static let pinAttemptsBeforeBlock = 5
+    private static let pinBlockDuration: TimeInterval = 30
+
+    private static func pinDigest(salt: String, pin: String) -> String {
+        SHA256.hash(data: Data((salt + pin).utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     func hasPIN(_ id: String) -> Bool {
         accounts.first { $0.id == id }?.pinEnabled == true || keychain.get(pinKey(id)) != nil
     }
+
     func needsLogin(_ account: TVSavedAccount) -> Bool { account.requiresLogin || session(account.id) == nil }
+
+    /// Only the signed-in active profile can change its own PIN.
+    private func canChangePIN(of id: String) -> Bool {
+        activeID == id && !showsSelector && AuthService.shared.isLoggedIn
+    }
+
     func setPIN(_ pin: String, accountID: String) -> Bool {
-        guard activeID == accountID, !showsSelector, AuthService.shared.isLoggedIn else { return false }
+        guard canChangePIN(of: accountID) else { return false }
         guard pin.count == 4, pin.allSatisfy({ $0.isASCII && $0.isNumber }) else {
             error = String(localized: "Enter exactly four digits."); return false
         }
         let salt = UUID().uuidString
-        let digest = SHA256.hash(data: Data((salt + pin).utf8)).map { String(format: "%02x", $0) }.joined()
-        guard let data = try? JSONEncoder().encode(PINRecord(salt: salt, digest: digest)),
-              let value = String(data: data, encoding: .utf8), keychain.set(value, for: pinKey(accountID)) else {
+        let record = PINRecord(salt: salt, digest: Self.pinDigest(salt: salt, pin: pin))
+        guard writeJSON(record, to: pinKey(accountID)) else {
             error = String(localized: "Couldn’t save the PIN."); return false
         }
-        if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index].pinEnabled = true }
-        markAccountChanged(accountID)
-        persist()
-        Task { await VividCloudAccountSync.shared.synchronize() }
+        if let index = accountIndex(accountID) { accounts[index].pinEnabled = true }
+        commitChange(to: accountID)
         return true
     }
+
     func removePIN(_ id: String) -> Bool {
-        guard activeID == id, !showsSelector, AuthService.shared.isLoggedIn else { return false }
-        guard keychain.delete(pinKey(id)) else { return false }
-        if let index = accounts.firstIndex(where: { $0.id == id }) { accounts[index].pinEnabled = false }
-        markAccountChanged(id)
-        persist()
-        Task { await VividCloudAccountSync.shared.synchronize() }
+        guard canChangePIN(of: id), keychain.delete(pinKey(id)) else { return false }
+        if let index = accountIndex(id) { accounts[index].pinEnabled = false }
+        commitChange(to: id)
         return true
     }
+
+    /// Checks a PIN. Five wrong tries in a row block the profile for 30
+    /// seconds, and the count starts again after the block.
     func unlock(_ id: String, pin: String) -> Bool {
-        guard let raw = keychain.get(pinKey(id)), let data = raw.data(using: .utf8),
-              var record = try? JSONDecoder().decode(PINRecord.self, from: data) else { return false }
+        guard var record = readJSON(PINRecord.self, from: pinKey(id)) else { return false }
         if let until = record.blockedUntil, until > Date() {
             error = String(localized: "Too many attempts. Wait 30 seconds and try again."); return false
         }
-        let digest = SHA256.hash(data: Data((record.salt + pin).utf8)).map { String(format: "%02x", $0) }.joined()
-        let valid = pin.count == 4 && digest == record.digest
+        let valid = pin.count == 4 && Self.pinDigest(salt: record.salt, pin: pin) == record.digest
         if valid {
-            record.failures = 0; record.blockedUntil = nil
+            record.failures = 0
+            record.blockedUntil = nil
         } else {
             record.failures += 1
-            if record.failures >= 5 { record.blockedUntil = Date().addingTimeInterval(30); record.failures = 0 }
+            if record.failures >= Self.pinAttemptsBeforeBlock {
+                record.blockedUntil = Date().addingTimeInterval(Self.pinBlockDuration)
+                record.failures = 0
+            }
         }
-        guard let updated = try? JSONEncoder().encode(record),
-              let string = String(data: updated, encoding: .utf8), keychain.set(string, for: pinKey(id)) else { return false }
-        if valid { unlockedID = id; error = nil }
-        else { error = String(localized: "Incorrect PIN. Try again.") }
+        guard writeJSON(record, to: pinKey(id)) else { return false }
+        if valid {
+            unlockedID = id
+            error = nil
+        } else {
+            error = String(localized: "Incorrect PIN. Try again.")
+        }
         return valid
     }
+
+    // MARK: Launch and background
+
     /// Restore only this native user's explicitly selected local account.
     /// Cloud availability must not decide whether an existing user is signed in.
     func restoreLocalSessionForLaunch() async throws {
@@ -477,21 +252,27 @@ final class TVSavedAccountStore {
         ProfileLaunchPreferences.shared.behavior = .automatic
         unlockedID = nil
         showsAnimation = false
-        defaults.removeObject(forKey: "vivid.accounts.backgroundedAt")
+        defaults.removeObject(forKey: backgroundedAtKey)
         showsSelector = accounts.count > 1 || accounts.first.map { $0.requiresLogin || hasPIN($0.id) } == true
     }
+
     func enteredBackground() {
-        defaults.set(String(Date().timeIntervalSince1970), forKey: "vivid.accounts.backgroundedAt")
+        defaults.set(String(Date().timeIntervalSince1970), forKey: backgroundedAtKey)
     }
+
+    /// After 15 minutes away, a device with several profiles, or a PIN on the
+    /// active one, asks who's watching again.
     func enteredForeground() {
-        let since = Double(defaults.string(forKey: "vivid.accounts.backgroundedAt") ?? "") ?? 0
-        defaults.removeObject(forKey: "vivid.accounts.backgroundedAt")
+        let since = Double(defaults.string(forKey: backgroundedAtKey) ?? "") ?? 0
+        defaults.removeObject(forKey: backgroundedAtKey)
         guard since > 0, Date().timeIntervalSince1970 - since >= 15 * 60,
               accounts.count > 1 || activeID.map({ hasPIN($0) }) == true else { return }
         unlockedID = nil
         showsSelector = true
         showsAnimation = true
     }
+
+    // MARK: Capturing the live session
 
     func captureCurrent(refreshMetadata: Bool = true) async {
         _ = await capture(refreshMetadata: refreshMetadata, committing: nil)
@@ -510,6 +291,12 @@ final class TVSavedAccountStore {
         guard !blocked(), AuthService.shared.isLoggedIn,
               let server = ServerRegistry.shared.activeServerId,
               let identity = await TokenStore.shared.refreshAccountIdentity() else { return false }
+        // The session and server must still be the ones this capture started on.
+        func stillCurrent() async -> Bool {
+            guard !blocked() else { return false }
+            return identity == (await TokenStore.shared.refreshAccountIdentity())
+                && server == ServerRegistry.shared.activeServerId
+        }
         // Leaving an account must not wait for its server. Reuse only user
         // metadata verified for this exact credential generation.
         let user: UserInfo?
@@ -518,9 +305,7 @@ final class TVSavedAccountStore {
         } else {
             user = capturedUser?.identity == identity ? capturedUser?.user : nil
         }
-        guard !blocked(), identity == (await TokenStore.shared.refreshAccountIdentity()),
-              server == ServerRegistry.shared.activeServerId else { return false }
-        guard let user, let userID = user.id else { return false }
+        guard await stillCurrent(), let user, let userID = user.id else { return false }
         let liveProfileID = AuthService.shared.profileId
         let isSilo = MediaServerProvider.forServerID(server) == .silo
         // A Silo session is saved only once its viewing profile is known, so a
@@ -534,35 +319,33 @@ final class TVSavedAccountStore {
         if profile == nil, refreshMetadata {
             profile = (try? await AuthService.shared.getProfiles())?.first { $0.id == liveProfileID }
         }
-        if profile == nil,
-           let previous = accounts.first(where: { sameLogin($0) && $0.profile?.id == liveProfileID })?.profile {
-            profile = previous
+        if profile == nil {
+            profile = accounts.first { sameLogin($0) && $0.profile?.id == liveProfileID }?.profile
         }
         guard let stored = await TokenStore.shared.savedTVSession(expected: identity, profile: profile),
-              !blocked(), identity == (await TokenStore.shared.refreshAccountIdentity()),
-              server == ServerRegistry.shared.activeServerId else { return false }
+              await stillCurrent() else { return false }
         guard let owner = captureOwner(sameLogin: sameLogin, isSilo: isSilo, liveProfileID: liveProfileID,
                                        profile: profile, pending: pending) else { return false }
-        let index = owner.index
-        guard index != nil || canAddAccount else { return false }
-        let id = index.map { accounts[$0].id } ?? UUID().uuidString
+        let existing = owner.index.map { accounts[$0] }
+        guard existing != nil || canAddAccount else { return false }
+        let id = existing?.id ?? UUID().uuidString
         let value = TVSavedAccount(id: id, serverID: server, userID: userID,
                                    username: user.username, profile: profile, requiresLogin: false,
-                                   pinEnabled: index.flatMap { accounts[$0].pinEnabled },
+                                   pinEnabled: existing?.pinEnabled,
                                    siloProfileID: owner.binding,
-                                   serverName: index.flatMap { accounts[$0].serverName })
+                                   serverName: existing?.serverName)
         do {
             try saveSession(stored, id: id)
-            if let index { accounts[index] = value } else { accounts.append(value) }
-            activeID = id
-            markAccountChanged(id)
-            persist()
-            if pending == nil { Task { await VividCloudAccountSync.shared.synchronize() } }
-            return true
         } catch {
             self.error = String(localized: "Couldn’t save this profile on this device.")
             return false
         }
+        if let index = owner.index { accounts[index] = value } else { accounts.append(value) }
+        activeID = id
+        markAccountChanged(id)
+        persist()
+        if pending == nil { Task { await VividCloudAccountSync.shared.synchronize() } }
+        return true
     }
 
     /// The saved profile a capture writes: an existing index, or nil to add
@@ -576,33 +359,34 @@ final class TVSavedAccountStore {
             }) {
                 return (held, nil)
             }
-            let index = accounts.firstIndex { sameLogin($0) && $0.siloProfileID == pending.binding }
-            return (index, pending.binding)
+            return (accounts.firstIndex { sameLogin($0) && $0.siloProfileID == pending.binding }, pending.binding)
         }
         if let active = accounts.firstIndex(where: { $0.id == activeID && sameLogin($0) }) {
             // A bound saved profile only ever saves its own household member.
             guard SiloProfileBinding.accepts(accounts[active], profileID: liveProfileID) else { return nil }
             return (active, accounts[active].siloProfileID)
         }
-        guard isSilo else {
-            return (accounts.firstIndex(where: sameLogin), nil)
-        }
-        if let bound = accounts.firstIndex(where: { sameLogin($0) && $0.siloProfileID != nil && $0.siloProfileID == liveProfileID }) {
+        guard isSilo else { return (accounts.firstIndex(where: sameLogin), nil) }
+        if let bound = accounts.firstIndex(where: {
+            sameLogin($0) && $0.siloProfileID != nil && $0.siloProfileID == liveProfileID
+        }) {
             return (bound, accounts[bound].siloProfileID)
         }
-        if let unbound = accounts.firstIndex(where: { sameLogin($0) && $0.siloProfileID == nil && $0.profile?.id == liveProfileID }) {
+        if let unbound = accounts.firstIndex(where: {
+            sameLogin($0) && $0.siloProfileID == nil && $0.profile?.id == liveProfileID
+        }) {
             return (unbound, nil)
         }
         guard let profile else { return nil }
         // A login's first saved profile is always the original kind, as before.
         let original = accounts.firstIndex { sameLogin($0) && $0.siloProfileID == nil }
-        if profile.isPrimary || original == nil {
-            return (original, nil)
-        }
+        if profile.isPrimary || original == nil { return (original, nil) }
         // Another household member without a saved profile, for example after
         // the app closed between entering the profile and saving it.
         return (nil, profile.id)
     }
+
+    // MARK: Silo household members
 
     /// The viewing profile login preparation enters for the live session.
     /// Only an explicit new sign-in chooses; a saved profile bound to a
@@ -694,6 +478,8 @@ final class TVSavedAccountStore {
         return true
     }
 
+    // MARK: Switching and signing in
+
     func select(_ account: TVSavedAccount, router: AppRouter) async {
         guard !busy, !account.requiresLogin, let saved = session(account.id) else { return }
         guard !hasPIN(account.id) || unlockedID == account.id else { return }
@@ -703,7 +489,8 @@ final class TVSavedAccountStore {
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
         do {
-            if activeID != account.id || ServerRegistry.shared.activeServerId != account.serverID || !AuthService.shared.isLoggedIn {
+            if activeID != account.id || ServerRegistry.shared.activeServerId != account.serverID
+                || !AuthService.shared.isLoggedIn {
                 try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             }
             activeID = account.id
@@ -725,18 +512,23 @@ final class TVSavedAccountStore {
                       embyConnect: EmbyLogin? = nil, verified: VerifiedServerLogin? = nil,
                       serverName: String? = nil) async -> Bool {
         guard !busy else { return false }
-        guard id != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles. Delete a saved profile to add another."); return false }
+        guard id != nil || canAddAccount else {
+            error = String(localized: "You can save up to eight profiles. Delete a saved profile to add another.")
+            return false
+        }
         await captureCurrent(refreshMetadata: false)
         guard !busy else { return false }
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
         do {
             let normalized = ServerRegistry.shared.normalizedUserAddress(serverURL)
-            guard let url = URL(string: normalized), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
+            guard let url = URL(string: normalized), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  url.host != nil else {
                 error = String(localized: "Enter a valid server address."); return false
             }
-            let selected = id.flatMap { selectedID in accounts.first { $0.id == selectedID } }
-            let provider = requestedProvider ?? MediaServerProvider.forServerID(selected?.serverID ?? ServerRegistry.shared.activeServerId)
+            let selected = id.flatMap { accountIndex($0) }.map { accounts[$0] }
+            let provider = requestedProvider
+                ?? MediaServerProvider.forServerID(selected?.serverID ?? ServerRegistry.shared.activeServerId)
             let checked: VerifiedServerLogin
             if let verified {
                 checked = verified
@@ -751,16 +543,21 @@ final class TVSavedAccountStore {
             let serverID = (provider.usesNativeUser ? provider.rawValue + ":" : "") + ServerRegistry.serverId(for: normalized)
             let userID = String(login.user.id)
             let sameLogin = accounts.first { $0.serverID == serverID && $0.userID == userID }
+            func saveServer() throws {
+                let entry = ServerEntry(id: serverID, url: normalized,
+                                        fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
+                guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
+            }
             // Adding a Silo profile may be another household member of a login
             // that is already saved, so its saved profile is chosen once the
             // viewing profile is known.
             if id == nil, provider == .silo {
-                guard sameLogin != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles."); return false }
+                guard sameLogin != nil || canAddAccount else {
+                    error = String(localized: "You can save up to eight profiles."); return false
+                }
                 let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
-                                                 profile: nil, profileToken: nil, nativeUserID: nativeUserID)
-                let entry = ServerEntry(id: serverID, url: normalized,
-                                        fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
-                guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
+                                                  profile: nil, profileToken: nil, nativeUserID: nativeUserID)
+                try saveServer()
                 try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
                 if let identity = await TokenStore.shared.refreshAccountIdentity() {
                     capturedUser = (identity, UserInfo(id: userID, username: login.user.username, isAdmin: nil))
@@ -773,11 +570,15 @@ final class TVSavedAccountStore {
                 await finishLogin(router: router, prepareHome: true)
                 return true
             }
-            let existing = id.flatMap { id in accounts.first { $0.id == id } } ?? sameLogin
+            // Read again after signing in: iCloud sync may have changed it meanwhile.
+            let existing = id.flatMap { accountIndex($0) }.map { accounts[$0] } ?? sameLogin
             if let existing, existing.userID != userID || existing.serverID != serverID {
-                error = String(localized: "These credentials belong to a different account. Use Add Profile instead."); return false
+                error = String(localized: "These credentials belong to a different account. Use Add Profile instead.")
+                return false
             }
-            guard existing != nil || canAddAccount else { error = String(localized: "You can save up to eight profiles."); return false }
+            guard existing != nil || canAddAccount else {
+                error = String(localized: "You can save up to eight profiles."); return false
+            }
             let accountID = existing?.id ?? UUID().uuidString
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,
@@ -786,14 +587,11 @@ final class TVSavedAccountStore {
             // Re-authentication requires a fresh PIN proof for a protected pairing.
             let pairing = existing?.profile.flatMap { $0.hasPin ? nil : $0 }
             let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
-                                             profile: pairing, profileToken: nil, nativeUserID: nativeUserID)
+                                              profile: pairing, profileToken: nil, nativeUserID: nativeUserID)
             try saveSession(saved, id: accountID)
-            let entry = ServerEntry(id: serverID, url: normalized,
-                                    fetchedName: fetchedName(serverName, serverID: serverID), lastUsedAt: Date())
-            guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
+            try saveServer()
             try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
-            if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
-            else { accounts.append(account) }
+            if let index = accountIndex(accountID) { accounts[index] = account } else { accounts.append(account) }
             activeID = accountID
             markAccountChanged(accountID)
             persist()
@@ -801,9 +599,13 @@ final class TVSavedAccountStore {
             await finishLogin(router: router, prepareHome: true)
             return true
         } catch {
-            self.error = quickConnect != nil ? String(localized: "Couldn’t finish signing in with Quick Connect. Please try again.")
-                : embyConnect != nil ? String(localized: "Couldn’t finish signing in with Emby Connect. Please try again.")
-                : String(localized: "Couldn’t sign in. Check the server address, username and password, then try again.")
+            if quickConnect != nil {
+                self.error = String(localized: "Couldn’t finish signing in with Quick Connect. Please try again.")
+            } else if embyConnect != nil {
+                self.error = String(localized: "Couldn’t finish signing in with Emby Connect. Please try again.")
+            } else {
+                self.error = String(localized: "Couldn’t sign in. Check the server address, username and password, then try again.")
+            }
             return false
         }
     }
@@ -828,46 +630,47 @@ final class TVSavedAccountStore {
                 try? await AuthService.shared.selectProfile(profileId: only.id)
             }
         }
-        if AuthService.shared.hasProfile {
-            #if os(iOS)
-            HomeSectionPreferences.shared.refresh()
-            TVHomeSpotlightPreferences.shared.refresh()
-            DownloadSettings.shared.reloadForCurrentProfile()
-                TVTMDbStore.shared.reloadForCurrentProfile()
-            UICustomizationPreferences.shared.restoreCachedPreferences()
-            await PlayerSettings.shared.reloadForCurrentProfile()
-            router.dismissItemDetail()
-            #endif
-            // Prepare the local snapshot before rebuilding an already-visible
-            // Home for a saved-account switch. Network refresh remains async.
-            if !prepareHome {
-                guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { return }
-            }
-            // Server publication precedes the token/profile commit. Rebuild
-            // only after restoration so both platforms discard early loads
-            // and same-server account state from the outgoing session.
-            contentRevision = UUID()
-            if prepareHome {
-                await TVLoginPreparation.shared.begin(router: router)
-            } else {
-                router.resetToHome()
-            }
-        } else {
+        guard AuthService.shared.hasProfile else {
             router.showProfileSelection()
+            return
+        }
+        #if os(iOS)
+        HomeSectionPreferences.shared.refresh()
+        TVHomeSpotlightPreferences.shared.refresh()
+        DownloadSettings.shared.reloadForCurrentProfile()
+        TVTMDbStore.shared.reloadForCurrentProfile()
+        UICustomizationPreferences.shared.restoreCachedPreferences()
+        await PlayerSettings.shared.reloadForCurrentProfile()
+        router.dismissItemDetail()
+        #endif
+        // Prepare the local snapshot before rebuilding an already-visible
+        // Home for a saved-account switch. Network refresh remains async.
+        if !prepareHome {
+            guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { return }
+        }
+        // Server publication precedes the token/profile commit. Rebuild
+        // only after restoration so both platforms discard early loads
+        // and same-server account state from the outgoing session.
+        contentRevision = UUID()
+        if prepareHome {
+            await TVLoginPreparation.shared.begin(router: router)
+        } else {
+            router.resetToHome()
         }
     }
+
+    // MARK: Signing out and expiry
 
     func signOut(router: AppRouter) async {
         guard !busy, let id = activeID else { return }
         busy = true; error = nil
         defer { busy = false }
         #if os(iOS)
-
         showsSelector = true
         #endif
         // Delete the saved session first: a failed remote logout must never restore it later.
         guard keychain.delete(sessionKey(id)) else { error = String(localized: "Couldn’t clear the saved login. Try again."); return }
-        if let index = accounts.firstIndex(where: { $0.id == id }) { accounts[index].requiresLogin = true }
+        if let index = accountIndex(id) { accounts[index].requiresLogin = true }
         markAccountChanged(id)
         persist()
         guard await AuthService.shared.signOut() else {
@@ -881,6 +684,7 @@ final class TVSavedAccountStore {
         router.resetToLogin()
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
+
     /// The server behind `serverID` refused the active session, which
     /// TokenStore has already dropped. Without this the app lands on the bare
     /// sign-in form with no saved profiles until a relaunch recomputes the
@@ -905,6 +709,8 @@ final class TVSavedAccountStore {
         showsSelector = !accounts.isEmpty
     }
 
+    // MARK: Deleting
+
     @discardableResult
     func deleteAccount(_ id: String, router: AppRouter) async -> Bool {
         guard let account = accounts.first(where: { $0.id == id }) else { return false }
@@ -916,6 +722,9 @@ final class TVSavedAccountStore {
         await deleteAccounts(accounts.filter { $0.serverID == serverID }, removedServerID: serverID, router: router)
     }
 
+    /// Deletes saved profiles in an order that can be retried at any step:
+    /// credentials first, then the live session, local caches, unused
+    /// servers, and finally the profiles themselves and their iCloud records.
     private func deleteAccounts(_ selected: [TVSavedAccount], removedServerID: String?, router: AppRouter) async -> Bool {
         guard !busy else { return false }
         busy = true
@@ -927,7 +736,7 @@ final class TVSavedAccountStore {
                 error = String(localized: "Couldn’t delete the saved profile. Try again.")
                 return false
             }
-            if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            if let index = accountIndex(account.id) {
                 accounts[index].requiresLogin = true
                 accounts[index].pinEnabled = false
                 markAccountChanged(account.id)
@@ -968,44 +777,42 @@ final class TVSavedAccountStore {
         contentRevision = UUID()
         if activeID == nil {
             showsSelector = !accounts.isEmpty
-            if accounts.isEmpty { router.resetToServerSetup() }
-            else { router.resetToLogin() }
+            if accounts.isEmpty { router.resetToServerSetup() } else { router.resetToLogin() }
         }
         await VividCloudAccountSync.shared.synchronize(router: router)
         return true
     }
+
+    // MARK: Server names and order
 
     /// Names the server for one saved profile, here and, through iCloud, on
     /// the person's other devices. A nil or blank name shows the server's own
     /// label again. Other profiles on the same server keep their own.
     @discardableResult
     func renameServer(for accountID: String, to name: String?) -> Bool {
-        guard !busy, let index = accounts.firstIndex(where: { $0.id == accountID }) else { return false }
+        guard !busy, let index = accountIndex(accountID) else { return false }
         let name = TVSavedAccount.serverName(from: name)
         guard accounts[index].serverName != name else { return true }
         accounts[index].serverName = name
-        markAccountChanged(accountID)
-        persist()
-        Task { await VividCloudAccountSync.shared.synchronize() }
+        commitChange(to: accountID)
         return true
     }
 
     @discardableResult
     func saveAccountOrder(_ ids: [String]) -> Bool {
         guard !busy else { return false }
-        let current = accounts.map(\.id)
-        let sorted = VividCloudPreferencePolicy.ordered(current, preferred: ids)
+        let sorted = VividCloudPreferencePolicy.ordered(accounts.map(\.id), preferred: ids)
         let byID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
         let order = VividCloudAccountOrder.values(for: sorted.compactMap { byID[$0] })
         do {
             try VividCloudPreferences.shared.setAccountOrder(legacy: order.legacy, full: order.full)
-            applyCloudOrder(legacy: order.legacy, full: order.full)
-            Task { await VividCloudAccountSync.shared.synchronize() }
-            return true
         } catch {
             self.error = String(localized: "Couldn’t save the profile order. Try again.")
             return false
         }
+        applyCloudOrder(legacy: order.legacy, full: order.full)
+        Task { await VividCloudAccountSync.shared.synchronize() }
+        return true
     }
 
     func applyCloudOrder(legacy: [String]?, full: [String]?) {
@@ -1014,11 +821,16 @@ final class TVSavedAccountStore {
         let sorted = VividCloudAccountOrder.resolved(identities: identities, legacyIdentities: legacyIdentities,
                                                      legacy: legacy, full: full)
         let positions = Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($1, $0) })
-        accounts.sort { positions[VividCloudAccountIdentity.key(for: $0), default: 0] < positions[VividCloudAccountIdentity.key(for: $1), default: 0] }
+        func position(_ account: TVSavedAccount) -> Int { positions[VividCloudAccountIdentity.key(for: account), default: 0] }
+        accounts.sort { position($0) < position($1) }
         if identities != sorted { persist() }
     }
 
-    fileprivate func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
+    // MARK: iCloud sync hooks (used by VividCloudAccountSync)
+
+    /// Every saved profile whose server is still saved, keyed by identity.
+    /// When two share an identity, the newer change wins.
+    func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
         var snapshot: [String: VividCloudAccountEnvelope] = [:]
         for account in accounts {
             guard let server = ServerRegistry.shared.entry(with: account.serverID) else { continue }
@@ -1036,79 +848,18 @@ final class TVSavedAccountStore {
         return snapshot
     }
 
-    fileprivate func applyCloudVault(_ vault: VividCloudAccountVault) async -> VividCloudApplyResult {
+    /// Applies a merged vault: deletions first, then newer or new profiles,
+    /// then picks an active profile if none is, and signs out of a deleted
+    /// or invalidated active session.
+    func applyCloudVault(_ vault: VividCloudAccountVault) async -> VividCloudApplyResult {
         let previousActiveID = activeID
         var result = VividCloudApplyResult()
-
         for identity in vault.tombstones.keys {
-            if VividCloudAccountSync.shared.signedInAfterDeletion(identity, in: vault) { continue }
-            let matching = accounts.filter { VividCloudAccountIdentity.key(for: $0) == identity }
-            var cacheCleanupFailed = false
-            for account in matching {
-                CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID)
-                do { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
-                catch { cacheCleanupFailed = true; self.error = String(localized: "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync.") }
-            }
-            for account in matching {
-                _ = keychain.delete(sessionKey(account.id))
-                _ = keychain.delete(pinKey(account.id))
-                modificationDates.removeValue(forKey: account.id)
-                if account.id == previousActiveID { result.activeAccountDeleted = true }
-                result.orphanedServerIDs.insert(account.serverID)
-            }
-            if cacheCleanupFailed {
-                for index in accounts.indices where VividCloudAccountIdentity.key(for: accounts[index]) == identity {
-                    accounts[index].requiresLogin = true
-                    accounts[index].pinEnabled = false
-                }
-                continue
-            }
-            accounts.removeAll { VividCloudAccountIdentity.key(for: $0) == identity }
+            await applyTombstone(identity, in: vault, previousActiveID: previousActiveID, result: &result)
         }
-
         for identity in vault.accounts.keys.sorted() where vault.tombstones[identity] == nil {
             guard let envelope = vault.accounts[identity] else { continue }
-            // A household member's saved profile only applies under its own identity.
-            if envelope.account.siloProfileID != nil,
-               VividCloudAccountIdentity.key(for: envelope.account) != identity { continue }
-            let existingIndex = accounts.firstIndex {
-                VividCloudAccountIdentity.key(for: $0) == identity
-            }
-            guard existingIndex != nil || canAddAccount else { continue }
-            let localID = existingIndex.map { accounts[$0].id } ?? envelope.account.id
-            let localDate = modificationDates[localID] ?? .distantPast
-            guard envelope.updatedAt > localDate || existingIndex == nil else { continue }
-
-            var imported = envelope.account
-            imported = TVSavedAccount(
-                id: localID,
-                serverID: imported.serverID,
-                userID: imported.userID,
-                username: imported.username,
-                profile: imported.profile,
-                requiresLogin: imported.requiresLogin,
-                pinEnabled: imported.pinEnabled,
-                siloProfileID: imported.siloProfileID,
-                serverName: imported.serverName
-            )
-            if let saved = envelope.session {
-                guard (try? saveSession(saved, id: localID)) != nil else { continue }
-            } else {
-                _ = keychain.delete(sessionKey(localID))
-            }
-            if let pin = envelope.pinRecord {
-                guard keychain.set(pin, for: pinKey(localID)) else { continue }
-            } else {
-                _ = keychain.delete(pinKey(localID))
-            }
-            guard ServerRegistry.shared.addOrUpdate(envelope.server) != nil else { continue }
-            if let existingIndex { accounts[existingIndex] = imported }
-            else { accounts.append(imported) }
-            modificationDates[localID] = envelope.updatedAt
-            if localID == previousActiveID,
-               imported.requiresLogin || envelope.session == nil {
-                result.activeSessionInvalidated = true
-            }
+            importEnvelope(envelope, identity: identity, previousActiveID: previousActiveID, result: &result)
         }
 
         if let activeID, !accounts.contains(where: { $0.id == activeID }) {
@@ -1125,11 +876,11 @@ final class TVSavedAccountStore {
         // saved-account metadata must not discard an open Settings page or
         // playback session. Only a changed active account or invalidated
         // authority requires rebuilding that tree.
-        if activeID != previousActiveID || result.activeAccountDeleted || result.activeSessionInvalidated {
+        let losesActiveSession = result.activeAccountDeleted || result.activeSessionInvalidated
+        if activeID != previousActiveID || losesActiveSession {
             contentRevision = UUID()
         }
-
-        if result.activeAccountDeleted || result.activeSessionInvalidated {
+        if losesActiveSession {
             _ = await AuthService.shared.signOut()
         }
         for serverID in result.orphanedServerIDs
@@ -1139,12 +890,86 @@ final class TVSavedAccountStore {
         return result
     }
 
-    fileprivate func restoreActiveCloudSessionIfNeeded() async -> Bool {
+    /// Removes the saved profiles a tombstone deletes, unless this device
+    /// signed in to them after the deletion. If a cache can't be cleared, the
+    /// profiles stay as signed out so the next sync retries.
+    private func applyTombstone(_ identity: String, in vault: VividCloudAccountVault, previousActiveID: String?,
+                                result: inout VividCloudApplyResult) async {
+        if VividCloudAccountSync.shared.signedInAfterDeletion(identity, in: vault) { return }
+        let matches: (TVSavedAccount) -> Bool = { VividCloudAccountIdentity.key(for: $0) == identity }
+        let matching = accounts.filter(matches)
+        var cacheCleanupFailed = false
+        for account in matching {
+            CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID)
+            do {
+                try await TVHomeMetadataCache.shared.deleteAccountCache(account)
+            } catch {
+                cacheCleanupFailed = true
+                self.error = String(localized: "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync.")
+            }
+        }
+        for account in matching {
+            _ = keychain.delete(sessionKey(account.id))
+            _ = keychain.delete(pinKey(account.id))
+            modificationDates.removeValue(forKey: account.id)
+            if account.id == previousActiveID { result.activeAccountDeleted = true }
+            result.orphanedServerIDs.insert(account.serverID)
+        }
+        guard !cacheCleanupFailed else {
+            for index in accounts.indices where matches(accounts[index]) {
+                accounts[index].requiresLogin = true
+                accounts[index].pinEnabled = false
+            }
+            return
+        }
+        accounts.removeAll(where: matches)
+    }
+
+    /// Adds a profile from iCloud, or replaces the local copy when iCloud's
+    /// is newer, keeping the local ID. A profile whose credentials or server
+    /// can't be saved here is skipped.
+    private func importEnvelope(_ envelope: VividCloudAccountEnvelope, identity: String, previousActiveID: String?,
+                                result: inout VividCloudApplyResult) {
+        // A household member's saved profile only applies under its own identity.
+        if envelope.account.siloProfileID != nil,
+           VividCloudAccountIdentity.key(for: envelope.account) != identity { return }
+        let existingIndex = accounts.firstIndex { VividCloudAccountIdentity.key(for: $0) == identity }
+        guard existingIndex != nil || canAddAccount else { return }
+        let localID = existingIndex.map { accounts[$0].id } ?? envelope.account.id
+        let localDate = modificationDates[localID] ?? .distantPast
+        guard envelope.updatedAt > localDate || existingIndex == nil else { return }
+
+        let remote = envelope.account
+        let imported = TVSavedAccount(
+            id: localID, serverID: remote.serverID, userID: remote.userID, username: remote.username,
+            profile: remote.profile, requiresLogin: remote.requiresLogin, pinEnabled: remote.pinEnabled,
+            siloProfileID: remote.siloProfileID, serverName: remote.serverName
+        )
+        if let saved = envelope.session {
+            guard (try? saveSession(saved, id: localID)) != nil else { return }
+        } else {
+            _ = keychain.delete(sessionKey(localID))
+        }
+        if let pin = envelope.pinRecord {
+            guard keychain.set(pin, for: pinKey(localID)) else { return }
+        } else {
+            _ = keychain.delete(pinKey(localID))
+        }
+        guard ServerRegistry.shared.addOrUpdate(envelope.server) != nil else { return }
+        if let existingIndex { accounts[existingIndex] = imported } else { accounts.append(imported) }
+        modificationDates[localID] = envelope.updatedAt
+        if localID == previousActiveID, imported.requiresLogin || envelope.session == nil {
+            result.activeSessionInvalidated = true
+        }
+    }
+
+    /// Restores the active saved profile's session after a sync, unless it's
+    /// already live or the person is setting up or signing in elsewhere.
+    func restoreActiveCloudSessionIfNeeded() async -> Bool {
         guard let account = activeAccount, !account.requiresLogin,
               let saved = session(account.id),
               ServerRegistry.shared.entry(with: account.serverID) != nil else { return false }
-        if AuthService.shared.isLoggedIn,
-           ServerRegistry.shared.activeServerId == account.serverID {
+        if AuthService.shared.isLoggedIn, ServerRegistry.shared.activeServerId == account.serverID {
             return true
         }
         guard !keepsChosenServer, !holdsCloudRestore else { return false }
@@ -1157,371 +982,5 @@ final class TVSavedAccountStore {
             return false
         }
     }
-
-}
-
-@Observable
-@MainActor
-final class VividCloudAccountSync {
-    static let shared = VividCloudAccountSync()
-
-    private static let containerIdentifier = "iCloud.com.blurbery.vivid"
-    private static let recordType = "VividAccountVault"
-    private static let payloadKey = "payload"
-    private static let recordID = CKRecord.ID(recordName: "account-vault-v1")
-    /// Saved profiles bound to a Silo household member (see ``VividCloudVaultPartition``).
-    private static let profileRecordID = CKRecord.ID(recordName: "account-vault-profiles-v1")
-    private static let tombstoneDefaultsKey = "vivid.cloudAccountTombstones.v1"
-    private static let serverTombstoneDefaultsKey = "vivid.cloudServerTombstones.v1"
-    private static let resurrectionDefaultsKey = "vivid.cloudAccountResurrections.v1"
-    private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
-        category: "CloudAccountSync"
-    )
-
-    private let container = CKContainer(identifier: containerIdentifier)
-    private let defaults = UserDefaults.standard
-    private(set) var bootstrapFailed = false
-    private var isSynchronizing = false
-    private var needsAnotherSynchronization = false
-    private var pendingRouter: AppRouter?
-    private var firstLaunchRestore: Task<Void, Never>?
-
-    private init() {}
-
-    func noteDeletion(of account: TVSavedAccount) {
-        try? VividCloudPreferences.shared.removeAccountPreferences(account)
-        let identity = VividCloudAccountIdentity.key(for: account)
-        var tombstones = loadTombstones()
-        tombstones[identity] = VividCloudAccountTombstone(deletedAt: Date())
-        save(tombstones, key: Self.tombstoneDefaultsKey)
-
-        var resurrections = loadResurrections()
-        resurrections.removeValue(forKey: identity)
-        save(resurrections, key: Self.resurrectionDefaultsKey)
-    }
-
-    func noteServerDeletion(_ serverID: String) {
-        var deletions: [String: VividCloudAccountTombstone] = load([String: VividCloudAccountTombstone].self, key: Self.serverTombstoneDefaultsKey) ?? [:]
-        deletions[serverID] = VividCloudAccountTombstone(deletedAt: Date())
-        save(deletions, key: Self.serverTombstoneDefaultsKey)
-    }
-
-    /// Only an explicit credential entry may revive an account identity that
-    /// was previously deleted. Routine capture and stale-device uploads never
-    /// create this marker.
-    /// A sync reads deletions before it applies them. If this device signed in
-    /// to the account after the deletion, even while the sync was running,
-    /// the account is kept; the next sync retires the deletion.
-    fileprivate func signedInAfterDeletion(_ identity: String, in vault: VividCloudAccountVault) -> Bool {
-        guard let deletedAt = vault.tombstones[identity]?.deletedAt,
-              let signedInAt = loadResurrections()[identity] else { return false }
-        return !VividCloudDeletionPolicy.tombstoneWins(deletedAt: deletedAt, explicitAuthenticationAt: signedInAt)
-    }
-
-    /// Sign-ins still to upload after a sync: anything recorded or updated
-    /// while it ran. Unchanged entries were carried by the uploaded vault.
-    static func resurrections(_ current: [String: Date], afterUploading synced: [String: Date]) -> [String: Date] {
-        current.filter { identity, date in synced[identity] != date }
-    }
-
-    func noteExplicitAuthentication(_ account: TVSavedAccount) {
-        noteExplicitAuthentication(serverID: account.serverID, userID: account.userID, siloProfileID: account.siloProfileID)
-    }
-
-    func noteExplicitAuthentication(serverID: String, userID: String, siloProfileID: String? = nil) {
-        var resurrections = loadResurrections()
-        resurrections[VividCloudAccountIdentity.key(serverID: serverID, userID: userID, siloProfileID: siloProfileID)] = Date()
-        save(resurrections, key: Self.resurrectionDefaultsKey)
-    }
-
-    func synchronize(router: AppRouter? = nil) async {
-        if let router {
-            pendingRouter = router
-        }
-        guard !isSynchronizing else {
-            needsAnotherSynchronization = true
-            while isSynchronizing, !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            return
-        }
-
-        isSynchronizing = true
-        var routingContext = router
-        repeat {
-            needsAnotherSynchronization = false
-            if let pendingRouter {
-                routingContext = pendingRouter
-                self.pendingRouter = nil
-            }
-            await synchronizeOnce(router: routingContext)
-        } while needsAnotherSynchronization
-        isSynchronizing = false
-    }
-
-    /// A new install's first launch waits for iCloud to restore saved
-    /// profiles, but for no longer than `limit`: a slow or blocked iCloud
-    /// must not keep the startup splash up. Returns false when the wait ran
-    /// out. The sync carries on and still imports saved profiles, but holds
-    /// back choosing one and restoring its session (see
-    /// ``TVSavedAccountStore/holdsCloudRestore``), so it can't rebuild the
-    /// setup screen the person is already using.
-    func synchronizeForFirstLaunch(router: AppRouter, limit: Duration) async -> Bool {
-        // Launch is still on the splash, so a hold left by an attempt that
-        // never reached setup doesn't apply to this one.
-        TVSavedAccountStore.shared.holdsCloudRestore = false
-        if firstLaunchRestore == nil {
-            // Unstructured, so it keeps going once launch stops waiting. A
-            // retried launch waits on the same sync rather than starting one.
-            firstLaunchRestore = Task {
-                await self.synchronize(router: router)
-                self.firstLaunchRestore = nil
-            }
-        }
-        let deadline = ContinuousClock.now.advanced(by: limit)
-        while firstLaunchRestore != nil, !Task.isCancelled {
-            // A session restore under way is local and quick. Let it finish
-            // so launch routes with it, rather than showing setup over it.
-            if ContinuousClock.now >= deadline, !TVSavedAccountStore.shared.isRestoringCloudSession {
-                TVSavedAccountStore.shared.holdsCloudRestore = true
-                Self.logger.notice("Private iCloud account restore is slow; continuing to setup.")
-                return false
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        return firstLaunchRestore == nil
-    }
-
-    private func synchronizeOnce(router: AppRouter?) async {
-        // A Silo profile choice owns the live session; the commit syncs after it.
-        guard TVSavedAccountStore.shared.pendingProfileChoice == nil else { return }
-        do {
-            bootstrapFailed = false
-            let status = try await container.accountStatus()
-            guard status == .available else {
-                bootstrapFailed = status != .noAccount
-                return
-            }
-            _ = try VividCloudPreferences.shared.capture(accounts: TVSavedAccountStore.shared.accounts)
-            // A media server outage must not block account restoration.
-            try? await VividCloudPreferences.shared.captureSharedSettings()
-            var activeWasDeleted = false
-            var activeSessionWasInvalidated = false
-            // Sign-ins recorded before this sync started. Any recorded while it
-            // runs stay local for the next sync.
-            let syncedResurrections = loadResurrections()
-            var savedSuccessfully = false
-
-            for _ in 0..<3 {
-                let (record, existingPayload) = try await fetchRecord()
-                // Without a readable household record, sync carries on but never
-                // writes that record, so other devices' saved profiles survive.
-                let profileState = await fetchProfileRecord()
-                var vault = VividCloudVaultPartition.combined(
-                    main: try decodeVault(existingPayload),
-                    profiles: profileState?.vault ?? VividCloudAccountVault()
-                )
-                _ = try VividCloudPreferences.shared.capture(accounts: TVSavedAccountStore.shared.accounts)
-                let localTombstones = loadTombstones()
-                let resurrections = vault.accounts.compactMapValues(\.authenticatedAt)
-                    .merging(loadResurrections(), uniquingKeysWith: max)
-
-                let serverDeletions: [String: VividCloudAccountTombstone] = load([String: VividCloudAccountTombstone].self, key: Self.serverTombstoneDefaultsKey) ?? [:]
-                for (serverID, deletion) in serverDeletions {
-                    if vault.serverTombstones?[serverID].map({ $0.deletedAt >= deletion.deletedAt }) == true { continue }
-                    if vault.serverTombstones == nil { vault.serverTombstones = [:] }
-                    vault.serverTombstones?[serverID] = deletion
-                }
-                vault.applyServerDeletions(local: TVSavedAccountStore.shared.cloudSnapshot(), authentications: resurrections)
-
-                for (identity, resurrectionDate) in resurrections {
-                    if let tombstone = vault.tombstones[identity],
-                       !VividCloudDeletionPolicy.tombstoneWins(
-                           deletedAt: tombstone.deletedAt,
-                           explicitAuthenticationAt: resurrectionDate
-                       ) {
-                        vault.tombstones.removeValue(forKey: identity)
-                    }
-                }
-                for (identity, tombstone) in localTombstones {
-                    if !VividCloudDeletionPolicy.tombstoneWins(
-                        deletedAt: tombstone.deletedAt,
-                        explicitAuthenticationAt: resurrections[identity]
-                    ) {
-                        continue
-                    }
-                    if let existing = vault.tombstones[identity], existing.deletedAt >= tombstone.deletedAt {
-                        continue
-                    }
-                    vault.tombstones[identity] = tombstone
-                }
-                for identity in vault.tombstones.keys {
-                    vault.accounts.removeValue(forKey: identity)
-                }
-
-                for account in TVSavedAccountStore.shared.accounts
-                where vault.tombstones[VividCloudAccountIdentity.key(for: account)] != nil
-                    && !signedInAfterDeletion(VividCloudAccountIdentity.key(for: account), in: vault) {
-                    try VividCloudPreferences.shared.removeAccountPreferences(account)
-                }
-                guard TVSavedAccountStore.shared.pendingProfileChoice == nil else { return }
-                let applyResult = await TVSavedAccountStore.shared.applyCloudVault(vault)
-                activeWasDeleted = activeWasDeleted || applyResult.activeAccountDeleted
-                activeSessionWasInvalidated = activeSessionWasInvalidated || applyResult.activeSessionInvalidated
-
-                for (identity, var envelope) in TVSavedAccountStore.shared.cloudSnapshot()
-                where vault.tombstones[identity] == nil {
-                    let existing = vault.accounts[identity]
-                    envelope.authenticatedAt = [existing?.authenticatedAt, resurrections[identity]].compactMap { $0 }.max()
-                    if let existing, existing.updatedAt >= envelope.updatedAt,
-                       existing.authenticatedAt == envelope.authenticatedAt { continue }
-                    vault.accounts[identity] = envelope
-                }
-
-                vault.preferences = try VividCloudPreferences.shared.reconcile(vault.preferences ?? [:], accounts: TVSavedAccountStore.shared.accounts)
-                let legacyOrder = vault.preferences?[VividCloudAccountOrder.legacyKey]?.value
-                    .flatMap { try? JSONDecoder().decode([String].self, from: $0) }
-                let fullOrder = vault.preferences?[VividCloudAccountOrder.fullKey]?.value
-                    .flatMap { try? JSONDecoder().decode([String].self, from: $0) }
-                if legacyOrder != nil || fullOrder != nil {
-                    TVSavedAccountStore.shared.applyCloudOrder(legacy: legacyOrder, full: fullOrder)
-                }
-                let parts = VividCloudVaultPartition.split(vault)
-                let payload = try Self.encoder.encode(parts.main)
-                let profilePayload = try Self.encoder.encode(parts.profiles)
-                let savesMain = payload != existingPayload
-                // The household record is created only once a member is saved.
-                let savesProfiles = profileState.map {
-                    profilePayload != $0.payload && ($0.payload != nil || !parts.profiles.accounts.isEmpty)
-                } ?? false
-                if !savesMain && !savesProfiles {
-                    savedSuccessfully = true
-                    break
-                }
-                do {
-                    if savesMain {
-                        record.encryptedValues[Self.payloadKey] = payload as NSData
-                        _ = try await container.privateCloudDatabase.save(record)
-                    }
-                    if savesProfiles, let profileRecord = profileState?.record {
-                        profileRecord.encryptedValues[Self.payloadKey] = profilePayload as NSData
-                        _ = try await container.privateCloudDatabase.save(profileRecord)
-                    }
-                    savedSuccessfully = true
-                    break
-                } catch let error as CKError where error.code == .serverRecordChanged {
-                    continue
-                }
-            }
-
-            guard savedSuccessfully else { bootstrapFailed = true; return }
-            VividCloudPreferences.shared.startObserving()
-            var retainedTombstones = loadTombstones()
-            for identity in loadResurrections().keys {
-                retainedTombstones.removeValue(forKey: identity)
-            }
-            save(retainedTombstones, key: Self.tombstoneDefaultsKey)
-            let pendingResurrections = Self.resurrections(loadResurrections(), afterUploading: syncedResurrections)
-            if pendingResurrections.isEmpty {
-                defaults.removeObject(forKey: Self.resurrectionDefaultsKey)
-            } else {
-                save(pendingResurrections, key: Self.resurrectionDefaultsKey)
-            }
-            // A profile choice that began during this sync keeps the live session.
-            guard TVSavedAccountStore.shared.pendingProfileChoice == nil else { return }
-            let restored = await TVSavedAccountStore.shared.restoreActiveCloudSessionIfNeeded()
-            if restored { try? await VividCloudPreferences.shared.applySharedSettings() }
-
-            if activeWasDeleted || activeSessionWasInvalidated {
-                if restored {
-                    if AuthService.shared.hasProfile { router?.resetToHome() }
-                    else { router?.showProfileSelection() }
-                } else if TVSavedAccountStore.shared.accounts.isEmpty {
-                    router?.resetToServerSetup()
-                } else {
-                    TVSavedAccountStore.shared.showsSelector = true
-                    router?.resetToLogin()
-                }
-            } else if restored,
-                      let router,
-                      router.authState == .needsLogin || router.authState == .needsServerSetup {
-                if AuthService.shared.hasProfile { router.resetToHome() }
-                else { router.showProfileSelection() }
-            }
-        } catch {
-            bootstrapFailed = true
-            Self.logger.notice("Private iCloud account sync is temporarily unavailable.")
-        }
-    }
-
-    private func fetchRecord() async throws -> (CKRecord, Data?) {
-        do {
-            let record = try await container.privateCloudDatabase.record(for: Self.recordID)
-            guard let payload = Self.payloadData(from: record) else { throw ServerRegistryError.persistenceFailed }
-            return (record, payload)
-        } catch let error as CKError where error.code == .unknownItem {
-            return (CKRecord(recordType: Self.recordType, recordID: Self.recordID), nil)
-        }
-    }
-
-    /// The household record, or nil when it can't be read or decoded. A
-    /// record that doesn't exist yet reads as empty.
-    private func fetchProfileRecord() async -> (record: CKRecord, payload: Data?, vault: VividCloudAccountVault)? {
-        do {
-            let record = try await container.privateCloudDatabase.record(for: Self.profileRecordID)
-            guard let payload = Self.payloadData(from: record),
-                  let vault = try? decodeVault(payload) else { return nil }
-            return (record, payload, vault)
-        } catch let error as CKError where error.code == .unknownItem {
-            return (CKRecord(recordType: Self.recordType, recordID: Self.profileRecordID), nil, VividCloudAccountVault())
-        } catch {
-            return nil
-        }
-    }
-
-    private func decodeVault(_ data: Data?) throws -> VividCloudAccountVault {
-        guard let data else { return VividCloudAccountVault() }
-        let vault = try Self.decoder.decode(VividCloudAccountVault.self, from: data)
-        guard vault.schemaVersion == 1 else { throw ServerRegistryError.persistenceFailed }
-        return vault
-    }
-
-    private static func payloadData(from record: CKRecord) -> Data? {
-        if let data = record.encryptedValues[payloadKey] as? Data { return data }
-        if let data = record.encryptedValues[payloadKey] as? NSData { return data as Data }
-        return nil
-    }
-
-    private func loadTombstones() -> [String: VividCloudAccountTombstone] {
-        load([String: VividCloudAccountTombstone].self, key: Self.tombstoneDefaultsKey) ?? [:]
-    }
-
-    private func loadResurrections() -> [String: Date] {
-        load([String: Date].self, key: Self.resurrectionDefaultsKey) ?? [:]
-    }
-
-    private func load<T: Decodable>(_ type: T.Type, key: String) -> T? {
-        guard let data = defaults.data(forKey: key) else { return nil }
-        return try? Self.decoder.decode(type, from: data)
-    }
-
-    private func save<T: Encodable>(_ value: T, key: String) {
-        guard let data = try? Self.encoder.encode(value) else { return }
-        defaults.set(data, forKey: key)
-    }
-
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .millisecondsSince1970
-        return encoder
-    }()
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .millisecondsSince1970
-        return decoder
-    }()
 }
 #endif

@@ -2,30 +2,32 @@ import Foundation
 
 /// Emby's episode lists carry one source per episode, while the episode
 /// itself lists every version. Season, series and Choose Episodes downloads
-/// fetch the rest here so their menus offer the same versions as Silo and
-/// Jellyfin.
+/// fetch the rest here, so their menus offer the same versions as on Silo
+/// and Jellyfin.
 enum EpisodeSourceFiles {
     /// Silo and Jellyfin episode lists carry every file; Emby's don't.
     static var listsEveryFile: Bool { MediaServerProvider.active != .emby }
 
-    /// Each episode's files by content id, a few requests at a time. An
-    /// episode whose request fails is left out. Stops when cancelled.
+    /// Each episode's files by content ID, `concurrency` requests at a time.
+    /// An episode whose request fails is left out. Stops between batches
+    /// when cancelled.
     static func fetch(_ contentIds: [String], concurrency: Int = 4) async -> [String: [EpisodeFile]] {
-        var found: [String: [EpisodeFile]] = [:]
-        var start = 0
-        while start < contentIds.count, !Task.isCancelled {
-            let chunk = contentIds[start..<min(start + concurrency, contentIds.count)]
+        var filesByID: [String: [EpisodeFile]] = [:]
+        var start = contentIds.startIndex
+        while start < contentIds.endIndex, !Task.isCancelled {
+            let end = min(start + concurrency, contentIds.endIndex)
+            let batch = contentIds[start..<end]
             start += concurrency
             await withTaskGroup(of: (String, [EpisodeFile]?).self) { group in
-                for id in chunk {
+                for id in batch {
                     group.addTask { (id, try? await VividAPI.shared.episodeFiles(contentId: id)) }
                 }
                 for await (id, files) in group {
-                    if let files { found[id] = files }
+                    if let files { filesByID[id] = files }
                 }
             }
         }
-        return found
+        return filesByID
     }
 }
 

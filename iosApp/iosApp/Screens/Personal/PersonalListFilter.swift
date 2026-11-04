@@ -55,11 +55,12 @@ struct PersonalListFilter: Hashable {
             }
         }
 
+        /// The catalogue `type` this sends, or nil for every type.
         var typeParam: String? {
             switch self {
-            case .all: return nil
-            case .movies: return "movie"
-            case .series: return "series"
+            case .all: nil
+            case .movies: "movie"
+            case .series: "series"
             }
         }
     }
@@ -88,16 +89,15 @@ struct PersonalListFilter: Hashable {
     var namePrefix: String?
     var source: Source = .all
 
+    /// How many choices differ from their default, for the Filter badge.
     var activeCount: Int {
-        (show == .all ? 0 : 1)
-            + (originalLanguage == nil ? 0 : 1)
-            + (anime == .any ? 0 : 1)
-            + (namePrefix == nil ? 0 : 1)
-            + (source == .all ? 0 : 1)
+        [show != .all, originalLanguage != nil, anime != .any, namePrefix != nil, source != .all]
+            .filter { $0 }.count
     }
 
     var isActive: Bool { activeCount > 0 }
 
+    /// Part of a response cache key, so each filter keeps its own pages.
     var cacheKey: String {
         "show=\(show.rawValue):lang=\(originalLanguage ?? "any"):anime=\(anime.rawValue):prefix=\(namePrefix ?? "all"):source=\(source.rawValue)"
     }
@@ -120,8 +120,8 @@ struct PersonalListFilter: Hashable {
     /// values; the English names are the fallback when the device has none.
     static func languageName(_ code: String) -> String {
         // TMDb's "cn" (Cantonese) isn't an ISO 639 code.
-        let displayCode = code == "cn" ? "yue" : code
-        if let name = Locale.current.localizedString(forLanguageCode: displayCode), !name.isEmpty {
+        let localeCode = code == "cn" ? "yue" : code
+        if let name = Locale.current.localizedString(forLanguageCode: localeCode), !name.isEmpty {
             return name.prefix(1).uppercased(with: Locale.current) + name.dropFirst()
         }
         return languages.first { $0.code == code }?.name ?? code.uppercased()
@@ -129,7 +129,8 @@ struct PersonalListFilter: Hashable {
 
     /// The menu's languages, named and sorted in the app language.
     static var languagesByName: [(code: String, name: String)] {
-        languages.map { ($0.code, languageName($0.code)) }
+        languages
+            .map { (code: $0.code, name: languageName($0.code)) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
@@ -184,12 +185,13 @@ enum PersonalListLoader {
     static func loadAll(source: String, filter: PersonalListFilter) async throws -> [BrowseItem] {
         var query = ["source": source]
         filter.apply(to: &query)
-        let items = try await allPages(query)
+        let items = try await everyPage(of: query)
         guard filter.anime != .any else { return items }
-        let animeIDs = try await animeLibraryItemIDs(source: source)
+        let animeLibraryItems = try await animeLibraryItemIDs(source: source)
+        let wantsAnime = filter.anime == .only
         return items.filter { item in
-            let isAnime = animeIDs.contains(item.contentId) || isTaggedAnime(item)
-            return filter.anime == .only ? isAnime : !isAnime
+            let isAnime = animeLibraryItems.contains(item.contentId) || isTaggedAnime(item)
+            return isAnime == wantsAnime
         }
     }
 
@@ -197,11 +199,11 @@ enum PersonalListLoader {
     /// server reports the original language (Silo).
     static func isTaggedAnime(_ item: BrowseItem) -> Bool {
         let genres = item.genres ?? []
-        if genres.contains(where: { $0.localizedCaseInsensitiveCompare("Anime") == .orderedSame }) {
-            return true
+        func hasGenre(_ name: String) -> Bool {
+            genres.contains { $0.localizedCaseInsensitiveCompare(name) == .orderedSame }
         }
-        return item.originalLanguage?.lowercased() == "ja"
-            && genres.contains { $0.localizedCaseInsensitiveCompare("Animation") == .orderedSame }
+        if hasGenre("Anime") { return true }
+        return item.originalLanguage?.lowercased() == "ja" && hasGenre("Animation")
     }
 
     /// A library whose name includes "Anime", such as "Movies Anime".
@@ -209,11 +211,11 @@ enum PersonalListLoader {
         library.name.localizedCaseInsensitiveContains("anime")
     }
 
+    /// The titles on `source` that sit in an anime library.
     private static func animeLibraryItemIDs(source: String) async throws -> Set<String> {
-        let animeLibraries = try await libraries().filter(isAnimeLibrary)
         var ids = Set<String>()
-        for library in animeLibraries {
-            let items = try await allPages(["source": source, "library_id": String(library.id)])
+        for library in try await libraries() where isAnimeLibrary(library) {
+            let items = try await everyPage(of: ["source": source, "library_id": String(library.id)])
             ids.formUnion(items.map(\.contentId))
         }
         return ids
@@ -226,26 +228,25 @@ enum PersonalListLoader {
         return try await VividAPI.shared.libraries().libraries
     }
 
-    private static func allPages(_ base: [String: String]) async throws -> [BrowseItem] {
+    /// Pages until the server says there are no more. A page with nothing
+    /// new also stops it, so a server that keeps saying "more" can't loop.
+    private static func everyPage(of base: [String: String]) async throws -> [BrowseItem] {
         var items: [BrowseItem] = []
         var seen = Set<String>()
         var offset = 0
-        // Pages until the server says there are no more. A page with nothing
-        // new also stops it, so a server that keeps saying "more" can't loop.
         while true {
             try Task.checkCancellation()
             var query = base
             query["offset"] = String(offset)
             query["limit"] = String(pageSize)
             query["include_total"] = "false"
-            let response = try await VividAPI.shared.catalog(query: query)
-            let fresh = response.items.filter { seen.insert($0.contentId).inserted }
-            items.append(contentsOf: fresh)
-            offset += response.items.count
-            let hasMore = response.hasMore ?? (response.total.map { offset < $0 } ?? false)
-            if !hasMore || fresh.isEmpty { break }
+            let page = try await VividAPI.shared.catalog(query: query)
+            let fresh = page.items.filter { seen.insert($0.contentId).inserted }
+            items += fresh
+            offset += page.items.count
+            let hasMore = page.hasMore ?? page.total.map { offset < $0 } ?? false
+            guard hasMore, !fresh.isEmpty else { return items }
         }
-        return items
     }
 }
 
@@ -256,6 +257,7 @@ struct PersonalListFilterMenuContent: View {
     let showsAlphabet: Bool
     var choices: PersonalListFilter.Choices = .lists
 
+    /// "#" for titles that start with a digit or symbol, then A to Z.
     private let letters = ["#"] + (65...90).compactMap { UnicodeScalar($0).map(String.init) }
 
     var body: some View {
@@ -275,43 +277,55 @@ struct PersonalListFilterMenuContent: View {
         }
         Section {
             if choices.contains(.originalLanguage), PersonalListFilter.supportsOriginalLanguage {
-                Menu {
-                    Button { filter.originalLanguage = nil } label: { item(String(localized: "Any"), selected: filter.originalLanguage == nil) }
-                    ForEach(PersonalListFilter.languagesByName, id: \.code) { language in
-                        Button { filter.originalLanguage = language.code } label: {
-                            item(language.name, selected: filter.originalLanguage == language.code)
-                        }
-                    }
-                } label: {
-                    Text("Original Language")
-                    if let code = filter.originalLanguage { Text(PersonalListFilter.languageName(code)) }
-                }
+                originalLanguageMenu
             }
             if choices.contains(.anime) {
-                Menu {
-                    ForEach(PersonalListFilter.Anime.allCases) { anime in
-                        Button { filter.anime = anime } label: { item(anime.title, selected: filter.anime == anime) }
-                    }
-                } label: {
-                    Text("Anime")
-                    if filter.anime != .any { Text(filter.anime.title) }
-                }
+                animeMenu
             }
             if showsAlphabet {
-                Menu {
-                    Button { filter.namePrefix = nil } label: { item(String(localized: "All"), selected: filter.namePrefix == nil) }
-                    ForEach(letters, id: \.self) { letter in
-                        Button { filter.namePrefix = letter } label: { item(letter, selected: filter.namePrefix == letter) }
-                    }
-                } label: {
-                    Text("A–Z")
-                    if let prefix = filter.namePrefix { Text(prefix) }
-                }
+                alphabetMenu
             }
         }
         Section {
             Button("Clear filters") { filter = PersonalListFilter() }
                 .disabled(!filter.isActive)
+        }
+    }
+
+    private var originalLanguageMenu: some View {
+        Menu {
+            Button { filter.originalLanguage = nil } label: { item(String(localized: "Any"), selected: filter.originalLanguage == nil) }
+            ForEach(PersonalListFilter.languagesByName, id: \.code) { language in
+                Button { filter.originalLanguage = language.code } label: {
+                    item(language.name, selected: filter.originalLanguage == language.code)
+                }
+            }
+        } label: {
+            Text("Original Language")
+            if let code = filter.originalLanguage { Text(PersonalListFilter.languageName(code)) }
+        }
+    }
+
+    private var animeMenu: some View {
+        Menu {
+            ForEach(PersonalListFilter.Anime.allCases) { anime in
+                Button { filter.anime = anime } label: { item(anime.title, selected: filter.anime == anime) }
+            }
+        } label: {
+            Text("Anime")
+            if filter.anime != .any { Text(filter.anime.title) }
+        }
+    }
+
+    private var alphabetMenu: some View {
+        Menu {
+            Button { filter.namePrefix = nil } label: { item(String(localized: "All"), selected: filter.namePrefix == nil) }
+            ForEach(letters, id: \.self) { letter in
+                Button { filter.namePrefix = letter } label: { item(letter, selected: filter.namePrefix == letter) }
+            }
+        } label: {
+            Text("A–Z")
+            if let prefix = filter.namePrefix { Text(prefix) }
         }
     }
 
