@@ -31,53 +31,10 @@ struct DiagnosticsSettingsView: View {
                                subtitle: "Crash and hang reports kept on this device.",
                                systemImage: "stethoscope")
                 .settingsPageHeaderRow()
-            Section {
-                if let latestPlayback {
-                    NavigationLink { LatestPlaybackView(report: latestPlayback) } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Send Latest Playback")
-                            Text(([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
-                                  + (latestPlayback.headline.isEmpty ? [] : [latestPlayback.headline]))
-                                .joined(separator: " · "))
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
-                    }
-                } else {
-                    Text("No playback recorded yet").foregroundStyle(.secondary)
-                }
-            } header: { PhoneSettingsSectionHeader("Latest Playback") }
-                footer: {
-                    Text("If playback looked choppy, the sound dropped out or something didn't look right, send the latest session so Vivid can see what happened. Only the most recent play is kept.")
-                }
-            Section {
-                if reports.isEmpty {
-                    Text(loaded ? "No reports" : "Loading…").foregroundStyle(.secondary)
-                } else {
-                    ForEach(groups) { group in
-                        NavigationLink { DiagnosticsReportGroupView(group: group) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(group.displaySummary)
-                                Text(groupDetail(group)).font(.footnote).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            } header: { PhoneSettingsSectionHeader("Reports") }
-                footer: {
-                    Text("Reports stay on this device for up to 14 days and are never uploaded automatically. They contain no titles, account details or server addresses.")
-                }
+            latestPlaybackSection
+            reportsSection
             if !reports.isEmpty {
-                Section {
-                    DiagnosticsNoteField(text: $note)
-                    DiagnosticsSendButton(title: sendTitle, reports: toSend, note: DiagnosticsNote.cleaned(note))
-                    DiagnosticsOtherOptions(subject: "Vivid Diagnostics", shareURL: shareURL,
-                                            file: { [reports = toSend, note] in
-                                                DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports, note: DiagnosticsNote.cleaned(note)))
-                                            },
-                                            onMailSent: { [reports = toSend] in AppHealthSendState.markSent(reports) })
-                } footer: {
-                    Text("Sends the reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
-                }
+                sendSection
                 Section {
                     Button("Delete All Reports", role: .destructive) { showsDeleteConfirm = true }
                 }
@@ -112,11 +69,65 @@ struct DiagnosticsSettingsView: View {
         .onDisappear { DiagnosticsExportFile.remove(shareURL); shareURL = nil }
     }
 
-    private var sendTitle: String {
-        switch unsent.count {
-        case 0: return String(localized: "Send All Again")
-        default: return String(localized: "Send \(unsent.count) New Reports")
+    private var latestPlaybackSection: some View {
+        Section {
+            if let latestPlayback {
+                NavigationLink { LatestPlaybackView(report: latestPlayback) } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Send Latest Playback")
+                        Text(([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
+                              + (latestPlayback.headline.isEmpty ? [] : [latestPlayback.headline]))
+                            .joined(separator: " · "))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text("No playback recorded yet").foregroundStyle(.secondary)
+            }
+        } header: { PhoneSettingsSectionHeader("Latest Playback") }
+            footer: {
+                Text("If playback looked choppy, the sound dropped out or something didn't look right, send the latest session so Vivid can see what happened. Only the most recent play is kept.")
+            }
+    }
+
+    /// One row per problem, newest first.
+    private var reportsSection: some View {
+        Section {
+            if reports.isEmpty {
+                Text(loaded ? "No reports" : "Loading…").foregroundStyle(.secondary)
+            } else {
+                ForEach(groups) { group in
+                    NavigationLink { DiagnosticsReportGroupView(group: group) } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(group.displaySummary)
+                            Text(groupDetail(group)).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        } header: { PhoneSettingsSectionHeader("Reports") }
+            footer: {
+                Text("Reports stay on this device for up to 14 days and are never uploaded automatically. They contain no titles, account details or server addresses.")
+            }
+    }
+
+    /// The note, Send and Other Options, all carrying the same reports.
+    private var sendSection: some View {
+        Section {
+            DiagnosticsNoteField(text: $note)
+            DiagnosticsSendButton(title: sendTitle, reports: toSend, note: DiagnosticsNote.cleaned(note))
+            DiagnosticsOtherOptions(subject: "Vivid Diagnostics", shareURL: shareURL,
+                                    file: { [reports = toSend, note] in
+                                        DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports, note: DiagnosticsNote.cleaned(note)))
+                                    },
+                                    onMailSent: { [reports = toSend] in AppHealthSendState.markSent(reports) })
+        } footer: {
+            Text("Sends the reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
         }
+    }
+
+    private var sendTitle: String {
+        unsent.isEmpty ? String(localized: "Send All Again") : String(localized: "Send \(unsent.count) New Reports")
     }
 
     private func groupDetail(_ group: AppHealthReportGroup) -> String {

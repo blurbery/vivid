@@ -8,6 +8,8 @@ import CoreImage.CIFilterBuiltins
 import UIKit
 #endif
 
+/// Vivid's contact details, version and source, shared by About, Contact,
+/// Diagnostics and the licences page.
 enum VividAbout {
     static let email = "admin@vividapp.co"
     /// Diagnostics reports have their own address so they can be filtered,
@@ -63,6 +65,14 @@ enum VividAbout {
 struct AboutSettingsView: View {
     var body: some View {
         #if os(tvOS)
+        tvBody
+        #else
+        phoneBody
+        #endif
+    }
+
+    #if os(tvOS)
+    private var tvBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(title: "About")
@@ -86,7 +96,9 @@ struct AboutSettingsView: View {
             .frame(maxWidth: TVSettingsLayout.contentWidth).padding(TVSettingsLayout.scaled(24)).frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
-        #else
+    }
+    #else
+    private var phoneBody: some View {
         List {
             SettingsPageHeader(title: "About", subtitle: "Vivid for your Apple devices.",
                                systemImage: "info.circle", imageName: "AboutInfoIcon")
@@ -111,8 +123,8 @@ struct AboutSettingsView: View {
                 .frame(maxWidth: .infinity).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
         .settingsListChrome().navigationTitle("")
-        #endif
     }
+    #endif
 
     /// The brand block is shared; on Apple TV it follows the settings scale.
     private func brandMetric(_ value: CGFloat) -> CGFloat {
@@ -141,8 +153,6 @@ struct AboutSettingsView: View {
             }
         }.frame(maxWidth: .infinity).padding(.vertical, brandMetric(20))
     }
-
-
 }
 
 private struct VividContactSettingsView: View {
