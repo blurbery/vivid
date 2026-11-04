@@ -7,87 +7,116 @@ import CoreMedia
 import Observation
 import OSLog
 
-/// Owns the system Picture in Picture controller for the active Vivid session.
+/// Runs the system Picture in Picture window for the Vivid player on screen.
 ///
-/// Vivid can change its rendering route at runtime. Native routes expose an
-/// `AVPlayerLayer`; software routes expose a `SampleBufferPiPSource` backed by an
-/// `AVSampleBufferDisplayLayer`. This coordinator follows both sources and
-/// keeps the active PiP controller alive across same-route reload seams.
+/// The engine offers PiP one of two pictures: an `AVPlayerLayer` on its
+/// native route, or a `SampleBufferPiPSource` around the sample-buffer layer
+/// its software route draws into. The coordinator follows the engine for
+/// both, builds the matching AVKit controller, and keeps a running window up
+/// when a reload only swaps the layer underneath it.
 @MainActor
 @Observable
 final class PictureInPictureCoordinator {
     static let shared = PictureInPictureCoordinator()
 
-    private static let logger = Logger(
+    /// Why a tap on Picture in Picture didn't start it, so the player can
+    /// say so rather than leave the button looking dead.
+    enum StartFailure {
+        /// AVKit refused the start.
+        case failed(Error)
+        /// AVKit can't start yet: `isPictureInPicturePossible` is still false.
+        case notReady
+    }
+
+    /// AVKit would start PiP for the current picture right now.
+    private(set) var isPossible = false
+    /// The window is up: set by did-start, cleared by did-stop.
+    private(set) var isActive = false
+    /// Set by will-start, cleared once the start lands or fails.
+    private(set) var isTransitioning = false
+    /// The engine is offering a picture, native or software, that PiP can use.
+    private(set) var hasSource = false
+
+    /// PiP has playback, or is about to take it.
+    var isEngaged: Bool { isActive || isTransitioning }
+    var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
+
+    /// Which kind of picture the AVKit controller was built from.
+    private enum Backend {
+        case playerLayer
+        case sampleBuffer
+    }
+
+    /// The player's hooks, kept as one value so a rebind can carry them over
+    /// in one step.
+    private struct Callbacks {
+        var engagementEnded: (() -> Void)?
+        /// Asked to put the full-screen player back when AVKit's restore
+        /// button is used. An answer of `false` means nothing can come back,
+        /// so the engagement has to end instead of playing on headless.
+        var restoreInterface: ((@escaping (Bool) -> Void) -> Void)?
+        /// AVKit reports a start that never happened only to its delegate.
+        var startFailure: ((StartFailure) -> Void)?
+
+        /// Each hook from `newer`, or this value's hook where `newer` has none.
+        func overlaid(with newer: Callbacks) -> Callbacks {
+            Callbacks(
+                engagementEnded: newer.engagementEnded ?? engagementEnded,
+                restoreInterface: newer.restoreInterface ?? restoreInterface,
+                startFailure: newer.startFailure ?? startFailure
+            )
+        }
+    }
+
+    private static let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
         category: "PictureInPicture"
     )
 
-    /// True while the current source is ready for AVKit to start PiP.
-    private(set) var isPossible = false
-    /// True between AVKit's did-start and did-stop callbacks.
-    private(set) var isActive = false
-    /// True after will-start until the start succeeds or fails.
-    private(set) var isTransitioning = false
-    /// True when Vivid currently exposes either a native or software PiP source.
-    private(set) var hasSource = false
-    /// Stable external-picture state, including AirPlay's transient item-reload gap.
-    private(set) var isExternalPlaybackActive = false
+    // The bound session. Its owner is held weakly, so an idle coordinator can
+    // never keep a closed player alive. `pinnedOwner` holds it strongly only
+    // while AVKit is taking over or showing its picture.
+    @ObservationIgnored private weak var boundEngine: VividEngine?
+    @ObservationIgnored private weak var owner: AnyObject?
+    @ObservationIgnored private var pinnedOwner: AnyObject?
+    @ObservationIgnored private var callbacks = Callbacks()
+    @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
+    @ObservationIgnored private var routeObserver: NSObjectProtocol?
 
-    /// True while PiP owns, or is about to own, playback.
-    var isEngaged: Bool { isActive || isTransitioning }
-    var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
+    // The AVKit controller and the picture it was built from.
+    @ObservationIgnored private var backend: Backend?
+    @ObservationIgnored private var pipController: AVPictureInPictureController?
+    @ObservationIgnored private var bridge: AVKitBridge?
+    /// Bumped for every controller built or released, so a late
+    /// possible-state callback from an old controller is dropped.
+    @ObservationIgnored private var controllerToken: UInt64 = 0
+    @ObservationIgnored private var possibleWatch: NSKeyValueObservation?
+    @ObservationIgnored private weak var boundLayer: AVPlayerLayer?
+    @ObservationIgnored private var boundSampleSource: SampleBufferPiPSource?
 
-    /// Why a Picture in Picture start did not happen, for a host that wants to
-    /// tell the user instead of leaving a tapped button looking inert.
-    enum StartFailure {
-        /// AVKit rejected the start outright.
-        case failed(Error)
-        /// The source is not ready for a start yet (`isPictureInPicturePossible`
-        /// is still false).
-        case notReady
-    }
+    // External screens: AirPlay video or a cable. Stays true through
+    // AirPlay's short gap while an item reloads.
+    @ObservationIgnored private weak var watchedPlayer: AVPlayer?
+    @ObservationIgnored private var externalWatch: NSKeyValueObservation?
+    @ObservationIgnored private var showsOnExternalScreen = false
 
-    private enum SourceKind {
-        case native
-        case software
-    }
-
-    @ObservationIgnored private weak var engine: VividEngine?
-    @ObservationIgnored private weak var lifecycleOwner: AnyObject?
-    /// Keeps the player presentation alive only while AVKit is taking over its
-    /// media graph. The normal owner reference stays weak so an idle
-    /// coordinator can never strand a dismissed player.
-    @ObservationIgnored private var engagedOwner: AnyObject?
-    @ObservationIgnored private weak var currentPlayer: AVPlayer?
-    @ObservationIgnored private weak var attachedLayer: AVPlayerLayer?
-    @ObservationIgnored private var softwareSource: SampleBufferPiPSource?
-    @ObservationIgnored private var sourceKind: SourceKind?
-    @ObservationIgnored private var controller: AVPictureInPictureController?
-    @ObservationIgnored private var controllerGeneration: UInt64 = 0
-    @ObservationIgnored private var possibleObservation: NSKeyValueObservation?
-    @ObservationIgnored private var externalPlaybackObservation: NSKeyValueObservation?
-    @ObservationIgnored private var routeChangeObserver: NSObjectProtocol?
-    @ObservationIgnored private var delegateProxy: DelegateProxy?
-    @ObservationIgnored private var subscriptions: Set<AnyCancellable> = []
-    @ObservationIgnored private var onEngagementEnded: (() -> Void)?
-    /// Asked to put the full-screen player back on screen when AVKit's restore
-    /// control is used. Answering `false` means no surface can come back, which
-    /// must end the engagement rather than leave playback running headless.
-    @ObservationIgnored private var onRestoreUserInterface: ((@escaping (Bool) -> Void) -> Void)?
-    /// Surfaces a start that never happened. AVKit reports both cases only to
-    /// the delegate, so without this the user sees a button that does nothing.
-    @ObservationIgnored private var onStartFailure: ((StartFailure) -> Void)?
-    @ObservationIgnored private var isRestoringUserInterface = false
-    /// A source disappeared while PiP was engaged. Re-read Vivid when PiP stops.
-    @ObservationIgnored private var pendingRebind = false
-    /// A backend-class transition cannot reuse the active controller safely.
-    @ObservationIgnored private var shouldStopForSourceChange = false
+    // How the current engagement should finish.
+    /// The app confirmed the full-screen player is back for a restore.
+    @ObservationIgnored private var restoreConfirmed = false
+    /// The picture changed or went while PiP was engaged; read the engine
+    /// again once the window has stopped.
+    @ObservationIgnored private var rebindAfterStop = false
+    /// The new picture needs a different controller, so the running window
+    /// has to stop first.
+    @ObservationIgnored private var stopForRebind = false
 
     private init() {}
 
-    /// Bind the coordinator to one Vivid session. Repeated calls for the same
-    /// owner/engine are idempotent; a new owner fully releases the previous graph.
+    // MARK: - Sessions
+
+    /// Ties the coordinator to one player. Binding the same owner and engine
+    /// again only refreshes the hooks it's given; a different owner releases
+    /// everything the previous one had.
     func bind(
         engine: VividEngine,
         owner: AnyObject,
@@ -95,143 +124,61 @@ final class PictureInPictureCoordinator {
         onRestoreUserInterface: ((@escaping (Bool) -> Void) -> Void)? = nil,
         onStartFailure: ((StartFailure) -> Void)? = nil
     ) {
-        if self.engine === engine, lifecycleOwner === owner {
-            if let onEngagementEnded {
-                self.onEngagementEnded = onEngagementEnded
-            }
-            if let onRestoreUserInterface {
-                self.onRestoreUserInterface = onRestoreUserInterface
-            }
-            if let onStartFailure {
-                self.onStartFailure = onStartFailure
-            }
-            adoptCurrentEngineSource()
-            refreshExternalPlaybackState()
+        let incoming = Callbacks(
+            engagementEnded: onEngagementEnded,
+            restoreInterface: onRestoreUserInterface,
+            startFailure: onStartFailure
+        )
+        let ownerUnchanged = self.owner === owner
+
+        if ownerUnchanged, boundEngine === engine {
+            callbacks = callbacks.overlaid(with: incoming)
+            reconcileWithEngine()
             return
         }
 
-        let isSameOwner = lifecycleOwner === owner
-        let retainedEngagementHandler = isSameOwner
-            ? (onEngagementEnded ?? self.onEngagementEnded)
-            : onEngagementEnded
-        let retainedRestoreHandler = isSameOwner
-            ? (onRestoreUserInterface ?? self.onRestoreUserInterface)
-            : onRestoreUserInterface
-        let retainedStartFailureHandler = isSameOwner
-            ? (onStartFailure ?? self.onStartFailure)
-            : onStartFailure
-        // The outgoing session keeps its engagement only when the same owner is
-        // rebinding a replacement engine; a genuinely new owner has to have its
-        // deferred cleanup run here, because the delegate that would have run it
-        // is detached below.
-        tearDownBoundSession(continuingOwner: owner)
+        let carried = ownerUnchanged ? callbacks.overlaid(with: incoming) : incoming
+        // The same owner moving to a replacement engine keeps its engagement.
+        // Any other owner gets its deferred cleanup run during this teardown,
+        // since the AVKit delegate that would have run it is detached there.
+        endBoundSession(handingOverTo: owner)
 
-        self.engine = engine
-        lifecycleOwner = owner
-        self.onEngagementEnded = retainedEngagementHandler
-        self.onRestoreUserInterface = retainedRestoreHandler
-        self.onStartFailure = retainedStartFailureHandler
-
-        observe(engine.$currentAVPlayer, of: engine) { coordinator, player in
-            coordinator.receiveNativePlayer(player)
-        }
-
-        // The native host and its layer survive item handovers. Observe the
-        // separately published item seam so external-route and native-subtitle
-        // ownership are re-applied to the replacement without rebuilding PiP.
-        observe(engine.$currentAVPlayerItem, of: engine) { coordinator, _ in
-            coordinator.adoptCurrentEngineSource()
-            coordinator.refreshExternalPlaybackState()
-        }
-
-        observe(engine.$softwarePiPSource, of: engine) { coordinator, source in
-            coordinator.receiveSoftwareSource(source)
-        }
-
-        // A track can change while video is already in PiP or on an external
-        // display. Re-assert native ownership after both the selection and the
-        // native rendition table settle so the newly selected track, rather
-        // than the previous ordinal, is rendered by AVKit or the receiver.
-        observe(engine.$activeSubtitleTrackIndex, of: engine) { coordinator, _ in
-            coordinator.syncNativeSubtitleRendering()
-        }
-        observe(engine.$subtitleTracks, of: engine) { coordinator, _ in
-            coordinator.syncNativeSubtitleRendering()
-        }
-
-        // Vivid publishes the host and layer before it commits the effective
-        // route at the end of a load. The route edge is therefore the final
-        // opportunity to apply loopback-native subtitle ownership after a
-        // same-player item handover.
-        observe(engine.$videoRoute, of: engine) { coordinator, route in
-            guard route == .remoteBypass else { return }
-            coordinator.syncNativeSubtitleRendering()
-        }
-
-        routeChangeObserver = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.refreshExternalPlaybackState()
-            }
-        }
-
-        adoptCurrentEngineSource()
-        refreshExternalPlaybackState()
+        boundEngine = engine
+        self.owner = owner
+        callbacks = carried
+        follow(engine)
+        reconcileWithEngine()
     }
 
-    /// Subscribes to one of the bound engine's publishers. The engine is
-    /// main-actor isolated and publishes synchronously, so the handler runs in
-    /// the same turn as the change, and only while that engine is still bound.
-    private func observe<Value>(
-        _ publisher: Published<Value>.Publisher,
-        of engine: VividEngine,
-        _ handler: @escaping (PictureInPictureCoordinator, Value) -> Void
-    ) {
-        publisher
-            .sink { [weak self, weak engine] value in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    handler(self, value)
-                }
-            }
-            .store(in: &subscriptions)
-    }
-
-    /// Owner-keyed teardown prevents an outgoing view from releasing a newer
-    /// session's controller during overlapping SwiftUI presentation lifecycles.
+    /// Keyed by owner, so a player view on its way out can't release the
+    /// controller of a newer player while SwiftUI overlaps the two.
     func endSession(owner: AnyObject) {
-        guard lifecycleOwner === owner else {
-            Self.logger.info("Skipping PiP teardown; another session owns the coordinator")
-            return
+        if self.owner === owner {
+            endBoundSession(handingOverTo: nil)
+        } else {
+            Self.log.info("Skipping PiP teardown; another session owns the coordinator")
         }
-        tearDownBoundSession(continuingOwner: nil)
     }
 
-    /// End whatever session is bound, whichever owner holds it, because the
-    /// app crossed an identity boundary: sign-out, a server or profile
-    /// switch, or a cleared session.
-    ///
-    /// Ordinary teardown is owner-keyed and driven by the player's
-    /// disappearance, which deliberately defers `cleanup()` while PiP is
-    /// engaged. An identity change tears the authenticated view hierarchy down
-    /// on that same deferred path, so without this the previous identity's
-    /// engine, server playback session, and PiP window all survive into the
-    /// next one. `tearDownBoundSession` runs the engaged owner's deferred
-    /// cleanup synchronously, which is what stops the engine and closes the
+    /// Ends the bound session whoever owns it, because the app crossed an
+    /// identity boundary: sign-out, a server or profile switch, or a cleared
     /// session.
+    ///
+    /// A player that disappears while PiP is engaged deliberately puts its
+    /// `cleanup()` off, and an identity change tears the signed-in views down
+    /// along that same path. Without this, the old identity's engine, server
+    /// session and PiP window would all carry on into the new one. The
+    /// teardown runs the engaged owner's put-off cleanup straight away, which
+    /// stops the engine and closes the server session.
     func endSessionForIdentityChange() {
-        guard lifecycleOwner != nil || engagedOwner != nil else { return }
-        Self.logger.info("Ending the PiP session for an identity boundary")
-        tearDownBoundSession(continuingOwner: nil)
+        if owner == nil, pinnedOwner == nil { return }
+        Self.log.info("Ending the PiP session for an identity boundary")
+        endBoundSession(handingOverTo: nil)
     }
 
-    /// Entry point for the shared auth paths, which are not statically
-    /// isolated to the main actor. The hop is safe in either order relative to
-    /// the player's own disappearance: whichever runs second finds the
-    /// engagement already ended.
+    /// For the shared sign-in code, which isn't on the main actor. Either
+    /// order against the player's own disappearance is fine: whichever runs
+    /// second finds nothing left to end.
     nonisolated static func endEngagedSessionForIdentityChange() {
         Task { @MainActor in
             shared.endSessionForIdentityChange()
@@ -239,500 +186,560 @@ final class PictureInPictureCoordinator {
     }
 
     func ownsEngagedSession(_ owner: AnyObject) -> Bool {
-        lifecycleOwner === owner && isEngaged
+        self.owner === owner && isEngaged
     }
 
     func toggle() {
-        guard let controller else { return }
-        if controller.isPictureInPictureActive || isActive {
-            controller.stopPictureInPicture()
+        guard let pipController else { return }
+        if pipController.isPictureInPictureActive || isActive {
+            pipController.stopPictureInPicture()
+            return
+        }
+        if pipController.isPictureInPicturePossible {
+            pipController.startPictureInPicture()
         } else {
-            guard controller.isPictureInPicturePossible else {
-                Self.logger.info("PiP start ignored; not possible yet")
-                onStartFailure?(.notReady)
-                return
-            }
-            controller.startPictureInPicture()
+            Self.log.info("PiP start ignored; not possible yet")
+            callbacks.startFailure?(.notReady)
         }
     }
 
-    // MARK: - Vivid source binding
+    // MARK: - Following the engine
 
-    private func receiveNativePlayer(_ player: AVPlayer?) {
-        externalPlaybackObservation?.invalidate()
-        externalPlaybackObservation = nil
-        currentPlayer = player
+    private func follow(_ engine: VividEngine) {
+        // Every publisher replays its current value when subscribed, so this
+        // order is also the order the first values arrive in.
+        relay(engine.$currentAVPlayer, from: engine) { coordinator, player in
+            coordinator.playerDidChange(to: player)
+        }
+        // A native host and its layer outlive an item swap. The item has its
+        // own publisher, so the external route and subtitle hand-off can be
+        // applied to the new item without building PiP again.
+        relay(engine.$currentAVPlayerItem, from: engine) { coordinator, _ in
+            coordinator.reconcileWithEngine()
+        }
+        relay(engine.$softwarePiPSource, from: engine) { coordinator, source in
+            coordinator.sampleSourceDidChange(to: source)
+        }
+        // The track can change while the video is in PiP or on another
+        // screen. Hand over again once both the pick and the native track
+        // table have settled, so the receiver draws the new track rather than
+        // whatever had the old number.
+        relay(engine.$activeSubtitleTrackIndex, from: engine) { coordinator, _ in
+            coordinator.applyNativeSubtitleOwnership()
+        }
+        relay(engine.$subtitleTracks, from: engine) { coordinator, _ in
+            coordinator.applyNativeSubtitleOwnership()
+        }
+        // A load publishes the host and layer before it commits its route,
+        // so the route is the last chance to hand native subtitles over after
+        // the same player swaps its item.
+        relay(engine.$videoRoute, from: engine) { coordinator, route in
+            if route == .remoteBypass {
+                coordinator.applyNativeSubtitleOwnership()
+            }
+        }
 
-        guard let player else {
-            if sourceKind == .native {
-                if isEngaged {
-                    pendingRebind = true
-                } else {
-                    releaseController(stopIfActive: false)
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshExternalScreenState()
+            }
+        }
+    }
+
+    /// Delivers one engine publisher. The engine lives on the main actor and
+    /// publishes synchronously, so each value arrives in the same turn as the
+    /// change, and only while that engine is still the bound one.
+    private func relay<Value>(
+        _ publisher: Published<Value>.Publisher,
+        from engine: VividEngine,
+        _ deliver: @escaping (PictureInPictureCoordinator, Value) -> Void
+    ) {
+        let subscription = publisher.sink { [weak self, weak engine] value in
+            MainActor.assumeIsolated {
+                guard let coordinator = self, let engine, coordinator.boundEngine === engine else { return }
+                deliver(coordinator, value)
+            }
+        }
+        cancellables.insert(subscription)
+    }
+
+    /// Reads the engine's current picture and the external screen state again.
+    private func reconcileWithEngine() {
+        adoptEnginePicture()
+        refreshExternalScreenState()
+    }
+
+    private func playerDidChange(to player: AVPlayer?) {
+        externalWatch?.invalidate()
+        externalWatch = nil
+        watchedPlayer = player
+
+        if let player {
+            externalWatch = player.observe(
+                \.isExternalPlaybackActive,
+                options: [.initial, .new]
+            ) { [weak self, weak player] _, _ in
+                Task { @MainActor [weak self, weak player] in
+                    guard let self, self.watchedPlayer === player else { return }
+                    self.refreshExternalScreenState()
                 }
             }
-            refreshExternalPlaybackState()
-            return
-        }
-
-        externalPlaybackObservation = player.observe(
-            \.isExternalPlaybackActive,
-            options: [.initial, .new]
-        ) { [weak self, weak player] _, _ in
-            Task { @MainActor [weak self, weak player] in
-                guard let self, self.currentPlayer === player else { return }
-                self.refreshExternalPlaybackState()
+            if let layer = boundEngine?.nativePlayerLayer {
+                attach(playerLayer: layer)
             }
+        } else if backend == .playerLayer {
+            pictureWentAway()
         }
-
-        if let layer = engine?.nativePlayerLayer {
-            bindNativeLayer(layer)
-        }
-        refreshExternalPlaybackState()
+        refreshExternalScreenState()
     }
 
-    private func receiveSoftwareSource(_ source: SampleBufferPiPSource?) {
+    private func sampleSourceDidChange(to source: SampleBufferPiPSource?) {
         guard let source else {
-            if sourceKind == .software {
-                if isEngaged {
-                    pendingRebind = true
-                } else {
-                    releaseController(stopIfActive: false)
-                }
+            if backend == .sampleBuffer {
+                pictureWentAway()
             }
             return
         }
-        bindSoftwareSource(source)
-        refreshExternalPlaybackState()
+        attach(sampleSource: source)
+        refreshExternalScreenState()
     }
 
-    private func adoptCurrentEngineSource() {
-        guard let engine else { return }
-        if engine.currentAVPlayer != nil, let layer = engine.nativePlayerLayer {
-            bindNativeLayer(layer)
-        } else if let source = engine.softwarePiPSource {
-            bindSoftwareSource(source)
-        } else if !isEngaged {
-            releaseController(stopIfActive: false)
-        }
-    }
-
-    private func bindNativeLayer(_ layer: AVPlayerLayer) {
-        guard isSupported else {
-            hasSource = false
-            return
-        }
-
-        if sourceKind == .native, attachedLayer === layer {
-            hasSource = true
-            pendingRebind = false
-            shouldStopForSourceChange = false
-            return
-        }
-
+    /// The picture the controller was built from has gone. A running window
+    /// keeps its controller until it stops; otherwise it's released now.
+    private func pictureWentAway() {
         if isEngaged {
-            pendingRebind = true
-            shouldStopForSourceChange = true
-            Self.logger.info("Native PiP source changed while active; stopping for a safe rebind")
-            controller?.stopPictureInPicture()
-            return
+            rebindAfterStop = true
+        } else {
+            releaseController(stopping: false)
         }
-
-        releaseController(stopIfActive: false)
-        guard let pictureInPicture = AVPictureInPictureController(playerLayer: layer) else {
-            Self.logger.error("AVPictureInPictureController rejected Vivid's native player layer")
-            return
-        }
-        let proxy = DelegateProxy(coordinator: self)
-        configureController(pictureInPicture, proxy: proxy)
-        sourceKind = .native
-        attachedLayer = layer
-        softwareSource = nil
-        hasSource = true
-        pendingRebind = false
-        shouldStopForSourceChange = false
-        Self.logger.info("PiP bound to Vivid native player layer")
     }
 
-    private func bindSoftwareSource(_ source: SampleBufferPiPSource) {
+    private func adoptEnginePicture() {
+        guard let engine = boundEngine else { return }
+        let nativeLayer = engine.currentAVPlayer == nil ? nil : engine.nativePlayerLayer
+        if let nativeLayer {
+            attach(playerLayer: nativeLayer)
+        } else if let sampleSource = engine.softwarePiPSource {
+            attach(sampleSource: sampleSource)
+        } else if !isEngaged {
+            releaseController(stopping: false)
+        }
+    }
+
+    // MARK: - Controllers
+
+    private func attach(playerLayer layer: AVPlayerLayer) {
         guard isSupported else {
             hasSource = false
             return
         }
+        if backend == .playerLayer, boundLayer === layer {
+            markPictureCurrent()
+            return
+        }
+        if isEngaged {
+            Self.log.info("Native PiP source changed while active; stopping for a safe rebind")
+            stopToRebind()
+            return
+        }
 
-        if sourceKind == .software, let controller, let proxy = delegateProxy {
-            if softwareSource === source {
-                hasSource = true
-                pendingRebind = false
-                shouldStopForSourceChange = false
+        releaseController(stopping: false)
+        guard let controller = AVPictureInPictureController(playerLayer: layer) else {
+            Self.log.error("AVPictureInPictureController rejected Vivid's native player layer")
+            return
+        }
+        install(controller, bridge: AVKitBridge(coordinator: self), backend: .playerLayer)
+        boundLayer = layer
+        boundSampleSource = nil
+        markPictureCurrent()
+        Self.log.info("PiP bound to Vivid native player layer")
+    }
+
+    private func attach(sampleSource source: SampleBufferPiPSource) {
+        guard isSupported else {
+            hasSource = false
+            return
+        }
+        if backend == .sampleBuffer, let pipController, let bridge {
+            if boundSampleSource === source {
+                markPictureCurrent()
                 return
             }
             if isEngaged {
-                // A software reload creates a new display layer. Replacing the
-                // ContentSource on the same controller keeps the PiP window up.
-                softwareSource = source
-                controller.contentSource = AVPictureInPictureController.ContentSource(
-                    sampleBufferDisplayLayer: source.layer,
-                    playbackDelegate: proxy
-                )
-                hasSource = true
-                pendingRebind = false
-                shouldStopForSourceChange = false
-                Self.logger.info("PiP swapped to Vivid's reloaded software source")
+                // A software reload brings a new display layer. Pointing the
+                // running controller at it keeps the window on screen.
+                boundSampleSource = source
+                pipController.contentSource = Self.content(for: source, bridge: bridge)
+                markPictureCurrent()
+                Self.log.info("PiP swapped to Vivid's reloaded software source")
                 return
             }
         }
-
         if isEngaged {
-            pendingRebind = true
-            shouldStopForSourceChange = true
-            Self.logger.info("PiP backend class changed while active; stopping for a safe rebind")
-            controller?.stopPictureInPicture()
+            Self.log.info("PiP backend class changed while active; stopping for a safe rebind")
+            stopToRebind()
             return
         }
 
-        releaseController(stopIfActive: false)
-        let proxy = DelegateProxy(coordinator: self)
-        let contentSource = AVPictureInPictureController.ContentSource(
-            sampleBufferDisplayLayer: source.layer,
-            playbackDelegate: proxy
+        releaseController(stopping: false)
+        let newBridge = AVKitBridge(coordinator: self)
+        let controller = AVPictureInPictureController(
+            contentSource: Self.content(for: source, bridge: newBridge)
         )
-        let pictureInPicture = AVPictureInPictureController(contentSource: contentSource)
-        configureController(pictureInPicture, proxy: proxy)
-        sourceKind = .software
-        softwareSource = source
-        attachedLayer = nil
-        hasSource = true
-        pendingRebind = false
-        shouldStopForSourceChange = false
-        Self.logger.info("PiP bound to Vivid software sample-buffer source")
+        install(controller, bridge: newBridge, backend: .sampleBuffer)
+        boundSampleSource = source
+        boundLayer = nil
+        markPictureCurrent()
+        Self.log.info("PiP bound to Vivid software sample-buffer source")
     }
 
-    private func configureController(
-        _ pictureInPicture: AVPictureInPictureController,
-        proxy: DelegateProxy
+    private static func content(
+        for source: SampleBufferPiPSource,
+        bridge: AVKitBridge
+    ) -> AVPictureInPictureController.ContentSource {
+        AVPictureInPictureController.ContentSource(
+            sampleBufferDisplayLayer: source.layer,
+            playbackDelegate: bridge
+        )
+    }
+
+    /// The controller already shows the engine's current picture.
+    private func markPictureCurrent() {
+        hasSource = true
+        rebindAfterStop = false
+        stopForRebind = false
+    }
+
+    /// Stops the running window so the next picture can get its own
+    /// controller once AVKit reports the stop.
+    private func stopToRebind() {
+        rebindAfterStop = true
+        stopForRebind = true
+        pipController?.stopPictureInPicture()
+    }
+
+    private func install(
+        _ controller: AVPictureInPictureController,
+        bridge: AVKitBridge,
+        backend: Backend
     ) {
-        controllerGeneration &+= 1
-        let generation = controllerGeneration
-        controller = pictureInPicture
-        delegateProxy = proxy
-        pictureInPicture.delegate = proxy
-        pictureInPicture.canStartPictureInPictureAutomaticallyFromInline = true
-        possibleObservation = pictureInPicture.observe(
+        controllerToken &+= 1
+        let token = controllerToken
+        pipController = controller
+        self.bridge = bridge
+        self.backend = backend
+        controller.delegate = bridge
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        possibleWatch = controller.observe(
             \.isPictureInPicturePossible,
             options: [.initial, .new]
-        ) { [weak self] observed, _ in
-            let isPossible = observed.isPictureInPicturePossible
+        ) { [weak self] watched, _ in
+            let possible = watched.isPictureInPicturePossible
             Task { @MainActor [weak self] in
-                guard let self, self.controllerGeneration == generation else { return }
-                self.isPossible = isPossible
+                guard let self, self.controllerToken == token else { return }
+                self.isPossible = possible
             }
         }
     }
 
-    private func releaseController(stopIfActive: Bool) {
-        controllerGeneration &+= 1
-        if stopIfActive, let controller,
-           controller.isPictureInPictureActive || isEngaged {
-            controller.stopPictureInPicture()
+    private func releaseController(stopping: Bool) {
+        controllerToken &+= 1
+        if stopping, let pipController,
+           pipController.isPictureInPictureActive || isEngaged {
+            pipController.stopPictureInPicture()
         }
-        controller?.delegate = nil
-        possibleObservation?.invalidate()
-        possibleObservation = nil
-        controller = nil
-        delegateProxy = nil
-        attachedLayer = nil
-        softwareSource = nil
-        sourceKind = nil
+        pipController?.delegate = nil
+        possibleWatch?.invalidate()
+        possibleWatch = nil
+        pipController = nil
+        bridge = nil
+        backend = nil
+        boundLayer = nil
+        boundSampleSource = nil
         hasSource = false
         isPossible = false
         isActive = false
         isTransitioning = false
-        isRestoringUserInterface = false
+        restoreConfirmed = false
     }
 
-    /// Release the bound graph.
+    /// Lets go of the bound engine and controller.
     ///
-    /// `releaseController(stopIfActive:)` detaches the AVKit delegate in the same
-    /// turn it asks for a stop, so `handleDidStop` can never arrive for a
-    /// controller torn down here. When PiP was engaged, that callback was the
-    /// only thing that would have ended the engagement, and the engaged owner has
-    /// already deferred its own `cleanup()` (final progress and the server
-    /// session stop) waiting for exactly that. So the engagement-ended work
-    /// runs here, synchronously, instead of being lost.
+    /// The controller loses its AVKit delegate in the same turn it's asked
+    /// to stop, so no did-stop ever arrives for it. If PiP was engaged, that
+    /// callback was the only thing that would have ended the engagement, and
+    /// the engaged player has put its `cleanup()` (final progress and the
+    /// server session's stop) off until then. So the engagement ends here,
+    /// synchronously, instead of never.
     ///
-    /// `continuingOwner` is the owner about to take the coordinator over. It only
-    /// matters when the same owner rebinds a replacement engine: that session is
-    /// not ending, so its cleanup must not run.
-    private func tearDownBoundSession(continuingOwner: AnyObject?) {
-        engine?.pictureInPictureActive = false
-        engine?.setNativeSubtitleRendering(false)
-        subscriptions.removeAll()
-        externalPlaybackObservation?.invalidate()
-        externalPlaybackObservation = nil
-        if let routeChangeObserver {
-            NotificationCenter.default.removeObserver(routeChangeObserver)
+    /// `successor` is the owner about to bind. It only matters when that's
+    /// the same owner moving to a replacement engine: its session carries on,
+    /// so its cleanup must not run.
+    private func endBoundSession(handingOverTo successor: AnyObject?) {
+        boundEngine?.pictureInPictureActive = false
+        boundEngine?.setNativeSubtitleRendering(false)
+        cancellables.removeAll()
+        externalWatch?.invalidate()
+        externalWatch = nil
+        if let routeObserver {
+            NotificationCenter.default.removeObserver(routeObserver)
         }
-        routeChangeObserver = nil
-        releaseController(stopIfActive: true)
-        currentPlayer = nil
-        isExternalPlaybackActive = false
-        pendingRebind = false
-        shouldStopForSourceChange = false
-        engine = nil
-        lifecycleOwner = nil
+        routeObserver = nil
+        releaseController(stopping: true)
+        watchedPlayer = nil
+        showsOnExternalScreen = false
+        rebindAfterStop = false
+        stopForRebind = false
+        boundEngine = nil
+        owner = nil
 
-        // Hand the engagement off before the references go, and keep the owner
-        // alive across its own cleanup: `engagedOwner` is the only strong
-        // reference holding it up.
-        let isEndingEngagement = engagedOwner != nil && engagedOwner !== continuingOwner
-        let endedOwner = engagedOwner
-        let endedEngagementHandler = isEndingEngagement ? onEngagementEnded : nil
-        // Cleared first so a late `handleDidStop`, or the owner-keyed
-        // `endSession` that its `cleanup()` calls back into, both find nothing
-        // left to end and cannot run this a second time.
-        engagedOwner = nil
-        onEngagementEnded = nil
-        onRestoreUserInterface = nil
-        onStartFailure = nil
+        let outgoing = pinnedOwner
+        let cleanup = outgoing != nil && outgoing !== successor ? callbacks.engagementEnded : nil
+        // Cleared before the cleanup runs, so a late did-stop, or the
+        // `endSession(owner:)` that `cleanup()` calls back into, finds
+        // nothing left to end. `outgoing` keeps the owner alive meanwhile.
+        pinnedOwner = nil
+        callbacks = Callbacks()
 
-        if let endedEngagementHandler {
-            Self.logger.info("PiP torn down while engaged; running the outgoing session's cleanup")
-            withExtendedLifetime(endedOwner) { endedEngagementHandler() }
-        }
+        guard let cleanup else { return }
+        Self.log.info("PiP torn down while engaged; running the outgoing session's cleanup")
+        withExtendedLifetime(outgoing) { cleanup() }
     }
 
-    // MARK: - External playback + subtitle ownership
+    // MARK: - External screens and native subtitles
 
-    private func refreshExternalPlaybackState() {
-        let hasNativePicture = currentPlayer != nil
-            || sourceKind == .native
-            || engine?.nativePlayerLayer != nil
-        let routeIsExternal = AVAudioSession.sharedInstance().currentRoute.outputs.contains {
-            $0.portType == .airPlay || $0.portType == .HDMI
+    private func refreshExternalScreenState() {
+        let hasNativePicture = watchedPlayer != nil
+            || backend == .playerLayer
+            || boundEngine?.nativePlayerLayer != nil
+        let isRoutedOut = AVAudioSession.sharedInstance().currentRoute.outputs.contains { output in
+            output.portType == .airPlay || output.portType == .HDMI
         }
-        let active = currentPlayer?.isExternalPlaybackActive == true
-            || (hasNativePicture && routeIsExternal)
-        isExternalPlaybackActive = active
-        syncNativeSubtitleRendering()
+        showsOnExternalScreen = watchedPlayer?.isExternalPlaybackActive == true
+            || (hasNativePicture && isRoutedOut)
+        applyNativeSubtitleOwnership()
     }
 
-    private func syncNativeSubtitleRendering() {
-        guard let engine else { return }
-        // This handoff applies only to Vivid's loopback-native route. Remote
-        // HLS subtitles already live in AVPlayer's media-selection group (and
-        // use ids absent from the generated rendition table); software PiP
-        // burns its overlay into the sample-buffer frames itself.
-        guard engine.videoRoute == .remoteBypass else { return }
-        engine.setNativeSubtitleRendering(
-            engine.pictureInPictureActive || isExternalPlaybackActive
-        )
+    /// Only the loopback-native route hands its subtitles to AVKit. Remote
+    /// HLS already keeps them in AVPlayer's selection group (under ids the
+    /// generated track table doesn't have), and software PiP draws Vivid's
+    /// overlay into its own frames.
+    private func applyNativeSubtitleOwnership() {
+        guard let engine = boundEngine, engine.videoRoute == .remoteBypass else { return }
+        engine.setNativeSubtitleRendering(engine.pictureInPictureActive || showsOnExternalScreen)
     }
 
-    // MARK: - AVKit delegate callbacks
+    // MARK: - AVKit callbacks
 
-    fileprivate func handleWillStart() {
-        // This callback is synchronous on the main thread. Set Vivid first so
-        // its did-enter-background observer sees PiP as a keepalive reason.
-        engine?.pictureInPictureActive = true
-        engagedOwner = lifecycleOwner
+    fileprivate func pictureWillStart() {
+        // AVKit calls this synchronously on the main thread. The engine flag
+        // goes first, so the engine's did-enter-background handler already
+        // counts PiP as a reason to keep playing.
+        boundEngine?.pictureInPictureActive = true
+        pinnedOwner = owner
         isTransitioning = true
-        isRestoringUserInterface = false
-        syncNativeSubtitleRendering()
+        restoreConfirmed = false
+        applyNativeSubtitleOwnership()
     }
 
-    fileprivate func handleDidStart() {
-        engine?.pictureInPictureActive = true
+    fileprivate func pictureDidStart() {
+        boundEngine?.pictureInPictureActive = true
         isTransitioning = false
         isActive = true
-        syncNativeSubtitleRendering()
-        Self.logger.info("PiP started")
-        if shouldStopForSourceChange {
-            controller?.stopPictureInPicture()
+        applyNativeSubtitleOwnership()
+        Self.log.info("PiP started")
+        if stopForRebind {
+            pipController?.stopPictureInPicture()
         }
     }
 
-    /// AVKit is stopping PiP because the user asked for the full-screen player
-    /// back. `completion(true)` must mean the player really is on screen again:
-    /// `handleDidStop` reads the outcome to decide whether the engagement, and
-    /// with it the deferred `cleanup()`, has to end.
-    fileprivate func handleRestoreRequested(completion: @escaping (Bool) -> Void) {
-        isRestoringUserInterface = false
-        guard let onRestoreUserInterface else {
-            // Nobody owns the player presentation. Answering `true` here is what
-            // left playback running with no UI and no session teardown.
-            Self.logger.error("PiP restore requested with no presentation owner")
+    /// AVKit is stopping because the viewer wants the full-screen player
+    /// back. Answering `true` must mean it really is on screen again: the
+    /// did-stop that follows reads that to decide whether the engagement, and
+    /// the player's put-off `cleanup()`, ends.
+    fileprivate func pictureRestoreRequested(_ completion: @escaping (Bool) -> Void) {
+        restoreConfirmed = false
+        guard let restore = callbacks.restoreInterface else {
+            // No player presentation to bring back. Answering `true` here is
+            // what once left playback running with no screen and no teardown.
+            Self.log.error("PiP restore requested with no presentation owner")
             completion(false)
             return
         }
-        var hasAnswered = false
-        onRestoreUserInterface { [weak self] didRestore in
-            // AVKit's handler must run exactly once.
-            guard !hasAnswered else { return }
-            hasAnswered = true
+        var answered = false
+        restore { [weak self] didRestore in
+            // AVKit's handler may only be called once.
+            if answered { return }
+            answered = true
             if didRestore {
-                self?.isRestoringUserInterface = true
+                self?.restoreConfirmed = true
             } else {
-                Self.logger.error("PiP restore could not re-present the player")
+                Self.log.error("PiP restore could not re-present the player")
             }
             completion(didRestore)
         }
     }
 
-    fileprivate func handleDidStop() {
-        engine?.pictureInPictureActive = false
+    fileprivate func pictureDidStop() {
+        boundEngine?.pictureInPictureActive = false
         isTransitioning = false
         isActive = false
-        syncNativeSubtitleRendering()
-        // True only when the app layer confirmed the full-screen player is back
-        // on screen. A close-button stop, a failed restore, and a rebind stop
-        // all land here as false, and each one has to end the engagement so the
-        // deferred `cleanup()` runs.
-        let didRestoreUserInterface = isRestoringUserInterface
-        isRestoringUserInterface = false
-        Self.logger.info(
-            "PiP stopped restored=\(didRestoreUserInterface ? 1 : 0, privacy: .public)"
-        )
-
-        if pendingRebind {
-            pendingRebind = false
-            shouldStopForSourceChange = false
-            adoptCurrentEngineSource()
-        }
-        // Released before the callback so the owner-keyed `endSession` that its
-        // `cleanup()` may call back into cannot end the same engagement twice.
-        let endedOwner = engagedOwner
-        engagedOwner = nil
-        if !didRestoreUserInterface {
-            withExtendedLifetime(endedOwner) { onEngagementEnded?() }
-        }
+        applyNativeSubtitleOwnership()
+        // Only a confirmed restore keeps the engagement going. The close
+        // button, a failed restore and a stop for a rebind all end it, so the
+        // player's put-off cleanup runs.
+        let restored = restoreConfirmed
+        restoreConfirmed = false
+        Self.log.info("PiP stopped restored=\(restored ? 1 : 0, privacy: .public)")
+        rebindIfDeferred()
+        finishEngagement(runningCleanup: !restored)
     }
 
-    fileprivate func handleFailedToStart(_ error: Error) {
-        engine?.pictureInPictureActive = false
+    fileprivate func pictureFailedToStart(_ error: Error) {
+        boundEngine?.pictureInPictureActive = false
         isTransitioning = false
         isActive = false
-        syncNativeSubtitleRendering()
-        Self.logger.error(
-            "PiP failed to start: \(MediaLogRedactor.sanitize(error), privacy: .public)"
-        )
-        onStartFailure?(.failed(error))
-        if pendingRebind {
-            pendingRebind = false
-            shouldStopForSourceChange = false
-            adoptCurrentEngineSource()
-        }
-        let endedOwner = engagedOwner
-        engagedOwner = nil
-        withExtendedLifetime(endedOwner) { onEngagementEnded?() }
+        applyNativeSubtitleOwnership()
+        Self.log.error("PiP failed to start: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+        callbacks.startFailure?(.failed(error))
+        rebindIfDeferred()
+        finishEngagement(runningCleanup: true)
     }
 
-    fileprivate func softwareSetPlaying(_ playing: Bool) {
-        softwareSource?.setPlaying(playing)
+    private func rebindIfDeferred() {
+        guard rebindAfterStop else { return }
+        rebindAfterStop = false
+        stopForRebind = false
+        adoptEnginePicture()
     }
 
-    fileprivate func softwareTimeRange() -> CMTimeRange {
-        softwareSource?.timeRange()
-            ?? CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
+    /// Unpins the owner before its cleanup runs, so the `endSession(owner:)`
+    /// that `cleanup()` can call back into can't end the engagement twice.
+    private func finishEngagement(runningCleanup: Bool) {
+        let outgoing = pinnedOwner
+        pinnedOwner = nil
+        guard runningCleanup else { return }
+        withExtendedLifetime(outgoing) { callbacks.engagementEnded?() }
     }
 
-    fileprivate func softwareIsPaused() -> Bool {
-        softwareSource?.isPaused ?? true
+    // MARK: - Software playback controls in the window
+
+    fileprivate func sampleSetPlaying(_ playing: Bool) {
+        boundSampleSource?.setPlaying(playing)
     }
 
-    fileprivate func softwareSkip(by seconds: Double) {
-        softwareSource?.skip(by: seconds)
+    fileprivate var sampleTimeRange: CMTimeRange {
+        boundSampleSource?.timeRange() ?? .pictureInPictureUnbounded
     }
 
-    /// AVKit delivers both delegate protocols on the main thread. The proxy
-    /// keeps the observable coordinator independent of NSObject while the
-    /// synchronous `assumeIsolated` call preserves will-start ordering.
-    private final class DelegateProxy: NSObject,
-        AVPictureInPictureControllerDelegate,
-        AVPictureInPictureSampleBufferPlaybackDelegate
-    {
-        private weak var coordinator: PictureInPictureCoordinator?
+    fileprivate var isSamplePaused: Bool {
+        boundSampleSource?.isPaused ?? true
+    }
 
-        init(coordinator: PictureInPictureCoordinator) {
-            self.coordinator = coordinator
-        }
+    fileprivate func sampleSkip(seconds: Double) {
+        boundSampleSource?.skip(by: seconds)
+    }
+}
 
-        func pictureInPictureControllerWillStartPictureInPicture(
-            _ pictureInPictureController: AVPictureInPictureController
-        ) {
-            MainActor.assumeIsolated { coordinator?.handleWillStart() }
-        }
+private extension CMTimeRange {
+    /// What the window gets while no software picture is bound.
+    static var pictureInPictureUnbounded: CMTimeRange {
+        CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
+    }
+}
 
-        func pictureInPictureControllerDidStartPictureInPicture(
-            _ pictureInPictureController: AVPictureInPictureController
-        ) {
-            MainActor.assumeIsolated { coordinator?.handleDidStart() }
-        }
+/// The AVKit delegate for both protocols. AVKit calls them on the main
+/// thread, and handing each straight to the coordinator with
+/// `assumeIsolated` keeps will-start synchronous. A separate object keeps
+/// the observable coordinator free of `NSObject`.
+private final class AVKitBridge: NSObject,
+    AVPictureInPictureControllerDelegate,
+    AVPictureInPictureSampleBufferPlaybackDelegate
+{
+    private weak var target: PictureInPictureCoordinator?
 
-        func pictureInPictureControllerDidStopPictureInPicture(
-            _ pictureInPictureController: AVPictureInPictureController
-        ) {
-            MainActor.assumeIsolated { coordinator?.handleDidStop() }
-        }
+    init(coordinator: PictureInPictureCoordinator) {
+        target = coordinator
+    }
 
-        func pictureInPictureController(
-            _ pictureInPictureController: AVPictureInPictureController,
-            failedToStartPictureInPictureWithError error: Error
-        ) {
-            MainActor.assumeIsolated { coordinator?.handleFailedToStart(error) }
-        }
+    func pictureInPictureControllerWillStartPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
+        MainActor.assumeIsolated { target?.pictureWillStart() }
+    }
 
-        func pictureInPictureController(
-            _ pictureInPictureController: AVPictureInPictureController,
-            restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler:
-                @escaping (Bool) -> Void
-        ) {
-            MainActor.assumeIsolated {
-                guard let coordinator else {
-                    completionHandler(false)
-                    return
-                }
-                coordinator.handleRestoreRequested(completion: completionHandler)
+    func pictureInPictureControllerDidStartPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
+        MainActor.assumeIsolated { target?.pictureDidStart() }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
+        MainActor.assumeIsolated { target?.pictureDidStop() }
+    }
+
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: Error
+    ) {
+        MainActor.assumeIsolated { target?.pictureFailedToStart(error) }
+    }
+
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler:
+            @escaping (Bool) -> Void
+    ) {
+        MainActor.assumeIsolated {
+            if let target {
+                target.pictureRestoreRequested(completionHandler)
+            } else {
+                completionHandler(false)
             }
         }
+    }
 
-        func pictureInPictureController(
-            _ pictureInPictureController: AVPictureInPictureController,
-            setPlaying playing: Bool
-        ) {
-            MainActor.assumeIsolated { coordinator?.softwareSetPlaying(playing) }
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        setPlaying playing: Bool
+    ) {
+        MainActor.assumeIsolated { target?.sampleSetPlaying(playing) }
+    }
+
+    func pictureInPictureControllerTimeRangeForPlayback(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) -> CMTimeRange {
+        MainActor.assumeIsolated {
+            target?.sampleTimeRange ?? .pictureInPictureUnbounded
         }
+    }
 
-        func pictureInPictureControllerTimeRangeForPlayback(
-            _ pictureInPictureController: AVPictureInPictureController
-        ) -> CMTimeRange {
-            MainActor.assumeIsolated {
-                coordinator?.softwareTimeRange()
-                    ?? CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
-            }
+    func pictureInPictureControllerIsPlaybackPaused(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) -> Bool {
+        MainActor.assumeIsolated { target?.isSamplePaused ?? true }
+    }
+
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        didTransitionToRenderSize newRenderSize: CMVideoDimensions
+    ) {}
+
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        skipByInterval skipInterval: CMTime,
+        completion completionHandler: @escaping () -> Void
+    ) {
+        MainActor.assumeIsolated {
+            target?.sampleSkip(seconds: skipInterval.seconds)
         }
-
-        func pictureInPictureControllerIsPlaybackPaused(
-            _ pictureInPictureController: AVPictureInPictureController
-        ) -> Bool {
-            MainActor.assumeIsolated { coordinator?.softwareIsPaused() ?? true }
-        }
-
-        func pictureInPictureController(
-            _ pictureInPictureController: AVPictureInPictureController,
-            didTransitionToRenderSize newRenderSize: CMVideoDimensions
-        ) {}
-
-        func pictureInPictureController(
-            _ pictureInPictureController: AVPictureInPictureController,
-            skipByInterval skipInterval: CMTime,
-            completion completionHandler: @escaping () -> Void
-        ) {
-            MainActor.assumeIsolated {
-                coordinator?.softwareSkip(by: skipInterval.seconds)
-            }
-            completionHandler()
-        }
+        completionHandler()
     }
 }
 #endif
