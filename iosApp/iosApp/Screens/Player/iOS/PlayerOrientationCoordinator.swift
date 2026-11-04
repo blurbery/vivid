@@ -180,7 +180,7 @@ final class PlayerOrientationCoordinator {
 
     private let motionManager = CMMotionManager()
     @ObservationIgnored private var motionSettling = MotionSettling()
-    @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var appStateObservers: [NSObjectProtocol] = []
 
     var isPlayerActive: Bool { rotationState.isPlayerActive }
     var isRotationLocked: Bool { rotationState.isLocked }
@@ -217,7 +217,7 @@ final class PlayerOrientationCoordinator {
 
     private init() {
         let center = NotificationCenter.default
-        lifecycleObservers.append(
+        appStateObservers.append(
             center.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification,
                 object: nil,
@@ -226,7 +226,7 @@ final class PlayerOrientationCoordinator {
                 self?.endMotionTracking()
             }
         )
-        lifecycleObservers.append(
+        appStateObservers.append(
             center.addObserver(
                 forName: UIApplication.didBecomeActiveNotification,
                 object: nil,
