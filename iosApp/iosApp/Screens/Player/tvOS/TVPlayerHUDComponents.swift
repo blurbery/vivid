@@ -402,7 +402,7 @@ extension TVPlayerInfoHUD {
             return String(localized: "\(milliseconds) ms", comment: "Subtitle delay in milliseconds")
         }
 
-        /// Subtitle delay up to 10 seconds either way (iPhone and iPad have no delay control):
+        /// Subtitle delay up to 10 seconds either way:
         /// 100 ms steps within 2 seconds and 500 ms steps beyond, since a
         /// downloaded file can be several seconds out. The current value is
         /// always on the list.
