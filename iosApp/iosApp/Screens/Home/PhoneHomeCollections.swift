@@ -11,42 +11,41 @@ private struct PhoneHomeCollectionPoster: View {
     private var height: CGFloat { (width * HomeFeedMetrics.posterAspect).rounded() }
 
     var body: some View {
-        Group {
-            if let url = collection.posterUrl, !url.isEmpty {
-                AsyncImageView(
-                    url: url,
-                    thumbhash: collection.posterThumbhash,
-                    targetSize: CGSize(width: width, height: height),
-                    contentMode: .fill
-                )
-            } else {
-                ZStack {
-                    Color.vividSurfaceVariant
-                    Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: width * 0.2, weight: .semibold))
-                        .foregroundColor(.vividSecondaryText)
-                }
+        artwork
+            .frame(width: width, height: height)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            // The same hairline as Home's posters, so dark artwork keeps its edge.
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.08), lineWidth: 0.5)
+            )
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let url = collection.posterUrl, !url.isEmpty {
+            AsyncImageView(
+                url: url,
+                thumbhash: collection.posterThumbhash,
+                targetSize: CGSize(width: width, height: height),
+                contentMode: .fill
+            )
+        } else {
+            ZStack {
+                Color.vividSurfaceVariant
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: width * 0.2, weight: .semibold))
+                    .foregroundColor(.vividSecondaryText)
             }
         }
-        .frame(width: width, height: height)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        // The same hairline as Home's posters, so dark artwork keeps its edge.
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(.white.opacity(0.08), lineWidth: 0.5)
-        )
     }
-}
-
-private func collectionCountLabel(_ collection: LibraryCollection) -> String? {
-    collection.itemCount.map { String(localized: "\($0) titles") }
 }
 
 // MARK: - Home row
 
-/// Always the last row on Home, outside the server's own rows. Posters
-/// match the other Home rows and open the collection's page.
+/// Always the last row on Home, outside the server's own rows. Posters match
+/// the other Home rows and open the collection's page.
 struct PhoneHomeCollectionsRow: View {
     @State private var store = HomeCollectionsStore.shared
     @State private var homeCards = TVHomeCardPreferences.shared
@@ -75,7 +74,6 @@ struct PhoneHomeCollectionsRow: View {
 
     private func card(_ entry: HomeCollection) -> some View {
         let width = HomeFeedMetrics.posterWidth * homeCards.presentation.posterSize.scale
-        let caption = homeCards.presentation.caption
         return Button {
             router.navigate(to: .libraryCollection(
                 libraryId: entry.libraryID, collectionId: entry.id,
@@ -84,28 +82,36 @@ struct PhoneHomeCollectionsRow: View {
         } label: {
             VStack(alignment: .leading, spacing: 7) {
                 PhoneHomeCollectionPoster(collection: entry.collection, width: width)
-                if caption.showsTitle {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(entry.collection.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.vividOnSurface)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        if caption.showsMetadata, let count = collectionCountLabel(entry.collection) {
-                            Text(count)
-                                .font(.system(size: 11, weight: .regular))
-                                .foregroundStyle(Color.vividOnSurface.opacity(0.5))
-                                .monospacedDigit()
-                                .lineLimit(1)
-                        }
-                    }
-                }
+                caption(entry.collection)
             }
             .frame(width: width, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(libraryCollectionAccessibilityLabel(entry.collection))
+    }
+
+    /// The name, and the title count when captions show metadata, following
+    /// the Home caption setting.
+    @ViewBuilder
+    private func caption(_ collection: LibraryCollection) -> some View {
+        let caption = homeCards.presentation.caption
+        if caption.showsTitle {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(collection.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.vividOnSurface)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if caption.showsMetadata, let count = collection.itemCount.map({ String(localized: "\($0) titles") }) {
+                    Text(count)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(Color.vividOnSurface.opacity(0.5))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+            }
+        }
     }
 }
 
@@ -144,28 +150,32 @@ struct PhoneHomeCollectionsSettingsView: View {
         List {
             SettingsPageHeader(title: Text("Collections"), subtitle: Text(statusText), systemImage: "square.stack.3d.up")
                 .settingsPageHeaderRow()
-
-            switch store.status {
-            case .ready:
-                readyContent
-            case .loading, .idle:
-                Section {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                }
-            case .failed:
-                Section {
-                    Button("Try Again") { Task { await store.loadIfNeeded(force: true) } }
-                        .frame(maxWidth: .infinity)
-                }
-            case .needsAccount:
-                EmptyView()
-            }
+            statusContent
         }
         .settingsListChrome()
         .navigationTitle("")
         .task { await store.loadIfNeeded(force: true) }
+    }
+
+    @ViewBuilder
+    private var statusContent: some View {
+        switch store.status {
+        case .ready:
+            readyContent
+        case .loading, .idle:
+            Section {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+        case .failed:
+            Section {
+                Button("Try Again") { Task { await store.loadIfNeeded(force: true) } }
+                    .frame(maxWidth: .infinity)
+            }
+        case .needsAccount:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
@@ -216,10 +226,10 @@ struct PhoneHomeCollectionsSettingsView: View {
     // MARK: Preview with wiggle mode
 
     /// Five posters a row, wrapping onto new rows as more are picked, so
-    /// every poster stays on screen and can be dragged to any slot.
-    /// The grid stays in place while nothing is chosen. Swapping it for the
-    /// message left the list row at the message's height, so posters added
-    /// back were cut off until the page was opened again.
+    /// every poster stays on screen and can be dragged to any slot. The grid
+    /// stays in place while nothing is chosen: swapping it for the message
+    /// left the list row at the message's height, so posters added back were
+    /// cut off until the page was opened again.
     private var preview: some View {
         VStack(spacing: 0) {
             if displayedPicks.isEmpty {
@@ -252,23 +262,28 @@ struct PhoneHomeCollectionsSettingsView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.picks)
         .coordinateSpace(name: Self.previewSpace)
         .onPreferenceChange(HomeCollectionTileFrames.self) { tileFrames = $0 }
-        .overlay(alignment: .topLeading) {
-            if let movingID, let entry = store.collection(movingID) {
-                PhoneHomeCollectionPoster(collection: entry.collection, width: dragStartFrame.width, cornerRadius: 6)
-                    .scaleEffect(reduceMotion ? 1 : 1.08)
-                    .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-                    .position(x: dragStartFrame.midX + dragOffset.width,
-                              y: dragStartFrame.midY + dragOffset.height)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
+        .overlay(alignment: .topLeading) { floatingPoster }
         .onChange(of: reorderGestureActive) { _, active in
             if !active { resetDrag() }
         }
         .onDisappear { resetDrag() }
     }
 
+    /// The copy of the picked-up poster that follows the finger.
+    @ViewBuilder
+    private var floatingPoster: some View {
+        if let movingID, let entry = store.collection(movingID) {
+            PhoneHomeCollectionPoster(collection: entry.collection, width: dragStartFrame.width, cornerRadius: 6)
+                .scaleEffect(reduceMotion ? 1 : 1.08)
+                .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                .position(x: dragStartFrame.midX + dragOffset.width,
+                          y: dragStartFrame.midY + dragOffset.height)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// The draft order while a poster is being dragged, otherwise the picks.
     private var displayedPicks: [String] {
         movingID == nil ? store.picks : draftOrder
     }
@@ -337,10 +352,10 @@ struct PhoneHomeCollectionsSettingsView: View {
             }
     }
 
+    /// Moves the dragged poster into the slot under the finger in the draft.
     private func previewReorder(at point: CGPoint, moving id: String) {
-        guard let target = draftOrder.first(where: {
-            $0 != id && tileFrames[$0]?.contains(point) == true
-        }), let from = draftOrder.firstIndex(of: id),
+        guard let target = draftOrder.first(where: { $0 != id && tileFrames[$0]?.contains(point) == true }),
+              let from = draftOrder.firstIndex(of: id),
               let to = draftOrder.firstIndex(of: target) else { return }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
             draftOrder.remove(at: from)

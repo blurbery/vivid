@@ -1,15 +1,17 @@
 #if os(tvOS)
 import SwiftUI
 
-/// The native menu replaces the expanding alphabet rail.
+/// The A to Z jump on library and For You pages, as a native menu offering
+/// All, # and A to Z. `nil` means All.
 struct TVAlphabetMenu: View {
     let selected: String?
     let onSelect: (String?) -> Void
-    private let letters = ["All", "#"] + (65...90).compactMap { UnicodeScalar($0).map(String.init) }
+
+    private static let letters = ["All", "#"] + (65...90).compactMap { UnicodeScalar($0).map(String.init) }
 
     var body: some View {
         Menu {
-            ForEach(letters, id: \.self) { letter in
+            ForEach(Self.letters, id: \.self) { letter in
                 Button { onSelect(letter == "All" ? nil : letter) } label: {
                     // "All" stays the menu's own identity; only its label is translated.
                     let title = letter == "All" ? String(localized: "All") : letter

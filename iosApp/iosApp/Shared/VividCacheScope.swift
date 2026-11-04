@@ -1,33 +1,44 @@
-import Foundation
 import CryptoKit
+import Foundation
 
-/// Stable ownership for disposable media caches, never a credential.
+/// Names who owns a disposable media cache: a server, its server user and a
+/// profile. A scope is a hash, never a credential.
 enum VividCacheScope {
+    /// Artwork fetched before anyone signs in gets this process's own scope,
+    /// so it never reuses an earlier account's disk cache. The image cache
+    /// gives `unowned-` scopes no disk storage.
     private static let unownedSession = UUID().uuidString
-    private static let keyCache = ScopeKeyCache()
+    private static let lastKey = LastKey()
 
+    /// The lowercase hex SHA-256 of the JSON array `[server, account,
+    /// profile]`. Cache folders on disk are named with it, so the format
+    /// can't change.
     static func key(serverID: String, accountID: String, profileID: String) -> String {
-        keyCache.key(serverID: serverID, accountID: accountID, profileID: profileID)
+        lastKey.key(for: Identity(serverID: serverID, accountID: accountID, profileID: profileID))
     }
 
     static func recordAccount(_ accountID: String?, serverID: String) {
-        let key = "vivid.cache.account." + serverID
-        if let accountID { SharedDefaults.shared.set(accountID, forKey: key) }
-        else { SharedDefaults.shared.removeObject(forKey: key) }
+        let key = accountKey(serverID: serverID)
+        if let accountID {
+            SharedDefaults.shared.set(accountID, forKey: key)
+        } else {
+            SharedDefaults.shared.removeObject(forKey: key)
+        }
     }
 
     /// The server user the live session on `serverID` belongs to.
     static func accountID(for serverID: String) -> String? {
-        SharedDefaults.shared.string(forKey: "vivid.cache.account." + serverID)
+        SharedDefaults.shared.string(forKey: accountKey(serverID: serverID))
     }
 
     /// The server, server user and profile the live session belongs to.
     static var currentIdentity: (serverID: String, accountID: String, profileID: String)? {
         let defaults = SharedDefaults.shared
         guard let server = defaults.string(forKey: SharedStorage.activeServerIdKey),
-              let account = defaults.string(forKey: "vivid.cache.account." + server),
+              let account = defaults.string(forKey: accountKey(serverID: server)),
               let profile = defaults.string(forKey: SharedStorage.profileIdKey),
-              !server.isEmpty, !account.isEmpty, !profile.isEmpty else { return nil }
+              !server.isEmpty, !account.isEmpty, !profile.isEmpty
+        else { return nil }
         return (server, account, profile)
     }
 
@@ -35,30 +46,44 @@ enum VividCacheScope {
         currentIdentity.map { key(serverID: $0.serverID, accountID: $0.accountID, profileID: $0.profileID) }
     }
 
-    // Pre-login artwork has no persistent owner and must not reuse an old
-    // account's disk cache. The transport gives this namespace no disk cache.
     static var artwork: String { current ?? "unowned-" + unownedSession }
 
-    /// Keep only the most recently used identity. Read the current defaults on
-    /// every lookup so account changes never depend on a cache invalidation hook.
-    private final class ScopeKeyCache: @unchecked Sendable {
-        private let lock = NSLock()
-        private var cached: (serverID: String, accountID: String, profileID: String, key: String)?
+    private static func accountKey(serverID: String) -> String {
+        "vivid.cache.account." + serverID
+    }
 
-        func key(serverID: String, accountID: String, profileID: String) -> String {
+    private struct Identity {
+        let serverID: String
+        let accountID: String
+        let profileID: String
+
+        /// Compares the UTF-8 bytes, not Swift's canonical equivalence: an
+        /// é written as one or two scalars encodes, and so hashes, differently.
+        func matches(_ other: Identity) -> Bool {
+            serverID.utf8.elementsEqual(other.serverID.utf8)
+                && accountID.utf8.elementsEqual(other.accountID.utf8)
+                && profileID.utf8.elementsEqual(other.profileID.utf8)
+        }
+
+        var hashedKey: String {
+            let json = (try? JSONEncoder().encode([serverID, accountID, profileID])) ?? Data()
+            return SHA256.hash(data: json).map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
+    /// Artwork asks for the same scope over and over, so the last one is kept.
+    /// The defaults are still read on every lookup, so an account change never
+    /// needs this cleared.
+    private final class LastKey: @unchecked Sendable {
+        private let lock = NSLock()
+        private var last: (identity: Identity, key: String)?
+
+        func key(for identity: Identity) -> String {
             lock.lock()
             defer { lock.unlock() }
-            // Compare UTF-8 rather than canonically equivalent Strings: the
-            // existing JSON/hash format distinguishes Unicode encodings.
-            if let cached, cached.serverID.utf8.elementsEqual(serverID.utf8),
-               cached.accountID.utf8.elementsEqual(accountID.utf8),
-               cached.profileID.utf8.elementsEqual(profileID.utf8) {
-                return cached.key
-            }
-            // Preserve the existing on-disk namespace, including JSON escaping.
-            let data = (try? JSONEncoder().encode([serverID, accountID, profileID])) ?? Data()
-            let key = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            cached = (serverID, accountID, profileID, key)
+            if let last, last.identity.matches(identity) { return last.key }
+            let key = identity.hashedKey
+            last = (identity, key)
             return key
         }
     }

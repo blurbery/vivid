@@ -159,4 +159,33 @@ final class HomeCollectionsStoreTests: XCTestCase {
         let decoded = try JSONDecoder().decode(HomeCollection.self, from: JSONEncoder().encode(entry))
         XCTAssertEqual(decoded, entry)
     }
+
+    func testASavedListIsReadBackFromTheSameFile() async throws {
+        let (server, profile) = ("collections-test-\(UUID().uuidString)", "profile-1")
+        // The format earlier versions saved, so existing caches keep loading.
+        let saved = #"{"savedAt":800000000,"collections":[{"collection":{"id":"7","title":"Bond","itemCount":25,"kind":"regular"},"libraryID":3}]}"#
+        let url = try XCTUnwrap(HomeCollectionsStore.Scope(server: server, profile: profile).cacheURL)
+        try Data(saved.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let cached = await HomeCollectionsStore.readCache(server: server, profile: profile)
+        XCTAssertEqual(cached?.savedAt, Date(timeIntervalSinceReferenceDate: 800_000_000))
+        XCTAssertEqual(cached?.collections.map(\.id), ["7"])
+        XCTAssertEqual(cached?.collections.first?.libraryID, 3)
+        XCTAssertEqual(cached?.collections.first?.collection.name, "Bond")
+    }
+
+    func testRemovingTheCacheWinsOverASaveStillUnderWay() async {
+        let (server, profile) = ("collections-test-\(UUID().uuidString)", "profile-1")
+        let entries = [HomeCollection(collection: collection("1", "Alien"), libraryID: 1)]
+        HomeCollectionsStore.saveCache(entries, server: server, profile: profile)
+        let saved = await HomeCollectionsStore.readCache(server: server, profile: profile)
+        XCTAssertEqual(saved?.collections, entries)
+
+        // Account removal straight after a save: the save can't put the file back.
+        HomeCollectionsStore.saveCache(entries, server: server, profile: profile)
+        HomeCollectionsStore.removeCache(server: server, profile: profile)
+        let afterRemoval = await HomeCollectionsStore.readCache(server: server, profile: profile)
+        XCTAssertNil(afterRemoval)
+    }
 }

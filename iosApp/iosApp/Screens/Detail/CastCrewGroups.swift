@@ -17,53 +17,63 @@ struct CastCrewGroup: Identifiable {
     let people: [CastCrewPerson]
 }
 
-/// Groups detail-page credits for the iPhone, iPad and Apple TV Cast & Crew
+/// Groups detail page credits for the iPhone, iPad and Apple TV Cast & Crew
 /// rails: directors first, then writers and creators, then the cast in the
 /// order the server sends, which is its billing order. Empty groups are left
 /// out.
 enum CastCrewGrouping {
+    /// Writing credits as Silo (Writer) and Jellyfin's TMDb data (Screenplay,
+    /// Story, Creator and so on) name them.
+    private static let writerJobs: Set<String> = [
+        "writer", "screenplay", "story", "teleplay", "novel", "creator",
+    ]
+
     static func groups(
         cast: [CastMember],
         crew: [CrewMember],
         maxCast: Int = 24,
         maxCrewPerGroup: Int = 6
     ) -> [CastCrewGroup] {
-        // Between the crew groups, a person credited more than once (a
-        // writer-director, or both screenplay and story) only appears in their
+        // Across the crew groups, someone credited more than once (a
+        // writer-director, or both screenplay and story) only shows in their
         // first group. The cast keeps every billed actor, so someone who
         // directs and acts still shows with their character.
-        var seen = Set<String>()
-        func crewGroup(_ id: String, label: String, role: (String?) -> String?) -> CastCrewGroup {
+        var placed = Set<String>()
+        func crewGroup(id: String, label: String, role: (String) -> String?) -> CastCrewGroup {
             var people: [CastCrewPerson] = []
-            for member in crew {
-                guard people.count < maxCrewPerGroup, let title = role(member.job),
-                      seen.insert(member.personId ?? member.name.lowercased()).inserted else { continue }
+            for member in crew where people.count < maxCrewPerGroup {
+                guard let title = role(normalised(member.job)),
+                      placed.insert(member.personId ?? member.name.lowercased()).inserted else { continue }
                 people.append(CastCrewPerson(
-                    id: "\(id)-\(people.count)", personId: member.personId, name: member.name,
-                    role: title, photoUrl: member.photoUrl, photoThumbhash: member.photoThumbhash
+                    id: "\(id)-\(people.count)",
+                    personId: member.personId,
+                    name: member.name,
+                    role: title,
+                    photoUrl: member.photoUrl,
+                    photoThumbhash: member.photoThumbhash
                 ))
             }
             return CastCrewGroup(id: id, label: label, people: people)
         }
 
-        let directors = crewGroup("directors", label: String(localized: "Directors")) { job in
-            normalised(job) == "director" ? String(localized: "Director") : nil
+        let directors = crewGroup(id: "directors", label: String(localized: "Directors")) { job in
+            job == "director" ? String(localized: "Director") : nil
         }
-        let writers = crewGroup("writers", label: String(localized: "Writers")) { job in
-            let job = normalised(job)
+        let writers = crewGroup(id: "writers", label: String(localized: "Writers")) { job in
             guard writerJobs.contains(job) else { return nil }
             return job == "creator" ? String(localized: "Creator") : String(localized: "Writer")
         }
-        let castGroup = CastCrewGroup(
-            id: "cast",
-            label: String(localized: "Cast"),
-            people: cast.prefix(maxCast).enumerated().map { index, member in
-                CastCrewPerson(
-                    id: "cast-\(index)", personId: member.personId, name: member.name,
-                    role: member.character, photoUrl: member.photoUrl, photoThumbhash: member.photoThumbhash
-                )
-            }
-        )
+        let billed = cast.prefix(maxCast).enumerated().map { index, member in
+            CastCrewPerson(
+                id: "cast-\(index)",
+                personId: member.personId,
+                name: member.name,
+                role: member.character,
+                photoUrl: member.photoUrl,
+                photoThumbhash: member.photoThumbhash
+            )
+        }
+        let castGroup = CastCrewGroup(id: "cast", label: String(localized: "Cast"), people: billed)
         return [directors, writers, castGroup].filter { !$0.people.isEmpty }
     }
 
@@ -72,12 +82,6 @@ enum CastCrewGrouping {
     static func hasPeople(cast: [CastMember]?, crew: [CrewMember]?) -> Bool {
         !groups(cast: cast ?? [], crew: crew ?? []).isEmpty
     }
-
-    /// Writing credits as Silo (Writer) and Jellyfin's TMDb data (Screenplay,
-    /// Story, Creator and so on) name them.
-    private static let writerJobs: Set<String> = [
-        "writer", "screenplay", "story", "teleplay", "novel", "creator",
-    ]
 
     private static func normalised(_ job: String?) -> String {
         (job ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
