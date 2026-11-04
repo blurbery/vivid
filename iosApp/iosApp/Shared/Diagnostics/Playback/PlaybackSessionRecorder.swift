@@ -3,7 +3,7 @@ import AVFoundation
 import Foundation
 import UIKit
 
-/// Keeps the latest playback session for Settings → Diagnostics → Send
+/// Keeps the latest playback session for Settings > Diagnostics > Send
 /// Latest Playback. Each new play replaces the previous session.
 ///
 /// Recording never adds work to the player's render path: inputs are values

@@ -4,20 +4,26 @@ import Foundation
 import QuartzCore
 import OSLog
 
-/// Monotonic, source-free measurements. A ready player is never counted as a picture.
+/// Monotonic, source-free measurements for one load, in the device log (and
+/// in trial builds a bounded file). A ready player is never counted as a picture.
 @MainActor
 final class PlaybackTrialTrace {
     private static let log = Logger(subsystem: "com.blurbery.vivid", category: "PlaybackTrial")
+    /// When the viewer asked to play, so the next trace measures from then.
     private static var pendingPlay: Double?
     private static weak var active: PlaybackTrialTrace?
-
-    static func controlEvent(_ name: String, fields: String = "") {
-        active?.event(name, fields: fields)
-    }
     #if VIVID_P8_TRIAL
     private static let recording = P8TrialRecording()
     #endif
-    static func requestPlay() { pendingPlay = CACurrentMediaTime() }
+
+    /// An event from the player's controls, on the current load's trace.
+    static func controlEvent(_ name: String, fields: String = "") {
+        active?.event(name, fields: fields)
+    }
+
+    static func requestPlay() {
+        pendingPlay = CACurrentMediaTime()
+    }
 
     let id = UUID().uuidString
     let started: Double
@@ -30,11 +36,11 @@ final class PlaybackTrialTrace {
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
         Self.active = self
-        let backend = "mpv"
-        event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=\(backend)")
+        event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=mpv")
         mark(origin, at: started)
     }
 
+    /// Records a milestone once per trace, with the time since the start.
     func mark(_ name: String, at time: Double = CACurrentMediaTime()) {
         guard time.isFinite, time >= started, milestones.insert(name).inserted else { return }
         event(name, fields: "elapsed_ms=\(Int((time - started) * 1000))")

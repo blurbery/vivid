@@ -417,7 +417,7 @@ For context only (Vivid-owned, not rewritten), the adapter's options hook then s
 | `http-header-fields` | set with `mpv_set_option` and `MPV_FORMAT_NODE` as a string array |
 | `vividstream` protocol | registered with `mpv_stream_cb_add_ro` when the managed reader applies |
 
-The first group is applied by iterating a Swift dictionary, so its order is unspecified and must not matter. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
+The first group is applied as an ordered list, in the table's order; its order must still not matter, because these options are independent. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
 
 ### 6.4 Log level and log messages
 
@@ -1197,7 +1197,7 @@ The bridge prints only these lines, with Swift `print` to standard output (tvOS 
 | `mpv_initialize` failed | One line, starting with the tag, giving the `mpv_error_string` of the status. Wording free. |
 | `checkError` sees a negative status | Exactly `[VividPlayerCore] MPV error: <mpv_error_string>`, then ` option=<name>` when an option name was passed, then ` at <file>:<line>` from the `file` and `line` parameters. |
 
-`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its dictionary group and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The previous bridge used a different tag; nothing in the repository depends on the tag.
+`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its first group, the enhancement options and `tls-verify`, and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The previous bridge used a different tag; nothing in the repository depends on the tag.
 
 ### 10.3 Strings other code reads
 

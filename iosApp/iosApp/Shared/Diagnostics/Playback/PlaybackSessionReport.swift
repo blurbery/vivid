@@ -1,7 +1,7 @@
 #if os(iOS) || os(tvOS)
 import Foundation
 
-/// The latest playback session, for Settings → Diagnostics → Send Latest
+/// The latest playback session, for Settings > Diagnostics > Send Latest
 /// Playback. Built only from fixed tokens and numbers: no titles, item IDs,
 /// server addresses, URLs or account details.
 ///
@@ -111,7 +111,7 @@ struct PlaybackSessionReport: Codable, Equatable {
         /// sign-in refresh.
         var reloads = 0
         var audioOutputChanges = 0
-        /// Fault token → count, for example decode_error or audio_system_restart.
+        /// Fault token to count, for example decode_error or audio_system_restart.
         var audioFaults: [String: Int] = [:]
         var lowestNetworkKbps: Int?
         var endReason: String?
@@ -129,7 +129,7 @@ struct PlaybackSessionReport: Codable, Equatable {
         var controlsShown: Int?
         var shortestControlsVisibleMs: Int?
         /// The controls going away within `earlyControlsHideSeconds` of
-        /// appearing, as "shown_by>hidden_by" → count, for example
+        /// appearing, as "shown_by>hidden_by" to count, for example
         /// "video_tap>background_tap".
         var controlsHiddenEarly: [String: Int]?
         /// The latest of those, oldest first, with how long the controls
