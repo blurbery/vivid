@@ -5,19 +5,16 @@ import SwiftUI
 import UIKit
 #endif
 
-/// How the iOS player should manage screen orientation while playback is
-/// visible. This is persisted so the next session reuses the user's choice.
+/// How the iOS player handles screen orientation. Saved, so the next session
+/// keeps the viewer's choice.
 enum PlayerOrientationMode: String {
     case landscapeLocked = "landscapeLocked"
     case rotateFreely = "rotateFreely"
 
-    var isLandscapeLocked: Bool {
-        self == .landscapeLocked
-    }
+    var isLandscapeLocked: Bool { self == .landscapeLocked }
 }
 
-/// How the video frame fills the player bounds. Maps directly to
-/// `AVLayerVideoGravity` values on the display layer.
+/// How the picture fills the player, as the display layer's video gravity.
 enum VideoGravity: String, CaseIterable {
     case fit = "fit"
     case fill = "fill"
@@ -25,22 +22,22 @@ enum VideoGravity: String, CaseIterable {
 
     var avGravity: AVLayerVideoGravity {
         switch self {
-        case .fit:     return .resizeAspect
-        case .fill:    return .resizeAspectFill
+        case .fit: return .resizeAspect
+        case .fill: return .resizeAspectFill
         case .stretch: return .resize
         }
     }
 
     var label: String {
         switch self {
-        case .fit:     return String(localized: "Fit", comment: "Video aspect option")
-        case .fill:    return String(localized: "Fill", comment: "Video aspect option")
+        case .fit: return String(localized: "Fit", comment: "Video aspect option")
+        case .fill: return String(localized: "Fill", comment: "Video aspect option")
         case .stretch: return String(localized: "Stretch", comment: "Video aspect option")
         }
     }
 }
 
-/// Read-ahead presets for the active platform engine.
+/// How far ahead of the playhead the engine reads.
 enum BufferAheadMode: String, CaseIterable {
     case automatic = "automatic"
     case seconds20 = "seconds20"
@@ -50,6 +47,7 @@ enum BufferAheadMode: String, CaseIterable {
     case fiveMinutes, maximum, unlimited
     #endif
 
+    /// Forward buffer size in segments, or nil for the engine's own default.
     var forwardBufferSegments: Int? {
         switch self {
         case .automatic: return nil
@@ -83,9 +81,15 @@ enum BufferAheadMode: String, CaseIterable {
     static var explanation: String {
         String(localized: "Lucid buffers ahead automatically, with up to 256 MB ahead and 16 MB behind for seeking. Playback starts before the buffer fills.")
     }
-
 }
 
+/// The player's preferences on this device.
+///
+/// Everything is local. Values live in `UserDefaults` under keys partitioned
+/// by server, profile and device (``currentScopeIdentifier``), falling back to
+/// the bare key when there's no active scope. Installed apps already hold
+/// values under these keys, so none of them may change. Each property writes
+/// itself back when it changes.
 @Observable
 final class PlayerSettings {
     enum RefreshResult: Equatable {
@@ -94,13 +98,16 @@ final class PlayerSettings {
 
     static let shared = PlayerSettings()
 
-    private var fallbackModeID: String? {
-        didSet {
-            let key = Self.cacheKey("vivid.quality.fallbackMode")
-            if let fallbackModeID { defaults.set(fallbackModeID, forKey: key) }
-            else { defaults.removeObject(forKey: key) }
-        }
+    private let defaults: UserDefaults
+
+    // MARK: - Quality
+
+    /// The in-player fallback rung the viewer last chose, kept only while the
+    /// stored quality pair still matches it.
+    private var fallbackModeID: String? = nil {
+        didSet { storeOrRemove(fallbackModeID, Keys.fallbackMode) }
     }
+
     var fallbackMode: PlaybackFallbackMode? {
         guard let id = fallbackModeID, let mode = PlaybackFallbackMode(rawValue: id),
               preferredQualityResolution == mode.resolution,
@@ -108,156 +115,133 @@ final class PlayerSettings {
         return mode
     }
 
-    var preferredSubtitleLanguage: String = PlaybackPrefSentinel.none {
-        didSet { defaults.set(preferredSubtitleLanguage, forKey: Self.cacheKey("vivid.subtitle.language")) }
-    }
-    /// Used only when a title has no subtitles in `preferredSubtitleLanguage`.
-    var preferredSubtitleBackupLanguage: String = PlaybackPrefSentinel.none {
-        didSet { defaults.set(preferredSubtitleBackupLanguage, forKey: Self.cacheKey("vivid.subtitle.backupLanguage")) }
-    }
-    var preferredSubtitleMode: String = "auto" {
-        didSet { defaults.set(preferredSubtitleMode, forKey: Self.cacheKey("vivid.subtitle.mode")) }
-    }
-    var showForcedSubtitles: Bool = true {
-        didSet { defaults.set(showForcedSubtitles, forKey: Self.cacheKey("vivid.subtitle.forced")) }
-    }
-
-    /// The resolution half of the quality preference: a member of the
+    /// The resolution half of the quality preference, a member of the
     /// contract's `playback.preferred_quality` enum.
     ///
-    /// The stored *pair* — this and ``maxBitrateKbps`` — is the local source of
-    /// truth. Storing a compound tier id was safe while this client had one
-    /// quality table; it stopped being safe when the settings picker adopted
-    /// the cross-client presets, because both tables spell a rung `1080p-high`
-    /// and mean different bitrates by it (10 Mbps in ``VividQualityPresets``,
-    /// 20 Mbps in ``ApplePlaybackQuality``). A stored id would silently change
-    /// meaning depending on which table read it back; a stored pair says what
-    /// it means and each table interprets it rather than owning it.
-    var preferredQualityResolution: String {
-        didSet {
-            defaults.set(preferredQualityResolution, forKey: Self.cacheKey(Keys.preferredQuality))
-        }
+    /// The stored pair (this and ``maxBitrateKbps``) is the source of truth.
+    /// A compound tier id isn't stored because ``VividQualityPresets`` and
+    /// ``ApplePlaybackQuality`` both spell a rung `1080p-high` and mean
+    /// different bitrates by it (10 and 20 Mbps). Each table reads the pair
+    /// in its own terms instead.
+    var preferredQualityResolution: String = "auto" {
+        didSet { store(preferredQualityResolution, Keys.preferredQuality) }
     }
 
-    /// The bandwidth half of the quality preference; nil is uncapped.
-    var maxBitrateKbps: Int? {
-        didSet {
-            let key = Self.cacheKey(Keys.maxBitrateKbps)
-            // Removed rather than stored as a sentinel, so "uncapped" is the
-            // absence of a value locally exactly as it is on the wire.
-            if let maxBitrateKbps {
-                defaults.set(maxBitrateKbps, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
+    /// The bandwidth half of the quality preference; nil is uncapped. Uncapped
+    /// is stored as no value, as it is on the wire.
+    var maxBitrateKbps: Int? = nil {
+        didSet { storeOrRemove(maxBitrateKbps, Keys.maxBitrateKbps) }
     }
 
-    /// The stored pair as an id from this client's in-player ladder.
-    ///
-    /// Read-only, and derived rather than stored: playback's ~12 call sites ask
-    /// "which transcode rung" and have always been answered with an
-    /// ``ApplePlaybackQuality`` id, so they keep working unchanged. The
-    /// derivation honours both caps, which is why a pair authored on web or
-    /// Android — whose ladders differ from this one — still resolves to a rung
-    /// this client can actually request. See AppleQualityAxes.swift.
+    /// The stored pair as an ``ApplePlaybackQuality`` id, the rung playback
+    /// asks for. Derived so a pair saved by a client with a different ladder
+    /// still resolves to a rung this one can request (see AppleQualityAxes.swift).
     var preferredQuality: String {
         if let fallbackMode { return fallbackMode.rawValue }
-        return AppleQualityAxes.join(
-            resolution: preferredQualityResolution,
-            bitrateKbps: maxBitrateKbps
-        )
+        return AppleQualityAxes.join(resolution: preferredQualityResolution, bitrateKbps: maxBitrateKbps)
     }
 
-    /// The shared preset the stored pair corresponds to, or nil when the pair
-    /// is a combination no preset covers — set through the API, or written by a
-    /// client whose ladder has a rung this table does not. The settings picker
-    /// shows the pair's own description in that case rather than snapping to a
-    /// nearby preset, which would misreport what is stored.
+    /// The shared preset matching the stored pair, or nil when no preset
+    /// covers it. Settings then describes the pair rather than snapping to a
+    /// nearby preset.
     var currentQualityPreset: VividQualityPreset? {
         if let fallbackMode { return fallbackMode.preset }
-        return VividQualityPresets.preset(
-            resolution: preferredQualityResolution,
-            bitrateKbps: maxBitrateKbps
-        )
+        return VividQualityPresets.preset(resolution: preferredQualityResolution, bitrateKbps: maxBitrateKbps)
     }
 
-    /// A user-facing label for the stored pair, preset or not.
+    /// A label for the stored pair, preset or not.
     var preferredQualityLabel: String {
         if let fallbackMode { return fallbackMode.option.labelWithBitrate }
-        return VividQualityPresets.describe(
-            resolution: preferredQualityResolution,
-            bitrateKbps: maxBitrateKbps
-        )
+        return VividQualityPresets.describe(resolution: preferredQualityResolution, bitrateKbps: maxBitrateKbps)
     }
 
-    var audioLanguage: String {
-        didSet { defaults.set(audioLanguage, forKey: Self.cacheKey(Keys.audioLanguage)) }
+    // MARK: - Audio and subtitle choice
+
+    var audioLanguage: String = "" {
+        didSet { store(audioLanguage, Keys.audioLanguage) }
     }
 
-    var introDBEnabled: Bool {
+    var preferredSubtitleLanguage: String = PlaybackPrefSentinel.none {
+        didSet { store(preferredSubtitleLanguage, Keys.subtitleLanguage) }
+    }
+
+    /// Used only when a title has no subtitles in `preferredSubtitleLanguage`.
+    var preferredSubtitleBackupLanguage: String = PlaybackPrefSentinel.none {
+        didSet { store(preferredSubtitleBackupLanguage, Keys.subtitleBackupLanguage) }
+    }
+
+    var preferredSubtitleMode: String = "auto" {
+        didSet { store(preferredSubtitleMode, Keys.subtitleMode) }
+    }
+
+    var showForcedSubtitles: Bool = true {
+        didSet { store(showForcedSubtitles, Keys.subtitleForced) }
+    }
+
+    // MARK: - Skipping and Next Up
+
+    /// IntroDB and TheIntroDB marker lookups. Saved under
+    /// ``VividSkipSource/defaultsKey`` as `introdb` or `off`.
+    var introDBEnabled: Bool = true {
         didSet { defaults.set(introDBEnabled ? "introdb" : "off", forKey: VividSkipSource.defaultsKey) }
     }
 
-    var autoSkipIntro: Bool {
-        didSet { defaults.set(autoSkipIntro, forKey: Self.cacheKey(Keys.autoSkipIntro)) }
+    var autoSkipIntro: Bool = false {
+        didSet { store(autoSkipIntro, Keys.autoSkipIntro) }
     }
 
-    var autoSkipCredits: Bool {
-        didSet { defaults.set(autoSkipCredits, forKey: Self.cacheKey(Keys.autoSkipCredits)) }
+    var autoSkipCredits: Bool = false {
+        didSet { store(autoSkipCredits, Keys.autoSkipCredits) }
     }
 
-    /// Device-local: when true, video playback keeps running as the app leaves
-    /// the foreground — Picture in Picture and background audio on iOS, the
-    /// PiP keepalive on tvOS. When false the engine tears the session down as
-    /// soon as the app is backgrounded, so audio stops with the app.
-    ///
-    /// Never synced to the server, and deliberately not a contract key: whether
-    /// leaving the app should keep a video's audio going is a habit of *this*
-    /// device, not a preference that should follow the profile onto a TV.
-    /// Default on, which is Vivid's own default.
-    var backgroundPlaybackEnabled: Bool {
-        didSet {
-            defaults.set(
-                backgroundPlaybackEnabled,
-                forKey: Self.cacheKey(Keys.backgroundPlaybackEnabled)
-            )
-        }
+    var autoPlayNextEpisode: Bool = true {
+        didSet { store(autoPlayNextEpisode, Keys.autoPlayNextEpisode) }
     }
 
-    /// Device-local: how far ahead of the playhead Vivid may buffer.
-    ///
-    /// Never synced to the server, and deliberately not a contract key — see
-    /// ``BufferAheadMode``. Default ``BufferAheadMode/automatic``, which uses the active engine’s bounded default.
-    var preferLosslessAudio: Bool {
-        didSet { defaults.set(preferLosslessAudio, forKey: Self.cacheKey(Keys.preferLosslessAudio)) }
+    /// Blur the still and scramble the title and overview of episodes after
+    /// the viewer's current position. See `EpisodeSpoilerPolicy`.
+    var hideFutureEpisodeSpoilers: Bool = false {
+        didSet { store(hideFutureEpisodeSpoilers, Keys.hideFutureEpisodeSpoilers) }
     }
 
-    var bufferAhead: BufferAheadMode {
-        didSet {
-            defaults.set(bufferAhead.rawValue, forKey: Self.cacheKey(Keys.bufferAhead))
-        }
+    var nextUpPromptSeconds: Int = 30 {
+        didSet { store(nextUpPromptSeconds, Keys.nextUpPromptSeconds) }
     }
 
-    /// Device-local: Volume Boost. Off plays at Vivid's standard level, and
-    /// ``volumeBoostPercent`` is kept so turning it back on restores the level.
-    ///
-    /// Never synced to the server, and deliberately not a contract key: how
-    /// loud a title needs to be depends on this device's speakers.
-    var volumeBoostEnabled: Bool {
-        didSet { defaults.set(volumeBoostEnabled, forKey: Self.cacheKey(Keys.volumeBoostEnabled)) }
+    // MARK: - Engine and sound
+
+    /// Whether video keeps playing as the app leaves the foreground (Picture
+    /// in Picture and background audio on iOS, the PiP keepalive on tvOS).
+    /// Off tears the session down when the app is backgrounded. A habit of
+    /// this device, so it's never synced.
+    var backgroundPlaybackEnabled: Bool = true {
+        didSet { store(backgroundPlaybackEnabled, Keys.backgroundPlaybackEnabled) }
     }
 
-    /// Device-local: the Volume Boost level, one of
-    /// ``VividAudioEnhancement/boostLevels``.
-    var volumeBoostPercent: Int {
-        didSet { defaults.set(volumeBoostPercent, forKey: Self.cacheKey(Keys.volumeBoostPercent)) }
+    var preferLosslessAudio: Bool = false {
+        didSet { store(preferLosslessAudio, Keys.preferLosslessAudio) }
     }
 
-    /// Device-local: Enhanced Dialogue, which lowers music and effects so
-    /// voices are easier to hear. Never synced, like Volume Boost.
-    var enhancedDialogueEnabled: Bool {
-        didSet { defaults.set(enhancedDialogueEnabled, forKey: Self.cacheKey(Keys.enhancedDialogueEnabled)) }
+    /// How far ahead Vivid may buffer. Never synced.
+    var bufferAhead: BufferAheadMode = .automatic {
+        didSet { store(bufferAhead.rawValue, Keys.bufferAhead) }
+    }
+
+    /// Volume Boost. Off plays at the standard level and keeps
+    /// ``volumeBoostPercent``, so turning it back on restores the level.
+    var volumeBoostEnabled: Bool = false {
+        didSet { store(volumeBoostEnabled, Keys.volumeBoostEnabled) }
+    }
+
+    /// The Volume Boost level, one of ``VividAudioEnhancement/boostLevels``.
+    var volumeBoostPercent: Int = VividAudioEnhancement.defaultBoostLevel {
+        didSet { store(volumeBoostPercent, Keys.volumeBoostPercent) }
+    }
+
+    /// Enhanced Dialogue, which lowers music and effects so voices are easier
+    /// to hear.
+    var enhancedDialogueEnabled: Bool = false {
+        didSet { store(enhancedDialogueEnabled, Keys.enhancedDialogueEnabled) }
     }
 
     /// What the player applies to the next load.
@@ -268,103 +252,71 @@ final class PlayerSettings {
         )
     }
 
-    var subtitleAppearance: SubtitleAppearance {
-        didSet {
-            let sanitized = subtitleAppearance.sanitized()
-            defaults.set(sanitized.jsonString, forKey: Self.cacheKey(Keys.subtitleAppearance))
-        }
+    var playbackSpeed: Double = 1.0 {
+        didSet { store(playbackSpeed, Keys.playbackSpeed) }
     }
 
-    var subtitleUsesDeviceAppearanceOverride: Bool {
-        didSet {
-            defaults.set(
-                subtitleUsesDeviceAppearanceOverride,
-                forKey: Self.cacheKey(Keys.subtitleUsesDeviceAppearanceOverride)
-            )
-        }
+    var videoGravity: VideoGravity = .fit {
+        didSet { store(videoGravity.rawValue, Keys.videoGravity) }
     }
 
-    /// Device-local: when true, subtitle styling mirrors the system's
-    /// Subtitles & Captioning accessibility preferences instead of the
-    /// Vivid appearance. Never synced to the server — it is inherently
-    /// about *this* device's accessibility configuration.
-    var subtitleMatchesSystemAppearance: Bool {
-        didSet {
-            defaults.set(
-                subtitleMatchesSystemAppearance,
-                forKey: Self.cacheKey(Keys.subtitleMatchesSystemAppearance)
-            )
-        }
+    var playerOrientationMode: PlayerOrientationMode = .landscapeLocked {
+        didSet { store(playerOrientationMode.rawValue, Keys.playerOrientationMode) }
     }
 
-    /// Latest mapping of the system caption preferences. Refreshed when
-    /// MediaAccessibility posts its settings-changed notification.
+    // MARK: - Subtitle appearance
+
+    /// Saved as the sanitised appearance's JSON.
+    var subtitleAppearance: SubtitleAppearance = .default {
+        didSet { store(subtitleAppearance.sanitized().jsonString, Keys.subtitleAppearance) }
+    }
+
+    var subtitleUsesDeviceAppearanceOverride: Bool = false {
+        didSet { store(subtitleUsesDeviceAppearanceOverride, Keys.subtitleUsesDeviceAppearanceOverride) }
+    }
+
+    /// When true, subtitles follow the system's Subtitles & Captioning
+    /// settings instead of the Vivid appearance. About this device's
+    /// accessibility set-up, so it's never synced.
+    var subtitleMatchesSystemAppearance: Bool = false {
+        didSet { store(subtitleMatchesSystemAppearance, Keys.subtitleMatchesSystemAppearance) }
+    }
+
+    /// The system caption settings as last read. Read again when
+    /// MediaAccessibility says they changed and when the app becomes active.
     var subtitleSystemAppearance: SubtitleAppearance = SystemCaptionAppearance.current()
     var subtitleSystemSelectionPreferences = SystemCaptionSelectionPreferences.current()
 
-    /// The appearance the player should actually render with.
+    /// The appearance the player draws with.
     var effectiveSubtitleAppearance: SubtitleAppearance {
         if subtitleMatchesSystemAppearance { return subtitleSystemAppearance }
-        return subtitleUsesDeviceAppearanceOverride
-            ? subtitleAppearance
-            : .default
+        return subtitleUsesDeviceAppearanceOverride ? subtitleAppearance : .default
     }
 
-    var subtitleSyncMs: Int {
-        didSet { defaults.set(subtitleSyncMs, forKey: Self.cacheKey(Keys.subtitleSyncMs)) }
+    var subtitleSyncMs: Int = 0 {
+        didSet { store(subtitleSyncMs, Keys.subtitleSyncMs) }
     }
 
-    var playbackSpeed: Double {
-        didSet { defaults.set(playbackSpeed, forKey: Self.cacheKey(Keys.playbackSpeed)) }
-    }
+    // MARK: - Lifecycle
 
-    var videoGravity: VideoGravity {
-        didSet { defaults.set(videoGravity.rawValue, forKey: Self.cacheKey(Keys.videoGravity)) }
-    }
-
-    var playerOrientationMode: PlayerOrientationMode {
-        didSet { defaults.set(playerOrientationMode.rawValue, forKey: Self.cacheKey(Keys.playerOrientationMode)) }
-    }
-
-    var autoPlayNextEpisode: Bool {
-        didSet { defaults.set(autoPlayNextEpisode, forKey: Self.cacheKey(Keys.autoPlayNextEpisode)) }
-    }
-
-    /// Blur the still and scramble the title and overview of episodes after
-    /// the viewer's current position. See `EpisodeSpoilerPolicy`.
-    var hideFutureEpisodeSpoilers: Bool {
-        didSet { defaults.set(hideFutureEpisodeSpoilers, forKey: Self.cacheKey(Keys.hideFutureEpisodeSpoilers)) }
-    }
-
-    var nextUpPromptSeconds: Int {
-        didSet { defaults.set(nextUpPromptSeconds, forKey: Self.cacheKey(Keys.nextUpPromptSeconds)) }
-    }
-
-    private let defaults: UserDefaults
-
-    /// Local preferences retain the existing device/profile cache partition.
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        // Registered under the bare keys, so they answer only when there's no
+        // active scope. `maxBitrateKbps` has none: a registered value would
+        // make uncapped look like a cap.
         defaults.register(defaults: [
             Keys.preferredQuality: "auto",
-            // maxBitrateKbps deliberately has no registered default: the
-            // contract's default is null, and a registered value would make
-            // "uncapped" indistinguishable from "capped at that number".
             Keys.audioLanguage: "",
             Keys.autoSkipIntro: false,
             Keys.autoSkipCredits: false,
-
             Keys.backgroundPlaybackEnabled: true,
             Keys.bufferAhead: BufferAheadMode.automatic.rawValue,
             Keys.volumeBoostEnabled: false,
             Keys.volumeBoostPercent: VividAudioEnhancement.defaultBoostLevel,
             Keys.enhancedDialogueEnabled: false,
-
             Keys.subtitleAppearance: SubtitleAppearance.default.jsonString,
-
             Keys.subtitleUsesDeviceAppearanceOverride: false,
             Keys.subtitleMatchesSystemAppearance: false,
-
             Keys.subtitleSyncMs: 0,
             Keys.playbackSpeed: 1.0,
             Keys.videoGravity: VideoGravity.fit.rawValue,
@@ -373,51 +325,7 @@ final class PlayerSettings {
             Keys.hideFutureEpisodeSpoilers: false,
             Keys.nextUpPromptSeconds: 30,
         ])
-
-        preferredQualityResolution = Self.cachedQualityResolution(defaults)
-        maxBitrateKbps = Self.cachedMaxBitrateKbps(defaults)
-        audioLanguage = defaults.string(forKey: Self.cacheKey(Keys.audioLanguage)) ?? ""
-        introDBEnabled = (defaults.string(forKey: VividSkipSource.defaultsKey) ?? "introdb") == "introdb"
-        autoSkipIntro = Self.cachedBool(defaults, key: Keys.autoSkipIntro, defaultValue: false)
-        autoSkipCredits = Self.cachedBool(defaults, key: Keys.autoSkipCredits, defaultValue: false)
-        backgroundPlaybackEnabled = Self.cachedBool(
-            defaults,
-            key: Keys.backgroundPlaybackEnabled,
-            defaultValue: true
-        )
-        preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
-        bufferAhead = Self.cachedBufferAhead(defaults)
-        volumeBoostEnabled = Self.cachedBool(defaults, key: Keys.volumeBoostEnabled, defaultValue: false)
-        volumeBoostPercent = Self.cachedVolumeBoostPercent(defaults)
-        enhancedDialogueEnabled = Self.cachedBool(defaults, key: Keys.enhancedDialogueEnabled, defaultValue: false)
-        subtitleAppearance = SubtitleAppearance.decode(from: defaults.string(forKey: Self.cacheKey(Keys.subtitleAppearance)))
-        subtitleUsesDeviceAppearanceOverride = Self.cachedBool(
-            defaults,
-            key: Keys.subtitleUsesDeviceAppearanceOverride,
-            defaultValue: false
-        )
-        subtitleMatchesSystemAppearance = Self.cachedBool(
-            defaults,
-            key: Keys.subtitleMatchesSystemAppearance,
-            defaultValue: false
-        )
-        subtitleSyncMs = defaults.integer(forKey: Self.cacheKey(Keys.subtitleSyncMs))
-        playbackSpeed = Self.cachedDouble(defaults, key: Keys.playbackSpeed, defaultValue: 1.0)
-        videoGravity = VideoGravity(rawValue: defaults.string(forKey: Self.cacheKey(Keys.videoGravity)) ?? VideoGravity.fit.rawValue) ?? .fit
-        playerOrientationMode = PlayerOrientationMode(
-            rawValue: defaults.string(forKey: Self.cacheKey(Keys.playerOrientationMode)) ?? PlayerOrientationMode.landscapeLocked.rawValue
-        ) ?? .landscapeLocked
-        autoPlayNextEpisode = Self.cachedBool(
-            defaults,
-            key: Keys.autoPlayNextEpisode,
-            legacyKey: Keys.legacyAutoPlayNextEpisode,
-            defaultValue: true
-        )
-        hideFutureEpisodeSpoilers = Self.cachedBool(defaults, key: Keys.hideFutureEpisodeSpoilers, defaultValue: false)
-        nextUpPromptSeconds = Self.clampNextUpPromptSeconds(
-            Self.cachedInt(defaults, key: Keys.nextUpPromptSeconds, defaultValue: 30)
-        )
-        applyCachedSettingsForCurrentScope()
+        loadSavedSettings()
 
         NotificationCenter.default.addObserver(
             forName: SystemCaptionAppearance.settingsChangedNotification,
@@ -428,8 +336,8 @@ final class PlayerSettings {
         }
         #if os(iOS) || os(tvOS)
         // Caption settings only change outside Vivid (Accessibility, or an
-        // AVKit app's subtitle menu on Apple TV). Read them again on the way
-        // back in rather than relying on the change notification alone.
+        // AVKit app's subtitle menu on Apple TV), so read them again on the
+        // way back in rather than relying on the notification alone.
         NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
@@ -440,135 +348,74 @@ final class PlayerSettings {
         #endif
     }
 
-    /// Re-read the system caption preferences. Idempotent; also called by
-    /// the player when the system posts a settings-changed notification so
-    /// re-application never races this class's own observer.
+    /// Read the system caption settings again. Assigns only real changes, so
+    /// returning to the app doesn't redraw every view that reads them.
     func refreshSubtitleSystemAppearance() {
-        // Assign only real changes, so a return to the app doesn't redraw
-        // every view that reads them.
         let appearance = SystemCaptionAppearance.current()
         if appearance != subtitleSystemAppearance { subtitleSystemAppearance = appearance }
         let selection = SystemCaptionSelectionPreferences.current()
         if selection != subtitleSystemSelectionPreferences { subtitleSystemSelectionPreferences = selection }
     }
 
-    /// Reload preferences from this device after an account/profile change.
+    /// Load the new scope's settings after an account or profile change.
     @discardableResult
     @MainActor
     func reloadForCurrentProfile() async -> RefreshResult {
-        applyCachedSettingsForCurrentScope()
+        loadSavedSettings()
         return .refreshed
     }
 
-    /// Set the quality from a tier id on this client's in-player ladder.
-    ///
-    /// The in-player switcher's entry point: it offers ``ApplePlaybackQuality``
-    /// rungs, so the id is decomposed into the contract's two axes before it is
-    /// stored. Sending the compound id would fail the enum with
-    /// `invalid_value`; see AppleQualityAxes.swift.
+    // MARK: - Setters
+
+    /// Set the quality from an ``ApplePlaybackQuality`` id, as the in-player
+    /// switcher does. The id is split into the contract's two axes before
+    /// it's stored (see AppleQualityAxes.swift).
     func setPreferredQuality(_ value: String) {
         let axes = AppleQualityAxes.split(ApplePlaybackQuality.normalizeStoredId(value))
         setQualityAxes(resolution: axes.resolution, bitrateKbps: axes.bitrateKbps)
         fallbackModeID = PlaybackFallbackMode(rawValue: value)?.rawValue
     }
 
-    /// Set the quality from a shared preset — the settings screens' entry
-    /// point, on every platform and in the web and Android clients.
+    /// Set the quality from a shared preset, as Settings does.
     func setQualityPreset(_ preset: VividQualityPreset) {
         setQualityAxes(resolution: preset.resolution, bitrateKbps: preset.bitrateKbps)
         fallbackModeID = PlaybackFallbackMode(rawValue: preset.id)?.rawValue
     }
 
-    /// Store one (resolution, bitrate) pair as the contract's two keys.
-    ///
-    /// Both axes are always written, never just the one that changed: the two
-    /// resolve independently, so leaving a stale cap behind would keep
-    /// throttling a tier the user just widened. Uncapped is an explicit JSON
-    /// null rather than an omitted write for the same reason.
+    /// Both axes are always written, so a stale cap can't keep throttling a
+    /// tier the viewer just widened.
     private func setQualityAxes(resolution: String, bitrateKbps: Int?) {
         fallbackModeID = nil
         preferredQualityResolution = VividQualityPresets.normalizeResolution(resolution)
         maxBitrateKbps = bitrateKbps.flatMap { $0 > 0 ? $0 : nil }
     }
 
-    func setAudioLanguage(_ value: String) {
-        audioLanguage = value
-        // The contract's language_tag rejects "": "no preference" is JSON null.
-    }
+    func setAudioLanguage(_ value: String) { audioLanguage = value }
+    func setAutoSkipIntro(_ enabled: Bool) { autoSkipIntro = enabled }
+    func setAutoSkipCredits(_ enabled: Bool) { autoSkipCredits = enabled }
+    func setAutoPlayNextEpisode(_ enabled: Bool) { autoPlayNextEpisode = enabled }
+    func setNextUpPromptSeconds(_ seconds: Int) { nextUpPromptSeconds = Self.clampNextUpPromptSeconds(seconds) }
+    func setBackgroundPlaybackEnabled(_ enabled: Bool) { backgroundPlaybackEnabled = enabled }
+    func setBufferAhead(_ mode: BufferAheadMode) { bufferAhead = mode }
+    func setVolumeBoostEnabled(_ enabled: Bool) { volumeBoostEnabled = enabled }
+    /// Snapped to an offered level.
+    func setVolumeBoostPercent(_ percent: Int) { volumeBoostPercent = VividAudioEnhancement.boostLevel(percent) }
+    func setEnhancedDialogueEnabled(_ enabled: Bool) { enhancedDialogueEnabled = enabled }
+    func setPlaybackSpeed(_ rate: Double) { playbackSpeed = Self.clampPlaybackSpeed(rate) }
+    func setVideoGravity(_ gravity: VideoGravity) { videoGravity = gravity }
+    func setPlayerOrientationMode(_ mode: PlayerOrientationMode) { playerOrientationMode = mode }
+    func setSubtitleSyncMs(_ milliseconds: Int) { subtitleSyncMs = max(-10000, min(milliseconds, 10000)) }
 
-    func setAutoSkipIntro(_ enabled: Bool) {
-        autoSkipIntro = enabled
-    }
-
-    func setAutoSkipCredits(_ enabled: Bool) {
-        autoSkipCredits = enabled
-    }
-
-    func setAutoPlayNextEpisode(_ enabled: Bool) {
-        autoPlayNextEpisode = enabled
-    }
-
-    func setNextUpPromptSeconds(_ seconds: Int) {
-        let normalized = Self.clampNextUpPromptSeconds(seconds)
-        nextUpPromptSeconds = normalized
-    }
-
-    /// Choose whether video playback survives leaving the app. Purely local —
-    /// there is no contract key to enqueue.
-    func setBackgroundPlaybackEnabled(_ enabled: Bool) {
-        backgroundPlaybackEnabled = enabled
-    }
-
-    /// Choose how far ahead Vivid buffers. Purely local — there is no contract
-    /// key to enqueue.
-    func setBufferAhead(_ mode: BufferAheadMode) {
-        bufferAhead = mode
-    }
-
-    /// Turn Volume Boost on or off. Purely local; the level is kept.
-    func setVolumeBoostEnabled(_ enabled: Bool) {
-        volumeBoostEnabled = enabled
-    }
-
-    /// Choose the Volume Boost level, snapped to an offered one.
-    func setVolumeBoostPercent(_ percent: Int) {
-        volumeBoostPercent = VividAudioEnhancement.boostLevel(percent)
-    }
-
-    /// Turn Enhanced Dialogue on or off. Purely local.
-    func setEnhancedDialogueEnabled(_ enabled: Bool) {
-        enhancedDialogueEnabled = enabled
-    }
-
-    func setPlaybackSpeed(_ rate: Double) {
-        let normalized = Self.clampPlaybackSpeed(rate)
-        playbackSpeed = normalized
-    }
-
-    func setVideoGravity(_ gravity: VideoGravity) {
-        videoGravity = gravity
-    }
-
-    func setPlayerOrientationMode(_ mode: PlayerOrientationMode) {
-        playerOrientationMode = mode
-    }
-
-    func setSubtitleSyncMs(_ milliseconds: Int) {
-        subtitleSyncMs = max(-10000, min(milliseconds, 10000))
-    }
-
+    /// A manual edit takes over from the system appearance.
     @MainActor
     func setSubtitleAppearance(_ appearance: SubtitleAppearance) async {
-        let sanitized = appearance.sanitized()
-        subtitleAppearance = sanitized
+        subtitleAppearance = appearance.sanitized()
         subtitleUsesDeviceAppearanceOverride = true
-        // A manual edit takes over from the system-matching source.
         subtitleMatchesSystemAppearance = false
     }
 
-    /// Toggle mirroring the device's Subtitles & Captioning accessibility
-    /// preferences. Purely local; the saved Vivid appearance is untouched
-    /// so switching back restores it.
+    /// Follow the system caption settings, or stop. The saved Vivid
+    /// appearance is untouched, so switching back restores it.
     func setSubtitleMatchesSystemAppearance(_ enabled: Bool) {
         guard enabled != subtitleMatchesSystemAppearance else { return }
         if enabled {
@@ -587,17 +434,6 @@ final class PlayerSettings {
     func resetAllDeviceSettings() async {
         fallbackModeID = nil
         introDBEnabled = true
-        resetDeviceLocalPreferences()
-        cachePlaybackDefaults(for: Self.currentScopeIdentifier)
-        applyCachedSettingsForCurrentScope()
-        preferredSubtitleLanguage = PlaybackPrefSentinel.none
-        preferredSubtitleBackupLanguage = PlaybackPrefSentinel.none
-        preferredSubtitleMode = "auto"
-        showForcedSubtitles = true
-    }
-
-    /// Restore device playback and caption-source preferences to defaults.
-    private func resetDeviceLocalPreferences() {
         backgroundPlaybackEnabled = true
         preferLosslessAudio = false
         bufferAhead = .automatic
@@ -605,86 +441,70 @@ final class PlayerSettings {
         volumeBoostPercent = VividAudioEnhancement.defaultBoostLevel
         enhancedDialogueEnabled = false
         subtitleMatchesSystemAppearance = false
+        writeResetValues(scopeID: Self.currentScopeIdentifier)
+        loadSavedSettings()
+        preferredSubtitleLanguage = PlaybackPrefSentinel.none
+        preferredSubtitleBackupLanguage = PlaybackPrefSentinel.none
+        preferredSubtitleMode = "auto"
+        showForcedSubtitles = true
     }
 
-    private func applyCachedSettingsForCurrentScope() {
-        fallbackModeID = defaults.string(forKey: Self.cacheKey("vivid.quality.fallbackMode"))
-        preferredSubtitleLanguage = defaults.string(forKey: Self.cacheKey("vivid.subtitle.language")) ?? PlaybackPrefSentinel.none
-        preferredSubtitleBackupLanguage = defaults.string(forKey: Self.cacheKey("vivid.subtitle.backupLanguage")) ?? PlaybackPrefSentinel.none
-        preferredSubtitleMode = defaults.string(forKey: Self.cacheKey("vivid.subtitle.mode")) ?? "auto"
-        showForcedSubtitles = Self.cachedBool(defaults, key: "vivid.subtitle.forced", defaultValue: true)
+    // MARK: - Scope and storage
 
-        preferredQualityResolution = Self.cachedQualityResolution(defaults)
-        maxBitrateKbps = Self.cachedMaxBitrateKbps(defaults)
-        audioLanguage = defaults.string(forKey: Self.cacheKey(Keys.audioLanguage)) ?? ""
-        introDBEnabled = (defaults.string(forKey: VividSkipSource.defaultsKey) ?? "introdb") == "introdb"
-        autoSkipIntro = Self.cachedBool(defaults, key: Keys.autoSkipIntro, defaultValue: false)
-        autoSkipCredits = Self.cachedBool(defaults, key: Keys.autoSkipCredits, defaultValue: false)
-        autoPlayNextEpisode = Self.cachedBool(
-            defaults,
-            key: Keys.autoPlayNextEpisode,
-            legacyKey: Keys.legacyAutoPlayNextEpisode,
-            defaultValue: true
-        )
-        hideFutureEpisodeSpoilers = Self.cachedBool(defaults, key: Keys.hideFutureEpisodeSpoilers, defaultValue: false)
-        nextUpPromptSeconds = Self.clampNextUpPromptSeconds(
-            Self.cachedInt(defaults, key: Keys.nextUpPromptSeconds, defaultValue: 30)
-        )
-        backgroundPlaybackEnabled = Self.cachedBool(
-            defaults,
-            key: Keys.backgroundPlaybackEnabled,
-            defaultValue: true
-        )
-        preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
-        bufferAhead = Self.cachedBufferAhead(defaults)
-        volumeBoostEnabled = Self.cachedBool(defaults, key: Keys.volumeBoostEnabled, defaultValue: false)
-        volumeBoostPercent = Self.cachedVolumeBoostPercent(defaults)
-        enhancedDialogueEnabled = Self.cachedBool(defaults, key: Keys.enhancedDialogueEnabled, defaultValue: false)
-        playbackSpeed = Self.clampPlaybackSpeed(
-            Self.cachedDouble(defaults, key: Keys.playbackSpeed, defaultValue: 1.0)
-        )
-        subtitleSyncMs = defaults.integer(forKey: Self.cacheKey(Keys.subtitleSyncMs))
-        videoGravity = VideoGravity(
-            rawValue: defaults.string(forKey: Self.cacheKey(Keys.videoGravity)) ?? VideoGravity.fit.rawValue
-        ) ?? .fit
-        playerOrientationMode = PlayerOrientationMode(
-            rawValue: defaults.string(forKey: Self.cacheKey(Keys.playerOrientationMode)) ?? PlayerOrientationMode.landscapeLocked.rawValue
-        ) ?? .landscapeLocked
-        subtitleUsesDeviceAppearanceOverride = Self.cachedBool(
-            defaults,
-            key: Keys.subtitleUsesDeviceAppearanceOverride,
-            defaultValue: false
-        )
-        subtitleMatchesSystemAppearance = Self.cachedBool(
-            defaults,
-            key: Keys.subtitleMatchesSystemAppearance,
-            defaultValue: false
-        )
-        subtitleAppearance = SubtitleAppearance.decode(from: defaults.string(forKey: Self.cacheKey(Keys.subtitleAppearance)))
-    }
-
-    /// The (server, profile, device) triple this device's settings belong to.
-    ///
-    /// Keep the established cache partition so existing preferences survive
-    /// upgrades and remain isolated across profiles and servers.
+    /// The base64 of `server|profile|device` this device's settings belong
+    /// to, or nil when any part is missing. Existing installs keep their
+    /// settings under this partition, so its format can't change.
     static var currentScopeIdentifier: String? {
         let serverURL = ServerRegistry.shared.activeServerUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let profileID = AuthService.shared.profileId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let deviceID = AppleDeviceIdentity.current.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !serverURL.isEmpty, !profileID.isEmpty, !deviceID.isEmpty else {
-            return nil
-        }
-        let raw = "\(serverURL)|\(profileID)|\(deviceID)"
-        return Data(raw.utf8).base64EncodedString()
+        guard !serverURL.isEmpty, !profileID.isEmpty, !deviceID.isEmpty else { return nil }
+        return Data("\(serverURL)|\(profileID)|\(deviceID)".utf8).base64EncodedString()
     }
 
-    /// Store the canonical reset state in one explicit cache partition.
-    /// All writes are local and target the same active profile partition.
-    private func cachePlaybackDefaults(for scopeID: String?) {
-        func key(_ baseKey: String) -> String {
-            Self.cacheKey(baseKey, scopeID: scopeID)
-        }
+    /// Read every saved value for the current scope. Each assignment writes
+    /// itself back, which also finishes a legacy key's migration.
+    private func loadSavedSettings() {
+        fallbackModeID = defaults.string(forKey: Self.cacheKey(Keys.fallbackMode))
+        preferredSubtitleLanguage = savedString(Keys.subtitleLanguage) ?? PlaybackPrefSentinel.none
+        preferredSubtitleBackupLanguage = savedString(Keys.subtitleBackupLanguage) ?? PlaybackPrefSentinel.none
+        preferredSubtitleMode = savedString(Keys.subtitleMode) ?? "auto"
+        showForcedSubtitles = savedBool(Keys.subtitleForced, default: true)
 
+        // Builds that stored a tier id wrote `1080p-high` and the like into
+        // this key. Normalising keeps the resolution; the separate bitrate key
+        // holds any cap.
+        preferredQualityResolution = VividQualityPresets.normalizeResolution(savedString(Keys.preferredQuality))
+        maxBitrateKbps = savedMaxBitrateKbps()
+        audioLanguage = savedString(Keys.audioLanguage) ?? ""
+        introDBEnabled = (defaults.string(forKey: VividSkipSource.defaultsKey) ?? "introdb") == "introdb"
+        autoSkipIntro = savedBool(Keys.autoSkipIntro, default: false)
+        autoSkipCredits = savedBool(Keys.autoSkipCredits, default: false)
+        autoPlayNextEpisode = savedBool(Keys.autoPlayNextEpisode, legacyKey: Keys.legacyAutoPlayNextEpisode, default: true)
+        hideFutureEpisodeSpoilers = savedBool(Keys.hideFutureEpisodeSpoilers, default: false)
+        nextUpPromptSeconds = Self.clampNextUpPromptSeconds(savedInt(Keys.nextUpPromptSeconds, default: 30))
+        backgroundPlaybackEnabled = savedBool(Keys.backgroundPlaybackEnabled, default: true)
+        preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
+        bufferAhead = BufferAheadMode(rawValue: savedString(Keys.bufferAhead) ?? "") ?? .automatic
+        volumeBoostEnabled = savedBool(Keys.volumeBoostEnabled, default: false)
+        volumeBoostPercent = VividAudioEnhancement.boostLevel(
+            savedInt(Keys.volumeBoostPercent, default: VividAudioEnhancement.defaultBoostLevel)
+        )
+        enhancedDialogueEnabled = savedBool(Keys.enhancedDialogueEnabled, default: false)
+        playbackSpeed = Self.clampPlaybackSpeed(savedDouble(Keys.playbackSpeed, default: 1.0))
+        subtitleSyncMs = defaults.integer(forKey: Self.cacheKey(Keys.subtitleSyncMs))
+        videoGravity = VideoGravity(rawValue: savedString(Keys.videoGravity) ?? "") ?? .fit
+        playerOrientationMode = PlayerOrientationMode(rawValue: savedString(Keys.playerOrientationMode) ?? "")
+            ?? .landscapeLocked
+        subtitleUsesDeviceAppearanceOverride = savedBool(Keys.subtitleUsesDeviceAppearanceOverride, default: false)
+        subtitleMatchesSystemAppearance = savedBool(Keys.subtitleMatchesSystemAppearance, default: false)
+        subtitleAppearance = SubtitleAppearance.decode(from: savedString(Keys.subtitleAppearance))
+    }
+
+    /// The reset state for one scope. `maxBitrateKbps` is removed, as
+    /// uncapped is stored as no value.
+    private func writeResetValues(scopeID: String?) {
+        func key(_ base: String) -> String { Self.cacheKey(base, scopeID: scopeID) }
         defaults.set("auto", forKey: key(Keys.preferredQuality))
         defaults.removeObject(forKey: key(Keys.maxBitrateKbps))
         defaults.set("", forKey: key(Keys.audioLanguage))
@@ -696,37 +516,37 @@ final class PlayerSettings {
         defaults.set(1.0, forKey: key(Keys.playbackSpeed))
         defaults.set(0, forKey: key(Keys.subtitleSyncMs))
         defaults.set(VideoGravity.fit.rawValue, forKey: key(Keys.videoGravity))
-        defaults.set(
-            PlayerOrientationMode.landscapeLocked.rawValue,
-            forKey: key(Keys.playerOrientationMode)
-        )
+        defaults.set(PlayerOrientationMode.landscapeLocked.rawValue, forKey: key(Keys.playerOrientationMode))
         defaults.set(SubtitleAppearance.default.jsonString, forKey: key(Keys.subtitleAppearance))
         defaults.set(false, forKey: key(Keys.subtitleUsesDeviceAppearanceOverride))
     }
 
-    private static func cacheKey(_ baseKey: String) -> String {
-        cacheKey(baseKey, scopeID: currentScopeIdentifier)
+    private func store(_ value: Any, _ key: String) {
+        defaults.set(value, forKey: Self.cacheKey(key))
     }
 
-    private static func cacheKey(_ baseKey: String, scopeID: String?) -> String {
-        guard let scopeID else {
-            return baseKey
+    private func storeOrRemove(_ value: Any?, _ key: String) {
+        if let value {
+            defaults.set(value, forKey: Self.cacheKey(key))
+        } else {
+            defaults.removeObject(forKey: Self.cacheKey(key))
         }
-        return "player.serverDeviceSettings.\(scopeID).\(baseKey)"
     }
 
-    private static func cachedBool(
-        _ defaults: UserDefaults,
-        key: String,
-        legacyKey: String? = nil,
-        defaultValue: Bool
-    ) -> Bool {
-        let scopedKey = cacheKey(key)
+    private func savedString(_ key: String) -> String? {
+        defaults.string(forKey: Self.cacheKey(key))
+    }
+
+    /// A saved Bool, or a legacy unscoped one copied into the scoped key. On
+    /// iOS the legacy value is used only when the scope matches the recorded
+    /// migration owner.
+    private func savedBool(_ key: String, legacyKey: String? = nil, default defaultValue: Bool) -> Bool {
+        let scopedKey = Self.cacheKey(key)
         if defaults.object(forKey: scopedKey) != nil {
             return defaults.bool(forKey: scopedKey)
         }
         #if os(iOS)
-        if currentScopeIdentifier != defaults.string(forKey: "player.legacyMigrationOwner") { return defaultValue }
+        if Self.currentScopeIdentifier != defaults.string(forKey: Keys.legacyMigrationOwner) { return defaultValue }
         #endif
         if let legacyKey, defaults.object(forKey: legacyKey) != nil {
             let legacyValue = defaults.bool(forKey: legacyKey)
@@ -736,82 +556,57 @@ final class PlayerSettings {
         return defaultValue
     }
 
-    /// The cached resolution axis, tolerating a compound value written by a
-    /// build that stored the tier id.
-    ///
-    /// Those builds wrote `1080p-high` and friends into this very key, so the
-    /// value read here may be either spelling.
-    /// ``VividQualityPresets/normalizeResolution(_:)`` reduces both to a
-    /// contract member, dropping the bitrate half — which is correct, because
-    /// the companion key below carries it. An upgrading device therefore keeps
-    /// its resolution and loses only a cap it never stored separately, and the
-    /// companion local bitrate key preserves any explicit cap.
-    private static func cachedQualityResolution(_ defaults: UserDefaults) -> String {
-        VividQualityPresets.normalizeResolution(
-            defaults.string(forKey: cacheKey(Keys.preferredQuality))
-        )
+    private func savedInt(_ key: String, default defaultValue: Int) -> Int {
+        let scopedKey = Self.cacheKey(key)
+        guard defaults.object(forKey: scopedKey) != nil else { return defaultValue }
+        return defaults.integer(forKey: scopedKey)
     }
 
-    /// The cached bitrate axis. Absent is uncapped, which is why this reads
-    /// through `object(forKey:)` rather than `integer(forKey:)` — the latter
-    /// answers 0 for a missing key, and 0 is not a cap the contract accepts.
-    private static func cachedMaxBitrateKbps(_ defaults: UserDefaults) -> Int? {
-        guard defaults.object(forKey: cacheKey(Keys.maxBitrateKbps)) != nil else { return nil }
-        let stored = defaults.integer(forKey: cacheKey(Keys.maxBitrateKbps))
-        return stored > 0 ? stored : nil
-    }
-
-    private static func cachedBufferAhead(_ defaults: UserDefaults) -> BufferAheadMode {
-        BufferAheadMode(
-            rawValue: defaults.string(forKey: cacheKey(Keys.bufferAhead))
-                ?? BufferAheadMode.automatic.rawValue
-        ) ?? .automatic
-    }
-
-    private static func cachedVolumeBoostPercent(_ defaults: UserDefaults) -> Int {
-        VividAudioEnhancement.boostLevel(
-            cachedInt(defaults, key: Keys.volumeBoostPercent, defaultValue: VividAudioEnhancement.defaultBoostLevel)
-        )
-    }
-
-    private static func cachedDouble(_ defaults: UserDefaults, key: String, defaultValue: Double) -> Double {
-        let scopedKey = cacheKey(key)
-        guard defaults.object(forKey: scopedKey) != nil else {
-            return defaultValue
-        }
+    private func savedDouble(_ key: String, default defaultValue: Double) -> Double {
+        let scopedKey = Self.cacheKey(key)
+        guard defaults.object(forKey: scopedKey) != nil else { return defaultValue }
         return defaults.double(forKey: scopedKey)
     }
 
-    private static func cachedInt(_ defaults: UserDefaults, key: String, defaultValue: Int) -> Int {
-        let scopedKey = cacheKey(key)
-        guard defaults.object(forKey: scopedKey) != nil else {
-            return defaultValue
-        }
-        return defaults.integer(forKey: scopedKey)
+    /// Read through `object(forKey:)`, because `integer(forKey:)` answers 0
+    /// for a missing key and 0 isn't a cap.
+    private func savedMaxBitrateKbps() -> Int? {
+        let key = Self.cacheKey(Keys.maxBitrateKbps)
+        guard defaults.object(forKey: key) != nil else { return nil }
+        let stored = defaults.integer(forKey: key)
+        return stored > 0 ? stored : nil
+    }
+
+    private static func cacheKey(_ baseKey: String) -> String {
+        cacheKey(baseKey, scopeID: currentScopeIdentifier)
+    }
+
+    private static func cacheKey(_ baseKey: String, scopeID: String?) -> String {
+        guard let scopeID else { return baseKey }
+        return "player.serverDeviceSettings.\(scopeID).\(baseKey)"
     }
 
     private static func clampNextUpPromptSeconds(_ seconds: Int) -> Int {
         max(0, min(seconds, 120))
     }
 
-    /// Clamp to the contract's declared range *and* step for
-    /// `player.playback_speed` (0.25…3.0, step 0.05).
-    ///
-    /// The step is the part worth stating: the server rejects a value off the
-    /// grid with `invalid_value`, and a UI that ever offers 1.33× — or a
-    /// double that lands at 1.7499999999999998 after arithmetic — would queue a
-    /// write that can never succeed. Rounding here means the value the user
-    /// sees is the value the server accepts.
+    /// Clamp to the contract's range and step for `player.playback_speed`
+    /// (0.25 to 3.0 in steps of 0.05), so the value shown is one the server
+    /// accepts. Rounded to hundredths afterwards because 0.05 isn't exact in
+    /// binary (0.25 + 30 * 0.05 is 1.7500000000000002).
     private static func clampPlaybackSpeed(_ rate: Double) -> Double {
         let bounded = max(0.25, min(rate, 3.0))
         let steps = ((bounded - 0.25) / 0.05).rounded()
-        // Re-rounded to hundredths because 0.05 is not representable in binary:
-        // 0.25 + 30 * 0.05 is 1.7500000000000002, which serializes as that.
         let aligned = ((0.25 + steps * 0.05) * 100).rounded() / 100
         return min(3.0, max(0.25, aligned))
     }
 
     private enum Keys {
+        static let fallbackMode = "vivid.quality.fallbackMode"
+        static let subtitleLanguage = "vivid.subtitle.language"
+        static let subtitleBackupLanguage = "vivid.subtitle.backupLanguage"
+        static let subtitleMode = "vivid.subtitle.mode"
+        static let subtitleForced = "vivid.subtitle.forced"
         static let preferredQuality = "preferredQuality"
         static let maxBitrateKbps = "playback.maxBitrateKbps"
         static let audioLanguage = "preferredAudioLanguage"
@@ -832,12 +627,13 @@ final class PlayerSettings {
         static let playerOrientationMode = "player.playerOrientationMode"
         static let autoPlayNextEpisode = "autoPlayNext"
         static let legacyAutoPlayNextEpisode = "player.autoPlayNextEpisode"
+        static let legacyMigrationOwner = "player.legacyMigrationOwner"
         static let hideFutureEpisodeSpoilers = "player.hideFutureEpisodeSpoilers"
         static let nextUpPromptSeconds = "player.nextUpPromptSeconds"
     }
 }
 
-/// Vivid owns marker lookup independently of the connected media server.
+/// Vivid looks up skip markers itself, whichever server is connected.
 enum VividSkipSource {
     static var defaultsKey: String {
         #if os(iOS)
@@ -845,9 +641,14 @@ enum VividSkipSource {
         #endif
         return "vivid.playback.skipSource"
     }
+
     static var isEnabled: Bool { PlayerSettings.shared.introDBEnabled }
 }
 
+// Everything from here to the end of the file is compiled on its own, with a
+// stand-in `TimeRange`, by scripts/ci/check-introdb-client.sh.
+
+/// Anonymous IntroDB and TheIntroDB marker lookups, cached for an hour.
 actor VividIntroDBClient {
     static let shared = VividIntroDBClient()
 
@@ -855,6 +656,7 @@ actor VividIntroDBClient {
         let imdbID: String
         let season: Int
         let episode: Int
+        /// Nil unless positive.
         let tmdbID: Int?
 
         init(imdbID: String, season: Int, episode: Int, tmdbID: Int? = nil) {
@@ -864,14 +666,18 @@ actor VividIntroDBClient {
             self.tmdbID = tmdbID.flatMap { $0 > 0 ? $0 : nil }
         }
 
+        /// TheIntroDB's lookup ID: the TMDB ID, otherwise a valid IMDb ID.
         var theIntroDBIdentifier: URLQueryItem? {
             if let tmdbID, tmdbID > 0 {
                 return URLQueryItem(name: "tmdb_id", value: String(tmdbID))
             }
-            guard imdbID.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil else { return nil }
+            guard VividIntroDBClient.isIMDbID(imdbID) else { return nil }
             return URLQueryItem(name: "imdb_id", value: imdbID)
         }
     }
+
+    /// A marker in milliseconds. A nil end runs to the end of the media,
+    /// which only TheIntroDB's credits produce.
     struct Segment: Decodable, Sendable {
         let start_ms: Double
         let end_ms: Double?
@@ -889,14 +695,17 @@ actor VividIntroDBClient {
         }
 
         private enum CodingKeys: String, CodingKey { case start_ms, end_ms }
+
+        /// IntroDB always sends an end, so decoding requires one.
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             start_ms = try values.decode(Double.self, forKey: .start_ms)
-            // IntroDB requires an explicit end. Only the TheIntroDB adapter
-            // creates an open-ended credits marker.
             end_ms = try values.decode(Double.self, forKey: .end_ms)
         }
 
+        /// The marker in seconds, clamped to the duration, or nil when it
+        /// isn't a usable range within it (an end up to a second past the
+        /// duration is allowed).
         func range(duration: Double) -> TimeRange? {
             let start = start_ms / 1000
             let end = end_ms.map { $0 / 1000 } ?? duration
@@ -905,6 +714,8 @@ actor VividIntroDBClient {
             return TimeRange(start: start, end: min(end, duration))
         }
     }
+
+    /// One episode's markers, in IntroDB's response shape.
     struct Segments: Decodable, Sendable {
         let imdb_id: String
         let season: Int
@@ -914,6 +725,9 @@ actor VividIntroDBClient {
         var recap: Segment? = nil
         var tmdb_id: Int? = nil
 
+        /// These markers with any missing kind taken from `fallback`, when it
+        /// is for the same series (by IMDb or TMDB ID, with neither ID
+        /// contradicting) and the same episode.
         func fillingMissing(from fallback: Segments?) -> Segments {
             guard let fallback,
                   (!imdb_id.isEmpty && fallback.imdb_id == imdb_id) ||
@@ -927,15 +741,22 @@ actor VividIntroDBClient {
         }
     }
 
+    /// TheIntroDB's v4 `/media` response. v4 keys every response by TVDB and
+    /// no longer returns `tmdb_id`.
     struct TheIntroDBResponse: Decodable, Sendable {
-        // v4 keys every response by TVDB and no longer returns tmdb_id.
         let tvdb_id: Int?
         let season: Int?
         let episode: Int?
+        let intro: [Timestamp]?
+        let credits: [Timestamp]?
+        let recap: [Timestamp]?
+
         struct Timestamp: Decodable, Sendable {
             let start_ms: Double?
             let end_ms: Double?
 
+            /// A null start means zero, except for credits, which need one.
+            /// Only credits may have a null end.
             func segment(credits: Bool) -> Segment? {
                 guard !credits || start_ms != nil else { return nil }
                 let start = start_ms ?? 0
@@ -948,13 +769,10 @@ actor VividIntroDBClient {
                 return Segment(start_ms: start, end_ms: end_ms)
             }
         }
-        let intro: [Timestamp]?
-        let credits: [Timestamp]?
-        let recap: [Timestamp]?
 
+        /// The earliest valid segment of each kind. Vivid shows one prompt
+        /// per kind and never joins ranges across the scenes between them.
         func segments(for episode: Episode) -> Segments {
-            // The current UI supports one prompt per kind. Keep the earliest
-            // valid segment intact, never join ranges across intervening scenes.
             func first(_ timestamps: [Timestamp]?, credits: Bool) -> Segment? {
                 timestamps?.compactMap { $0.segment(credits: credits) }
                     .sorted { $0.start_ms < $1.start_ms }.first
@@ -965,9 +783,16 @@ actor VividIntroDBClient {
         }
     }
 
+    private static let cacheLifetime: TimeInterval = 3600
+    private static let cacheLimit = 200
+    private static let maximumResponseBytes = 100_000
+
     private var theIntroDBCache: [Episode: (Date, Segments)] = [:]
     private var cache: [Episode: (Date, Segments)] = [:]
+    /// An ephemeral session of its own, so no media server token or cookie
+    /// is ever attached.
     private let session: URLSession
+
     init(session: URLSession? = nil) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 8
@@ -975,62 +800,77 @@ actor VividIntroDBClient {
         self.session = session ?? URLSession(configuration: configuration)
     }
 
+    /// TheIntroDB markers for an episode. TMDB and IMDb IDs are resolved
+    /// with that provider's episode numbering, so no TVDB episode-order
+    /// mapping is sent.
     func theIntroDBSegments(for episode: Episode) async throws -> Segments? {
         guard let identifier = episode.theIntroDBIdentifier,
               episode.season > 0, episode.episode > 0 else { return nil }
-        if let cached = theIntroDBCache[episode], Date().timeIntervalSince(cached.0) < 3600 {
-            return cached.1
-        }
-        // TMDB and IMDb IDs are resolved server-side using that provider's
-        // episode numbering, so no TVDB episode-order mapping is sent.
-        var url = URLComponents(string: "https://api.theintrodb.org/v4/media")!
-        url.queryItems = [identifier,
-                         URLQueryItem(name: "season", value: String(episode.season)),
-                         URLQueryItem(name: "episode", value: String(episode.episode))]
-        // Public lookup, with no API key, server credentials or shared cookies.
-        let (data, response) = try await session.data(from: url.url!)
-        try Task.checkCancellation()
-        guard let response = response as? HTTPURLResponse,
-              response.statusCode == 200, data.count < 100_000 else { return nil }
-        let responseBody = try JSONDecoder().decode(TheIntroDBResponse.self, from: data)
-        // v4 has no tmdb_id to compare with the request, so the series rests on
-        // TheIntroDB resolving the ID sent. Require a TVDB ID and the echoed
-        // episode, which also rejects the version and episode-list shapes.
-        guard let responseTVDBID = responseBody.tvdb_id, responseTVDBID > 0,
-              responseBody.season == episode.season,
-              responseBody.episode == episode.episode else { return nil }
-        let result = responseBody.segments(for: episode)
-        if theIntroDBCache.count >= 200 { theIntroDBCache.removeAll() }
-        theIntroDBCache[episode] = (Date(), result)
+        if let cached = Self.fresh(theIntroDBCache[episode]) { return cached }
+        let query = [identifier,
+                     URLQueryItem(name: "season", value: String(episode.season)),
+                     URLQueryItem(name: "episode", value: String(episode.episode))]
+        guard let data = try await fetch("https://api.theintrodb.org/v4/media", query: query) else { return nil }
+        let response = try JSONDecoder().decode(TheIntroDBResponse.self, from: data)
+        // With no tmdb_id to compare, the series rests on TheIntroDB resolving
+        // the ID sent. A TVDB ID and the echoed episode are required, which
+        // also rejects the version and episode-list shapes.
+        guard let tvdbID = response.tvdb_id, tvdbID > 0,
+              response.season == episode.season,
+              response.episode == episode.episode else { return nil }
+        let result = response.segments(for: episode)
+        Self.insert(result, for: episode, into: &theIntroDBCache)
         return result
     }
 
+    /// IntroDB markers for an episode, which needs a valid IMDb ID.
     func introDBSegments(for episode: Episode) async throws -> Segments? {
-        guard episode.imdbID.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil,
-              episode.season > 0, episode.episode > 0 else { return nil }
-        if let cached = cache[episode], Date().timeIntervalSince(cached.0) < 3600 { return cached.1 }
-        var url = URLComponents(string: "https://api.introdb.app/segments")!
-        url.queryItems = [URLQueryItem(name: "imdb_id", value: episode.imdbID),
-                         URLQueryItem(name: "season", value: String(episode.season)),
-                         URLQueryItem(name: "episode", value: String(episode.episode))]
-        // Separate session: never attach a media-server token or cookie.
-        let (data, response) = try await session.data(from: url.url!)
-        try Task.checkCancellation()
-        guard let response = response as? HTTPURLResponse else { return nil }
-        if response.statusCode == 404 { return nil }
-        guard response.statusCode == 200, data.count < 100_000 else { return nil }
+        guard Self.isIMDbID(episode.imdbID), episode.season > 0, episode.episode > 0 else { return nil }
+        if let cached = Self.fresh(cache[episode]) { return cached }
+        let query = [URLQueryItem(name: "imdb_id", value: episode.imdbID),
+                     URLQueryItem(name: "season", value: String(episode.season)),
+                     URLQueryItem(name: "episode", value: String(episode.episode))]
+        guard let data = try await fetch("https://api.introdb.app/segments", query: query) else { return nil }
         let result = try JSONDecoder().decode(Segments.self, from: data)
         guard result.imdb_id == episode.imdbID, result.season == episode.season,
               result.episode == episode.episode else { return nil }
-        if cache.count >= 200 { cache.removeAll() }
-        cache[episode] = (Date(), result)
+        Self.insert(result, for: episode, into: &cache)
         return result
+    }
+
+    /// The body of a 200 response under the size limit, or nil for any other
+    /// answer (404, rate limiting and so on). Public requests, with no API
+    /// key, server credentials or shared cookies.
+    private func fetch(_ endpoint: String, query: [URLQueryItem]) async throws -> Data? {
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = query
+        let (data, response) = try await session.data(from: components.url!)
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse,
+              response.statusCode == 200, data.count < Self.maximumResponseBytes else { return nil }
+        return data
+    }
+
+    private static func isIMDbID(_ value: String) -> Bool {
+        value.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil
+    }
+
+    private static func fresh(_ entry: (Date, Segments)?) -> Segments? {
+        guard let entry, Date().timeIntervalSince(entry.0) < cacheLifetime else { return nil }
+        return entry.1
+    }
+
+    private static func insert(_ segments: Segments, for episode: Episode, into cache: inout [Episode: (Date, Segments)]) {
+        if cache.count >= cacheLimit { cache.removeAll() }
+        cache[episode] = (Date(), segments)
     }
 }
 
 /// Vivid's own watched rule, applied on top of each server's resume rules.
 /// Partial progress has no Vivid threshold: the server decides what to keep.
 enum PlaybackCompletionPolicy {
+    /// Complete at 90% of the duration, at a valid credits marker, or at a
+    /// natural end with any progress.
     static func isComplete(position: Double, duration: Double, credits: TimeRange? = nil,
                            endedNaturally: Bool = false) -> Bool {
         guard position.isFinite, position >= 0 else { return false }

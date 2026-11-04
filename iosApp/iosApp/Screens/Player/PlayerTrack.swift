@@ -1,11 +1,11 @@
 import Foundation
 
-/// An app-facing projection of an Vivid media track. `trackId` is the
-/// per-kind id passed back through the Vivid controller; `ffIndex` is the
-/// source stream index used to match server-supplied preferences.
+/// An engine media track as the app sees it. `trackId` is the per-kind id
+/// passed back through the playback controller; `ffIndex` is the source
+/// stream index used to match server and catalogue tracks.
 ///
 /// Fields beyond id/title/lang are optional because not every codec populates
-/// every field — e.g. PGS subtitle tracks report no `audio-channels`.
+/// every field (PGS subtitle tracks report no `audio-channels`, for example).
 struct PlayerTrack: Identifiable, Equatable, Hashable {
     enum Kind: String {
         case audio
@@ -60,13 +60,13 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// Same attributes as `attributesLabel`, unjoined — for UIs that render
+    /// The same attributes as `attributesLabel`, unjoined, for UIs that render
     /// each attribute as its own pill instead of a dot-separated line.
     var attributePillLabels: [String] {
         attributeParts()
     }
 
-    /// Pill labels with the language optionally omitted — for rows that
+    /// Pill labels with the language optionally left out, for rows that
     /// already surface the language as the primary name.
     func attributePillLabels(includeLanguage: Bool) -> [String] {
         attributeParts(includeLanguage: includeLanguage)
@@ -84,7 +84,7 @@ struct PlayerTrack: Identifiable, Equatable, Hashable {
     }
 
     /// The embedded title, but only when it says something the language,
-    /// codec, and flags don't already — e.g. "Dub (SDH)" or "Signs & Songs"
+    /// codec and flags don't already: "Dub (SDH)" or "Signs & Songs"
     /// survives; "ASS", "SubRip", or a repeat of the language is dropped.
     var languageFirstDetailLabel: String? {
         guard let lang = normalizedLanguageCode else { return nil }
@@ -191,7 +191,7 @@ enum DeferredTrackSelectionGate {
     enum Outcome: Equatable {
         /// Keep holding the selection: the load is not established yet.
         case deferUntilEstablished
-        /// Adopt it as the published selection without touching the engine —
+        /// Adopt it as the published selection without touching the engine:
         /// the engine is already on this track.
         case adoptWithoutEngineCall
         /// Establish and different: drive the engine.

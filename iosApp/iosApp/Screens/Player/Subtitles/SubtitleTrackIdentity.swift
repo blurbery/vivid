@@ -1,36 +1,28 @@
-//
-//  SubtitleTrackIdentity.swift
-//  Vivid (iOS + tvOS)
-//
-//  Subtitle slots and server protocol track identities.
-//
-
 import Foundation
 
-/// Primary vs secondary subtitle slot. Matches the user-facing notion of
-/// a main caption line + an optional second line (e.g. dual-language
-/// learning setups).
+/// The primary subtitle line and an optional second one (for dual-language
+/// viewing, for example).
 enum SubtitleSlot: Int, CaseIterable, Hashable {
     case primary = 0
     case secondary = 1
 }
 
-/// Lucid embedded tracks use their media-stream ids directly.
-/// Server protocol ordinals occupy a separate, bounded id range.
+/// Subtitle track ids. Lucid's embedded tracks use their stream ids as they
+/// are; sidecar tracks (server subtitle files and other external tracks) use
+/// a separate bounded range keyed by their sidecar index.
 enum SubtitleTrackIdSpace {
     static let sidecarBase: Int64 = 0x4000_0000
     private static let sidecarLimit: Int64 = 0x6000_0000
 
     static func makeSidecarTrackId(urlIndex: Int) -> Int64 {
-        Self.sidecarBase | Int64(urlIndex)
+        sidecarBase | Int64(urlIndex)
     }
 
     static func isSidecar(_ trackId: Int64) -> Bool {
-        trackId >= Self.sidecarBase && trackId < Self.sidecarLimit
+        trackId >= sidecarBase && trackId < sidecarLimit
     }
 
     static func sidecarIndex(from trackId: Int64) -> Int {
-        Int(trackId & (Self.sidecarBase - 1))
+        Int(trackId & (sidecarBase - 1))
     }
-
 }

@@ -1,25 +1,20 @@
 import Foundation
 
-/// Time formatters shared across player overlays. Consolidated so the HMS
-/// format, runtime shorthand, and sleep-timer countdown all render
-/// identically — previously each view re-implemented the HMS path and the
-/// copies were starting to drift.
+/// The player's time formats, shared so every overlay shows times the same way.
 enum PlayerTimeFormatter {
-    /// `h:mm:ss` for durations ≥ 1 hour, otherwise `m:ss`. Clamps negative
-    /// and non-finite input to `0:00` so mid-load / missing-duration
-    /// states don't render garbage.
+    /// `h:mm:ss` from an hour up, otherwise `m:ss`. Negative and non-finite
+    /// values show `0:00`, so a load without a duration yet shows nothing odd.
     static func formatHMS(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let total = Int(seconds)
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0
-            ? String(format: "%d:%02d:%02d", h, m, s)
-            : String(format: "%d:%02d", m, s)
+        let hours = total / 3600, minutes = (total % 3600) / 60, secs = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+            : String(format: "%d:%02d", minutes, secs)
     }
 
-    /// Compact runtime label for the hero strip: "1h 42m" / "42m" / "".
-    /// Returns an empty string for zero/unknown duration so callers can
-    /// simply filter it out when joining metadata segments.
+    /// A short runtime such as "1h 42m", "2h" or "42m", or an empty string
+    /// for a zero or unknown duration so callers can leave it out.
     static func formatRuntime(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "" }
         let total = Int(seconds)
@@ -32,9 +27,8 @@ enum PlayerTimeFormatter {
         return String(localized: "\(m)m", comment: "Runtime in minutes, abbreviated")
     }
 
-    /// `m:ss` for the sleep-timer countdown in the status column.
+    /// `m:ss`, for the sleep timer countdown.
     static func formatCountdown(_ seconds: Int) -> String {
-        let m = seconds / 60, s = seconds % 60
-        return String(format: "%d:%02d", m, s)
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }

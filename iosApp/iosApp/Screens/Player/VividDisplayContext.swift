@@ -31,17 +31,13 @@ enum VividDisplayContext {
         #endif
     }
 
-    /// Mirror of the panel's live EDR headroom, which is what
-    /// `LoadOptions.panelIsInHDRMode` documents itself as
-    /// (`currentEDRHeadroom > 1`, api.md).
+    /// Whether the panel is presenting HDR now, from its live EDR headroom
+    /// (what `LoadOptions.panelIsInHDRMode` documents: `currentEDRHeadroom > 1`).
     ///
-    /// It must be sampled before `load`: Vivid runs the display-criteria
-    /// handshake synchronously inside the load and falls back to this
-    /// pre-load snapshot on any path that has no handshake of its own to
-    /// observe. Passing the default `false` there makes an HDR panel look
-    /// like an SDR one and declines the HDR10-to-Dolby Vision upgrade.
-    ///
-    /// Reports the display's current HDR presentation state.
+    /// Sample it before `load`: the display-criteria handshake runs inside
+    /// the load and falls back to this snapshot on any path without a
+    /// handshake of its own. Passing the default `false` there makes an HDR
+    /// panel look like SDR and declines the HDR10 to Dolby Vision upgrade.
     @MainActor
     static var panelIsInHDRMode: Bool {
         #if canImport(UIKit)
