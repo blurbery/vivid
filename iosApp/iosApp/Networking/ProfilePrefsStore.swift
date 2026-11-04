@@ -1,95 +1,61 @@
-//
-//  ProfilePrefsStore.swift
-//  Vivid (iOS + tvOS + macOS)
-//
-//  In-memory cache of the signed-in profile's preferred subtitle
-//  language, hydrated lazily on first read. The detail-page subtitle
-//  selector reads this to float the preferred language to the top of its
-//  grouped track list — matching what the player does at playback time
-//  via `WatchDetail.effective_subtitle_language`.
-//
-//  Scope is deliberately tiny: playback already reads the precise
-//  per-item `effective_*` values off the WatchDetail response, so this
-//  store exists only for the pre-playback detail screen, which sees the
-//  catalog `ItemDetail` (no effective fields) and would otherwise have no
-//  cheap source for the preference. The profile default is a close-enough
-//  approximation for ordering.
-//
-//  Mirrors the `OverlayPrefsStore` pattern: a
-//  `@MainActor` observable singleton, idempotent hydration, and a
-//  `clear()` hook for sign-out / profile switch.
-//
-
 import Foundation
 
+/// The active profile's preferred subtitle language, for the detail page's
+/// subtitle menu, which lists that language first. Playback reads the exact
+/// per-item values from `WatchDetail`; the detail page only has the catalogue
+/// item, so it uses the profile default as a close enough guide.
+///
+/// Loaded on first use and cleared on sign-out and profile switches. Nothing
+/// is stored.
 @MainActor
 final class ProfilePrefsStore: ObservableObject {
-
     static let shared = ProfilePrefsStore()
 
-    /// The active profile's preferred subtitle language (ISO code), or nil
-    /// when the profile hasn't set one. Read by the detail-page selector.
+    /// The language code, or nil when the profile hasn't set one.
     @Published private(set) var preferredSubtitleLanguage: String?
 
-    private var hasHydrated = false
-    private var hydrationTask: Task<Void, Never>?
-    private var hydrationGeneration = 0
+    private var isLoaded = false
+    private var load: Task<Void, Never>?
+    private var generation = 0
 
-    /// Idempotent first-load. Safe to call from `.task {}` on every view
-    /// that wants the preference — subsequent invocations are no-ops until
-    /// `clear()` runs.
+    /// Loads once; later calls do nothing until `clear()`.
     func hydrateIfNeeded() async {
-        guard !hasHydrated else { return }
+        guard !isLoaded else { return }
         await refresh()
     }
 
-    /// Re-fetch the profile list and resolve the active profile's
-    /// subtitle language. A transient failure leaves `hasHydrated` false
-    /// so the next `hydrateIfNeeded()` retries.
+    /// Reads the profile list again. A failure, or no active profile yet,
+    /// leaves it unloaded so the next `hydrateIfNeeded()` tries again.
     func refresh() async {
-        if let hydrationTask {
-            await hydrationTask.value
+        if let load {
+            await load.value
             return
         }
-        guard let profileId = ServerRegistry.shared.activeProfileId else {
-            // No active profile yet — nothing to resolve, but don't mark
-            // hydrated so a later sign-in retries.
-            return
-        }
+        guard let profileID = ServerRegistry.shared.activeProfileId else { return }
 
-        let generation = hydrationGeneration
+        let started = generation
         let task = Task { @MainActor [weak self] in
             defer {
-                if self?.hydrationGeneration == generation {
-                    self?.hydrationTask = nil
-                }
+                if let self, self.generation == started { self.load = nil }
             }
-            do {
-                let profiles = try await AuthService.shared.getProfiles()
-                guard !Task.isCancelled,
-                      self?.hydrationGeneration == generation,
-                      ServerRegistry.shared.activeProfileId == profileId else {
-                    return
-                }
-                self?.preferredSubtitleLanguage = profiles
-                    .first(where: { $0.id == profileId })?
-                    .subtitleLanguage
-                self?.hasHydrated = true
-            } catch {
-                // Leave state untouched; next hydrateIfNeeded() retries.
-            }
+            guard let profiles = try? await AuthService.shared.getProfiles(),
+                  let self,
+                  !Task.isCancelled,
+                  self.generation == started,
+                  ServerRegistry.shared.activeProfileId == profileID
+            else { return }
+            self.preferredSubtitleLanguage = profiles.first { $0.id == profileID }?.subtitleLanguage
+            self.isLoaded = true
         }
-        hydrationTask = task
+        load = task
         await task.value
     }
 
-    /// Wipe local state on sign-out / profile switch so the next profile
-    /// gets a clean hydration cycle.
     func clear() {
-        hydrationGeneration &+= 1
-        hydrationTask?.cancel()
-        hydrationTask = nil
+        generation &+= 1
+        load?.cancel()
+        load = nil
         preferredSubtitleLanguage = nil
-        hasHydrated = false
+        isLoaded = false
     }
 }

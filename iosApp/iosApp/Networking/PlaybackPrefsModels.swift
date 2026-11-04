@@ -1,38 +1,26 @@
-//
-//  PlaybackPrefsModels.swift
-//  Vivid (iOS + tvOS)
-//
-//  Wire types for the user's playback preferences. The server stores
-//  these at three precedence levels: per-series (highest), per-library,
-//  and profile default (lowest). The cascade is resolved server-side
-//  and surfaced via the `effective_*` fields on `WatchDetail`, so the
-//  client only re-reads the raw prefs when the user is editing them in
-//  Settings.
-//
-//  Audio and subtitles don't use any of this: Settings > Playback >
-//  Audio Language and Settings > Subtitles on the device decide them on
-//  every server, and a pick lasts only for the viewing. The app never
-//  reads or writes `/api/v1/audio-prefs/{series_id}` or
-//  `/api/v1/subtitle-prefs/{series_id}`, and never uses the
-//  `effective_audio_*` or `effective_subtitle_*` fields to choose a track.
-//
-//  Endpoints in play:
-//    GET    /api/v1/library-playback-prefs           — list all
-//    PUT    /api/v1/library-playback-prefs/{id}      — set one
-//    DELETE /api/v1/library-playback-prefs/{id}      — clear one
-//
-
 import Foundation
+
+// Playback preference types shared by Settings, the detail pages and the
+// player.
+//
+// Audio and subtitle tracks are chosen on the device on every server
+// (Settings > Playback > Audio Language and Settings > Subtitles), and a pick
+// lasts only for the viewing. The app never reads or writes
+// `/api/v1/audio-prefs/{series_id}` or `/api/v1/subtitle-prefs/{series_id}`,
+// and never picks a track from the `effective_audio_*` or
+// `effective_subtitle_*` fields.
 
 // MARK: - Track signatures
 
-/// Identifier used to re-locate the same subtitle track across episodes
-/// in a series when the FFmpeg stream index shifts. Server tries an
-/// exact signature match first, falls back to language match.
+/// Finds the same subtitle track again in another episode when the stream
+/// index moves: an exact signature match first, then the language.
 struct SubtitleTrackSignature: Codable, Hashable {
-    let source: String?           // "embedded", "external", "downloaded"
-    let language: String?         // ISO 639-1 / -2
-    let codec: String?            // "subrip", "ass", "pgs", …
+    /// "embedded", "external" or "downloaded".
+    let source: String?
+    /// ISO 639-1 or 639-2.
+    let language: String?
+    /// "subrip", "ass", "pgs" and so on.
+    let codec: String?
     let label: String?
     let forced: Bool
     let hearingImpaired: Bool
@@ -54,39 +42,37 @@ struct SubtitleTrackSignature: Codable, Hashable {
     }
 
     init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        source = try c.decodeIfPresent(String.self, forKey: .source)
-        language = try c.decodeIfPresent(String.self, forKey: .language)
-        codec = try c.decodeIfPresent(String.self, forKey: .codec)
-        label = try c.decodeIfPresent(String.self, forKey: .label)
-        forced = try c.decodeIfPresent(Bool.self, forKey: .forced) ?? false
-        hearingImpaired = try c.decodeIfPresent(Bool.self, forKey: .hearingImpaired) ?? false
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        language = try container.decodeIfPresent(String.self, forKey: .language)
+        codec = try container.decodeIfPresent(String.self, forKey: .codec)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+        forced = try container.decodeIfPresent(Bool.self, forKey: .forced) ?? false
+        hearingImpaired = try container.decodeIfPresent(Bool.self, forKey: .hearingImpaired) ?? false
     }
 }
 
-// MARK: - Settings UI constants
+// MARK: - Settings values
 
-/// Sentinel used by the library-prefs editor to mean "no override —
-/// fall through to the profile / global default". Mirrors the web
-/// frontend's `INHERIT_VALUE` so the same vocabulary works everywhere.
+/// Special values in the language preferences. `inherit` means no override
+/// (the same word Silo's web app uses), `none` means no language and
+/// `originalLanguage` follows the title's own language.
 enum PlaybackPrefSentinel {
     static let inherit = "__inherit__"
     static let none = "__none__"
     static let originalLanguage = "original"
 }
 
-/// One language row in a settings picker. Values come from the generated
-/// contract catalog, deployment-observed suggestions, and the current stored
-/// value. Labels are localized by Foundation rather than shipped as a second
-/// English-only registry.
+/// One row in a language picker. Codes come from the contract's suggestions,
+/// values the server has seen and the current value; Foundation localises the
+/// names.
 struct PlaybackLanguageOption: Identifiable, Hashable {
     let code: String
     let label: String
     var id: String { code }
 
-    /// ISO 639-2/B spellings whose terminology form differs. Foundation
-    /// canonicalizes most of these through CLDR, but not every supported
-    /// spelling (notably `mao`), so keep the stable ISO aliases explicit.
+    /// ISO 639-2/B codes whose terminology form differs. Foundation maps most
+    /// of them but not all (`mao`, for one), so they're spelt out.
     private static let bibliographicAliases: [String: String] = [
         "alb": "sq", "arm": "hy", "baq": "eu", "bur": "my",
         "chi": "zh", "cze": "cs", "dut": "nl", "fre": "fr",
@@ -95,35 +81,35 @@ struct PlaybackLanguageOption: Identifiable, Hashable {
         "rum": "ro", "slo": "sk", "tib": "bo", "wel": "cy",
     ]
 
+    /// The picker rows for a language setting: the contract's suggestions,
+    /// then `runtimeValues`, then `currentValue`, one row per language. The
+    /// current value replaces another spelling of the same language so the
+    /// picker can select it.
     static func options(
         for key: SettingKey,
         currentValue: String? = nil,
         runtimeValues: [String] = []
     ) -> [PlaybackLanguageOption] {
-        var values: [String] = []
-        var indexByIdentity: [String: Int] = [:]
+        var codes: [String] = []
+        var indexByLanguage: [String: Int] = [:]
 
         func add(_ rawValue: String, replacingAlias: Bool) {
-            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty,
-                  value != PlaybackPrefSentinel.none,
-                  value != PlaybackPrefSentinel.inherit else { return }
-            let identity = languageIdentity(value)
-            if let index = indexByIdentity[identity] {
-                if replacingAlias { values[index] = value }
+            let code = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !code.isEmpty, code != PlaybackPrefSentinel.none, code != PlaybackPrefSentinel.inherit else { return }
+            let language = languageIdentity(code)
+            if let index = indexByLanguage[language] {
+                if replacingAlias { codes[index] = code }
                 return
             }
-            indexByIdentity[identity] = values.count
-            values.append(value)
+            indexByLanguage[language] = codes.count
+            codes.append(code)
         }
 
-        SettingPresentationMetadata.suggestedValues(for: key).forEach {
-            add($0, replacingAlias: false)
-        }
+        SettingPresentationMetadata.suggestedValues(for: key).forEach { add($0, replacingAlias: false) }
         runtimeValues.forEach { add($0, replacingAlias: false) }
         if let currentValue { add(currentValue, replacingAlias: true) }
 
-        return values.map { .init(code: $0, label: label(forCode: $0)) }
+        return codes.map { PlaybackLanguageOption(code: $0, label: label(forCode: $0)) }
     }
 
     static func label(forCode code: String) -> String {
@@ -133,40 +119,40 @@ struct PlaybackLanguageOption: Identifiable, Hashable {
             ?? code.uppercased()
     }
 
+    /// One spelling per language and region: `eng`, `en` and `EN` match, and
+    /// so do `pt_BR` and `por-br`.
     private static func languageIdentity(_ value: String) -> String {
-        let normalized = value.replacingOccurrences(of: "_", with: "-")
-        var components = normalized.split(separator: "-").map(String.init)
-        guard let language = components.first else { return normalized.lowercased() }
-        let languageCode = Locale(identifier: language).language.languageCode
-        components[0] = languageCode?.identifier(.alpha2)
+        let normalised = value.replacingOccurrences(of: "_", with: "-")
+        var components = normalised.split(separator: "-").map(String.init)
+        guard let language = components.first else { return normalised.lowercased() }
+        components[0] = Locale(identifier: language).language.languageCode?.identifier(.alpha2)
             ?? bibliographicAliases[language.lowercased()]
             ?? language
         return components.joined(separator: "-").lowercased()
     }
 }
 
-// MARK: - Subtitle mode enum
+// MARK: - Subtitle mode
 
-/// Server-side `subtitle_mode` enum. Empty / nil means "inherit from
-/// the next level up" (per-series → library → profile default).
+/// Silo's `subtitle_mode`. Empty or nil inherits the next level up.
 enum SubtitleMode: String, CaseIterable, Codable, Hashable {
-    case auto    = "auto"
-    case always  = "always"
-    case off     = "off"
+    case auto
+    case always
+    case off
 
     var displayLabel: String {
         switch self {
-        case .auto:   return String(localized: "Auto")
+        case .auto: return String(localized: "Auto")
         case .always: return String(localized: "Always")
-        case .off:    return String(localized: "Off")
+        case .off: return String(localized: "Off")
         }
     }
 
     var displayDescription: String {
         switch self {
-        case .auto:   return String(localized: "Show subtitles only when audio language doesn't match your spoken language.")
+        case .auto: return String(localized: "Show subtitles only when audio language doesn't match your spoken language.")
         case .always: return String(localized: "Always show subtitles when available.")
-        case .off:    return String(localized: "Never show subtitles.")
+        case .off: return String(localized: "Never show subtitles.")
         }
     }
 }

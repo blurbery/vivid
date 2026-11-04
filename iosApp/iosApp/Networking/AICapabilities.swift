@@ -1,65 +1,41 @@
 import Foundation
 
-/// Cached metadata-translation capability for catalog descriptions.
-/// Results are discarded when the active server or profile changes.
+/// Whether the server translates catalogue descriptions, checked once per
+/// session and dropped when the server or profile changes.
 @MainActor
 @Observable
 final class AICapabilities {
     static let shared = AICapabilities()
 
-    /// `GET /metadata/ai/status`. Nil until fetched or after `reset()`.
+    /// Nil until checked, after `reset()`, or when the check failed.
     private(set) var metadataStatus: MetadataAIStatus?
 
-    private let api: VividAI
-
-    /// Bumped on every `reset()`. Each in-flight `refresh()`
-    /// captures the value before its network awaits and only commits results
-    /// when it still matches — so a slow probe that finishes after a
-    /// sign-out / profile switch is discarded instead of repopulating the
-    /// next account's capabilities.
+    /// Bumped by `reset()`, so a check that finishes after a sign-out or
+    /// profile switch can't fill in the next account's status.
     private var generation = 0
+    private let api: VividAI
 
     init(api: VividAI = .shared) {
         self.api = api
     }
 
-    // MARK: - Gating convenience
-
-    /// How the item-detail translate affordance behaves. Defaults to
-    /// `.off` when the probe hasn't landed or the feature is disabled.
+    /// How the detail page offers translation: `.off` until a check says
+    /// the feature is on.
     var metadataOnView: MetadataAIStatus.OnViewMode {
-        guard let status = metadataStatus, status.enabled else { return .off }
-        return status.onView
+        guard let metadataStatus, metadataStatus.enabled else { return .off }
+        return metadataStatus.onView
     }
 
-
-    // MARK: - Lifecycle
-
-    /// Failure leaves metadata translation unavailable for this session.
+    /// A failed check leaves translation off for the session.
     func refresh() async {
-        let gen = generation
-        let meta = await fetchMetadataStatus()
-        // Discard if a reset (sign-out / profile switch) happened while the
-        // probes were in flight — otherwise we'd repopulate the next
-        // account's capabilities with the previous one's results.
-        guard gen == generation else { return }
-        metadataStatus = meta
+        let started = generation
+        let status = try? await api.metadataAIStatus()
+        guard started == generation else { return }
+        metadataStatus = status
     }
 
-
-    /// Drop every cached probe. Called on sign-out and profile/server
-    /// switch so capabilities don't leak across accounts. Bumps
-    /// `generation` first so any refresh still in flight discards its
-    /// results instead of clobbering this reset.
     func reset() {
         generation &+= 1
         metadataStatus = nil
     }
-
-    // MARK: - Internals
-
-    private func fetchMetadataStatus() async -> MetadataAIStatus? {
-        try? await api.metadataAIStatus()
-    }
-
 }

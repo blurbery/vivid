@@ -1,29 +1,16 @@
+// The quality picker's resolution and bandwidth presets.
 //
-//  VividQualityPresets.swift
-//  Vivid (iOS + tvOS + macOS)
+// The server stores two separate values: `playback.preferred_quality` (a
+// resolution cap) and `playback.max_bitrate_kbps` (a bandwidth cap, null for
+// none). This table combines them into the one list people pick from. It
+// matches the web and Android tables field for field, so a preset chosen on
+// one platform reads back with the same label on the others.
 //
-//  The quality picker's resolution and bandwidth presets.
-//
-//  The server stores two orthogonal values — `playback.preferred_quality` (a
-//  resolution cap) and `playback.max_bitrate_kbps` (a bandwidth cap, null for
-//  uncapped). This table composes them into the single list a user picks from,
-//  and is a field-for-field port of web/src/lib/qualityPresets.ts and Android's
-//  QualityPresets.kt so a preset chosen on one platform reads back with the
-//  same label on the others.
-//
-//  Presets live here rather than in the contract on purpose. Baking "high" into
-//  an enum member would freeze what it means: retuning 1080p High from 10 to 12
-//  Mbps would be a contract change every client has to agree to. As a
-//  client-side table it is a one-line edit, and older servers keep working
-//  because they only ever see the two axes they already understand.
-//
-//  This table is the *settings* vocabulary. The in-player quality switcher
-//  keeps its own finer-grained ladder (``ApplePlaybackQuality/tiers``), which is
-//  what the transcoder's rungs are tuned for and which a user reaches for mid
-//  playback rather than as a stored default. The two coexist because a stored
-//  preference is a *pair*, never an id — so the two tables can disagree about
-//  labels without any stored value being reinterpreted.
-//
+// The presets live in the app rather than the contract, so retuning one is a
+// one-line change and older servers only ever see the two values. The
+// player's own quality switcher keeps its finer ladder
+// (`ApplePlaybackQuality.tiers`); a stored preference is always the pair,
+// never an ID, so the two tables can label things differently safely.
 
 import Foundation
 
@@ -128,11 +115,9 @@ enum VividQualityPresets {
     /// The preset for a stored (resolution, bitrate) pair, or nil for a
     /// combination no preset covers.
     static func preset(resolution: String?, bitrateKbps: Int?) -> VividQualityPreset? {
-        let normalizedResolution = normalizeResolution(resolution)
-        let normalizedBitrate = bitrateKbps.flatMap { $0 > 0 ? $0 : nil }
-        return all.first {
-            $0.resolution == normalizedResolution && $0.bitrateKbps == normalizedBitrate
-        }
+        let resolution = normalizeResolution(resolution)
+        let bitrate = bitrateKbps.flatMap { $0 > 0 ? $0 : nil }
+        return all.first { $0.resolution == resolution && $0.bitrateKbps == bitrate }
     }
 
     static func preset(id: String?) -> VividQualityPreset? {
