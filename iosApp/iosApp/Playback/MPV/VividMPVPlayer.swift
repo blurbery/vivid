@@ -519,8 +519,8 @@ extension VividMPVPlayer {
         case "hwdec-current":
             let hwdec = value as? String
             videoDecoder = hwdec.map { "Lucid (\($0))" }
-            let token = hwdec.flatMap(Self.formatToken)
-            PlaybackSessionRecorder.shared.updateMedia { $0.hardwareDecoding = token }
+            let decoderToken = hwdec.flatMap(Self.formatToken)
+            PlaybackSessionRecorder.shared.updateMedia { $0.hardwareDecoding = decoderToken }
         case "container-fps":
             sourceVideoFrameRate = value as? Double
             let fps = sourceVideoFrameRate
@@ -678,7 +678,7 @@ extension VividMPVPlayer {
         }
         trace?.event("mpv_audio_diagnostic", fields: fields)
         let snapshotEvents = ["raw_s=", "event=audio_transport ", "event=pcm_transport ", "event=audio_edge "]
-        if snapshotEvents.contains(where: fields.hasPrefix) {
+        if snapshotEvents.contains(where: { fields.hasPrefix($0) }) {
             recordPipelineSnapshot()
         }
     }
@@ -1400,7 +1400,7 @@ extension VividMPVPlayer {
                 } catch {
                     return
                 }
-                guard let self, generation == token, let core else { return }
+                guard let self, generation == token, let core = self.core else { return }
                 let slow = tick % 10 == 0
                 tick &+= 1
                 async let decoder = Self.readNumber(core, "decoder-frame-drop-count")
@@ -1501,7 +1501,7 @@ private final class VividMPVCore: VividPlayerCore {
     }
 
     /// The options every load sets, each reported by name if Lucid refuses it.
-    private var options: [(name: String, value: String)] {
+    private var loadOptions: [(name: String, value: String)] {
         [("ao", "avfoundation"),
          ("audio-spdif", VividMPVAudio.spdifCodecs(rate: initialRate, enhancement: audioEnhancement)),
          ("ao-avfoundation-manage-audio-session", "no"),
@@ -1531,7 +1531,7 @@ private final class VividMPVCore: VividPlayerCore {
     }
 
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
-        for option in options {
+        for option in loadOptions {
             checkError(mpv_set_option_string(mpv, option.name, option.value), option: option.name)
         }
         for (name, value) in VividMPVAudio.enhancementOptions(audioEnhancement) {
