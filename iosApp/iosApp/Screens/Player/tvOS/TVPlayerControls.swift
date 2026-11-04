@@ -3,6 +3,8 @@ import CoreGraphics
 import SwiftUI
 import UIKit
 
+/// Which pair of clock labels sits under the Apple TV timeline. A light
+/// touch on the Siri Remote surface switches between them.
 enum TVPlayerTimeDisplayMode: Equatable {
     case elapsedRemaining
     case currentAndFinish
@@ -12,13 +14,14 @@ enum TVPlayerTimeDisplayMode: Equatable {
     }
 }
 
-/// tvOS player overlay. Post-redesign the idle state is VidHub-minimal:
-/// no hero strip, thin scrubber, icon-only transport row along the bottom.
-/// When the user opens the options panel, the idle overlay steps aside and
-/// `TVPlayerInfoHUD` takes over as a floating top-center HUD (Infuse idiom).
-/// Controls auto-hide after 5 s of no focus movement while playing; Menu
-/// either hides the HUD, dismisses the overlay, or exits the player
-/// depending on what's on screen.
+/// The Apple TV player overlay.
+///
+/// Idle, it is a minimal bottom transport: title, the subtitle and options
+/// shortcuts, the timeline and its clock labels. Opening options swaps it for
+/// `TVPlayerInfoHUD`, a floating panel at the top. Intro and credits skip
+/// prompts float above the transport, or stand alone when it is hidden. The
+/// controls auto-hide 5 seconds after the last focus move while playing.
+/// Menu handling lives in `PlayerView`, which can see the whole player.
 struct TVPlayerControls: View {
     private static let transportHorizontalInset: CGFloat = 80
 
@@ -31,40 +34,35 @@ struct TVPlayerControls: View {
 
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Remembered so reopening the HUD lands on the last-used tab rather
-    /// than always snapping back to Info. Lives at this level because the
-    /// HUD view is recreated each time HUD presentation toggles.
+    /// The HUD reopens on the tab used last. This lives here because the HUD
+    /// view is rebuilt every time it opens.
     @State private var activeHUDTab: TVPlayerInfoHUD.Tab = .info
     @State private var subtitleOnlyHUD = false
     @State private var rememberedInfoTab: TVPlayerInfoHUD.Tab = .info
     @State private var hudReturnTarget: TVPlayerTransportCluster.FocusTarget?
 
-    /// Flipped on immediately *before* the HUD appears so the scrubber's
-    /// focus-lost path treats the resulting blur as a cancel rather than a
-    /// commit. Without this, opening the HUD with an in-flight scrub preview
-    /// would seek to that preview as a side-effect.
+    /// Set just before the HUD opens, so the scrubber treats the blur that
+    /// follows as a cancel rather than a commit. Otherwise opening the HUD
+    /// with a scrub preview in flight would seek to it.
     @State private var cancelPendingScrub: Bool = false
-    /// Mirrors the scrubber's explicit timeline-scrub mode (Select on the
-    /// puck). Held here so the transport cluster can leave the focus graph
-    /// while the scrub is modal.
+    /// Mirrors the scrubber's explicit timeline selection, so the shortcut
+    /// row can leave the focus graph while the selection is modal.
     @State private var isTimelineScrubbing: Bool = false
-    /// Tracks whether the current explicit timeline session interrupted
-    /// active playback. Exiting a timeline opened from an already-paused
-    /// HUD must leave playback paused, while Select from playing resumes.
+    /// Whether the current timeline selection interrupted playback. A
+    /// selection opened while already paused leaves playback paused; Select
+    /// from playing resumes it.
     @State private var resumePlaybackAfterTimelineSelection = false
-    /// True while the scrubber owns focus. The transport row leaves the
-    /// focus graph for that duration so a Down press has no native target:
-    /// the engine otherwise moves focus geometrically — to whichever button
-    /// happens to sit under the playhead — *before* the scrubber's
-    /// `onMoveCommand` fires, and the play/pause seed then reads as a
-    /// visible hop off the wrong button. Released on the Down hand-off (so
-    /// the seed has a focusable target) and whenever the scrubber blurs for
-    /// any other reason (intro skip, HUD) so direction moves into the row
-    /// keep working from elsewhere.
+    /// True while the scrubber owns focus. The shortcut row leaves the focus
+    /// graph meanwhile, so a press towards it has no native target: the
+    /// engine would otherwise move focus geometrically to whichever button
+    /// sits nearest the playhead before the scrubber's `onMoveCommand` runs,
+    /// which reads as a hop off the wrong button. It is released on the
+    /// hand-off to the row, so the seed has a target, and whenever the
+    /// scrubber loses focus for another reason (intro skip, HUD).
     @State private var trapsTransportFocus = false
-    /// A touch-surface contact can toggle the full HUD's clock labels only
-    /// if it ends as a light touch. Select and drag interactions clear this
-    /// candidate so their existing transport behavior remains exclusive.
+    /// A touch-surface contact toggles the clock labels only if it ends as a
+    /// light touch. Select, clicks and drags clear it, so their transport
+    /// behaviour stays exclusive.
     @State private var fullHUDContactCanToggle = false
     @State private var transportHeight: CGFloat = 240
 
@@ -72,13 +70,10 @@ struct TVPlayerControls: View {
         viewModel.showControls ? max(180, transportHeight + 48 + 32) : 180
     }
 
-    // Focus states. SwiftUI's focus engine only holds focus on one
-    // focusable at a time, so selecting one of these implicitly clears the
-    // others. The HUD tab focus lives here (rather than inside
-    // `TVPlayerInfoHUD`) so we can explicitly seed it at open time — without
-    // a deterministic initial focus target the HUD can appear with nothing
-    // focused, which leaves the Menu button with no exit handler to bubble
-    // to and the user stranded inside the panel.
+    // One focus binding per zone. Focusing one clears the others. The HUD tab
+    // binding lives here, not in `TVPlayerInfoHUD`, so opening the HUD can
+    // seed a pill: with nothing focused, Menu has no handler to bubble to and
+    // the user is stuck in the panel.
     @FocusState private var isScrubberFocused: Bool
     @FocusState private var focusedTransportButton: TVPlayerTransportCluster.FocusTarget?
     @FocusState private var focusedHUDTab: TVPlayerInfoHUD.Tab?
@@ -93,10 +88,9 @@ struct TVPlayerControls: View {
                 timelinePreviewOverlay
                     .transition(.opacity)
             }
-            // Idle overlay and HUD are mutually exclusive. Stacking both
-            // confused the focus engine (scrubber clicks bleeding into
-            // hidden transport buttons) and added visual noise from the
-            // progress bar showing underneath the panel.
+            // The idle overlay and the HUD never show together. Stacking them
+            // let scrubber clicks reach hidden shortcut buttons and left the
+            // progress bar showing under the panel.
             if viewModel.showControls && !isHUDPresented {
                 idleOverlay
                     .transition(.opacity)
@@ -122,9 +116,8 @@ struct TVPlayerControls: View {
         }
         .background {
             TVTouchSurfaceContactGestureView(
-                // Keep the raw contact observer active in both normal HUD
-                // and timeline-selection states. Its simultaneous-recognition
-                // delegate lets an actual pan continue to own scrubbing.
+                // Active in both the idle and timeline-selection states. It
+                // recognises alongside the pan, so a real drag still scrubs.
                 isActive: viewModel.showControls && !isHUDPresented,
                 onContactBegan: {
                     fullHUDContactCanToggle = true
@@ -144,24 +137,21 @@ struct TVPlayerControls: View {
             .frame(width: 1, height: 1)
         }
         .animation(.easeOut(duration: VividTheme.fastDuration), value: isHUDPresented)
-        // Menu / exit handling intentionally lives at the `PlayerView` level
-        // rather than here. That higher handler reads `viewModel.isHUDPresented`
-        // directly so it catches Menu presses even when focus has drifted off
-        // the HUD's tab pill — adding a handler here would consume Menu while
-        // the HUD is closed and break the "dismiss controls first" path.
+        // No Menu handler here: `PlayerView` reads `isHUDPresented` itself, so
+        // it catches Menu even when focus drifts off the HUD, and a handler
+        // here would swallow Menu while the HUD is closed.
         .onChange(of: isHUDPresented) { _, presented in
             fullHUDContactCanToggle = false
-            if !presented {
-                cancelPendingScrub = false
-                focusedHUDTab = nil
-                let target: TVPlayerTransportCluster.FocusTarget = subtitleOnlyHUD ? .subtitles : .options
-                hudReturnTarget = target
-                trapsTransportFocus = false
-                isScrubberFocused = false
-                DispatchQueue.main.async {
-                    guard !isHUDPresented, viewModel.showControls else { return }
-                    focusedTransportButton = target
-                }
+            guard !presented else { return }
+            cancelPendingScrub = false
+            focusedHUDTab = nil
+            let target: TVPlayerTransportCluster.FocusTarget = subtitleOnlyHUD ? .subtitles : .options
+            hudReturnTarget = target
+            trapsTransportFocus = false
+            isScrubberFocused = false
+            DispatchQueue.main.async {
+                guard !isHUDPresented, viewModel.showControls else { return }
+                focusedTransportButton = target
             }
         }
         .onChange(of: viewModel.requestedTVHUDEntryPoint) { _, entryPoint in
@@ -172,8 +162,8 @@ struct TVPlayerControls: View {
         .onChange(of: timelineSelectionRequest) { _, request in
             guard request != nil else { return }
             fullHUDContactCanToggle = false
-            // PlayerView only issues this request from its playing Select
-            // path, immediately after pausing the backend.
+            // PlayerView only sends this from its playing Select path, just
+            // after pausing.
             resumePlaybackAfterTimelineSelection = true
             enterTimelineSelection()
         }
@@ -184,9 +174,8 @@ struct TVPlayerControls: View {
                 DispatchQueue.main.async { focusStandaloneSkipPrompt() }
             }
         }
-        // Re-arm the auto-hide whenever focus moves between transport controls,
-        // so navigating the overlay doesn't let the fixed 5s timer hide it (and
-        // the user's focus) out from under them mid-interaction.
+        // A focus move restarts the auto-hide, so the fixed 5 second timer
+        // can't hide the controls, and the user's focus, mid-interaction.
         .onChange(of: isScrubberFocused) { _, focused in
             if focused { rearmAutoHideOnFocusMove() }
             trapsTransportFocus = focused
@@ -194,18 +183,14 @@ struct TVPlayerControls: View {
         .onChange(of: focusedTransportButton) { _, target in
             if target != nil { rearmAutoHideOnFocusMove() }
         }
-        // TV sleep discards the app's focus state, and the background-suspend
-        // path keeps `showControls` true — so on wake the idle overlay is
-        // already mounted, its `onAppear` seed never re-fires, and nothing is
-        // focused. With no focused descendant, Menu presses never reach the
-        // shell-level `onExitCommand` in PlayerView, stranding the user until
-        // they d-pad onto the transport row. Re-seed a deterministic focus
-        // target when the scene becomes active again.
+        // TV sleep drops the app's focus while `showControls` stays true, so
+        // on wake the overlay is already mounted, its `onAppear` seed doesn't
+        // run again, and nothing is focused. Menu then never reaches
+        // PlayerView's `onExitCommand`. Reseed focus when the scene is active.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            // Defer one turn so the write lands after the focus engine has
-            // reattached to the foregrounded scene; a same-transaction claim
-            // can get dropped.
+            // One turn later, once the focus engine is back on the scene; a
+            // claim in the same transaction can be dropped.
             DispatchQueue.main.async {
                 reseedFocusAfterWake()
             }
@@ -227,7 +212,7 @@ struct TVPlayerControls: View {
 
     @MainActor
     private func focusMountedSkipPrompt() async {
-        // Let the button join the focus graph before claiming initial focus.
+        // Let the button join the focus graph before claiming focus.
         await Task.yield()
         guard !Task.isCancelled else { return }
         focusStandaloneSkipPrompt()
@@ -247,8 +232,10 @@ struct TVPlayerControls: View {
         viewModel.revealControls()
     }
 
-    // MARK: - Idle overlay
+    // MARK: - Timeline preview
 
+    /// The passive timeline and clock labels a light touch shows while the
+    /// controls are hidden.
     private var timelinePreviewOverlay: some View {
         ZStack(alignment: .bottom) {
             bottomGradient.ignoresSafeArea()
@@ -265,22 +252,23 @@ struct TVPlayerControls: View {
     private var passiveTimelineBar: some View {
         GeometryReader { geo in
             let width = geo.size.width
+            let progress = progressFraction
             ZStack(alignment: .leading) {
                 Capsule(style: .continuous)
                     .fill(Color.white.opacity(0.24))
                     .frame(height: 7)
 
-                let bufferedAhead = max(0, bufferedFraction - progressFraction)
+                let bufferedAhead = max(0, bufferedFraction - progress)
                 if bufferedAhead > 0 {
                     Capsule(style: .continuous)
                         .fill(Color.white.opacity(0.28))
                         .frame(width: width * bufferedAhead, height: 7)
-                        .offset(x: width * progressFraction)
+                        .offset(x: width * progress)
                 }
 
                 Capsule(style: .continuous)
                     .fill(Color.white)
-                    .frame(width: width * progressFraction, height: 7)
+                    .frame(width: width * progress, height: 7)
             }
             .frame(height: 20, alignment: .center)
         }
@@ -288,15 +276,17 @@ struct TVPlayerControls: View {
     }
 
     private var progressFraction: Double {
-        guard viewModel.duration > 0 else { return 0 }
-        return min(max(scrubberDisplayTime / viewModel.duration, 0), 1)
+        TVTimelineScrubMath.fraction(of: scrubberDisplayTime, duration: viewModel.duration)
     }
 
     private var bufferedFraction: Double {
-        guard viewModel.duration > 0 else { return 0 }
-        let end = viewModel.currentTime + viewModel.timelineBufferedAheadSeconds
-        return min(max(end / viewModel.duration, 0), 1)
+        TVTimelineScrubMath.fraction(
+            of: viewModel.currentTime + viewModel.timelineBufferedAheadSeconds,
+            duration: viewModel.duration
+        )
     }
+
+    // MARK: - Idle overlay
 
     @ViewBuilder
     private var idleOverlay: some View {
@@ -317,7 +307,7 @@ struct TVPlayerControls: View {
         }
         .onAppear {
             focusedTransportButton = nil
-            // Opening controls is an explicit move away from the skip prompt.
+            // Opening the controls is an explicit move away from a skip prompt.
             focusedIntroAction = nil
             isCreditsSkipFocused = false
             if let returnTarget = hudReturnTarget {
@@ -330,9 +320,7 @@ struct TVPlayerControls: View {
         }
     }
 
-    /// Subtle bottom gradient so the transport has contrast against bright
-    /// frames. Shallower than pre-redesign (340pt → 240pt) since the scrubber
-    /// and icon buttons now carry their own outlines and need less backdrop.
+    /// A shallow gradient that gives the transport contrast on bright frames.
     private var bottomGradient: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -345,12 +333,12 @@ struct TVPlayerControls: View {
         }
     }
 
-    /// The sleep-timer chip floats in the top-right when active. Buffering is
-    /// owned by the player shell so it remains visible outside this overlay.
+    /// The sleep timer chip, top right, while a timer runs. Buffering belongs
+    /// to the player shell so it shows outside this overlay too.
     private var statusColumn: some View {
         VStack(alignment: .trailing, spacing: 10) {
             if viewModel.sleepTimer.isActive {
-                Label(formatCountdown(viewModel.sleepTimer.remainingSeconds),
+                Label(PlayerTimeFormatter.formatCountdown(viewModel.sleepTimer.remainingSeconds),
                       systemImage: "moon.zzz.fill")
                     .font(.vividSmall.weight(.medium))
                     .foregroundStyle(.white.opacity(0.85))
@@ -362,11 +350,13 @@ struct TVPlayerControls: View {
         }
     }
 
-    /// Reveal the timeline at the boundary of the standalone prompt. Once
-    /// controls exist, their native focus graph owns directional movement.
+    // MARK: - Skip prompts
+
+    /// A move off a standalone prompt reveals the timeline. Once the controls
+    /// are up, their native focus graph owns movement.
     private func moveFromSkipPrompt(_ direction: MoveCommandDirection) {
         guard !viewModel.showControls, !isHUDPresented else { return }
-        // Preserve native movement between Cancel and Skip during a countdown.
+        // Left and Right stay between Cancel and Skip during a countdown.
         if viewModel.showIntroSkip && viewModel.introAutoSkipCountdownSeconds != nil &&
             (direction == .left || direction == .right) {
             return
@@ -375,7 +365,7 @@ struct TVPlayerControls: View {
     }
 
     private var introSkipLayer: some View {
-        introSkipButton
+        introSkipButtons
             .focusSection()
             .onMoveCommand(perform: moveFromSkipPrompt)
             .task { await focusMountedSkipPrompt() }
@@ -404,10 +394,10 @@ struct TVPlayerControls: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
     }
 
-    private var introSkipButton: some View {
+    private var introSkipButtons: some View {
         VStack(alignment: .trailing, spacing: 16) {
             if let countdown = viewModel.introAutoSkipCountdownSeconds {
-                markerCountdownBadge(countdown)
+                introCountdownBadge(countdown)
             }
 
             HStack(spacing: 18) {
@@ -425,31 +415,30 @@ struct TVPlayerControls: View {
                     .accessibilityLabel(viewModel.introSkipCancelLabel)
                 }
 
-                skipIntroNowButton
+                skipIntroButton
             }
         }
     }
 
-    private var skipIntroNowButton: some View {
-        TVSkipButton(accessibilityTitle: viewModel.introSkipLabel) {
+    private var skipIntroButton: some View {
+        let isCountingDown = viewModel.introAutoSkipCountdownSeconds != nil
+        return TVSkipButton(accessibilityTitle: viewModel.introSkipLabel) {
             viewModel.skipIntro()
         } label: {
             Label(
-                viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : String(localized: "Skip Now"),
+                isCountingDown ? String(localized: "Skip Now") : viewModel.introSkipLabel,
                 systemImage: "forward.end.fill"
             )
-                .font(.system(size: 26, weight: .semibold))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: 220)
+            .font(.system(size: 26, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(width: 220)
         }
         .focused($focusedIntroAction, equals: .skip)
-        .accessibilityLabel(
-            viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipNowLabel
-        )
+        .accessibilityLabel(isCountingDown ? viewModel.introSkipNowLabel : viewModel.introSkipLabel)
     }
 
-    private func markerCountdownBadge(_ countdown: Int) -> some View {
+    private func introCountdownBadge(_ countdown: Int) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles.tv")
                 .font(.system(size: 19, weight: .semibold))
@@ -488,7 +477,7 @@ struct TVPlayerControls: View {
             HStack(alignment: .bottom, spacing: 24) {
                 titleFooter
                 Spacer(minLength: 24)
-                transportInfoButton
+                transportShortcuts
             }
             TVPlayerScrubber(
                 viewModel: viewModel,
@@ -497,20 +486,19 @@ struct TVPlayerControls: View {
                     fullHUDContactCanToggle = false
                 },
                 onMoveToTransport: {
-                    // This fires only because the trap kept the transport row
-                    // out of the focus graph (no native Down target). Restore
-                    // the row first, then seed play/pause on the next turn —
-                    // a claim in the same transaction as the structural
-                    // re-enable gets dropped by the engine. Focus stays on
-                    // the scrubber for that frame, so there is no visible
-                    // intermediate stop.
+                    // This only runs because the trap kept the shortcut row
+                    // out of the focus graph. Restore the row first, then seed
+                    // Options on the next turn: a claim in the same
+                    // transaction as the re-enable gets dropped. Focus stays
+                    // on the scrubber for that frame, so there's no visible
+                    // stop on the way.
                     trapsTransportFocus = false
                     DispatchQueue.main.async {
                         focusedTransportButton = .options
                     }
                 },
                 onExitWhenIdle: {
-                    // While paused, Menu exits the player instead of hiding
+                    // While paused, Menu leaves the player rather than hiding
                     // the controls over a frozen frame.
                     if viewModel.isPlaying {
                         viewModel.dismissControls()
@@ -523,37 +511,33 @@ struct TVPlayerControls: View {
                 cancelOnBlur: cancelPendingScrub
             )
             PlayerTickIsolated { timeRow }
-
         }
     }
 
-    private var transportInfoButton: some View {
-            TVPlayerTransportCluster(
-                viewModel: viewModel,
-                onOpenHUD: { openHUD() },
-                onOpenSubtitles: { openHUD(subtitles: true) },
-                onMoveToScrubber: {
-                    // Same single-write rule as onMoveToTransport: nulling the
-                    // transport focus first invites a geometric repair hop.
-                    isScrubberFocused = true
-                },
-                onDismiss: onDismiss,
-                // Timeline scrub is modal, and a focused scrubber traps Down:
-                // with the transport buttons out of the focus graph, a Down
-                // press/swipe has no native target below the scrubber, so the
-                // hand-off goes through onMoveToTransport instead of the
-                // engine's geometric pick.
-                allowsFocus: !isTimelineScrubbing && !trapsTransportFocus,
-                focusedButton: $focusedTransportButton
-            )
+    private var transportShortcuts: some View {
+        TVPlayerTransportCluster(
+            viewModel: viewModel,
+            onOpenHUD: { openHUD() },
+            onOpenSubtitles: { openHUD(subtitles: true) },
+            onMoveToScrubber: {
+                // One write, as in onMoveToTransport: clearing the shortcut
+                // focus first invites a geometric repair hop.
+                isScrubberFocused = true
+            },
+            // A timeline selection is modal, and a focused scrubber traps the
+            // move towards the row: with the shortcuts out of the focus graph
+            // there's no native target, so the hand-off goes through
+            // onMoveToTransport instead of the engine's geometric pick.
+            allowsFocus: !isTimelineScrubbing && !trapsTransportFocus,
+            focusedButton: $focusedTransportButton
+        )
     }
 
-    /// Quiet title footer above the scrubber — the VidHub idiom of surfacing
-    /// the currently-playing title as bottom-left caption rather than a hero
-    /// slab. Hidden while we still have no title resolved.
+    /// The playing title as a quiet caption above the timeline, hidden until
+    /// a title resolves.
     @ViewBuilder
     private var titleFooter: some View {
-        let title = heroTitleText
+        let title = displayTitle
         if !title.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 if let series = viewModel.metadata.seriesTitle, !series.isEmpty {
@@ -578,11 +562,13 @@ struct TVPlayerControls: View {
         }
     }
 
-    private var heroTitleText: String {
+    private var displayTitle: String {
         viewModel.metadata.primaryTitle.isEmpty
             ? viewModel.title
             : viewModel.metadata.primaryTitle
     }
+
+    // MARK: - Clock labels
 
     @ViewBuilder
     private var timeRow: some View {
@@ -594,7 +580,7 @@ struct TVPlayerControls: View {
                     Spacer()
                     if viewModel.duration > 0 {
                         let finish = formatClockTime(estimatedFinishDate(from: context.date))
-                        let remaining = formatTime(remainingTime)
+                        let remaining = PlayerTimeFormatter.formatHMS(remainingTime)
                         clockText(String(localized: "\(finish) · \(remaining) left", comment: "Finish time and time remaining, for example 9:41 PM · 1:02:03 left"))
                     }
                 }
@@ -602,10 +588,10 @@ struct TVPlayerControls: View {
         } else {
             HStack {
                 pauseIndicator
-                clockText(formatTime(scrubberDisplayTime))
+                clockText(PlayerTimeFormatter.formatHMS(scrubberDisplayTime))
                 Spacer()
                 if viewModel.duration > 0 {
-                    let remaining = formatTime(remainingTime)
+                    let remaining = PlayerTimeFormatter.formatHMS(remainingTime)
                     clockText(String(localized: "\(remaining) left", comment: "Time remaining in the title, for example 1:02:03 left"))
                 }
             }
@@ -645,7 +631,7 @@ struct TVPlayerControls: View {
         date.formatted(date: .omitted, time: .shortened)
     }
 
-    // MARK: - HUD open/close
+    // MARK: - Timeline selection and HUD
 
     private func enterTimelineSelection() {
         cancelPendingScrub = false
@@ -661,22 +647,18 @@ struct TVPlayerControls: View {
             return
         }
 
-        let fraction = min(max(viewModel.currentTime / viewModel.duration, 0), 1)
-        viewModel.beginScrub(fraction: fraction)
+        viewModel.beginScrub(fraction: TVTimelineScrubMath.fraction(of: viewModel.currentTime, duration: viewModel.duration))
         isTimelineScrubbing = true
         isScrubberFocused = true
     }
 
-    /// Open the Infuse-style HUD. Side-effects land in this order so focus
-    /// transitions cleanly:
-    ///   1. Flip `cancelPendingScrub` so the scrubber treats the imminent
-    ///      blur as a cancel rather than a commit.
-    ///   2. Drop the idle overlay's focus bindings so SwiftUI isn't trying
-    ///      to hold focus on a view that's about to leave the hierarchy.
-    ///   3. Seed `focusedHUDTab` so the HUD opens with a deterministic
-    ///      focus target — otherwise focus can land nowhere and the Menu
-    ///      button has no exit handler to bubble to.
-    ///   4. Present the HUD via the view model (single source of truth).
+    /// Opens the HUD. The order matters for focus:
+    /// 1. `cancelPendingScrub`, so the scrubber cancels on the coming blur.
+    /// 2. The idle overlay's focus bindings clear, so SwiftUI isn't holding
+    ///    focus on a view that is about to leave.
+    /// 3. `focusedHUDTab` is seeded, so the HUD opens with focus and Menu
+    ///    has a handler to bubble to.
+    /// 4. The view model presents the HUD.
     private func openHUD(subtitles: Bool = false) {
         if !subtitleOnlyHUD { rememberedInfoTab = activeHUDTab }
         subtitleOnlyHUD = subtitles
@@ -697,33 +679,22 @@ struct TVPlayerControls: View {
         case .settings:
             activeHUDTab = .video
         case .playback:
-            activeHUDTab = preferredPlaybackHUDTab
+            activeHUDTab = viewModel.audioTracks.isEmpty ? .video : .audio
         }
         focusedHUDTab = activeHUDTab
-    }
-
-    private var preferredPlaybackHUDTab: TVPlayerInfoHUD.Tab {
-        if !viewModel.audioTracks.isEmpty { return .audio }
-        return .video
     }
 
     private func closeHUD() {
         hudReturnTarget = subtitleOnlyHUD ? .subtitles : .options
         viewModel.closeHUD()
     }
-
-    // MARK: - Helpers
-
-    private func formatTime(_ seconds: Double) -> String {
-        PlayerTimeFormatter.formatHMS(seconds)
-    }
-
-    private func formatCountdown(_ seconds: Int) -> String {
-        PlayerTimeFormatter.formatCountdown(seconds)
-    }
 }
-/// The native view is the only focus and Select owner. The glass label is
-/// passive, avoiding SwiftUI Button's delayed press-release activation.
+
+// MARK: - Skip button
+
+/// A skip prompt button. The native view is the only focus and Select
+/// owner; the glass label is passive, which avoids a SwiftUI Button's
+/// activation on release.
 private struct TVSkipButton<Label: View>: View {
     let accessibilityTitle: String
     let action: () -> Void
@@ -774,6 +745,9 @@ private struct TVSkipSelectView: UIViewRepresentable {
     }
 }
 
+/// Focusable view that runs the skip action once on Select press-down and
+/// treats the release or cancellation as the end of that press. Other
+/// presses (arrows, Menu) continue up the responder chain.
 private final class TVSkipSelectUIView: UIView {
     var action: () -> Void = {}
     var onFocus: (Bool) -> Void = { _ in }
@@ -798,25 +772,25 @@ private final class TVSkipSelectUIView: UIView {
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        let others = presses.filter { $0.type != .select }
         if presses.contains(where: { $0.type == .select }), isFocused, !selectIsDown {
             selectIsDown = true
             onPress(true)
             PlaybackTrialTrace.controlEvent("skip_select", fields: "focused=true")
             action()
         }
+        let others = Self.nonSelect(presses)
         if !others.isEmpty { super.pressesBegan(others, with: event) }
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if presses.contains(where: { $0.type == .select }) { endSelect() }
-        let others = presses.filter { $0.type != .select }
+        let others = Self.nonSelect(presses)
         if !others.isEmpty { super.pressesEnded(others, with: event) }
     }
 
     override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if presses.contains(where: { $0.type == .select }) { endSelect() }
-        let others = presses.filter { $0.type != .select }
+        let others = Self.nonSelect(presses)
         if !others.isEmpty { super.pressesCancelled(others, with: event) }
     }
 
@@ -830,6 +804,9 @@ private final class TVSkipSelectUIView: UIView {
         selectIsDown = false
         onPress(false)
     }
-}
 
+    private static func nonSelect(_ presses: Set<UIPress>) -> Set<UIPress> {
+        presses.filter { $0.type != .select }
+    }
+}
 #endif
