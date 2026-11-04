@@ -12,8 +12,7 @@ import Foundation
 enum SearchMatching {
     /// Letters and digits only, without case or accents.
     static func key(_ text: String) -> String {
-        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-        return String(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        String(fold(text).unicodeScalars.filter(CharacterSet.alphanumerics.contains))
     }
 
     /// What Search asks the server for besides the query itself.
@@ -28,8 +27,7 @@ enum SearchMatching {
     /// and `x men` add none.
     static func pieces(of query: String) -> [String] {
         let words = Self.words(of: query)
-        guard let longest = words.max(by: { $0.count < $1.count }) else { return [] }
-
+        guard let longest = longestWord(in: words) else { return [] }
         var pieces: [String] = []
         if words.count > 1, longest.count >= 4 { pieces.append(longest) }
         if longest.count >= 5 { pieces.append(String(longest.prefix(startLength(of: longest)))) }
@@ -43,18 +41,17 @@ enum SearchMatching {
     /// place matches nothing. Up to five, so a first word of up to five
     /// letters is found, as in `harry-potter`.
     static func splits(of query: String) -> [String] {
-        guard let longest = Self.words(of: query).max(by: { $0.count < $1.count }),
-              longest.count >= 4 else { return [] }
-        return (1..<min(startLength(of: longest), 6)).map { split in
-            "\(longest.prefix(split))-\(longest.dropFirst(split))"
-        }
+        guard let longest = longestWord(in: words(of: query)), longest.count >= 4 else { return [] }
+        let lastSplit = min(startLength(of: longest), 6)
+        return (1..<lastSplit).map { "\(longest.prefix($0))-\(longest.dropFirst($0))" }
     }
 
     /// Whether any of `items` has a title whose letters and digits contain
     /// the query's.
     static func hasMatch(in items: [BrowseItem], query: String) -> Bool {
         let wanted = key(query)
-        return !wanted.isEmpty && items.contains { key($0.title).contains(wanted) }
+        guard !wanted.isEmpty else { return false }
+        return items.contains { key($0.title).contains(wanted) }
     }
 
     /// The titles from the pieces' results whose letters and digits contain
@@ -65,18 +62,30 @@ enum SearchMatching {
         let wanted = key(query)
         guard !wanted.isEmpty else { return [] }
         var seen = Set<String>()
-        let found = pages.joined().filter { item in
-            key(item.title).contains(wanted) && seen.insert(item.contentId).inserted
+        var leading: [BrowseItem] = []
+        var others: [BrowseItem] = []
+        for item in pages.joined() {
+            let title = key(item.title)
+            guard title.contains(wanted), seen.insert(item.contentId).inserted else { continue }
+            if title.hasPrefix(wanted) { leading.append(item) } else { others.append(item) }
         }
-        let leading = found.filter { key($0.title).hasPrefix(wanted) }
-        return leading + found.filter { !key($0.title).hasPrefix(wanted) }
+        return leading + others
+    }
+
+    private static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
     /// The query's words, without case or accents, split at spaces and punctuation.
     private static func words(of query: String) -> [String] {
-        query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).unicodeScalars
+        fold(query).unicodeScalars
             .split { !CharacterSet.alphanumerics.contains($0) }
             .map { String(String.UnicodeScalarView($0)) }
+    }
+
+    /// The longest word, the first of those as long.
+    private static func longestWord(in words: [String]) -> String? {
+        words.max { $0.count < $1.count }
     }
 
     /// The length of the start of `word` that Search asks for: half of it,

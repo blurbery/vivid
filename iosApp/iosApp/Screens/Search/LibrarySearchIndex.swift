@@ -44,125 +44,130 @@ struct LibrarySearchIndex: Sendable {
         /// Exact, prefix, word start or all words: the query reads as this title.
         var isStrong: Bool {
             switch tier {
-            case .exact, .prefix, .wordStart, .allWords: return true
-            case .contains, .typo: return false
+            case .exact, .prefix, .wordStart, .allWords: true
+            case .contains, .typo: false
             }
         }
     }
 
     /// The items, one per content ID, in the order they were given.
     private let items: [BrowseItem]
-    /// What a search needs of each item, at the same index.
-    private let entries: [Entry]
+    /// What ranking needs of each item, at the same index as `items`.
+    private let titles: [IndexedTitle]
     /// Every form of every title.
-    private let variants: [Variant]
-    /// The scalar values of every form, one after another.
-    private let scalars: [UInt32]
+    private let forms: [Form]
+    /// The scalar values of every form, one form after another.
+    private let text: [UInt32]
     /// Where each form's words start, as offsets into that form.
-    private let starts: [Int]
-    /// The item types, indexed by `Entry.type`.
-    private let typeNames: [String]
+    private let wordStarts: [Int]
+    /// The item types, indexed by `IndexedTitle.type`.
+    private let types: [String]
 
     var count: Int { items.count }
 
     init(items: [BrowseItem]) {
         var seen = Set<String>()
         let kept = items.filter { seen.insert($0.contentId).inserted }
+
         // Each title's place in title order, so ranking compares numbers only.
-        var order = [Int](repeating: 0, count: kept.count)
-        let sorted = kept.indices.sorted {
+        var titleOrder = [Int](repeating: 0, count: kept.count)
+        let byTitle = kept.indices.sorted {
             (kept[$0].title, kept[$0].contentId) < (kept[$1].title, kept[$1].contentId)
         }
-        for (place, index) in sorted.enumerated() { order[index] = place }
+        for (place, index) in byTitle.enumerated() { titleOrder[index] = place }
 
-        var entries: [Entry] = []
-        var variants: [Variant] = []
-        var scalars: [UInt32] = []
-        var starts: [Int] = []
-        var typeNames: [String] = []
-        var typeCodes: [String: Int] = [:]
-        entries.reserveCapacity(kept.count)
-        variants.reserveCapacity(kept.count)
+        var titles: [IndexedTitle] = []
+        var forms: [Form] = []
+        var text: [UInt32] = []
+        var wordStarts: [Int] = []
+        var types: [String] = []
+        var typeIndex: [String: Int] = [:]
+        titles.reserveCapacity(kept.count)
+        forms.reserveCapacity(kept.count)
+
         for (index, item) in kept.enumerated() {
             let type: Int
-            if let code = typeCodes[item.type] {
-                type = code
+            if let known = typeIndex[item.type] {
+                type = known
             } else {
-                type = typeNames.count
-                typeCodes[item.type] = type
-                typeNames.append(item.type)
+                type = types.count
+                typeIndex[item.type] = type
+                types.append(item.type)
             }
-            let first = variants.count
-            for form in Self.forms(of: item.title) {
-                variants.append(Variant(
-                    scalars: scalars.count..<(scalars.count + form.scalars.count),
-                    starts: starts.count..<(starts.count + form.starts.count),
-                    mask: form.scalars.reduce(0) { $0 | Self.bit($1) }
+            let firstForm = forms.count
+            for words in Self.forms(of: item.title) {
+                forms.append(Form(
+                    text: text.count..<(text.count + words.scalars.count),
+                    wordStarts: wordStarts.count..<(wordStarts.count + words.starts.count),
+                    letters: words.scalars.reduce(0) { $0 | Self.letterBit($1) }
                 ))
-                scalars += form.scalars
-                starts += form.starts
+                text += words.scalars
+                wordStarts += words.starts
             }
-            entries.append(Entry(type: type, year: item.year ?? .max, order: order[index], variants: first..<variants.count))
+            titles.append(IndexedTitle(
+                type: type, year: item.year ?? .max, titleOrder: titleOrder[index], forms: firstForm..<forms.count
+            ))
         }
 
         self.items = kept
-        self.entries = entries
-        self.variants = variants
-        self.scalars = scalars
-        self.starts = starts
-        self.typeNames = typeNames
+        self.titles = titles
+        self.forms = forms
+        self.text = text
+        self.wordStarts = wordStarts
+        self.types = types
     }
 
     /// The titles that match `query`, best first. `types` nil means every
     /// type; otherwise only items whose type it holds.
-    func search(_ query: String, types: Set<String>? = nil, limit: Int = 100) -> [Match] {
+    func search(_ query: String, types wanted: Set<String>? = nil, limit: Int = 100) -> [Match] {
         let folded = Self.fold(query)
-        let words = Self.words(in: folded, ampersandAsAnd: true)
-        // A query of only "&" would find every title with "and" in it.
+        // A query of only "&" would find every title with "and" in it, so the
+        // query needs letters or digits of its own.
         guard limit > 0, !Self.words(in: folded, ampersandAsAnd: false).scalars.isEmpty else { return [] }
-        let allowed = typeNames.map { types?.contains($0) ?? true }
+        let queryWords = Self.words(in: folded, ampersandAsAnd: true)
+        let allowedTypes = types.map { wanted?.contains($0) ?? true }
 
-        var found: [Found] = []
-        scalars.withUnsafeBufferPointer { scalars in
-            starts.withUnsafeBufferPointer { starts in
-                let scorer = Scorer(query: words, scalars: scalars, starts: starts)
-                defer { scorer.release() }
-                for (index, entry) in entries.enumerated() where allowed[entry.type] {
-                    guard let score = scorer.score(entry.variants, of: variants) else { continue }
-                    found.append(Found(entry: index, score: score, year: entry.year, order: entry.order))
+        var hits: [Hit] = []
+        text.withUnsafeBufferPointer { text in
+            wordStarts.withUnsafeBufferPointer { wordStarts in
+                let matcher = Matcher(query: queryWords, text: text, wordStarts: wordStarts)
+                defer { matcher.release() }
+                for (index, title) in titles.enumerated() where allowedTypes[title.type] {
+                    guard let score = matcher.bestScore(of: title.forms, in: forms) else { continue }
+                    hits.append(Hit(title: index, score: score, year: title.year, titleOrder: title.titleOrder))
                 }
             }
         }
-        found.sort { $0.key < $1.key }
-        return found.prefix(limit).map { Match(item: items[$0.entry], tier: $0.score.tier, distance: $0.score.distance) }
+        hits.sort { $0.rank < $1.rank }
+        return hits.prefix(limit).map { Match(item: items[$0.title], tier: $0.score.tier, distance: $0.score.distance) }
     }
 }
 
 // MARK: - Storage
 
 private extension LibrarySearchIndex {
-    /// What a search needs of an item, without the item itself, so walking
-    /// the entries copies no references.
-    struct Entry: Sendable {
-        /// The item's type, as an index into `typeNames`.
+    /// What ranking needs of an item, without the item itself, so walking the
+    /// titles copies no references.
+    struct IndexedTitle: Sendable {
+        /// The item's type, as an index into `types`.
         let type: Int
         /// The release year, or `Int.max` without one so those come last.
         let year: Int
         /// The item's place in order of title, then content ID.
-        let order: Int
-        /// The forms of the item's title, in `variants`.
-        let variants: Range<Int>
+        let titleOrder: Int
+        /// The title's forms, in `forms`.
+        let forms: Range<Int>
     }
 
     /// One form of a title: its letters and digits, and where its words start.
-    struct Variant: Sendable {
-        /// The form's scalar values, in `scalars`.
-        let scalars: Range<Int>
-        /// Where the form's words start, in `starts`.
-        let starts: Range<Int>
-        /// `bit(_:)` of every scalar in the form, so a typo can be ruled out
-        /// without lining the query up against it.
-        let mask: UInt64
+    struct Form: Sendable {
+        /// The form's scalar values, in `text`.
+        let text: Range<Int>
+        /// Where the form's words start, in `wordStarts`.
+        let wordStarts: Range<Int>
+        /// `letterBit(_:)` of every scalar in the form, so a typo can be ruled
+        /// out without lining the query up against it.
+        let letters: UInt64
     }
 
     /// A title's or query's letters and digits, and the offset where each of
@@ -182,23 +187,23 @@ private extension LibrarySearchIndex {
         /// The form's length, so shorter titles come first.
         let length: Int
 
-        var key: (Int, Int, Int, Int) { (tier.rawValue, distance, position, length) }
+        var rank: (Int, Int, Int, Int) { (tier.rawValue, distance, position, length) }
 
-        func isBetter(than other: Score?) -> Bool {
+        func beats(_ other: Score?) -> Bool {
             guard let other else { return true }
-            return key < other.key
+            return rank < other.rank
         }
     }
 
-    /// A matching item and everything it's ranked by.
-    struct Found {
-        let entry: Int
+    /// A matching title and everything it's ranked by.
+    struct Hit {
+        let title: Int
         let score: Score
         let year: Int
-        let order: Int
+        let titleOrder: Int
 
-        var key: (Int, Int, Int, Int, Int, Int) {
-            (score.tier.rawValue, score.distance, score.position, score.length, year, order)
+        var rank: (Int, Int, Int, Int, Int, Int) {
+            (score.tier.rawValue, score.distance, score.position, score.length, year, titleOrder)
         }
     }
 }
@@ -207,6 +212,7 @@ private extension LibrarySearchIndex {
 
 private extension LibrarySearchIndex {
     static let alphanumerics = CharacterSet.alphanumerics
+    /// "and", for an "&".
     static let and: [UInt32] = [0x61, 0x6E, 0x64]
 
     /// Without case or accents.
@@ -231,7 +237,7 @@ private extension LibrarySearchIndex {
         var words = Words()
         var inWord = false
         for scalar in folded.unicodeScalars {
-            if scalar == "&", ampersandAsAnd {
+            if ampersandAsAnd, scalar == "&" {
                 words.starts.append(words.scalars.count)
                 words.scalars += and
                 inWord = false
@@ -248,18 +254,22 @@ private extension LibrarySearchIndex {
 
     /// A bit for `scalar`: one each for a to z and 0 to 9, and the rest share
     /// the others. A title without a scalar's bit doesn't hold that scalar.
-    static func bit(_ scalar: UInt32) -> UInt64 {
+    static func letterBit(_ scalar: UInt32) -> UInt64 {
         switch scalar {
-        case 0x61...0x7A: return 1 << UInt64(scalar - 0x61)
-        case 0x30...0x39: return 1 << UInt64(scalar - 0x30 + 26)
-        default: return 1 << UInt64(36 + scalar % 28)
+        case 0x61...0x7A: 1 << UInt64(scalar - 0x61)
+        case 0x30...0x39: 1 << UInt64(scalar - 0x30 + 26)
+        default: 1 << UInt64(36 + scalar % 28)
         }
     }
 
     /// Typos allowed in a query, or a word of one, of `length` scalars: none
     /// under 5, 1 up to 8 and 2 from 9.
-    static func allowance(forLength length: Int) -> Int {
-        length < 5 ? 0 : length < 9 ? 1 : 2
+    static func typoAllowance(forLength length: Int) -> Int {
+        switch length {
+        case ..<5: 0
+        case ..<9: 1
+        default: 2
+        }
     }
 }
 
@@ -276,81 +286,85 @@ private extension LibrarySearchIndex {
     /// Scores titles against one query. The query and the typo table live in
     /// raw memory, so scoring a title allocates nothing and counts no
     /// references. `release()` frees them.
-    struct Scorer {
-        let scalars: UnsafeBufferPointer<UInt32>
-        let starts: UnsafeBufferPointer<Int>
+    struct Matcher {
+        let text: UnsafeBufferPointer<UInt32>
+        let wordStarts: UnsafeBufferPointer<Int>
         let query: UnsafeBufferPointer<UInt32>
-        let queryStarts: UnsafeBufferPointer<Int>
-        /// `bit(_:)` of each query scalar.
-        let queryBits: UnsafeBufferPointer<UInt64>
+        let queryWordStarts: UnsafeBufferPointer<Int>
+        /// `letterBit(_:)` of each query scalar.
+        let queryLetters: UnsafeBufferPointer<UInt64>
+        /// Typos the whole query allows.
         let allowance: Int
         /// Three columns of the typo table, long enough for the whole query.
-        let columns: UnsafeMutableBufferPointer<Int>
+        let table: UnsafeMutableBufferPointer<Int>
         /// A single start at 0, for a typo within one title word.
-        let origin: UnsafeBufferPointer<Int>
+        let firstOnly: UnsafeBufferPointer<Int>
 
-        init(query: Words, scalars: UnsafeBufferPointer<UInt32>, starts: UnsafeBufferPointer<Int>) {
-            self.scalars = scalars
-            self.starts = starts
+        init(query: Words, text: UnsafeBufferPointer<UInt32>, wordStarts: UnsafeBufferPointer<Int>) {
+            self.text = text
+            self.wordStarts = wordStarts
             self.query = Self.copy(query.scalars)
-            self.queryStarts = Self.copy(query.starts)
-            self.queryBits = Self.copy(query.scalars.map(LibrarySearchIndex.bit))
-            self.allowance = LibrarySearchIndex.allowance(forLength: query.scalars.count)
-            self.columns = .allocate(capacity: 3 * (query.scalars.count + 1))
-            self.columns.initialize(repeating: 0)
-            self.origin = Self.copy([0])
+            self.queryWordStarts = Self.copy(query.starts)
+            self.queryLetters = Self.copy(query.scalars.map(LibrarySearchIndex.letterBit))
+            self.allowance = LibrarySearchIndex.typoAllowance(forLength: query.scalars.count)
+            self.table = .allocate(capacity: 3 * (query.scalars.count + 1))
+            self.table.initialize(repeating: 0)
+            self.firstOnly = Self.copy([0])
         }
 
         func release() {
             query.deallocate()
-            queryStarts.deallocate()
-            queryBits.deallocate()
-            columns.deallocate()
-            origin.deallocate()
+            queryWordStarts.deallocate()
+            queryLetters.deallocate()
+            table.deallocate()
+            firstOnly.deallocate()
         }
 
-        /// The best score any of a title's forms reaches, trying the cheap
-        /// tiers on every form before the typo tables.
-        func score(_ forms: Range<Int>, of variants: [Variant]) -> Score? {
+        /// The best score any of a title's forms reaches. Every form gets the
+        /// cheap tiers before any gets the typo tables.
+        func bestScore(of titleForms: Range<Int>, in forms: [Form]) -> Score? {
+            if let best = best(.occurrence, of: titleForms, in: forms) { return best }
+            if queryWordStarts.count > 1, let best = best(.allWords, of: titleForms, in: forms) { return best }
+            return allowance > 0 ? best(.typo, of: titleForms, in: forms) : nil
+        }
+
+        private enum Pass { case occurrence, allWords, typo }
+
+        private func best(_ pass: Pass, of titleForms: Range<Int>, in forms: [Form]) -> Score? {
             var best: Score?
-            for form in forms {
-                if let score = occurrence(in: variants[form]), score.isBetter(than: best) { best = score }
-            }
-            if best != nil { return best }
-            if queryStarts.count > 1 {
-                for form in forms {
-                    if let score = allWords(in: variants[form]), score.isBetter(than: best) { best = score }
+            for index in titleForms {
+                let score: Score?
+                switch pass {
+                case .occurrence: score = occurrence(in: forms[index])
+                case .allWords: score = allWords(in: forms[index])
+                case .typo: score = typo(in: forms[index])
                 }
-                if best != nil { return best }
-            }
-            if allowance > 0 {
-                for form in forms {
-                    if let score = typo(in: variants[form]), score.isBetter(than: best) { best = score }
-                }
+                if let score, score.beats(best) { best = score }
             }
             return best
         }
 
         /// Exact, prefix, word start or contains: where the query first
         /// appears in the form, preferring a word start.
-        func occurrence(in form: Variant) -> Score? {
-            let text = title(form), words = wordStarts(form)
+        func occurrence(in form: Form) -> Score? {
+            let title = formText(form), starts = formStarts(form)
             let length = query.count
-            guard length <= text.count else { return nil }
-            var anywhere: Int?
+            guard length <= title.count else { return nil }
+            var firstAnywhere: Int?
             var word = 0
-            for offset in 0...(text.count - length)
-            where text[offset] == query[0] && LibrarySearchIndex.matches(query, text, at: offset) {
-                while word < words.count, words[word] < offset { word += 1 }
-                if word < words.count, words[word] == offset {
-                    if offset == 0 {
-                        return Score(tier: length == text.count ? .exact : .prefix, distance: 0, position: 0, length: text.count)
-                    }
-                    return Score(tier: .wordStart, distance: 0, position: offset, length: text.count)
+            for offset in 0...(title.count - length)
+            where title[offset] == query[0] && LibrarySearchIndex.holds(query, in: title, at: offset) {
+                while word < starts.count, starts[word] < offset { word += 1 }
+                guard word < starts.count, starts[word] == offset else {
+                    if firstAnywhere == nil { firstAnywhere = offset }
+                    continue
                 }
-                if anywhere == nil { anywhere = offset }
+                guard offset == 0 else {
+                    return Score(tier: .wordStart, distance: 0, position: offset, length: title.count)
+                }
+                return Score(tier: length == title.count ? .exact : .prefix, distance: 0, position: 0, length: title.count)
             }
-            return anywhere.map { Score(tier: .contains, distance: 0, position: $0, length: text.count) }
+            return firstAnywhere.map { Score(tier: .contains, distance: 0, position: $0, length: title.count) }
         }
 
         /// All words: each query word starts a word of the form, exactly or,
@@ -359,29 +373,33 @@ private extension LibrarySearchIndex {
         /// titles out. Each word takes the first title word it starts exactly,
         /// or else the first it starts with a typo, and the position is the
         /// earliest of those.
-        func allWords(in form: Variant) -> Score? {
-            let text = title(form), words = wordStarts(form)
+        func allWords(in form: Form) -> Score? {
+            let title = formText(form), starts = formStarts(form)
             var position = Int.max
-            for word in 0..<queryStarts.count {
+            for word in 0..<queryWordStarts.count {
                 let range = queryWord(word)
-                if let start = LibrarySearchIndex.wordStarting(with: slice(range), in: text, words: words) {
+                if let start = LibrarySearchIndex.firstWord(startingWith: queryScalars(range), in: title, starts: starts) {
                     position = min(position, start)
-                } else if LibrarySearchIndex.allowance(forLength: range.count) == 0 {
+                } else if LibrarySearchIndex.typoAllowance(forLength: range.count) == 0 {
                     return nil
                 }
             }
-            for word in 0..<queryStarts.count {
-                let range = queryWord(word)
-                let pattern = slice(range)
-                guard LibrarySearchIndex.wordStarting(with: pattern, in: text, words: words) == nil else { continue }
-                let allowance = LibrarySearchIndex.allowance(forLength: range.count)
-                guard missing(range, from: form.mask) <= allowance else { return nil }
+            // A second pass for the words without an exact start, so a title
+            // the first pass rules out never reaches the typo table.
+            for wordIndex in 0..<queryWordStarts.count {
+                let range = queryWord(wordIndex)
+                let word = queryScalars(range)
+                guard LibrarySearchIndex.firstWord(startingWith: word, in: title, starts: starts) == nil else { continue }
+                let allowance = LibrarySearchIndex.typoAllowance(forLength: range.count)
+                guard missingLetters(range, from: form.letters) <= allowance else { return nil }
                 var found: Int?
-                for index in 0..<words.count {
-                    let start = words[index]
-                    let end = index + 1 < words.count ? words[index + 1] : text.count
-                    let titleWord = UnsafeBufferPointer(rebasing: text[start..<end])
-                    if LibrarySearchIndex.typoMatch(pattern, in: titleWord, starts: origin, allowance: allowance, columns: columns) != nil {
+                for index in 0..<starts.count {
+                    let start = starts[index]
+                    let end = index + 1 < starts.count ? starts[index + 1] : title.count
+                    let titleWord = UnsafeBufferPointer(rebasing: title[start..<end])
+                    if LibrarySearchIndex.typoAlignment(
+                        of: word, in: titleWord, from: firstOnly, allowance: allowance, table: table
+                    ) != nil {
                         found = start
                         break
                     }
@@ -389,42 +407,41 @@ private extension LibrarySearchIndex {
                 guard let found else { return nil }
                 position = min(position, found)
             }
-            return Score(tier: .allWords, distance: 0, position: position, length: text.count)
+            return Score(tier: .allWords, distance: 0, position: position, length: title.count)
         }
 
         /// Typo: the query lines up with the start of a word of the form, and
         /// what follows, within the query's allowance.
-        func typo(in form: Variant) -> Score? {
-            guard missing(0..<query.count, from: form.mask) <= allowance else { return nil }
-            let text = title(form)
-            guard let match = LibrarySearchIndex.typoMatch(
-                query, in: text, starts: wordStarts(form), allowance: allowance, columns: columns
+        func typo(in form: Form) -> Score? {
+            guard missingLetters(0..<query.count, from: form.letters) <= allowance else { return nil }
+            let title = formText(form)
+            guard let alignment = LibrarySearchIndex.typoAlignment(
+                of: query, in: title, from: formStarts(form), allowance: allowance, table: table
             ) else { return nil }
-            return Score(tier: .typo, distance: match.distance, position: match.start, length: text.count)
+            return Score(tier: .typo, distance: alignment.distance, position: alignment.start, length: title.count)
         }
 
         /// How many query scalars in `range` the form doesn't hold. Each needs
         /// an edit, so more than the allowance rules a typo out.
-        private func missing(_ range: Range<Int>, from mask: UInt64) -> Int {
-            var count = 0
-            for index in range where queryBits[index] & mask == 0 { count += 1 }
-            return count
+        private func missingLetters(_ range: Range<Int>, from letters: UInt64) -> Int {
+            range.reduce(0) { $0 + (queryLetters[$1] & letters == 0 ? 1 : 0) }
         }
 
-        private func title(_ form: Variant) -> UnsafeBufferPointer<UInt32> {
-            UnsafeBufferPointer(rebasing: scalars[form.scalars])
+        private func formText(_ form: Form) -> UnsafeBufferPointer<UInt32> {
+            UnsafeBufferPointer(rebasing: text[form.text])
         }
 
-        private func wordStarts(_ form: Variant) -> UnsafeBufferPointer<Int> {
-            UnsafeBufferPointer(rebasing: starts[form.starts])
+        private func formStarts(_ form: Form) -> UnsafeBufferPointer<Int> {
+            UnsafeBufferPointer(rebasing: wordStarts[form.wordStarts])
         }
 
         /// The query scalars of its `index`th word.
         private func queryWord(_ index: Int) -> Range<Int> {
-            queryStarts[index]..<(index + 1 < queryStarts.count ? queryStarts[index + 1] : query.count)
+            let end = index + 1 < queryWordStarts.count ? queryWordStarts[index + 1] : query.count
+            return queryWordStarts[index]..<end
         }
 
-        private func slice(_ range: Range<Int>) -> UnsafeBufferPointer<UInt32> {
+        private func queryScalars(_ range: Range<Int>) -> UnsafeBufferPointer<UInt32> {
             UnsafeBufferPointer(rebasing: query[range])
         }
 
@@ -436,19 +453,19 @@ private extension LibrarySearchIndex {
     }
 
     /// Whether `text` holds `pattern` at `offset`.
-    static func matches(_ pattern: UnsafeBufferPointer<UInt32>, _ text: UnsafeBufferPointer<UInt32>, at offset: Int) -> Bool {
+    static func holds(_ pattern: UnsafeBufferPointer<UInt32>, in text: UnsafeBufferPointer<UInt32>, at offset: Int) -> Bool {
         for index in 0..<pattern.count where pattern[index] != text[offset + index] { return false }
         return true
     }
 
     /// The offset of the first word of `text` that starts with `pattern`.
-    static func wordStarting(
-        with pattern: UnsafeBufferPointer<UInt32>, in text: UnsafeBufferPointer<UInt32>, words: UnsafeBufferPointer<Int>
+    static func firstWord(
+        startingWith pattern: UnsafeBufferPointer<UInt32>, in text: UnsafeBufferPointer<UInt32>, starts: UnsafeBufferPointer<Int>
     ) -> Int? {
-        for index in 0..<words.count {
-            let start = words[index]
-            let end = index + 1 < words.count ? words[index + 1] : text.count
-            if end - start >= pattern.count, matches(pattern, text, at: start) { return start }
+        for index in 0..<starts.count {
+            let start = starts[index]
+            let end = index + 1 < starts.count ? starts[index + 1] : text.count
+            if end - start >= pattern.count, holds(pattern, in: text, at: start) { return start }
         }
         return nil
     }
@@ -468,86 +485,86 @@ private extension LibrarySearchIndex {
     /// Callers have already ruled out an exact match, so after 1 edit is found
     /// and its alignments die out, later starts can't do better.
     ///
-    /// `columns` holds three columns of `pattern.count + 1` cells.
-    static func typoMatch(
-        _ pattern: UnsafeBufferPointer<UInt32>,
+    /// `table` holds three columns of `pattern.count + 1` cells.
+    static func typoAlignment(
+        of pattern: UnsafeBufferPointer<UInt32>,
         in text: UnsafeBufferPointer<UInt32>,
-        starts: UnsafeBufferPointer<Int>,
+        from starts: UnsafeBufferPointer<Int>,
         allowance: Int,
-        columns: UnsafeMutableBufferPointer<Int>
+        table: UnsafeMutableBufferPointer<Int>
     ) -> (distance: Int, start: Int)? {
         let rows = pattern.count + 1
-        let last = pattern.count
+        let lastRow = pattern.count
         let width = min(text.count, typoColumns)
-        guard last > 0, width > 0, 3 * rows <= columns.count else { return nil }
-        let edit = 1 << startBits
-        let dead = (allowance + 1) * edit
+        guard lastRow > 0, width > 0, 3 * rows <= table.count else { return nil }
+        let oneEdit = 1 << startBits
+        let overAllowance = (allowance + 1) * oneEdit
 
-        // Two columns back, the last column and this one, and the last row
-        // each has written. Rows past that are always `dead`.
-        var older = columns.baseAddress!
-        var previous = older + rows
-        var current = previous + rows
-        older.update(repeating: dead, count: 3 * rows)
-        var olderEnd = 0, previousEnd = 0, currentEnd = 0
-        // The last row of the previous column within the allowance, or -1.
-        var previousTop = -1
+        // The column two back, the last one and this one, with the last row
+        // each has written. Rows past that always hold `overAllowance`.
+        var twoBack = table.baseAddress!
+        var lastColumn = twoBack + rows
+        var column = lastColumn + rows
+        twoBack.update(repeating: overAllowance, count: 3 * rows)
+        var twoBackEnd = 0, lastColumnEnd = 0, columnEnd = 0
+        // The last row of the last column within the allowance, or -1.
+        var lastColumnTop = -1
         var nextStart = 0
         var best = Int.max
 
-        var column = 0
-        while column <= width {
-            if previousTop < 0 {
+        var offset = 0
+        while offset <= width {
+            if lastColumnTop < 0 {
                 // Every alignment so far is past the allowance, so start
                 // afresh at the next start.
-                guard nextStart < starts.count, starts[nextStart] < width, best >= 2 * edit else { break }
-                column = starts[nextStart]
-                older.update(repeating: dead, count: olderEnd + 1)
-                previous.update(repeating: dead, count: previousEnd + 1)
-                olderEnd = 0
-                previousEnd = 0
+                guard nextStart < starts.count, starts[nextStart] < width, best >= 2 * oneEdit else { break }
+                offset = starts[nextStart]
+                twoBack.update(repeating: overAllowance, count: twoBackEnd + 1)
+                lastColumn.update(repeating: overAllowance, count: lastColumnEnd + 1)
+                twoBackEnd = 0
+                lastColumnEnd = 0
             }
 
             // Row 0 aligns none of the pattern: free at a start, and one more
             // skipped scalar of the text after it.
-            if nextStart < starts.count, starts[nextStart] == column, column < width {
-                current[0] = column
+            if nextStart < starts.count, starts[nextStart] == offset, offset < width {
+                column[0] = offset
                 nextStart += 1
             } else {
-                current[0] = min(previous[0] + edit, dead)
+                column[0] = min(lastColumn[0] + oneEdit, overAllowance)
             }
-            var top = current[0] < dead ? 0 : -1
+            var top = column[0] < overAllowance ? 0 : -1
 
-            // Rows up to one past the previous column's last live row can be
-            // within the allowance, and so can each row under a live one.
-            let band = min(last, previousTop + 1)
+            // Rows up to one past the last column's top live row can be within
+            // the allowance, and so can each row under a live one.
+            let band = min(lastRow, lastColumnTop + 1)
             var row = 0
-            while row < last, row < band || current[row] < dead {
+            while row < lastRow, row < band || column[row] < overAllowance {
                 row += 1
-                var cell = min(current[row - 1], previous[row]) + edit
-                if column > 0 {
-                    let scalar = text[column - 1]
-                    cell = min(cell, previous[row - 1] + (pattern[row - 1] == scalar ? 0 : edit))
-                    if row > 1, column > 1, pattern[row - 1] == text[column - 2], pattern[row - 2] == scalar {
-                        cell = min(cell, older[row - 2] + edit)
+                var cell = min(column[row - 1], lastColumn[row]) + oneEdit
+                if offset > 0 {
+                    let scalar = text[offset - 1]
+                    cell = min(cell, lastColumn[row - 1] + (pattern[row - 1] == scalar ? 0 : oneEdit))
+                    if row > 1, offset > 1, pattern[row - 1] == text[offset - 2], pattern[row - 2] == scalar {
+                        cell = min(cell, twoBack[row - 2] + oneEdit)
                     }
                 }
-                current[row] = min(cell, dead)
-                if cell < dead { top = row }
+                column[row] = min(cell, overAllowance)
+                if cell < overAllowance { top = row }
             }
-            // Rows past this column's still hold the one three columns back.
-            if currentEnd > row {
-                (current + row + 1).update(repeating: dead, count: currentEnd - row)
+            // Rows past this column's still hold the column three back.
+            if columnEnd > row {
+                (column + row + 1).update(repeating: overAllowance, count: columnEnd - row)
             }
-            currentEnd = row
-            if top == last { best = min(best, current[last]) }
+            columnEnd = row
+            if top == lastRow { best = min(best, column[lastRow]) }
 
-            (older, previous, current) = (previous, current, older)
-            (olderEnd, previousEnd, currentEnd) = (previousEnd, currentEnd, olderEnd)
-            previousTop = top
-            column += 1
+            (twoBack, lastColumn, column) = (lastColumn, column, twoBack)
+            (twoBackEnd, lastColumnEnd, columnEnd) = (lastColumnEnd, columnEnd, twoBackEnd)
+            lastColumnTop = top
+            offset += 1
         }
         guard best != Int.max else { return nil }
-        return (best >> startBits, best & (edit - 1))
+        return (best >> startBits, best & (oneEdit - 1))
     }
 }
