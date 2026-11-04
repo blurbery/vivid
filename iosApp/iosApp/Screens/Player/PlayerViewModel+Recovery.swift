@@ -3,17 +3,23 @@ import OSLog
 
 /// Getting the current item playing again after its engine or source fails.
 ///
-/// `+EngineEvents` and `+PlaybackEnd` try three ways back, in this order:
+/// `+EngineEvents` and `+PlaybackEnd` choose between three ways back:
 ///
 /// 1. **Reopen the same route.** Load the committed Silo plan again at the
 ///    current position with fresh request headers. This covers an expired
 ///    bearer, a dropped connection and a stream that stopped early.
 /// 2. **Replan.** Ask Silo for a different route
 ///    (`attemptProtocolV3Replan`). Track, quality, output route and seek
-///    re-anchor changes travel the same way.
+///    re-anchor changes travel the same way. A reopen that doesn't recover
+///    falls back to this, except after an authentication or audio session
+///    failure.
 /// 3. **Renew a stale session.** Start a new session where playback was
-///    (`attemptStaleSessionRenewal`, in `+SessionLoad`) when the server has
-///    lost the old one.
+///    (`attemptStaleSessionRenewal`, in `+SessionLoad`). With a committed
+///    Silo plan, `handlePlaybackError` never renews: it only replans. Renewal
+///    runs when there's no committed Silo plan (Emby, Jellyfin, or a load
+///    that hasn't committed) and the error says the session is missing or
+///    its source expired, and when a replan fails because Silo no longer
+///    has the session.
 ///
 /// A failure nothing can recover ends on the Retry screen through
 /// `finalizeTerminalPlaybackError`; a recovery load that fails shows a notice

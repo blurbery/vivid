@@ -528,8 +528,10 @@ struct PlayerView: View {
     #if os(tvOS)
     // MARK: Apple TV remote
 
-    /// Whether the press-capture view owns the Siri Remote: when the
-    /// transport bar is hidden, or during a hold-to-seek session.
+    /// Whether the press-capture view owns the Siri Remote. It needs the
+    /// item to have loaded and the HUD to be closed, and then either the
+    /// transport bar hidden with no intro or credits skip button showing, or
+    /// a hold-to-seek session in progress (whatever those show).
     ///
     /// Outside seek mode, tapping left or right skips, down opens the player
     /// menu, up shows the transport bar, Select pauses into the timeline, and
