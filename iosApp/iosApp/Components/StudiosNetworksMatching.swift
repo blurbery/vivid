@@ -68,11 +68,15 @@ extension StudiosNetworksStore {
     /// The brands with at least six matches, most first, ties in catalogue
     /// order, up to 20.
     static func automaticPicks(counts: [String: Int]) -> [String] {
-        let ranked = catalogue.enumerated()
-            .map { (position: $0.offset, id: $0.element.id, count: counts[$0.element.id] ?? 0) }
-            .filter { $0.count >= minimumCount }
-            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.position < $1.position }
-        return ranked.prefix(maxPicks).map(\.id)
+        typealias Ranked = (position: Int, id: String, count: Int)
+        let eligible: [Ranked] = catalogue.enumerated().compactMap { position, brand in
+            let count = counts[brand.id] ?? 0
+            return count >= minimumCount ? (position, brand.id, count) : nil
+        }
+        let ranked = eligible.sorted { lhs, rhs in
+            lhs.count != rhs.count ? lhs.count > rhs.count : lhs.position < rhs.position
+        }
+        return ranked.prefix(maxPicks).map { $0.id }
     }
 
     /// Keeps up to 20 eligible chosen brands. A set below six is topped up
