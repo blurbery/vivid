@@ -17,6 +17,11 @@ no warranty except as required by applicable law. The full GPLv3 text and
 Apple permission are included in this screen. Earlier Apache-2.0 grants
 remain valid; their original licence text is also retained here.
 
+Portions of Vivid are derived from Silo Apple
+(https://github.com/Silo-Server/silo-apple), copyright 2026 Silo Media
+L.L.C. and contributors. Those portions are licensed under AGPL-3.0-or-later
+with the Silo Apple App Store exception; both are on the Silo Apple page.
+
 Vivid attribution: GPLv3 section 7 additional terms
 
 Vivid is developed and maintained by blurbery.
