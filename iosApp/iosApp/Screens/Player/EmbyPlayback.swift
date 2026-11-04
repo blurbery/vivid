@@ -94,7 +94,7 @@ final class EmbyPlayback {
                                              subtitleIndex: Int?, bitrateKbps: Int?, source: [String: Any],
                                              quality: String?, device: DeviceProfileVideoLimits) -> [String: Any] {
         let deviceProfile: [String: Any] = [
-            "Name": "Vivid Vivid",
+            "Name": "Vivid",
             "MaxStreamingBitrate": (bitrateKbps ?? 200_000) * 1000,
             "DirectPlayProfiles": [[
                 "Type": "Video",

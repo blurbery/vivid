@@ -109,7 +109,7 @@ final class ServerDeviceProfileTests: XCTestCase {
                             bitrateKbps: bitrate, source: source, quality: quality, device: device)
                         let label = "\(machine) quality \(quality ?? "nil") bitrate \(bitrate.map(String.init) ?? "nil")"
                         XCTAssertEqual(emby as NSDictionary, Self.legacyBody(
-                            name: "Vivid Vivid", start: 754.5, audioIndex: 2, subtitleIndex: 3, bitrateKbps: bitrate,
+                            name: "Vivid", start: 754.5, audioIndex: 2, subtitleIndex: 3, bitrateKbps: bitrate,
                             source: source, quality: quality) as NSDictionary, "Emby \(label)")
                         XCTAssertEqual(jellyfin as NSDictionary, Self.legacyBody(
                             name: "Vivid", start: 754.5, audioIndex: 2, subtitleIndex: 3, bitrateKbps: bitrate,
