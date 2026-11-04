@@ -2,12 +2,12 @@
 import CoreGraphics
 import SwiftUI
 
-/// Floating chip shown during a seek session. The transport overlay is
-/// deliberately suppressed while a session is active (it would shift
-/// focus off the press-capture view and lose the remote's input), so
-/// this is the only visual feedback between hold-enter and commit/cancel.
-/// Shows the signed rate (direction + magnitude), the running preview
-/// time, and a small hint line for the available controls.
+/// Floating chip shown during a hold-to-seek session that started while the
+/// controls were hidden. The controls stay hidden for the whole session
+/// (showing them would take focus off the press sink and lose the remote),
+/// so this is the only feedback between the hold and Select or Menu. It
+/// shows the direction and speed, the preview time, a thin progress line
+/// and a hint for the buttons.
 struct HoldSeekIndicator: View {
     /// Signed multiplier: negative = backward, positive = forward.
     let rate: Int
@@ -66,12 +66,11 @@ struct HoldSeekIndicator: View {
         )
     }
 
-    /// Thin progress bar so the user has spatial context for where the
-    /// preview is landing. Read-only — the scrubber is suppressed while
-    /// this is on-screen, so there's no control to fight with.
+    /// Where the preview lands on the timeline. Read-only: the scrubber is
+    /// hidden while this shows.
     private var miniProgress: some View {
         GeometryReader { geo in
-            let fraction = min(max(previewTime / duration, 0), 1)
+            let fraction = TVTimelineScrubMath.fraction(of: previewTime, duration: duration)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.22))
                 Capsule().fill(Color.white).frame(width: geo.size.width * fraction)
@@ -80,9 +79,8 @@ struct HoldSeekIndicator: View {
         .frame(height: 3)
     }
 
-    /// Small one-liner reminding the user which buttons do what. First-
-    /// time discoverability matters here since the seek-session model
-    /// doesn't match the Apple TV app's momentary hold-to-FF.
+    /// Which buttons do what. A seek session isn't the Apple TV app's
+    /// momentary hold to fast-forward, so first-time users need the hint.
     private var hint: some View {
         HStack(spacing: 18) {
             Label("Speed", systemImage: "arrow.left.arrow.right")
