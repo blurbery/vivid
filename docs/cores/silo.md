@@ -11,7 +11,7 @@ Silo is one of the implemented server connections, alongside Emby and Jellyfin. 
 
 ## Server ownership
 
-The Silo server core handles Silo discovery/setup, username/password login, account and viewing-profile identity, authenticated requests, library metadata, playable versions and track metadata, playback-session negotiation, renewal and Silo-specific realtime events. It translates playback progress and watched state into Silo requests; the server persists those records.
+The Silo server core handles Silo discovery/setup, username/password login, account and viewing-profile identity, authenticated requests, library metadata, playable versions and track metadata, playback-session negotiation, renewal and Silo-specific realtime events. It translates playback progress and watched state into Silo requests; the server persists those records. A realtime event or command field read as a whole number is ignored when it isn't a finite number within the integer range, so a malformed payload can't crash the player.
 
 A Silo account with several viewing profiles can give each household member their own saved card, bound to that viewing profile. Once Vivid has loaded a card's viewing profile, every Silo card, the primary profile's included, is labelled with that profile's name in Silo rather than the sign-in username. Household → Search for Accounts adds the other profiles through Silo's device sign-in, approved by the signed-in session, so no password is needed. See [Silo household profiles](../server-connections.md#silo-household-profiles).
 
