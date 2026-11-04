@@ -103,7 +103,8 @@ actor PlaybackSessionBridge {
     private static let nearEndResumeSuppressionSeconds: Double = 5
     private static let pastEndResumeClampSeconds: Double = 0.25
     private static let orphanedSessionLogThreshold = 3
-    /// Replans allowed in one attempt before recovery gives up.
+    /// Plan attempts allowed in one playback attempt, counting the start
+    /// plan, so at most seven replans go through before recovery gives up.
     private static let protocolV3AttemptLimit = 8
 
     private let logger = Logger(
@@ -489,8 +490,9 @@ actor PlaybackSessionBridge {
     }
 
     /// The start position: 0 from the beginning, else the explicit or stored
-    /// resume point. Against the shorter of the two duration hints, a stored
-    /// resume within the last five seconds restarts from 0, and a transient
+    /// resume point. Against the shorter of the two duration hints, a resume
+    /// position within the last five seconds restarts from 0 unless
+    /// `allowNearEndResume` is set, and a transient
     /// resume (`allowNearEndResume`) at or past the end is pulled back just
     /// inside it.
     private func resolvedStartPosition(
@@ -1410,9 +1412,10 @@ actor PlaybackSessionBridge {
 
     /// Reports the position to the current session, after any earlier write.
     /// An ineligible position (before the first frame) only pings Emby and
-    /// Jellyfin and reports zero to Silo, answering `deferred`. A
-    /// `completedContentId` makes the position eligible and marks that item
-    /// watched once the position is written.
+    /// Jellyfin and reports zero to Silo; Silo answers `deferred` only when
+    /// that zero write succeeds. A `completedContentId` makes the position
+    /// eligible and marks that item watched: Emby and Jellyfin only after a
+    /// successful report, Silo whatever the position write returned.
     func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String? = nil) async -> PlaybackProgressReportResult {
         if jellyfinTransitionInProgress {
             let expectedSession = sessionId
