@@ -92,8 +92,9 @@ extension PlayerViewModel {
 
     // MARK: - Artwork
 
-    /// Caller-supplied artwork URLs, passed on from `PlayerView.onAppear`, so
-    /// `pushNowPlayingArtwork` can skip its own item fetch.
+    /// Caller-supplied artwork URLs for the item the player opened, passed on
+    /// from `PlayerView.onAppear`, so `pushNowPlayingArtwork` can skip its own
+    /// item fetch. Starting the next episode clears them.
     func applyArtworkURLHints(posterURL: String?, backdropURL: String?) {
         artworkPosterURLHint = posterURL
         artworkBackdropURLHint = backdropURL

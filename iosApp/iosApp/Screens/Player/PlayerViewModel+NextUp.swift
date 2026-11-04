@@ -413,6 +413,9 @@ extension PlayerViewModel {
         // Keep the cap this episode actually ran with instead of reading one
         // from the tier table. Ignored when nothing carries over.
         request.carriedBandwidthCap = activeBandwidthCap
+        // The presenter's artwork hints describe the item it opened, so the
+        // next episode fetches its own.
+        applyArtworkURLHints(posterURL: nil, backdropURL: nil)
         beginFreshLoad(
             request: request,
             progressPosition: completionProgressPositionForCurrentItem(),

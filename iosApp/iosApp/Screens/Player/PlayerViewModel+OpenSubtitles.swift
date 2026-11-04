@@ -91,8 +91,9 @@ extension PlayerViewModel {
     }
 
     /// Keeps the item's remembered OpenSubtitles file in step with the latest
-    /// explicit choice, so resuming later restores it. Nil, or a pick that
-    /// isn't an OpenSubtitles file, forgets it.
+    /// explicit choice, so resuming later restores it. While the item has an
+    /// OpenSubtitles context, nil or a pick that isn't an OpenSubtitles file
+    /// forgets it; without one, or when the file can't be read, nothing changes.
     func rememberOpenSubtitleChoice(_ trackID: Int64?) {
         guard let context = openSubtitleContext else { return }
         let fileID = currentSelectedVersion?.fileId
