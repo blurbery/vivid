@@ -18,6 +18,9 @@ engine libraries' Vivid-written header lines changed again (how each is built,
 its patches and the pipeline commit). Later, the Rust standard library notice
 gained the MIT texts of the crates.io crates built into it, and notices for
 the bundled Jellyfin logo (CC BY-SA 4.0) and Seerr icon (MIT) were added.
+The Silo Apple entry is a Vivid-written notice crediting the portions derived
+from Silo Apple, followed by its App Store exception and AGPL-3.0 text exactly
+as published at the revision Vivid started from.
 README.txt is Vivid's own overview, which changes with the docs, so it is only
 checked for presence. When a licence file changes deliberately (for example a
 library update), update its entry here with the hash this script prints for
@@ -50,8 +53,8 @@ ORIGINALS = {
     "SPIRV-Cross-Apache-2.0.txt": ("fb9b07689f16dd2f26bb823b304f866c3510b26cbf9882be78f115e473e16de2", 13751),
     "SPIRV-Headers-MIT.txt": ("53f637fa9add95006c58844267eeda7cb3ec8afda9b57ba27235a571e0292ee8", 24230),
     "SPIRV-Tools-Apache-2.0.txt": ("b03185cd87802fe40144ff4e75251c20a8c1dce90c4a2e27911f2a0a1f1fd223", 12065),
-    "Silo-Apple-AGPL-3.0-or-later.txt": ("3575d340a9e6003bb00259bdad38bede4ac6eb7896a239ce58a8a74a401bdf64", 35244),
     "Seerr-Icon-MIT.txt": ("015b031dd7f8d5b70cc5038da6ab4c22c2d89daad264b2a134b119c9feac3b95", 2160),
+    "Silo-Apple-AGPL-3.0-or-later.txt": ("3575d340a9e6003bb00259bdad38bede4ac6eb7896a239ce58a8a74a401bdf64", 35244),
     "ThumbHash-MIT.txt": ("c3848c6ae5964087a2a7c73de48d47d713f641319beebc74d243652614d8d65b", 1721),
     "Vivid-Apache-2.0.txt": ("cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30", 11358),
     "Vivid-Apple-Distribution.txt": ("0e34a96aa82d61d38a37721f23825f1e2a76d08d85c0b92bd199c83f167f00fd", 4930),

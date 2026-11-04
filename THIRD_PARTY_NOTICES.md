@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). The [Vivid attribution terms](ATTRIBUTION.md) apply only to the covered material identified there. Third-party libraries retain their own licences.
+Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). The [Vivid attribution terms](ATTRIBUTION.md) apply only to the covered material identified there. Portions derived from Silo Apple remain under AGPL-3.0-or-later with the Silo Apple App Store exception (see the Silo Apple row below). Third-party libraries retain their own licences.
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |

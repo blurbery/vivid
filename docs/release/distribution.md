@@ -76,8 +76,11 @@ Before conveying any new GPL-covered binary, including through TestFlight:
   Test limited to change bullets. If the description limit prevents preserving
   source access, obtain authority before creating a new public source index.
 - Check the app's bundled Open Source Licences includes GPLv3, the Apple permission, applicable
-  [Vivid attribution terms](../../ATTRIBUTION.md), earlier Apache notices and
-  all packaged third-party licences. The bundled overview carries the full
+  [Vivid attribution terms](../../ATTRIBUTION.md), earlier Apache notices, the
+  Silo Apple notice with its AGPL-3.0 text and App Store exception, and all
+  packaged third-party licences. The portions derived from Silo Apple are
+  AGPL-3.0-or-later, so the same published source revision also serves as their
+  corresponding source. The bundled overview carries the full
   attribution terms; keep them aligned with `ATTRIBUTION.md`.
 - Preserve LGPL rights independently. Vivid's Apple permission applies to
   its authorised code; it cannot waive conditions on FFmpeg, FriBidi or

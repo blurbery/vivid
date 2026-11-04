@@ -100,7 +100,7 @@ If you'd like to support Vivid's development, you can sponsor me on [GitHub Spon
 
 ## Licence
 
-Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
+Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Portions derived from Silo Apple, copyright 2026 Silo Media L.L.C. and contributors, remain under AGPL-3.0-or-later with the Silo Apple App Store exception. Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
 
 [Vivid attribution](ATTRIBUTION.md) contains additional terms under GPLv3 sections 7(b) and 7(c) for material blurbery has authority to license on those terms. Distributors must preserve the Vivid/blurbery attribution in source notices, accurately represent its origin and identify modified versions. Third-party rights remain unchanged.
 
