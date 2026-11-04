@@ -1,10 +1,17 @@
 import Foundation
-import CryptoKit
+
+// The Jellyfin connection: errors, the signed transport (with Jellyfin's
+// older per-user routes as a fallback), sign-in (username and password or
+// Quick Connect), the people ID store and the library directory. The adapter
+// that turns Jellyfin's API into Vivid's is in `JellyfinProvider+Items.swift`
+// and `JellyfinProvider+Routes.swift`. Apart from Emby's
+// `filterRequestFailureText`, nothing is shared with Emby.
 
 enum JellyfinError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable
     case quickConnectDisabled, quickConnectExpired, quickConnectUnavailable
     case filterRequestFailed(step: String, status: Int)
+
     var errorDescription: String? {
         switch self {
         case .filterRequestFailed(let step, let status): filterRequestFailureText(step: step, status: status)
@@ -20,26 +27,36 @@ enum JellyfinError: LocalizedError {
     }
 }
 
+/// Refuses every redirect, so a token never follows one to another host.
 final class JellyfinRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
         completionHandler(nil)
     }
 }
 
+// MARK: - People
+
 /// Person route IDs mapped to Jellyfin's native IDs, one bounded dictionary
-/// per server and user instead of a defaults key per person. Older per-person
-/// keys move in on first use so existing links keep working.
+/// per server and user (stored under `<partition>.people`) instead of a
+/// defaults key per person. Older per-person keys (`<partition>.person.<id>`)
+/// move in on first use so existing links keep working.
 final class JellyfinPeopleStore: @unchecked Sendable {
     static let shared = JellyfinPeopleStore()
+
     private let limit: Int
     private let lock = NSLock()
     private let defaults: UserDefaults
     private var partitions: [String: [String: String]] = [:]
+    /// Route IDs remembered this launch, oldest first.
     private var order: [String: [String]] = [:]
     private var pending = Set<String>()
+
     init(defaults: UserDefaults = .standard, limit: Int = 4_000) {
         self.defaults = defaults
         self.limit = limit
@@ -48,31 +65,32 @@ final class JellyfinPeopleStore: @unchecked Sendable {
     static func key(_ partition: String) -> String { partition + ".people" }
 
     func remember(routeID: String, nativeID: String, partition: String) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         var people = load(partition)
         guard people[routeID] != nativeID else { return }
         people[routeID] = nativeID
         var recent = order[partition, default: []]
         recent.removeAll { $0 == routeID }
         recent.append(routeID)
-        // Entries loaded from disk count as oldest, so the cap drops those first.
         if people.count > limit {
+            // Entries loaded from disk count as oldest, so the cap drops those first.
             let recentSet = Set(recent)
             var older = people.keys.filter { !recentSet.contains($0) }
             while people.count > limit {
-                let victim = older.popLast() ?? recent.removeFirst()
-                people[victim] = nil
+                people[older.popLast() ?? recent.removeFirst()] = nil
             }
         }
         partitions[partition] = people
         order[partition] = recent
-        // A detail page maps its whole cast at once; save once afterwards.
+        // A detail page maps its whole cast at once, so save once afterwards.
         guard pending.insert(partition).inserted else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in save(partition) }
     }
 
     func nativeID(routeID: String, partition: String) -> String? {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         return load(partition)[routeID]
     }
 
@@ -104,17 +122,35 @@ final class JellyfinPeopleStore: @unchecked Sendable {
 }
 
 /// Servers seen to need Jellyfin's pre-12 user routes during this launch.
-/// In memory only, so each launch rechecks once.
+/// In memory only, so each launch checks again once.
 final class JellyfinLegacyRoutes: @unchecked Sendable {
     static let shared = JellyfinLegacyRoutes()
+
     private let lock = NSLock()
     private var servers = Set<String>()
-    func prefersLegacy(_ server: String) -> Bool { lock.lock(); defer { lock.unlock() }; return servers.contains(server) }
-    func remember(_ server: String) { lock.lock(); servers.insert(server); lock.unlock() }
-    func forget(_ server: String) { lock.lock(); servers.remove(server); lock.unlock() }
-    func reset() { lock.lock(); servers.removeAll(); lock.unlock() }
+
+    func prefersLegacy(_ server: String) -> Bool {
+        lock.withLock { servers.contains(server) }
+    }
+
+    func remember(_ server: String) {
+        lock.withLock { _ = servers.insert(server) }
+    }
+
+    func forget(_ server: String) {
+        lock.withLock { _ = servers.remove(server) }
+    }
+
+    func reset() {
+        lock.withLock { servers.removeAll() }
+    }
 }
 
+// MARK: - Connection
+
+/// One Jellyfin account's transport: its address, token and user, plus the
+/// captured sign-in it belongs to. Every request checks that sign-in is still
+/// the active one before and after it goes out.
 struct JellyfinConnection: Sendable {
     let serverURL: String
     let token: String?
@@ -122,25 +158,31 @@ struct JellyfinConnection: Sendable {
     let identity: CapturedOrdinaryRequestAuth?
     var sessionOverride: URLSession? = nil
 
+    /// The active Jellyfin account. Throws `signInRequired` without one.
     static func current() async throws -> Self {
         guard let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
               MediaServerProvider.forServerID(auth.account.serverId) == .jellyfin,
-              let token = auth.accessToken, !token.isEmpty else { throw JellyfinError.signInRequired }
-        let userID = await TokenStore.shared.nativeUserID(expected: auth.account)
-        guard let userID, !userID.isEmpty else { throw JellyfinError.signInRequired }
+              let token = auth.accessToken, !token.isEmpty
+        else { throw JellyfinError.signInRequired }
+        guard let userID = await TokenStore.shared.nativeUserID(expected: auth.account), !userID.isEmpty else {
+            throw JellyfinError.signInRequired
+        }
         return Self(serverURL: auth.account.serverURL, token: token, userID: userID, identity: auth)
     }
 
+    /// The active Jellyfin account, only when it's still the sign-in
+    /// `expected` captured (same account, profile and profile proof).
     static func current(matching expected: CapturedOrdinaryRequestAuth) async throws -> Self {
         let connection = try await current()
         guard connection.identity?.account == expected.account,
               connection.identity?.profileId == expected.profileId,
-              connection.identity?.profileToken == expected.profileToken else {
-            throw HTTPError.requestIdentityChanged
-        }
+              connection.identity?.profileToken == expected.profileToken
+        else { throw HTTPError.requestIdentityChanged }
         return connection
     }
 
+    /// Throws when the task was cancelled or the captured sign-in is no
+    /// longer the active one.
     func validate() async throws {
         try Task.checkCancellation()
         if let identity,
@@ -149,23 +191,46 @@ struct JellyfinConnection: Sendable {
         }
     }
 
+    /// `path` under the server address, with the query sorted by name. The
+    /// address must be plain http or https with a host and nothing else; the
+    /// path must be absolute and can't climb out with `..`.
     static func url(serverURL: String, path: String, query: [String: String] = [:]) throws -> URL {
-        guard var base = URLComponents(string: serverURL),
-              ["https", "http"].contains(base.scheme?.lowercased() ?? ""), base.host != nil,
-              base.user == nil, base.password == nil, base.query == nil, base.fragment == nil,
-              path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("..") else { throw JellyfinError.invalidURL }
-        let prefix = base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        base.path = (prefix.isEmpty ? "" : "/" + prefix) + path
-        base.queryItems = query.isEmpty ? nil : query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
-        guard let url = base.url else { throw JellyfinError.invalidURL }
+        guard var components = URLComponents(string: serverURL),
+              ["https", "http"].contains(components.scheme?.lowercased() ?? ""),
+              components.host != nil,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("..")
+        else { throw JellyfinError.invalidURL }
+        let base = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.path = (base.isEmpty ? "" : "/" + base) + path
+        components.queryItems = query.isEmpty
+            ? nil
+            : query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { throw JellyfinError.invalidURL }
         return url
     }
 
+    /// The ID itself when it's only ASCII letters, digits, `-` and `_`, so it
+    /// can go into a path as is.
     static func id(_ value: String) throws -> String {
-        guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95 }) else { throw JellyfinError.invalidResponse }
+        guard !value.isEmpty, value.utf8.allSatisfy(isIDByte) else { throw JellyfinError.invalidResponse }
         return value
     }
 
+    private static func isIDByte(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: "0")...UInt8(ascii: "9"),
+             UInt8(ascii: "A")...UInt8(ascii: "Z"),
+             UInt8(ascii: "a")...UInt8(ascii: "z"),
+             UInt8(ascii: "-"), UInt8(ascii: "_"):
+            true
+        default:
+            false
+        }
+    }
+
+    /// This installation's Jellyfin device ID, made once and kept.
     static let deviceID: String = {
         let key = "vivid.jellyfin.deviceID"
         if let saved = UserDefaults.standard.string(forKey: key) { return saved }
@@ -175,74 +240,78 @@ struct JellyfinConnection: Sendable {
     }()
 
     var headers: [String: String] {
-        var authorization = "MediaBrowser Client=\"Vivid\", Device=\"Apple\", DeviceId=\"\(Self.deviceID)\", Version=\"\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")\""
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        var authorization = "MediaBrowser Client=\"Vivid\", Device=\"Apple\", DeviceId=\"\(Self.deviceID)\", Version=\"\(version)\""
         if let token { authorization += ", Token=\"\(token)\"" }
         return ["Authorization": authorization]
     }
 
     private static let session = URLSession(configuration: {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        config.httpShouldSetCookies = false
-        config.urlCache = nil
-        return config
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        return configuration
     }(), delegate: JellyfinRedirectPolicy(), delegateQueue: nil)
 
+    // MARK: Requests
+
+    /// The decoded JSON reply; an empty body reads as an empty object.
     func request(_ method: String = "GET", _ path: String, query: [String: String] = [:], body: Any? = nil) async throws -> Any {
-        let data = try await data(method,path,query:query,body:body)
-        return data.isEmpty ? [:] : try JSONSerialization.jsonObject(with:data)
+        let data = try await data(method, path, query: query, body: body)
+        return data.isEmpty ? [:] : try JSONSerialization.jsonObject(with: data)
     }
 
-    /// Jellyfin 12 moved user-scoped routes out of /Users/{id}. Older
-    /// Jellyfin releases are retried only when the new route is absent.
+    /// Jellyfin 12 moved user-scoped routes out of `/Users/{id}`. Older
+    /// releases are only asked at the old route when the new one is missing.
     func legacyPath(for path: String) -> String? {
         guard let userID else { return nil }
         switch path {
         case "/UserViews": return "/Users/\(userID)/Views"
         case "/UserItems/Resume": return "/Users/\(userID)/Items/Resume"
         case "/Items/Latest": return "/Users/\(userID)/Items/Latest"
-        default:
-            let parts = path.split(separator:"/").map(String.init)
-            if parts.count == 2, parts[0] == "Items", (try? Self.id(parts[1])) != nil,
-               !["Filters","Filters2","Latest"].contains(parts[1]) {
-                return "/Users/\(userID)/Items/\(parts[1])"
-            }
-            if parts.count == 2, ["UserFavoriteItems","UserPlayedItems"].contains(parts[0]) {
-                return "/Users/\(userID)/\(parts[0].dropFirst(4))/\(parts[1])"
-            }
-            return nil
+        default: break
         }
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count == 2 else { return nil }
+        if parts[0] == "Items", (try? Self.id(parts[1])) != nil, !["Filters", "Filters2", "Latest"].contains(parts[1]) {
+            return "/Users/\(userID)/Items/\(parts[1])"
+        }
+        if ["UserFavoriteItems", "UserPlayedItems"].contains(parts[0]) {
+            return "/Users/\(userID)/\(parts[0].dropFirst(4))/\(parts[1])"
+        }
+        return nil
     }
 
+    /// The raw reply, trying the older route where needed. A server already
+    /// seen to need the older routes goes straight to them; if that route has
+    /// since gone (an in-place upgrade), the current route is tried and the
+    /// preference forgotten. Otherwise a 404 on the current route tries the
+    /// older one, and only a successful older route marks an older server: an
+    /// ordinary missing item 404s on both.
     func data(_ method: String = "GET", _ path: String, query: [String: String] = [:], body: Any? = nil) async throws -> Data {
         try await validate()
         let legacy = legacyPath(for: path)
-        // A server already shown to need the older routes skips the 404 round
-        // trip. If that route is now missing (an in-place upgrade), retry the
-        // current route and forget the preference.
         if let legacy, JellyfinLegacyRoutes.shared.prefersLegacy(serverURL) {
             let response = try await send(method, legacy, query: query, body: body)
-            if response.1.statusCode != 404 { return try await handle(response) }
+            guard response.1.statusCode == 404 else { return try await handle(response) }
             JellyfinLegacyRoutes.shared.forget(serverURL)
             return try await handle(try await send(method, path, query: query, body: body))
         }
         let response = try await send(method, path, query: query, body: body)
-        if response.1.statusCode == 404, let legacy {
-            let fallback = try await send(method, legacy, query: query, body: body)
-            // Only a successful older route proves an older server; an
-            // ordinary missing item 404s on both and is not remembered.
-            if (200..<300).contains(fallback.1.statusCode) { JellyfinLegacyRoutes.shared.remember(serverURL) }
-            return try await handle(fallback)
-        }
-        return try await handle(response)
+        guard response.1.statusCode == 404, let legacy else { return try await handle(response) }
+        let fallback = try await send(method, legacy, query: query, body: body)
+        if (200..<300).contains(fallback.1.statusCode) { JellyfinLegacyRoutes.shared.remember(serverURL) }
+        return try await handle(fallback)
     }
 
+    /// Sends one request. The connection's own user always goes as `UserId`.
     private func send(_ method: String, _ path: String, query: [String: String], body: Any?) async throws -> (Data, HTTPURLResponse) {
         let scopedQuery = userID.map { query.merging(["UserId": $0]) { _, captured in captured } } ?? query
         var request = URLRequest(url: try Self.url(serverURL: serverURL, path: path, query: scopedQuery))
         request.httpMethod = method
-        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.fragmentsAllowed])
@@ -254,53 +323,68 @@ struct JellyfinConnection: Sendable {
         return (data, response)
     }
 
+    /// A 401 retires this sign-in's token (posting the session expiry once)
+    /// and throws `signInRequired`; any other non-2xx throws `HTTPError.http`
+    /// without a body.
     private func handle(_ result: (Data, HTTPURLResponse)) async throws -> Data {
         let (data, response) = result
-        guard (200..<300).contains(response.statusCode) else {
-            if response.statusCode == 401 {
-                if let identity, let event = await TokenStore.shared.invalidateNativeToken(identity),
-                   await TokenStore.shared.shouldConsumeSessionExpiryEvent(event) {
-                    await MainActor.run { NotificationCenter.default.post(name: .vividSessionExpired, object: event) }
-                }
-                throw JellyfinError.signInRequired
+        switch response.statusCode {
+        case 200..<300:
+            return data
+        case 401:
+            if let identity,
+               let event = await TokenStore.shared.invalidateNativeToken(identity),
+               await TokenStore.shared.shouldConsumeSessionExpiryEvent(event) {
+                await MainActor.run { NotificationCenter.default.post(name: .vividSessionExpired, object: event) }
             }
+            throw JellyfinError.signInRequired
+        default:
             throw HTTPError.http(statusCode: response.statusCode, body: nil)
         }
-        return data
     }
 
+    /// An artwork or file URL the server returned, fetched through this
+    /// signed transport. It must sit under this server's base.
     func assetData(_ raw: String) async throws -> Data {
-        let base = try Self.url(serverURL:serverURL,path:"/")
-        guard let url = URL(string:raw), let path = ServerAssetPath.relative(url, base: base),
-              let components = URLComponents(url:url,resolvingAgainstBaseURL:false) else { throw JellyfinError.invalidURL }
-        let query = Dictionary((components.queryItems ?? []).map { ($0.name,$0.value ?? "") },uniquingKeysWith:{ _,last in last })
-        return try await data("GET",path,query:query)
+        let base = try Self.url(serverURL: serverURL, path: "/")
+        guard let url = URL(string: raw),
+              let path = ServerAssetPath.relative(url, base: base),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { throw JellyfinError.invalidURL }
+        let query = Dictionary((components.queryItems ?? []).map { ($0.name, $0.value ?? "") }) { _, last in last }
+        return try await data("GET", path, query: query)
     }
 
+    /// The reply as a JSON object; anything else throws `invalidResponse`.
     func object(_ method: String = "GET", _ path: String, query: [String: String] = [:], body: Any? = nil) async throws -> [String: Any] {
-        guard let result = try await request(method, path, query: query, body: body) as? [String: Any] else { throw JellyfinError.invalidResponse }
-        return result
+        guard let object = try await request(method, path, query: query, body: body) as? [String: Any] else {
+            throw JellyfinError.invalidResponse
+        }
+        return object
     }
 
+    // MARK: Sign-in
+
+    /// Checks the address is a Jellyfin server and returns its name.
     static func probe(serverURL: String) async throws -> String? {
-        let result = try await Self(serverURL: serverURL, token: nil, userID: nil, identity: nil).object("GET", "/System/Info/Public")
-        guard result["Id"] is String, result["Version"] is String else { throw JellyfinError.invalidResponse }
-        return result["ServerName"] as? String
+        let info = try await signIn(serverURL: serverURL).object("GET", "/System/Info/Public")
+        guard info["Id"] is String, info["Version"] is String else { throw JellyfinError.invalidResponse }
+        return info["ServerName"] as? String
     }
 
     static func login(serverURL: String, username: String, password: String) async throws -> (token: String, userID: String) {
-        let result = try await Self(serverURL: serverURL, token: nil, userID: nil, identity: nil)
+        let result = try await signIn(serverURL: serverURL)
             .object("POST", "/Users/AuthenticateByName", body: ["Username": username, "Pw": password])
         let login = try JellyfinLogin(result)
         return (login.token, login.userID)
     }
 
-    // MARK: Quick Connect
-
-    /// An unauthenticated connection for Quick Connect sign-in.
+    /// An unauthenticated connection for signing in.
     static func signIn(serverURL: String) -> Self {
         Self(serverURL: serverURL, token: nil, userID: nil, identity: nil)
     }
+
+    // MARK: Quick Connect
 
     /// Jellyfin answers a bare `true` or `false`. Any other answer, or no
     /// route at all, comes from a server that isn't Jellyfin 10.8 or later,
@@ -319,9 +403,9 @@ struct JellyfinConnection: Sendable {
         }
     }
 
-    /// Starts a request and returns the code the user approves from a signed-in
-    /// Jellyfin app. Jellyfin ties the request to this device's ID in the
-    /// authorisation header.
+    /// Starts a request and returns the code the user approves from a
+    /// signed-in Jellyfin app. Jellyfin ties the request to this device's ID
+    /// in the authorisation header.
     func initiateQuickConnect() async throws -> JellyfinQuickConnectCode {
         let result: [String: Any]
         do {
@@ -335,12 +419,13 @@ struct JellyfinConnection: Sendable {
             throw JellyfinError.quickConnectDisabled
         }
         guard let code = result["Code"] as? String, !code.isEmpty,
-              let secret = result["Secret"] as? String, !secret.isEmpty else { throw JellyfinError.invalidResponse }
+              let secret = result["Secret"] as? String, !secret.isEmpty
+        else { throw JellyfinError.invalidResponse }
         return JellyfinQuickConnectCode(code: code, secret: secret)
     }
 
-    /// Whether the code has been approved yet. Jellyfin forgets a request once
-    /// it expires, after about ten minutes.
+    /// Whether the code has been approved yet. Jellyfin forgets a request
+    /// once it expires, after about ten minutes.
     func quickConnectApproved(secret: String) async throws -> Bool {
         do {
             let result = try await object("GET", "/QuickConnect/Connect", query: ["secret": secret])
@@ -377,720 +462,51 @@ struct JellyfinLogin: Sendable, Equatable {
 
     init(_ result: [String: Any]) throws {
         guard let token = result["AccessToken"] as? String, !token.isEmpty,
-              let user = result["User"] as? [String: Any], let userID = user["Id"] as? String else { throw JellyfinError.invalidResponse }
+              let user = result["User"] as? [String: Any],
+              let userID = user["Id"] as? String
+        else { throw JellyfinError.invalidResponse }
         self.init(token: token, userID: try JellyfinConnection.id(userID), username: user["Name"] as? String ?? "")
     }
 }
 
-/// Only the native library-ID directory is cached, never catalogue/user state.
-/// A new login epoch or Jellyfin user gets a separate short-lived directory.
+// MARK: - Directory
+
+/// Library IDs from Views, under the number Vivid uses for each, kept for
+/// five minutes per credential owner and user (at most eight). Only this
+/// directory is cached, never catalogue or user state.
 actor JellyfinLibraryDirectory {
     static let shared = JellyfinLibraryDirectory()
+
     private struct Key: Hashable {
         let account: RefreshAccountIdentity
         let user: String
     }
+
     private struct Entry {
         let expires: Date
         let ids: [String: String]
     }
+
     private var entries: [Key: Entry] = [:]
 
     func remember(_ rows: [[String: Any]], connection: JellyfinConnection, now: Date = Date()) {
-        guard let account = connection.identity?.account, let user = connection.userID else { return }
+        guard let key = Self.key(connection) else { return }
         entries = entries.filter { $0.value.expires > now }
-        let key = Key(account: account, user: user)
         if entries.count >= 8, entries[key] == nil { entries.removeAll() }
         let pairs = rows.compactMap { row -> (String, String)? in
             guard let id = row["Id"] as? String else { return nil }
             return (String(JellyfinAdapter.numberID(id)), id)
         }
-        entries[key] = Entry(expires: now.addingTimeInterval(300),
-            ids: Dictionary(pairs, uniquingKeysWith: { first, _ in first }))
+        entries[key] = Entry(expires: now.addingTimeInterval(300), ids: Dictionary(pairs) { first, _ in first })
     }
 
     func nativeID(_ number: String, connection: JellyfinConnection, now: Date = Date()) -> String? {
-        guard let account = connection.identity?.account, let user = connection.userID,
-              let entry = entries[Key(account: account, user: user)], entry.expires > now else { return nil }
+        guard let key = Self.key(connection), let entry = entries[key], entry.expires > now else { return nil }
         return entry.ids[number]
     }
-}
 
-struct JellyfinAdapter {
-    let connection: JellyfinConnection
-    var userID: String { connection.userID! }
-    static let browseFields = "Overview,Genres,Studios,ProviderIds,DateCreated,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
-    static let homeFields = browseFields + ",MediaSources,MediaStreams"
-    static let fields = "Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
-
-    static func seconds(_ ticks: Any?) -> Double {
-        guard let number = ticks as? NSNumber else { return 0 }
-        let value = number.doubleValue / 10_000_000
-        return value.isFinite ? max(0,value) : 0
-    }
-
-    static func numberID(_ raw: String) -> Int {
-        if let numeric = Int(raw), numeric >= 0 { return numeric }
-        return SHA256.hash(data: Data(raw.utf8)).prefix(7).reduce(0) { ($0 << 8) | Int($1) }
-    }
-
-    /// One item's watch state as a `ProgressPullItem` row. Jellyfin clears
-    /// the position when it marks an item played, so played rows report 0.
-    static func progress(_ raw: [String: Any]) -> [String: Any]? {
-        guard let id = raw["Id"] as? String, (try? JellyfinConnection.id(id)) != nil else { return nil }
-        let user = raw["UserData"] as? [String: Any] ?? [:]
-        return ["mediaItemId": id, "positionSeconds": seconds(user["PlaybackPositionTicks"]),
-                "durationSeconds": seconds(raw["RunTimeTicks"]), "completed": user["Played"] as? Bool ?? false]
-    }
-
-    static func decode<T: Decodable>(_ value: Any, as type: T.Type = T.self) throws -> T {
-        try JSONDecoder().decode(type, from: JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
-    }
-
-    func image(_ item: [String: Any], kind: String) -> String? {
-        let tags = item["ImageTags"] as? [String: Any] ?? [:]
-        var imageID = item["Id"] as? String
-        var tag = tags[kind] as? String
-        if kind == "Backdrop" {
-            tag = (item["BackdropImageTags"] as? [String])?.first
-            if tag == nil {
-                imageID = item["ParentBackdropItemId"] as? String
-                tag = (item["ParentBackdropImageTags"] as? [String])?.first
-            }
-        } else if kind == "Primary", tag == nil {
-            imageID = item["SeriesId"] as? String
-            tag = item["SeriesPrimaryImageTag"] as? String
-        } else if kind == "Logo", tag == nil {
-            imageID = item["ParentLogoItemId"] as? String
-            tag = item["ParentLogoImageTag"] as? String
-        }
-        guard let imageID, let tag, (try? JellyfinConnection.id(imageID)) != nil else { return nil }
-        return try? JellyfinConnection.url(serverURL: connection.serverURL,
-            path: "/Items/\(imageID)/Images/\(kind)", query: ["tag": tag, "maxWidth": kind == "Backdrop" ? "1920" : "780", "quality": "90"]).absoluteString
-    }
-
-    func poster(_ raw: [String: Any]) -> String? {
-        guard ["Episode", "Season"].contains(raw["Type"] as? String ?? ""),
-              let seriesID = raw["SeriesId"] as? String,
-              (try? JellyfinConnection.id(seriesID)) != nil else {
-            return image(raw, kind: "Primary")
-        }
-        var query = ["maxWidth": "780", "quality": "90"]
-        if let tag = raw["SeriesPrimaryImageTag"] as? String, !tag.isEmpty { query["tag"] = tag }
-        return try? JellyfinConnection.url(serverURL: connection.serverURL,
-            path: "/Items/\(seriesID)/Images/Primary", query: query).absoluteString
-    }
-
-    func item(_ raw: [String: Any]) throws -> [String: Any] {
-        try item(raw, watchlist: Set(watchlistIDs))
-    }
-
-    /// Converts a page of items, reading the watchlist once rather than per item.
-    func convert(_ rows: [[String: Any]]) throws -> [[String: Any]] {
-        let watchlist = Set(watchlistIDs)
-        return try rows.map { try item($0, watchlist: watchlist) }
-    }
-
-    func item(_ raw: [String: Any], watchlist: Set<String>) throws -> [String: Any] {
-        guard let id = raw["Id"] as? String, let name = raw["Name"] as? String else { throw JellyfinError.invalidResponse }
-        _ = try JellyfinConnection.id(id)
-        let kind = (raw["Type"] as? String ?? "Movie").lowercased()
-        let user = raw["UserData"] as? [String: Any] ?? [:]
-        let seconds = Self.seconds(raw["RunTimeTicks"])
-        let position = Self.seconds(user["PlaybackPositionTicks"])
-        guard let runtime = Int(exactly: (seconds / 60).rounded(.towardZero)) else {
-            throw JellyfinError.invalidResponse
-        }
-        var value: [String: Any] = ["contentId": id, "title": name, "type": kind == "boxset" ? "collection" : kind,
-            "status": "available", "runtime": runtime, "durationSeconds": seconds, "positionSeconds": position,
-            "userState": ["played": user["Played"] as? Bool ?? false, "isFavorite": user["IsFavorite"] as? Bool ?? false, "inWatchlist": watchlist.contains(id)],
-            "userData": ["played": user["Played"] as? Bool ?? false, "isInProgress": position > 0, "positionSeconds": position, "durationSeconds": seconds],
-            "versions": try (raw["MediaSources"] as? [[String: Any]] ?? []).map { try version($0, chapters: raw["Chapters"] as? [[String: Any]] ?? []) }]
-        let pairs = ["ProductionYear":"year", "Overview":"overview", "OfficialRating":"contentRating", "Genres":"genres", "CommunityRating":"ratingTmdb", "CriticRating":"ratingRtCritic", "PremiereDate":"releaseDate", "DateCreated":"addedAt", "SeriesId":"seriesId", "SeriesName":"seriesTitle", "ParentIndexNumber":"seasonNumber", "IndexNumber":"episodeNumber", "ChildCount":"episodeCount", "Status":"showStatus", "SortName":"sortTitle"]
-        for (source,target) in pairs { value[target] = raw[source] }
-        let people = raw["People"] as? [[String:Any]] ?? []
-        value["cast"] = people.filter { $0["Type"] as? String == "Actor" }.compactMap { person -> [String:Any]? in
-            guard let name = person["Name"] as? String else { return nil }
-            var member: [String:Any] = ["name":name]
-            if let id = person["Id"] as? String { member["personId"] = rememberPerson(id) }; member["character"] = person["Role"]
-            if let id = person["Id"] as? String, let tag = person["PrimaryImageTag"] as? String {
-                member["photoUrl"] = try? JellyfinConnection.url(serverURL:connection.serverURL,path:"/Items/\(JellyfinConnection.id(id))/Images/Primary",query:["tag":tag,"maxWidth":"300"]).absoluteString
-            }
-            return member
-        }
-        value["crew"] = people.filter { $0["Type"] as? String != "Actor" }.compactMap { person -> [String: Any]? in
-            guard let name = person["Name"] as? String else { return nil }
-            var member: [String: Any] = ["name": name]
-            member["job"] = person["Role"] ?? person["Type"]
-            if let id = person["Id"] as? String {
-                member["personId"] = rememberPerson(id)
-                if let tag = person["PrimaryImageTag"] as? String {
-                    member["photoUrl"] = try? JellyfinConnection.url(serverURL: connection.serverURL, path: "/Items/\(JellyfinConnection.id(id))/Images/Primary", query: ["tag": tag, "maxWidth": "300"]).absoluteString
-                }
-            }
-            return member
-        }
-        value["posterUrl"] = poster(raw)
-        value["stillUrl"] = image(raw, kind: "Primary")
-        value["backdropUrl"] = image(raw, kind: "Backdrop")
-        value["logoUrl"] = image(raw, kind: "Logo")
-        value["airDate"] = raw["PremiereDate"]
-        value["progressUpdatedAt"] = user["LastPlayedDate"]
-        value["studios"] = (raw["Studios"] as? [[String: Any]])?.compactMap { $0["Name"] as? String }
-        let providers = Dictionary((raw["ProviderIds"] as? [String:String] ?? [:]).map { ($0.key.lowercased(),$0.value) },uniquingKeysWith:{ _,last in last })
-        value["imdbId"] = providers["imdb"]; value["tmdbId"] = providers["tmdb"]; value["tvdbId"] = providers["tvdb"]
-        if kind == "season" {
-            let seasonNumber = raw["IndexNumber"] as? Int
-            value["seasonNumber"] = seasonNumber ?? 0
-            let count = raw["RecursiveItemCount"] as? Int ?? raw["ChildCount"] as? Int ?? 0
-            value["episodeCount"] = count
-            var state: [String: Any] = ["played": user["Played"] as? Bool ?? false]
-            if let unplayed = user["UnplayedItemCount"] as? Int {
-                state["unplayedCount"] = unplayed
-                state["watchedCount"] = max(0, count - unplayed)
-            }
-            value["userData"] = state
-            value["isSpecials"] = seasonNumber == 0
-            if let seasonNumber, seasonNumber >= 0 {
-                value["title"] = seasonNumber == 0 ? String(localized: "Specials") : String(localized: "Season \(String(seasonNumber))")
-            }
-        }
-        if kind == "episode" { value["seasonNumber"] = raw["ParentIndexNumber"] as? Int ?? 0; value["episodeNumber"] = raw["IndexNumber"] as? Int ?? 0; value["files"] = value["versions"] }
-        return value
-    }
-
-    func version(_ raw: [String: Any], chapters: [[String: Any]] = []) throws -> [String: Any] {
-        guard let id = raw["Id"] as? String else { throw JellyfinError.invalidResponse }
-        let streams = raw["MediaStreams"] as? [[String: Any]] ?? []
-        let video = streams.first { $0["Type"] as? String == "Video" } ?? [:]
-        let audios = streams.filter { $0["Type"] as? String == "Audio" }
-        var value: [String: Any] = ["fileId": Self.numberID(id), "duration": Self.seconds(raw["RunTimeTicks"]),
-            "audioTracks": audios.enumerated().map { ordinal, stream in track(stream, index: ordinal) },
-            "subtitleTracks": streams.filter { $0["Type"] as? String == "Subtitle" }.map { track($0, index: $0["Index"] as? Int ?? -1) },
-            "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0).merging(Self.dynamicRange($0)) { current, _ in current } },
-            "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? String(localized: "Chapter \(index + 1)")] }]
-        value["fileName"] = raw["Name"]
-        value["container"] = raw["Container"]; value["fileSize"] = raw["Size"]; value["bitrate"] = raw["Bitrate"]
-        value["codecVideo"] = video["Codec"]; value["codecAudio"] = audios.first?["Codec"]
-        if let height = video["Height"] as? Int {
-            let width = video["Width"] as? Int ?? 0
-            let resolution = width >= 3800 || height >= 2100 ? 2160
-                : width >= 1900 || height >= 1050 ? 1080
-                : width >= 1260 || height >= 700 ? 720 : height
-            value["resolution"] = "\(resolution)p"
-        }
-        value["hdr"] = (video["VideoRange"] as? String ?? "SDR") != "SDR"
-        if let defaultIndex = raw["DefaultAudioStreamIndex"] as? Int { value["effectiveAudioTrackIndex"] = audios.firstIndex { $0["Index"] as? Int == defaultIndex } }
-        return value
-    }
-
-    func track(_ raw: [String: Any], index: Int) -> [String: Any] {
-        var value: [String: Any] = ["index": index]
-        for (source,target) in ["Codec":"codec", "Language":"language", "DisplayTitle":"title", "Title":"embeddedTitle", "IsDefault":"default", "IsForced":"forced", "IsHearingImpaired":"hearingImpaired", "IsExternal":"external", "Channels":"channels", "ChannelLayout":"layout", "SampleRate":"sampleRate", "BitRate":"bitrate", "Width":"width", "Height":"height"] { value[target] = raw[source] }
-        return value
-    }
-
-    /// A video stream's dynamic range for the player and detail labels (see
-    /// `PlayerStreamBadges`). Jellyfin's `VideoRangeType` is the vocabulary
-    /// Silo shares (SDR, HDR10, HDR10Plus, HLG, DOVI, DOVIWithHDR10,
-    /// DOVIWithHDR10Plus, DOVIWithSDR, DOVIWithHLG, DOVIWithEL,
-    /// DOVIWithELHDR10Plus, DOVIInvalid, Unknown), `DvProfile` is the Dolby
-    /// Vision profile and `DvBlSignalCompatibilityId` its base-layer
-    /// compatibility ID (1 for HDR10, 2 for SDR, 4 for HLG, 6 for Blu-ray).
-    /// Values of the wrong type are skipped so they can't break decoding.
-    /// `videoRange` and `dolbyVision` stay empty because the phone's Dolby
-    /// Vision fact and the Continue Watching card overlays on Apple TV
-    /// (`TVFocusMarquee`) read them; other cards use `OverlaySummary`.
-    static func dynamicRange(_ raw: [String: Any]) -> [String: Any] {
-        var value: [String: Any] = [:]
-        value["videoRangeType"] = raw["VideoRangeType"] as? String
-        value["dvProfile"] = raw["DvProfile"] as? Int
-        value["dvBlCompatId"] = raw["DvBlSignalCompatibilityId"] as? Int
-        value["hdr10Plus"] = raw["Hdr10PlusPresentFlag"] as? Bool
-        return value
-    }
-
-    func rawItem(_ id: String) async throws -> [String: Any] {
-        try await connection.object("GET", "/Items/\(JellyfinConnection.id(id))", query: ["Fields": Self.fields, "EnableUserData": "true"])
-    }
-
-    func items(_ path: String? = nil, query: [String: String] = [:]) async throws -> [String: Any] {
-        var defaults = ["UserId":userID,"Fields":Self.fields,"EnableUserData":"true"]
-        if path == nil { defaults["Recursive"] = "true" }
-        let q = defaults.merging(query) { _,new in new }
-        let raw = try await connection.object("GET", path ?? "/Items", query: q)
-        let converted = try convert(raw["Items"] as? [[String: Any]] ?? [])
-        let total = raw["TotalRecordCount"] as? Int ?? converted.count
-        return ["items": converted, "total": total, "totalExact": true, "hasMore": (Int(q["StartIndex"] ?? "0") ?? 0) + converted.count < total]
-    }
-
-    func episodes(seriesID: String, seasonNumber: String, resumeEpisodeID: String?) async throws -> [String: Any] {
-        async let page = connection.object("GET", "/Shows/\(JellyfinConnection.id(seriesID))/Episodes", query: [
-            "Season": seasonNumber, "UserId": userID, "EnableUserData": "true",
-            "Fields": Self.fields, "Recursive": "false", "IncludeItemTypes": "Episode",
-            "SortBy": "ParentIndexNumber,IndexNumber", "SortOrder": "Ascending"
-        ])
-        async let resume = resumeItem(resumeEpisodeID)
-        var rows = try await page["Items"] as? [[String: Any]] ?? []
-        if let selected = try await resume {
-            guard selected["Id"] as? String == resumeEpisodeID,
-                  selected["Type"] as? String == "Episode",
-                  selected["SeriesId"] as? String == seriesID,
-                  selected["ParentIndexNumber"] as? Int == Int(seasonNumber),
-                  let episodeNumber = selected["IndexNumber"] as? Int else {
-                throw JellyfinError.invalidResponse
-            }
-            if let index = rows.firstIndex(where: {
-                $0["Id"] as? String == resumeEpisodeID
-                    || $0["IndexNumber"] as? Int == episodeNumber
-            }) {
-                rows[index] = selected
-            } else {
-                rows.append(selected)
-            }
-        }
-        try await connection.validate()
-        return ["episodes": try convert(rows)]
-    }
-
-    private func resumeItem(_ id: String?) async throws -> [String: Any]? {
-        guard let id else { return nil }
-        do {
-            return try await rawItem(id)
-        } catch HTTPError.http(statusCode: 404, body: _) {
-            // A deleted resume version must not hide the remaining season.
-            // Keep authentication, cancellation and all other failures visible.
-            try await connection.validate()
-            return nil
-        }
-    }
-
-    func libraryViews() async throws -> [String: Any] {
-        let result = try await connection.object("GET", "/UserViews")
-        await JellyfinLibraryDirectory.shared.remember(result["Items"] as? [[String: Any]] ?? [], connection: connection)
-        try await connection.validate()
-        return result
-    }
-
-    func libraryID(_ number: String) async throws -> String {
-        try await connection.validate()
-        if let cached = await JellyfinLibraryDirectory.shared.nativeID(number, connection: connection) {
-            try await connection.validate()
-            return try JellyfinConnection.id(cached)
-        }
-        let views = try await libraryViews()
-        guard let id = (views["Items"] as? [[String: Any]] ?? []).compactMap({ $0["Id"] as? String }).first(where: { String(Self.numberID($0)) == number }) else { throw JellyfinError.invalidResponse }
-        return try JellyfinConnection.id(id)
-    }
-
-    func seasonRows(_ rows: [[String:Any]], episodes: [[String:Any]]? = nil) throws -> [[String:Any]] {
-        let seasons = rows.filter { $0["Type"] as? String == "Season" }
-        let converted = try convert(seasons)
-        guard let episodes else { return converted }
-        return zip(seasons, converted).map { Self.countingGroupedVersions($1, seasonNumber: $0["IndexNumber"] as? Int, episodes: episodes) }
-    }
-
-    /// Jellyfin 12.2 can count every version of an episode in a season's RecursiveItemCount
-    /// and UnplayedItemCount, so 8 episodes with two versions each report 16.
-    /// The episode list groups versions into one row, so these rows give matching counts.
-    /// Returns nil when the list can't be read, leaving the server's counts in place.
-    func groupedEpisodeRows(seriesID: String, seasonNumber: Int? = nil) async -> [[String:Any]]? {
-        var query = ["UserId":userID, "EnableUserData":"true", "EnableImages":"false", "Fields":"MediaSourceCount",
-                     "Recursive":"false", "IncludeItemTypes":"Episode"]
-        if let seasonNumber { query["Season"] = String(seasonNumber) }
-        guard let id = try? JellyfinConnection.id(seriesID),
-              let page = try? await connection.object("GET", "/Shows/\(id)/Episodes", query: query) else { return nil }
-        return page["Items"] as? [[String:Any]]
-    }
-
-    /// Jellyfin groups versions in a season's ChildCount only when RecursiveItemCount isn't
-    /// requested with it, so a lower ChildCount there means a season is counting versions.
-    nonisolated static func countsVersions(_ seasons: [[String:Any]], grouped: [[String:Any]]) -> Bool {
-        let childCounts = Dictionary(grouped.compactMap { row in (row["Id"] as? String).map { ($0, row["ChildCount"] as? Int) } }) { first,_ in first }
-        return seasons.contains { season in
-            guard let id = season["Id"] as? String, let total = season["RecursiveItemCount"] as? Int, let child = childCounts[id] ?? nil else { return false }
-            return child < total
-        }
-    }
-
-    /// Recounts a season from its grouped episode rows when any of them has more than one
-    /// version. Seasons without versions keep the server's counts. Rows are matched by
-    /// season number because a season merged across libraries has a different ID per library.
-    nonisolated static func countingGroupedVersions(_ season: [String:Any], seasonNumber: Int?, episodes: [[String:Any]]) -> [String:Any] {
-        guard let seasonNumber else { return season }
-        let rows = episodes.filter { $0["ParentIndexNumber"] as? Int == seasonNumber && $0["LocationType"] as? String != "Virtual" }
-        guard rows.contains(where: { $0["MediaSourceCount"] as? Int ?? 1 > 1 }) else { return season }
-        let watched = rows.filter { ($0["UserData"] as? [String:Any])?["Played"] as? Bool == true }.count
-        var value = season
-        value["episodeCount"] = rows.count
-        value["userData"] = ["played": watched == rows.count, "watchedCount": watched, "unplayedCount": rows.count - watched]
-        return value
-    }
-
-    nonisolated static func excludesHomeRow(id: String, type: String, title: String) -> Bool {
-        func normalized(_ value: String) -> String {
-            value.lowercased().filter { $0.isLetter || $0.isNumber }
-        }
-        let excluded: Set<String> = ["featured","spotlight","recentlyadded","recentlyadd"]
-        return [id,type,title].contains { excluded.contains(normalized($0)) }
-    }
-
-    func home(library: String? = nil) async throws -> [String: Any] {
-        let parent: String?
-        if let library { parent = try await libraryID(library) } else { parent = nil }
-        var scope = ["Limit":"20", "MediaTypes":"Video", "Fields":Self.homeFields]
-        if let parent { scope["ParentId"] = parent }
-        // Independent rows and configuration should not add their latencies.
-        async let viewsRequest = libraryViews()
-        async let userRequest = connection.object("GET", "/Users/\(userID)")
-        async let resumeRequest = items("/UserItems/Resume", query: scope)
-        async let nextRequest = items("/Shows/NextUp", query: scope.merging(["EnableResumable":"false"]) { _, new in new })
-        let (views, user) = try await (viewsRequest, userRequest)
-        let excluded = Set((user["Configuration"] as? [String:Any])?["LatestItemsExcludes"] as? [String] ?? [])
-        let libraries = (views["Items"] as? [[String:Any]] ?? []).compactMap { view -> (String, String)? in
-            guard let id = view["Id"] as? String, let name = view["Name"] as? String,
-                  parent == nil || parent == id, !excluded.contains(id),
-                  ["movies","tvshows","mixed", ""].contains(view["CollectionType"] as? String ?? "") else { return nil }
-            return (id, name)
-        }
-        var latestSections: [[String: Any]] = []
-        // Fetch at most two latest-library rows at once, preserving server order.
-        for offset in stride(from: 0, to: libraries.count, by: 2) {
-            try Task.checkCancellation()
-            async let first = latestHomeSection(id: libraries[offset].0, name: libraries[offset].1)
-            if offset + 1 < libraries.count {
-                async let second = latestHomeSection(id: libraries[offset + 1].0, name: libraries[offset + 1].1)
-                let pair = try await (first, second)
-                latestSections.append(contentsOf: [pair.0, pair.1])
-            } else {
-                latestSections.append(try await first)
-            }
-        }
-        let (resume, next) = try await (resumeRequest, nextRequest)
-        try await connection.validate()
-        return ["sections": [section("continue_watching", String(localized: "Continue Watching"), resume),
-                             section("next_up", String(localized: "Next Up"), next)] + latestSections]
-    }
-
-    private func latestHomeSection(id: String, name: String) async throws -> [String: Any] {
-        let latest = try await connection.request("GET", "/Items/Latest",
-            query: ["ParentId":id,"Limit":"20","Fields":Self.homeFields,"EnableUserData":"true"])
-        let rows = try convert(latest as? [[String:Any]] ?? [])
-        return section("latestmedia_" + id, String(localized: "Latest \(name)", comment: "Home row of a library's newest items; the library name comes from the server"), ["items":rows,"total":rows.count])
-    }
-
-    func collection(_ raw: [String:Any]) -> [String:Any]? {
-        guard raw["Type"] as? String == "BoxSet", let id = raw["Id"] as? String, let name = raw["Name"] as? String else { return nil }
-        var result: [String:Any] = ["id":id,"name":name,"title":name,"collectionType":"collection","kind":"regular"]
-        result["itemCount"] = raw["ChildCount"] ?? raw["RecursiveItemCount"]
-        result["posterUrl"] = image(raw,kind:"Primary")
-        return result
-    }
-
-    func section(_ id: String, _ title: String, _ catalog: [String: Any], featured: Bool = false) -> [String: Any] {
-        // Continue Watching removal is Silo-only, so rows follow the server.
-        let rows = (catalog["items"] as? [[String:Any]] ?? []).map { item in
-            var card = item
-            if ["continue_watching", "next_up"].contains(id),
-               item["type"] as? String == "episode",
-               let still = item["stillUrl"] as? String, !still.isEmpty {
-                // Home's cards show the series background (the episode's
-                // own backdrop, if it has one); other places that use these
-                // rows keep the episode still.
-                card["seriesBackdropUrl"] = item["backdropUrl"]
-                card["backdropUrl"] = still
-            }
-            return card
-        }
-        return ["id":id,"sectionType":id,"title":title,"featured":featured,"items":rows,"totalCount":rows.count]
-    }
-
-    private var storagePrefix: String { "vivid.jellyfin." + (connection.identity?.account.serverId ?? connection.serverURL) + "." + userID }
-    // Vivid's person routes use numeric IDs; preserve Jellyfin's native ID in
-    // this server/user partition so navigation and filmography round-trip.
-    private func rememberPerson(_ nativeID: String) -> String {
-        let routeID = String(Self.numberID(nativeID))
-        JellyfinPeopleStore.shared.remember(routeID: routeID, nativeID: nativeID, partition: storagePrefix)
-        return routeID
-    }
-
-    private func nativePersonID(_ routeID: String) throws -> String {
-        guard let id = JellyfinPeopleStore.shared.nativeID(routeID: routeID, partition: storagePrefix) else {
-            throw JellyfinError.invalidResponse
-        }
-        return try JellyfinConnection.id(id)
-    }
-
-    private var watchlistIDs: [String] { UserDefaults.standard.stringArray(forKey: storagePrefix + ".watchlist") ?? [] }
-
-    /// No sort, so Jellyfin lists a collection in its own display order
-    /// (release date unless changed on the server), as its web client does.
-    nonisolated static func collectionQuery(id: String, offset: String, limit: String) -> [String:String] {
-        ["ParentId":id,"Recursive":"false","CollapseBoxSetItems":"false",
-         "StartIndex":offset,"Limit":limit]
-    }
-
-    nonisolated static func catalogFilterOptions(_ raw: [String: Any]) -> [String: Any] {
-        func names(_ value: Any?) -> [String] {
-            let values = (value as? [Any] ?? []).compactMap { entry -> String? in
-                if let name = entry as? String { return name }
-                return (entry as? [String: Any])?["Name"] as? String
-            }.filter { !$0.isEmpty }
-            return Array(Set(values)).sorted()
-        }
-        return ["genres": names(raw["Genres"]), "contentRatings": names(raw["OfficialRatings"]),
-                "studios": [String](), "networks": [String](), "countries": [String]()]
-    }
-
-    func catalog(_ input: [String: String]) async throws -> [String: Any] {
-        if let collection = input["collection_id"] {
-            return try await items(query:Self.collectionQuery(id:JellyfinConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60").merging(["Fields": Self.browseFields]) { _, new in new })
-        }
-        var q = ["Fields": Self.browseFields, "StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
-        // A server set to group movies or shows into collections would otherwise swap
-        // a library's titles for collection cards. Collections have their own pages.
-        q["CollapseBoxSetItems"] = "false"
-        // Search's "video" scope, like any other unmapped type, keeps both movies and series.
-        if let type = input["type"], let mapped = ["movie":"Movie", "series":"Series", "episode":"Episode"][type] { q["IncludeItemTypes"] = mapped }
-        for (source,target) in ["search":"SearchTerm", "q":"SearchTerm", "genre":"Genres", "genres":"Genres", "year":"Years", "years":"Years", "content_rating":"OfficialRatings", "studio":"StudioIds"] { if let v = input[source], !v.isEmpty { q[target] = v } }
-        let sorts = ["title":"SortName", "year":"ProductionYear", "release_date":"PremiereDate", "added":"DateCreated", "added_at":"DateCreated", "rating":"CommunityRating", "random":"Random", "runtime":"Runtime"]
-        if let sort = input["sort"], let mapped = sorts[sort] { q["SortBy"] = mapped }
-        if let library = input["library_id"] { q["ParentId"] = try await libraryID(library) }
-        if let prefix = input["name_prefix"], !prefix.isEmpty {
-            if prefix == "#" { q["NameLessThan"] = "A" }
-            else { q["NameStartsWith"] = prefix }
-        }
-        if let person = input["person_id"] { q["PersonIds"] = try nativePersonID(person) }
-        switch input["jellyfin_watch_status"] {
-        case "watched": q["IsPlayed"] = "true"
-        case "unwatched": q["IsPlayed"] = "false"
-        case "inProgress": q["Filters"] = "IsResumable"
-        case "favorited": q["IsFavorite"] = "true"
-        default: break
-        }
-        if input["source"] == "favorites" { q["Filters"] = "IsFavorite" }
-        if input["source"] == "history" { q["Filters"] = "IsPlayed"; q["SortBy"] = "DatePlayed"; q["SortOrder"] = "Descending"; q["IncludeItemTypes"] = input["type"] == "movie" ? "Movie" : input["type"] == "episode" ? "Episode" : "Movie,Episode" }
-        if input["source"] == "watchlist" {
-            let ids = watchlistIDs
-            guard !ids.isEmpty else { return ["items": [], "total": 0, "hasMore": false] }
-            q["Ids"] = ids.joined(separator: ",")
-            if input["type"] == nil { q.removeValue(forKey: "IncludeItemTypes") }
-        }
-        return try await items(query: q)
-    }
-
-    private func trackPreference(_ kind: String, id: String) -> [String:Any] {
-        guard let data = UserDefaults.standard.data(forKey:storagePrefix + "." + kind + "." + id) else { return [:] }
-        return (try? JSONSerialization.jsonObject(with:data)) as? [String:Any] ?? [:]
-    }
-
-    func watchWithPreferences(_ raw: [String:Any]) async throws -> [String:Any] {
-        let prefID = raw["SeriesId"] as? String ?? raw["Id"] as? String ?? ""
-        return try watch(raw, preferences: await JellyfinLocalPreferences.shared.playbackValues(connection: connection),
-                         subtitle: trackPreference("subtitle-prefs", id: prefID), audio: trackPreference("audio-prefs", id: prefID))
-    }
-
-    func watch(_ raw: [String:Any], preferences: [String:Any], subtitle: [String:Any] = [:], audio: [String:Any] = [:]) throws -> [String:Any] {
-        var value = try item(raw)
-        value["effectiveSubtitleLanguage"] = subtitle["subtitle_language"] ?? preferences["playback.subtitle_language"]
-        value["effectiveSubtitleMode"] = subtitle["subtitle_mode"] ?? preferences["playback.subtitle_mode"]
-        value["effectiveShowForcedSubtitles"] = subtitle["show_forced_subtitles"] ?? preferences["playback.show_forced_subtitles"]
-        value["effectiveSubtitleTrackSignature"] = subtitle["track_signature"]
-        let language = audio["audio_language"] as? String ?? preferences["playback.audio_language"] as? String
-        func normalized(_ code: String) -> String {
-            Locale(identifier:code).language.languageCode?.identifier(.alpha2) ?? code.lowercased()
-        }
-        value["versions"] = (value["versions"] as? [[String:Any]] ?? []).map { version in
-            var result = version
-            let tracks = version["audioTracks"] as? [[String:Any]] ?? []
-            if let language, !language.isEmpty, language != "original",
-               let selected = tracks.firstIndex(where:{ normalized($0["language"] as? String ?? "") == normalized(language) }) {
-                result["effectiveAudioTrackIndex"] = selected
-                result["effectiveAudioLanguage"] = language
-            }
-            return result
-        }
-        return value
-    }
-
-    func route(method: String, path: String, query: [String: String], body: Any?) async throws -> Any {
-        let p = path.split(separator: "/").map(String.init)
-        let payload = body as? [String: Any] ?? [:]
-        if path == "/api/v1/auth/logout" { return try await connection.request("POST", "/Sessions/Logout") }
-        if path == "/api/v1/auth/me" {
-            let user = try await connection.object("GET", "/Users/\(userID)")
-            return ["id": Self.numberID(userID), "username": user["Name"] as? String ?? "Jellyfin", "role": "user", "email": ""]
-        }
-        if path == "/api/v1/profiles", method == "GET" {
-            let user = try await connection.object("GET", "/Users/\(userID)")
-            return ["profiles": [["id": userID, "name": user["Name"] as? String ?? "Jellyfin", "hasPin": false, "isChild": false, "isPrimary": true]]]
-        }
-        if path == "/api/v1/home/sections" { return try await home() }
-        if p.count == 5, p[2] == "library", p[4] == "sections" { return try await home(library: p[3]) }
-        if path == "/api/v1/user/libraries" || path == "/api/v1/libraries" {
-            let result = try await libraryViews()
-            return (result["Items"] as? [[String: Any]] ?? []).compactMap { raw -> [String: Any]? in
-                guard let id = raw["Id"] as? String else { return nil }
-                let type = raw["CollectionType"] as? String ?? "mixed"
-                guard ["movies", "tvshows", "mixed", ""].contains(type) else { return nil }
-                return ["id": Self.numberID(id), "name": raw["Name"] as? String ?? String(localized: "Library", comment: "Fallback name for a library the server sent without one"), "type": type == "tvshows" ? "series" : type == "movies" ? "movie" : "mixed"]
-            }
-        }
-        if path == "/api/v1/catalog" { return try await catalog(query) }
-        if ["/api/v1/favorites", "/api/v1/history", "/api/v1/watchlist"].contains(path) {
-            return try await catalog(query.merging(["source":p[2]]) { _,new in new })
-        }
-        if p.count == 5, p[2] == "catalog", p[3] == "items" {
-            let raw = try await rawItem(p[4])
-            let value = try item(raw)
-            // Like the seasons route, only a season counting versions lists its episodes.
-            guard raw["Type"] as? String == "Season", raw["RecursiveItemCount"] is Int,
-                  let series = raw["SeriesId"] as? String, let number = raw["IndexNumber"] as? Int,
-                  let grouped = try? await connection.object("GET", "/Items/\(JellyfinConnection.id(p[4]))", query: ["Fields":"ChildCount","EnableUserData":"true","EnableImages":"false"]),
-                  Self.countsVersions([raw], grouped: [grouped]),
-                  let episodes = await groupedEpisodeRows(seriesID: series, seasonNumber: number) else { return value }
-            return Self.countingGroupedVersions(value, seasonNumber: number, episodes: episodes)
-        }
-        if p.count == 4, p[2] == "people", method == "GET" {
-            let raw = try await rawItem(nativePersonID(p[3]))
-            var person: [String:Any] = ["id":Self.numberID(p[3]), "name":raw["Name"] as? String ?? ""]
-            person["bio"] = raw["Overview"]; person["photoUrl"] = image(raw,kind:"Primary")
-            person["birthDate"] = raw["PremiereDate"]; person["deathDate"] = raw["EndDate"]
-            return person
-        }
-        if p.count == 4, p[2] == "watch" {
-            let raw = try await rawItem(p[3])
-            return try await watchWithPreferences(raw)
-        }
-        if p.count == 4, ["audio-prefs","subtitle-prefs"].contains(p[2]) {
-            _ = try JellyfinConnection.id(p[3])
-            try await connection.validate()
-            let key = storagePrefix + "." + p[2] + "." + p[3]
-            if method == "GET" { return trackPreference(p[2],id:p[3]) }
-            if method == "DELETE" { UserDefaults.standard.removeObject(forKey:key); return [:] }
-            guard method == "PUT" else { throw JellyfinError.unsupportedFeature }
-            UserDefaults.standard.set(try JSONSerialization.data(withJSONObject:payload),forKey:key)
-            return payload
-        }
-        if p.count == 6, p[2] == "catalog", p[3] == "series", p[5] == "seasons" {
-            let series = try JellyfinConnection.id(p[4])
-            let query = ["UserId":userID,"Fields":Self.fields,"EnableUserData":"true","Recursive":"false","IncludeItemTypes":"Season","SortBy":"SortName","SortOrder":"Ascending"]
-            async let result = connection.object("GET", "/Shows/\(series)/Seasons", query: query)
-            async let grouped = try? connection.object("GET", "/Shows/\(series)/Seasons", query: query.merging(["Fields":"ChildCount","EnableImages":"false"]) { _,new in new })
-            let rows = try await result["Items"] as? [[String:Any]] ?? []
-            // Only a series whose seasons count versions pays for listing every episode.
-            let versioned = Self.countsVersions(rows, grouped: await grouped?["Items"] as? [[String:Any]] ?? [])
-            return ["seasons":try await seasonRows(rows, episodes: versioned ? groupedEpisodeRows(seriesID: series) : nil)]
-        }
-        if p.count == 8, p[2] == "catalog", p[3] == "series", p[7] == "episodes" {
-            return try await episodes(seriesID: p[4], seasonNumber: p[6], resumeEpisodeID: query["resume_episode_id"])
-        }
-        if p.count == 4, ["favorites", "watched"].contains(p[2]) {
-            let kind = p[2] == "favorites" ? "FavoriteItems" : "PlayedItems"
-            if method == "GET" {
-                let raw = try await rawItem(p[3]); let data = raw["UserData"] as? [String: Any] ?? [:]
-                guard data[p[2] == "watched" ? "Played" : "IsFavorite"] as? Bool == true else { throw HTTPError.http(statusCode: 404, body: nil) }
-                return [:]
-            }
-            return try await connection.request(method == "DELETE" ? "DELETE" : "POST", "/User\(kind)/\(JellyfinConnection.id(p[3]))")
-        }
-        if path == "/api/v1/recommendations/discover" {
-            let result = try await items(query:["SortBy":"Random","IncludeItemTypes":"Movie,Series","Limit":"30","Fields":Self.homeFields])
-            return ["rows":[["type":"discover","label":String(localized: "Discover"),"items":result["items"] ?? []]]]
-        }
-        if p.count == 5, p[2] == "recommendations", p[3] == "similar" {
-            let result = try await items("/Items/\(JellyfinConnection.id(p[4]))/Similar", query: ["Limit":"12","Fields":Self.browseFields])
-            return ["items": (result["items"] as? [[String: Any]] ?? []).map { ["contentId":$0["contentId"]!, "score":1] }]
-        }
-        if p.count == 4, p[2] == "watchlist" {
-            let id = try JellyfinConnection.id(p[3])
-            var ids = watchlistIDs
-            if method == "GET" {
-                guard ids.contains(id) else { throw HTTPError.http(statusCode: 404, body: nil) }
-            } else if method == "DELETE" { ids.removeAll { $0 == id } }
-            else if method == "PUT", !ids.contains(id) { ids.append(id) }
-            UserDefaults.standard.set(ids, forKey: storagePrefix + ".watchlist")
-            return [:]
-        }
-        if path == "/api/v1/collections", method == "GET" {
-            let raw = try await connection.object("GET", "/Items", query:["Recursive":"true", "IncludeItemTypes":"BoxSet", "Fields":"Overview,ChildCount,RecursiveItemCount", "SortBy":"SortName", "SortOrder":"Ascending"])
-            return ["collections":(raw["Items"] as? [[String:Any]] ?? []).compactMap(collection),"groups":[]]
-        }
-        if p.count == 5, p[2] == "library", p[4] == "collections" {
-            let raw = try await connection.object("GET", "/Items", query:["Recursive":"true", "IncludeItemTypes":"BoxSet", "Fields":"ChildCount,RecursiveItemCount", "ParentId":try await libraryID(p[3])])
-            return ["collections":(raw["Items"] as? [[String:Any]] ?? []).compactMap(collection),"sections":[]]
-        }
-        if p.count == 5, p[2] == "collections", p[4] == "items", method == "GET" {
-            return try await items(query:Self.collectionQuery(id:JellyfinConnection.id(p[3]),offset:query["offset"] ?? "0",limit:query["limit"] ?? "200"))
-        }
-        if p.count >= 3, p[2] == "downloads" {
-            return try await JellyfinDownloads.shared.route(connection:connection,method:method,path:p,body:payload)
-        }
-        if path == "/api/v1/sync/progress" {
-            var results: [[String:Any]] = []
-            for item in payload["items"] as? [[String:Any]] ?? [] {
-                guard let id = item["media_item_id"] as? String,
-                      let position = item["position_seconds"] as? Double ?? item["position"] as? Double else { throw JellyfinError.invalidResponse }
-                // A stop report, unlike a user-data write, goes through
-                // Jellyfin's resume settings and needs no prior start. Without
-                // a PlaySessionId it can't end a transcode, and without a
-                // MediaSourceId it updates the item itself. A stop isn't safe
-                // to repeat, so a failure part-way returns the items already
-                // accepted rather than failing them all.
-                do { _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":JellyfinConnection.id(id), "PositionTicks":JellyfinPlayback.ticks(position)]) }
-                catch let error as HTTPError where error.isPermanentRejection {
-                    // Refused outright, for example an item the server no
-                    // longer has. Reporting it as an error lets the queue use
-                    // up that entry's retries instead of it holding up every
-                    // entry behind it.
-                    results.append(["mediaItemId":id,"status":"error"]); continue
-                }
-                catch { guard !results.isEmpty else { throw error }; break }
-                results.append(["mediaItemId":id,"status":"ok"])
-            }
-            return ["results":results]
-        }
-        // Jellyfin has no progress change feed, so this answers with the
-        // current watch state of the items named in `ids` (the device's downloads).
-        if path == "/api/v1/progress", method == "GET", let list = query["ids"] {
-            let ids = try list.split(separator: ",").map { try JellyfinConnection.id(String($0)) }
-            guard !ids.isEmpty else { return ["progress": []] }
-            let raw = try await connection.object("GET", "/Items", query: [
-                "UserId": userID, "Ids": ids.joined(separator: ","), "Recursive": "true", "EnableUserData": "true", "EnableImages": "false"
-            ])
-            return ["progress": (raw["Items"] as? [[String: Any]] ?? []).compactMap(Self.progress)]
-        }
-        if path.hasPrefix("/api/v1/settings/values/") || path == "/api/v1/settings/contract/capabilities" {
-            return try await JellyfinLocalPreferences.shared.route(connection:connection,method:method,path:p,query:query,body:payload)
-        }
-        if path == "/api/v1/settings/effective" {
-            let settings = (query["keys"] ?? "").split(separator:",").compactMap { key -> [String:Any]? in
-                let prefix = "vivid.jellyfin.setting.\(connection.identity?.account.serverId ?? connection.serverURL).\(userID)."
-                let user = UserDefaults.standard.string(forKey:prefix + String(key))
-                let device = UserDefaults.standard.string(forKey:prefix + "device." + String(key))
-                guard let value = device ?? user else { return nil }
-                var setting: [String:Any] = ["key":String(key),"effectiveValue":value,"source":device == nil ? "user":"device","hasDeviceOverride":device != nil]
-                setting["userValue"] = user; setting["deviceValue"] = device
-                return setting
-            }
-            return ["settings":settings]
-        }
-        if path == "/api/v1/catalog/filters" {
-            var q = ["UserId":userID,"IncludeItemTypes":"Movie,Series"]
-            if let library = query["library_id"] { q["ParentId"] = try await libraryID(library) }
-            return Self.catalogFilterOptions(try await connection.object("GET", "/Items/Filters", query:q))
-        }
-        if p.count >= 3, p[2] == "settings" {
-            let key = "vivid.jellyfin.setting.\(connection.identity?.account.serverId ?? connection.serverURL).\(userID).\(p.dropFirst(3).joined(separator: "."))"
-            if method == "GET" {
-                guard let value = UserDefaults.standard.string(forKey:key) else { throw HTTPError.http(statusCode: 404, body: nil) }
-                return ["key":p.last ?? "", "value":value]
-            }
-            if method == "DELETE" { UserDefaults.standard.removeObject(forKey:key) }
-            else if let value = payload["value"] as? String { UserDefaults.standard.set(value,forKey:key) }
-            else { throw JellyfinError.unsupportedFeature }
-            return [:]
-        }
-        throw JellyfinError.unsupportedFeature
+    private static func key(_ connection: JellyfinConnection) -> Key? {
+        guard let account = connection.identity?.account, let user = connection.userID else { return nil }
+        return Key(account: account, user: user)
     }
 }

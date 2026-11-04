@@ -1,6 +1,6 @@
 import Foundation
 
-/// Body for POST /api/v1/auth/login.
+/// Body of `POST /api/v1/auth/login`. A nil `provider` is left out.
 struct LoginRequest: Codable {
     let username: String
     let password: String
@@ -13,7 +13,7 @@ struct LoginRequest: Codable {
     }
 }
 
-/// Response from POST /api/v1/auth/login.
+/// Reply to `POST /api/v1/auth/login`.
 struct LoginResponse: Codable {
     let accessToken: String
     let refreshToken: String
@@ -21,11 +21,8 @@ struct LoginResponse: Codable {
     let user: AuthUser
 }
 
-/// Wire-format user object returned inside auth responses.
-///
-/// Distinct from ``UserInfo`` (used by the rest of the app) because the
-/// server wire shape has more fields than the reduced `UserInfo` the UI
-/// needs. `VividAPI` maps between the two at the API boundary.
+/// The user inside auth replies. It has more fields than the `UserInfo` the
+/// rest of the app uses; `VividAPI` maps one to the other.
 struct AuthUser: Codable {
     let id: Int
     let username: String
@@ -41,7 +38,7 @@ struct ImpersonationInfo: Codable {
     let impersonatorUsername: String
 }
 
-/// Body for POST /api/v1/auth/refresh.
+/// Body of `POST /api/v1/auth/refresh`.
 struct RefreshRequest: Codable {
     let refreshToken: String
 
@@ -54,7 +51,7 @@ struct RefreshRequest: Codable {
     }
 }
 
-/// Response from POST /api/v1/auth/refresh.
+/// Reply to `POST /api/v1/auth/refresh`.
 struct RefreshResponse: Codable {
     let accessToken: String
     let refreshToken: String

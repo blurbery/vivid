@@ -1,11 +1,10 @@
 import Foundation
 
-/// Resolves the native display name advertised by a Silo server.
+/// Reads the display name a Silo server advertises.
 ///
-/// Branding owns the native product identity. Health remains a compatibility
-/// fallback when branding is blank or the endpoint returns 404, indicating a
-/// server that predates the public branding endpoint. Other failures leave the
-/// previously stored identity unchanged.
+/// The branding endpoint owns the name. Health is the fallback when branding
+/// has no name or returns 404 (a server older than that endpoint). Any other
+/// branding failure returns nil, so the stored name stays as it is.
 struct ServerIdentityResolver {
     private let httpClient: HTTPClient
 
@@ -24,23 +23,21 @@ struct ServerIdentityResolver {
                 return name
             }
         } catch HTTPError.http(let statusCode, _) where statusCode == 404 {
-            // Older servers do not expose native branding.
+            // Older servers have no branding endpoint.
         } catch {
             return nil
         }
 
-        if let health: HealthStatus = try? await httpClient.getUnauthenticated(
+        guard let health: HealthStatus = try? await httpClient.getUnauthenticated(
             serverURL: serverURL,
             path: "/api/v1/health"
-        ) {
-            return Self.usableName(health.serverName)
-        }
-        return nil
+        ) else { return nil }
+        return Self.usableName(health.serverName)
     }
 
+    /// The name without surrounding whitespace, or nil when that leaves nothing.
     private static func usableName(_ value: String?) -> String? {
-        guard let name = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !name.isEmpty else {
+        guard let name = value?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
             return nil
         }
         return name
