@@ -15,6 +15,7 @@ enum AppHealthMonitor {
         var bootTime = 0
         var armedAt: Date?
         var hangInProgressMs: Int?
+        // Reports recorded this session, against their caps.
         var watchdogReports = 0
         var playbackFailureReports = 0
         var downloadFailureReports = 0
@@ -32,6 +33,7 @@ enum AppHealthMonitor {
     /// leaves exit detection off rather than falling back to the standard
     /// store.
     static let store = UserDefaults(suiteName: "com.blurbery.vivid.health")
+
     /// A run of hangs is one problem; cap how many one session can record.
     private static let maxWatchdogReportsPerSession = 10
     /// Opening can briefly block on a slow device behind the splash screen,
@@ -49,11 +51,12 @@ enum AppHealthMonitor {
     private static let appErrorAttributes: Set<String> = [
         "method", "path", "status", "outcome", "error_code", "attempt", "phase", "reason", "state",
     ]
-    private static let state = OSAllocatedUnfairLock(initialState: State())
-    private static let storeQueue = DispatchQueue(label: "com.blurbery.vivid.health.store", qos: .utility)
     /// How often memory use is written to the exit marker while active, so a
     /// memory termination report shows how use grew before it.
     private static let memorySampleInterval: DispatchTimeInterval = .seconds(30)
+
+    private static let state = OSAllocatedUnfairLock(initialState: State())
+    private static let storeQueue = DispatchQueue(label: "com.blurbery.vivid.health.store", qos: .utility)
     private static let memorySampler = OSAllocatedUnfairLock<DispatchSourceTimer?>(initialState: nil)
     private static let watchdog = MainThreadWatchdog(
         onStall: { stalledMs in AppHealthMonitor.mainThreadStalled(ms: stalledMs) },
@@ -83,15 +86,8 @@ enum AppHealthMonitor {
             $0.bootTime = bootTime
         }
 
-        // Earlier builds kept both in the standard store. They are still read
-        // once, so a crash just before an update keeps what the app was
-        // doing, then removed.
-        let previous = (store?.data(forKey: markerKey) ?? UserDefaults.standard.data(forKey: markerKey))
-            .flatMap { try? JSONDecoder().decode(AppHealthExitMarker.self, from: $0) }
-        store?.removeObject(forKey: markerKey)
-        let backgroundContext = (store?.data(forKey: backgroundContextKey) ?? UserDefaults.standard.data(forKey: backgroundContextKey))
-            .flatMap { try? JSONDecoder().decode(AppHealthBackgroundContext.self, from: $0) }
-        store?.removeObject(forKey: backgroundContextKey)
+        let previous = takeSaved(AppHealthExitMarker.self, key: markerKey)
+        let backgroundContext = takeSaved(AppHealthBackgroundContext.self, key: backgroundContextKey)
         for key in [markerKey, backgroundContextKey] where UserDefaults.standard.object(forKey: key) != nil {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -100,30 +96,11 @@ enum AppHealthMonitor {
         let previousEvents = AppHealthTrail.collectPrevious()
         AppHealthTrail.isEnabled = true
 
-        let verdict = AppHealthExitMarker.evaluate(
-            previous,
-            currentBuild: AppHealthAppInfo.current.build,
-            currentBootTime: bootTime
-        )
-        let report: AppHealthReport?
-        if let crash {
-            // A recorded signal is a crash whatever the marker says, including
-            // one that happened in the background.
-            report = AppHealthExitMarker.crashReport(
-                crash,
-                marker: previous.flatMap { $0.debuggerAttached ? nil : $0 },
-                backgroundContext: backgroundContext,
-                detectedAt: Date(),
-                app: AppHealthAppInfo.current,
-                recentEvents: previousEvents
-            )
-        } else if case .unexpectedExit(let marker) = verdict {
-            report = marker.report(detectedAt: Date(), app: AppHealthAppInfo.current, recentEvents: previousEvents)
-        } else {
-            report = nil
-        }
-        if let report {
-            storeQueue.async { AppHealthStore.shared.add(report) }
+        if let report = previousSessionReport(
+            marker: previous, backgroundContext: backgroundContext, crash: crash,
+            bootTime: bootTime, recentEvents: previousEvents
+        ) {
+            add(report)
             DiagTrace.breadcrumb(
                 .essential,
                 level: .warning,
@@ -137,6 +114,42 @@ enum AppHealthMonitor {
         #if os(iOS)
         MetricKitReportSubscriber.install()
         #endif
+    }
+
+    /// Reads and removes what the previous process saved. Earlier builds kept
+    /// it in the standard store, which is still read once, so a crash just
+    /// before an update keeps what the app was doing.
+    private static func takeSaved<Value: Decodable>(_ type: Value.Type, key: String) -> Value? {
+        let value = (store?.data(forKey: key) ?? UserDefaults.standard.data(forKey: key))
+            .flatMap { try? JSONDecoder().decode(Value.self, from: $0) }
+        store?.removeObject(forKey: key)
+        return value
+    }
+
+    /// A recorded signal is a crash whatever the marker says, including one
+    /// that happened in the background. Otherwise a marker that survived is
+    /// an unexpected exit, unless it's explained away.
+    private static func previousSessionReport(
+        marker: AppHealthExitMarker?,
+        backgroundContext: AppHealthBackgroundContext?,
+        crash: AppHealthCrashCapture.Previous?,
+        bootTime: Int,
+        recentEvents: [String]
+    ) -> AppHealthReport? {
+        let app = AppHealthAppInfo.current
+        if let crash {
+            return AppHealthExitMarker.crashReport(
+                crash,
+                marker: marker.flatMap { $0.debuggerAttached ? nil : $0 },
+                backgroundContext: backgroundContext,
+                detectedAt: Date(),
+                app: app,
+                recentEvents: recentEvents
+            )
+        }
+        let verdict = AppHealthExitMarker.evaluate(marker, currentBuild: app.build, currentBootTime: bootTime)
+        guard case .unexpectedExit(let marker) = verdict else { return nil }
+        return marker.report(detectedAt: Date(), app: app, recentEvents: recentEvents)
     }
 
     static func sceneDidBecomeActive() {
@@ -219,6 +232,11 @@ enum AppHealthMonitor {
         AppHealthTrail.flushSoon()
     }
 
+    static func playMethodChanged(_ playMethod: String?) {
+        let token = AppHealthContextSnapshot.playMethodToken(playMethod)
+        contextChanged { $0.playMethod = token }
+    }
+
     static func deviceOnlineChanged(_ online: Bool) {
         contextChanged { $0.deviceOnline = online }
     }
@@ -227,18 +245,18 @@ enum AppHealthMonitor {
         contextChanged { $0.serverReachable = reachable }
     }
 
-    // MARK: - Playback failures and app errors
+    private static func contextChanged(_ change: (inout AppHealthContextSnapshot) -> Void) {
+        _ = AppHealthContext.update(change)
+        writeMarker()
+    }
+
+    // MARK: - Playback failures, download failures and app errors
 
     /// Playback ended in failure. `reason` is the player's stable failure
     /// token; the position is rounded to the minute.
     static func playbackFailed(reason: String, playMethod: String?, positionMs: Int?) {
-        guard shouldReportPlaybackFailure(reason: reason, context: AppHealthContext.snapshot()) else { return }
-        let allowed = state.withLock { state -> Bool in
-            guard state.enabled, state.playbackFailureReports < maxPlaybackFailuresPerSession else { return false }
-            state.playbackFailureReports += 1
-            return true
-        }
-        guard allowed else { return }
+        guard shouldReportPlaybackFailure(reason: reason, context: AppHealthContext.snapshot()),
+              claim(\.playbackFailureReports, limit: maxPlaybackFailuresPerSession) else { return }
         var details: [String: DiagnosticsJSONValue] = [
             "reason": .string(AppHealthContextSnapshot.playMethodToken(reason) ?? "unknown"),
             "server": .string(MediaServerProvider.active.rawValue),
@@ -248,18 +266,22 @@ enum AppHealthMonitor {
         recordWithRecentEvents(kind: .playbackFailure, details: details)
     }
 
+    /// Cancelled playback is not a fault, and network failures while the
+    /// device is offline or the server is down are not the app's.
+    static func shouldReportPlaybackFailure(reason: String, context: AppHealthContextSnapshot) -> Bool {
+        if reason == "cancelled" { return false }
+        let networkReasons: Set<String> = ["network", "timeout"]
+        if networkReasons.contains(reason), !context.deviceOnline || !context.serverReachable { return false }
+        return true
+    }
+
     /// A download failed for good (registration refused, or preparing or
     /// transferring it ran out of retries). Connectivity failures, and other
     /// network failures while the device is offline or the server is
     /// unreachable, aren't recorded.
     static func downloadFailed(_ failure: DownloadFailureReport) {
-        guard shouldReportDownloadFailure(failure, context: AppHealthContext.snapshot()) else { return }
-        let allowed = state.withLock { state -> Bool in
-            guard state.enabled, state.downloadFailureReports < maxDownloadFailuresPerSession else { return false }
-            state.downloadFailureReports += 1
-            return true
-        }
-        guard allowed else { return }
+        guard shouldReportDownloadFailure(failure, context: AppHealthContext.snapshot()),
+              claim(\.downloadFailureReports, limit: maxDownloadFailuresPerSession) else { return }
         recordWithRecentEvents(kind: .downloadFailure, details: failure.details)
     }
 
@@ -291,8 +313,9 @@ enum AppHealthMonitor {
             case .double, .url, .error: continue
             }
         }
-        let kindKey = [category.rawValue, tag, attrs["error_code"].flatMap(Self.token) ?? attrs["outcome"].flatMap(Self.token) ?? ""]
-            .joined(separator: "|")
+        // The same failure from the same place counts towards one kind's cap.
+        let code = attrs["error_code"].flatMap(token) ?? attrs["outcome"].flatMap(token) ?? ""
+        let kindKey = [category.rawValue, tag, code].joined(separator: "|")
         let allowed = state.withLock { state -> Bool in
             guard state.enabled, state.appErrorReports < maxAppErrorsPerSession,
                   state.appErrorKeys[kindKey, default: 0] < maxAppErrorsPerKind else { return false }
@@ -302,15 +325,6 @@ enum AppHealthMonitor {
         }
         guard allowed else { return }
         recordWithRecentEvents(kind: .appError, details: details)
-    }
-
-    /// Cancelled playback is not a fault, and network failures while the
-    /// device is offline or the server is down are not the app's.
-    static func shouldReportPlaybackFailure(reason: String, context: AppHealthContextSnapshot) -> Bool {
-        if reason == "cancelled" { return false }
-        let networkReasons: Set<String> = ["network", "timeout"]
-        if networkReasons.contains(reason), !context.deviceOnline || !context.serverReachable { return false }
-        return true
     }
 
     /// Network errors only count when they point at the app: a response it
@@ -332,13 +346,23 @@ enum AppHealthMonitor {
         return nil
     }
 
+    /// Counts one more report against a session cap. False once monitoring
+    /// is off or the cap is reached.
+    private static func claim(_ counter: WritableKeyPath<State, Int>, limit: Int) -> Bool {
+        state.withLockUnchecked { state in
+            guard state.enabled, state[keyPath: counter] < limit else { return false }
+            state[keyPath: counter] += 1
+            return true
+        }
+    }
+
     /// Builds the report once the triggering line has reached the event log,
     /// so the log ends with it.
     private static func recordWithRecentEvents(kind: AppHealthReport.Kind, details: [String: DiagnosticsJSONValue]) {
         let recordedAt = Date()
         let context = AppHealthContext.snapshot().attributes
         AppHealthTrail.queue.async {
-            let report = AppHealthReport(
+            add(AppHealthReport(
                 kind: kind,
                 source: .app,
                 recordedAt: recordedAt,
@@ -347,19 +371,13 @@ enum AppHealthMonitor {
                 context: context,
                 recentEvents: AppHealthTrail.recentOnQueue(),
                 fingerprintSeed: "\(recordedAt.timeIntervalSince1970)|\(kind.rawValue)"
-            )
-            storeQueue.async { AppHealthStore.shared.add(report) }
+            ))
         }
     }
 
-    static func playMethodChanged(_ playMethod: String?) {
-        let token = AppHealthContextSnapshot.playMethodToken(playMethod)
-        contextChanged { $0.playMethod = token }
-    }
-
-    private static func contextChanged(_ change: (inout AppHealthContextSnapshot) -> Void) {
-        _ = AppHealthContext.update(change)
-        writeMarker()
+    /// Store writes happen off the caller's thread, in order.
+    private static func add(_ report: AppHealthReport) {
+        storeQueue.async { AppHealthStore.shared.add(report) }
     }
 
     // MARK: - Memory
@@ -413,7 +431,7 @@ enum AppHealthMonitor {
         writeMarker()
         guard shouldReport, let durationMs else { return }
         let recordedAt = Date()
-        let report = AppHealthReport(
+        add(AppHealthReport(
             kind: .hang,
             source: .watchdog,
             recordedAt: recordedAt,
@@ -422,8 +440,7 @@ enum AppHealthMonitor {
             context: AppHealthContext.snapshot().attributes,
             recentEvents: AppHealthTrail.recent(),
             fingerprintSeed: "\(recordedAt.timeIntervalSince1970)|\(durationMs)"
-        )
-        storeQueue.async { AppHealthStore.shared.add(report) }
+        ))
         DiagTrace.breadcrumb(
             .essential,
             level: .warning,
@@ -452,118 +469,6 @@ enum AppHealthMonitor {
         )
         guard let data = try? JSONEncoder().encode(marker) else { return }
         store?.set(data, forKey: markerKey)
-    }
-}
-
-/// Pings the main queue from a utility queue and measures how long the main
-/// thread takes to answer. One timer wake-up every half second while the app
-/// is active; stopped in the background.
-final class MainThreadWatchdog {
-    static let interval: DispatchTimeInterval = .milliseconds(500)
-    /// Stalls at least this long are recorded as hangs.
-    static let hangThresholdMs = 1_000
-    /// Stalls this long are written to the exit marker while still running,
-    /// in case the system kills the app before the main thread recovers.
-    static let ongoingThresholdMs = 2_000
-    /// A gap between ticks this long means the whole process was suspended,
-    /// not that the main thread was busy.
-    static let suspensionGapMs = 2_000
-
-    private let queue = DispatchQueue(label: "com.blurbery.vivid.health.watchdog", qos: .utility)
-    private let onStall: (Int) -> Void
-    /// Called when a stall ends: with its duration when it reached the hang
-    /// threshold, otherwise `nil` (only after a stall was reported).
-    private let onRecovered: (Int?) -> Void
-
-    // Confined to `queue`.
-    private var timer: DispatchSourceTimer?
-    private var generation: UInt64 = 0
-    private var pendingSince: UInt64?
-    private var lastTick: UInt64 = 0
-    private var reportedStall = false
-
-    init(onStall: @escaping (Int) -> Void, onRecovered: @escaping (Int?) -> Void) {
-        self.onStall = onStall
-        self.onRecovered = onRecovered
-    }
-
-    func start() {
-        queue.async { [self] in
-            guard timer == nil else { return }
-            resetPending()
-            lastTick = 0
-            let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now() + Self.interval, repeating: Self.interval, leeway: .milliseconds(200))
-            timer.setEventHandler { [weak self] in self?.tick() }
-            self.timer = timer
-            timer.resume()
-        }
-    }
-
-    func stop() {
-        queue.async { [self] in
-            timer?.cancel()
-            timer = nil
-            resetPending()
-        }
-    }
-
-    private func resetPending() {
-        // Any acknowledgement still in flight belongs to the old generation
-        // and is ignored.
-        generation &+= 1
-        pendingSince = nil
-        reportedStall = false
-    }
-
-    private func tick() {
-        let now = DispatchTime.now().uptimeNanoseconds
-        defer { lastTick = now }
-        if lastTick != 0, Self.milliseconds(from: lastTick, to: now) >= Self.suspensionGapMs {
-            if reportedStall { onRecovered(nil) }
-            resetPending()
-            return
-        }
-        if let since = pendingSince {
-            let stalledMs = Self.milliseconds(from: since, to: now)
-            if !reportedStall, stalledMs >= Self.ongoingThresholdMs {
-                reportedStall = true
-                onStall(stalledMs)
-            }
-            return
-        }
-        pendingSince = now
-        let expectedGeneration = generation
-        DispatchQueue.main.async { [weak self] in
-            let answeredAt = DispatchTime.now().uptimeNanoseconds
-            self?.queue.async { self?.acknowledge(generation: expectedGeneration, answeredAt: answeredAt) }
-        }
-    }
-
-    private func acknowledge(generation expected: UInt64, answeredAt: UInt64) {
-        guard expected == generation, let since = pendingSince else { return }
-        // Ticks keep arriving while only the main thread is stuck. A long gap
-        // since the last tick means the whole process was suspended, and the
-        // answer may have beaten the first tick after resuming.
-        if lastTick != 0, Self.milliseconds(from: lastTick, to: answeredAt) >= Self.suspensionGapMs {
-            if reportedStall { onRecovered(nil) }
-            resetPending()
-            return
-        }
-        let durationMs = Self.milliseconds(from: since, to: answeredAt)
-        let wasReported = reportedStall
-        pendingSince = nil
-        reportedStall = false
-        if durationMs >= Self.hangThresholdMs {
-            onRecovered(durationMs)
-        } else if wasReported {
-            onRecovered(nil)
-        }
-    }
-
-    private static func milliseconds(from start: UInt64, to end: UInt64) -> Int {
-        guard end > start else { return 0 }
-        return Int((end - start) / 1_000_000)
     }
 }
 #endif
