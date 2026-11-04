@@ -1,13 +1,81 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Glass-capsule scrubber inspired by Infuse / the Apple TV app. Left/right
-/// presses route through `PlayerViewModel.skipBackward` / `skipForward`,
-/// which own a trailing-edge debounce — rapid presses coalesce into one
-/// seek fired after the user stops pressing. Select commits the in-flight
-/// preview immediately. In explicit timeline-scrub mode, Select starts and
-/// commits the preview; opening a player menu abandons the preview.
-/// The footer below the timeline owns the current-time readout.
+// BEGIN TVTimelineScrubMath
+// scripts/ci/check-tv-remote-wheel.sh compiles the code between these
+// markers on its own, so it must only need Foundation.
+
+/// Timeline arithmetic for the Apple TV scrubber.
+enum TVTimelineScrubMath {
+    /// Left and Right steps, in seconds.
+    static let backwardStep: Double = 10
+    static let forwardStep: Double = 30
+
+    /// A held Left or Right seeks this many seconds times the rate every
+    /// 100 ms. Left and Right step the rate along the ladder, which skips 0.
+    static let autoSeekBaseStep: Double = 2
+    static let autoSeekRates = [-32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32]
+
+    /// One full edge-to-edge swipe on the Siri Remote surface is about
+    /// 1,000 points, so a full swipe covers roughly 8% of the timeline and a
+    /// light drag lands within seconds of where it started.
+    static let panPointsForFullTimeline: CGFloat = 12000
+    /// Accumulated drag before the playhead moves. A clickpad click always
+    /// jitters the finger a few points and must not nudge the preview.
+    static let panDeadzone: CGFloat = 12
+
+    /// `time` as a fraction of `duration`, clamped to 0...1, or 0 when the
+    /// duration is unknown.
+    static func fraction(of time: Double, duration: Double) -> Double {
+        guard duration > 0 else { return 0 }
+        return min(max(time / duration, 0), 1)
+    }
+
+    /// `time` clamped to the timeline.
+    static func clampedTime(_ time: Double, duration: Double) -> Double {
+        min(max(time, 0), duration)
+    }
+
+    /// The rate `delta` rungs along the ladder from `rate`, stopping at
+    /// either end, or nil when `rate` isn't on the ladder.
+    static func autoSeekRate(from rate: Int, delta: Int) -> Int? {
+        guard let index = autoSeekRates.firstIndex(of: rate) else { return nil }
+        return autoSeekRates[max(0, min(autoSeekRates.count - 1, index + delta))]
+    }
+
+    /// Seconds of timeline a drag of `translation` points covers.
+    static func panSeconds(forTranslation translation: CGFloat, duration: Double) -> Double {
+        Double(translation / panPointsForFullTimeline) * duration
+    }
+}
+
+/// Deadzone for one drag on the Siri Remote surface. Small deltas build up
+/// until they cross the deadzone; the whole build-up then applies at once,
+/// and every later delta applies directly.
+struct TVTimelinePanTracker {
+    private(set) var isEngaged = false
+    private var accumulated: CGFloat = 0
+
+    /// The translation to apply for `delta`, or nil while the drag is still
+    /// inside the deadzone.
+    mutating func translation(for delta: CGFloat) -> CGFloat? {
+        if isEngaged { return delta }
+        accumulated += delta
+        guard abs(accumulated) >= TVTimelineScrubMath.panDeadzone else { return nil }
+        isEngaged = true
+        return accumulated
+    }
+}
+// END TVTimelineScrubMath
+
+/// The Apple TV timeline, a thin bar with a puck while focused.
+///
+/// Focused but idle, Left and Right go through `PlayerViewModel.skipBackward`
+/// and `skipForward`, which debounce rapid presses into one seek. Select
+/// starts an explicit timeline selection: the preview moves by Left and Right
+/// steps, by swipes, or by holding Left or Right to seek at a rate, and
+/// Select commits it while Menu or opening a player menu abandons it. The
+/// time readout lives in the footer below the timeline.
 struct TVPlayerScrubber: View {
     let viewModel: PlayerViewModel
     @FocusState.Binding var isFocused: Bool
@@ -15,85 +83,66 @@ struct TVPlayerScrubber: View {
     let onMoveToTransport: () -> Void
     let onExitWhenIdle: () -> Void
 
-    /// Explicit timeline-scrub mode (Select on the puck). Owned by the shell
-    /// so it can drop the transport row out of the focus graph while the
-    /// scrub is modal — otherwise a Down press/swipe moves focus there
-    /// natively, before `onMoveCommand` ever fires.
+    /// Explicit timeline selection. The shell owns it so it can take the
+    /// shortcut row out of the focus graph while the selection is modal;
+    /// otherwise a Down press or swipe moves focus there natively before
+    /// `onMoveCommand` runs.
     @Binding var isTimelineScrubbing: Bool
 
-    /// Whether this explicit timeline session paused active playback and
-    /// should therefore resume it when committed. Kept by the shell so an
-    /// externally-requested session can carry its pre-pause state in.
+    /// Whether this timeline selection paused playback, and so resumes it on
+    /// commit. The shell owns it so a selection it starts can carry the state
+    /// from before its pause.
     @Binding var resumePlaybackAfterTimelineSelection: Bool
 
-    /// When true, blurring the scrubber cancels the in-progress scrub rather
-    /// than committing it. The shell flips this on before opening a sheet so
-    /// the focus-lost path doesn't turn into an accidental seek.
+    /// When true, losing focus cancels an in-flight scrub instead of
+    /// committing it. The shell sets it before opening a menu so the blur
+    /// doesn't turn into an accidental seek.
     var cancelOnBlur: Bool = false
 
-    private static let scrubBackwardStep: Double = 10
-    private static let scrubForwardStep: Double = 30
     private static let timelineAutoSeekTickNanos: UInt64 = 100_000_000
-    private static let timelineAutoSeekBaseStep: Double = 2
-    private static let timelineAutoSeekRates = [-32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32]
     @State private var timelineAutoSeekRate = 0
     @State private var timelineAutoSeekTask: Task<Void, Never>?
 
-    /// Trackpad-drag scrubbing. Translation from one full edge-to-edge swipe
-    /// on the Siri Remote surface is ~1000pt, so this maps a full swipe to
-    /// roughly 8% of the timeline — a light drag lands within seconds of
-    /// where it started instead of jumping minutes.
-    private static let panPointsForFullTimeline: CGFloat = 12000
-    /// Accumulated translation required before a drag starts moving the
-    /// playhead; the finger contact from a d-pad click always jitters a few
-    /// points and must not nudge the preview.
-    private static let panDeadzone: CGFloat = 12
     @State private var isPanScrubbing = false
-    @State private var panEngaged = false
-    @State private var panAccumulated: CGFloat = 0
-    /// Distinguishes entering/exiting timeline mode from a real seek. A
-    /// Select-only round trip should resume the paused pipeline in place.
+    @State private var panTracker = TVTimelinePanTracker()
+    /// Tells entering and leaving the timeline apart from a real seek. A
+    /// Select round trip with no movement resumes the paused pipeline in
+    /// place.
     @State private var hasTimelineSelectionMoved = false
 
-    // Visual metrics pulled out as compile-time constants so layout doesn't
-    // re-evaluate them each pass.
     private static let barHeight: CGFloat = 5
     private static let activeBarHeight: CGFloat = 7
     private static let puckSize: CGFloat = 20
     private static let activePuckSize: CGFloat = 26
-    /// Reserved vertical footprint for the largest focused puck so
-    /// focus state cannot resize the transport stack.
+    /// Room for the largest puck, so focus never resizes the transport stack.
     private static let trackStackHeight: CGFloat = 56
 
-    /// Playhead fraction as rendered on the bar — reflects the scrub preview
-    /// while scrubbing so the white fill tracks the user's nudges instead of
-    /// the underlying playback position.
-    private var progressFraction: Double {
-        guard viewModel.duration > 0 else { return 0 }
-        let t = viewModel.isScrubbing ? viewModel.scrubPreviewTime : viewModel.currentTime
-        return min(max(t / viewModel.duration, 0), 1)
-    }
-
-    private var bufferedFraction: Double {
-        guard viewModel.duration > 0 else { return 0 }
-        let end = viewModel.currentTime + viewModel.timelineBufferedAheadSeconds
-        return min(max(end / viewModel.duration, 0), 1)
-    }
-
+    /// The scrub preview while scrubbing, otherwise the playhead.
     private var displayTime: Double {
         viewModel.isScrubbing ? viewModel.scrubPreviewTime : viewModel.currentTime
     }
 
+    private var progressFraction: Double {
+        TVTimelineScrubMath.fraction(of: displayTime, duration: viewModel.duration)
+    }
+
+    private var bufferedFraction: Double {
+        TVTimelineScrubMath.fraction(
+            of: viewModel.currentTime + viewModel.timelineBufferedAheadSeconds,
+            duration: viewModel.duration
+        )
+    }
+
+    private var isTimelineAutoSeeking: Bool {
+        timelineAutoSeekRate != 0
+    }
+
     var body: some View {
-        // Plain `.focusable(true)` rather than a `Button`: tvOS's built-in
-        // button styles (.plain/.card/.borderless) all render a full-bounds
-        // "focused surface" that inflated the scrubber into a full-width
-        // white slab whenever focus arrived. `.focusEffectDisabled()`
-        // doesn't suppress that surface because it belongs to the
-        // ButtonStyle, not a separate focus effect. Using a bare focusable
-        // view gives us the focus state without any system chrome. Select
-        // press commits via `onTapGesture` — on tvOS the remote's Select
-        // button delivers a tap to the focused view.
+        // A bare focusable view rather than a Button: every tvOS button style
+        // draws a full-bounds focused surface that turned the bar into a
+        // full-width white slab, and `.focusEffectDisabled()` can't remove it
+        // because it belongs to the style. Select reaches the focused view as
+        // a tap.
         barLayer
             .contentShape(Rectangle())
             .overlay(alignment: .topTrailing) {
@@ -113,16 +162,13 @@ struct TVPlayerScrubber: View {
                         onArrowTap: handleArrowTap,
                         onArrowHoldBegin: handleArrowHoldBegin
                     )
-                    // Continuous trackpad drag while the puck is selected —
-                    // Select enters timeline-scrub mode, then swipes stream
-                    // through here instead of stepping ±10s/30s per move
-                    // command.
+                    // During a timeline selection, swipes drag the preview
+                    // continuously instead of stepping by move commands.
                     TVPanCaptureView(
                         isActive: isFocused && isTimelineScrubbing && !isTimelineAutoSeeking,
                         onPanBegan: {
                             isPanScrubbing = true
-                            panEngaged = false
-                            panAccumulated = 0
+                            panTracker = TVTimelinePanTracker()
                         },
                         onPanChanged: handlePanChanged,
                         onPanEnded: { isPanScrubbing = false }
@@ -131,22 +177,18 @@ struct TVPlayerScrubber: View {
                 .frame(width: 1, height: 1)
             }
             .onChange(of: isFocused) { _, focused in
-                // Gaining focus is not itself a scrub: the scrub series
-                // starts on the first Left/Right press (via `skipBackward`
-                // / `skipForward` which own the debounce). Blur only
-                // matters when a series is in flight — commit or cancel
-                // based on whether the shell asked us to abandon.
-                if !focused, viewModel.isScrubbing {
-                    if isTimelineScrubbing {
-                        stopTimelineAutoSeek()
-                        isTimelineScrubbing = false
-                        resumePlaybackAfterTimelineSelection = false
-                        viewModel.cancelScrub()
-                    } else if cancelOnBlur {
-                        viewModel.cancelScrub()
-                    } else {
-                        viewModel.endScrub()
-                    }
+                // Gaining focus isn't a scrub; one starts with the first press.
+                // Losing focus only matters while a scrub is in flight.
+                guard !focused, viewModel.isScrubbing else { return }
+                if isTimelineScrubbing {
+                    stopTimelineAutoSeek()
+                    isTimelineScrubbing = false
+                    resumePlaybackAfterTimelineSelection = false
+                    viewModel.cancelScrub()
+                } else if cancelOnBlur {
+                    viewModel.cancelScrub()
+                } else {
+                    viewModel.endScrub()
                 }
             }
             .onChange(of: isTimelineScrubbing) { _, scrubbing in
@@ -162,8 +204,11 @@ struct TVPlayerScrubber: View {
                     onExitWhenIdle()
                 }
             }
+            // The auto-seek task outlives the view otherwise, and keeps
+            // moving the preview after a reload unmounts the controls.
+            .onDisappear { stopTimelineAutoSeek() }
             .accessibilityLabel("Scrubber")
-            .accessibilityValue(Text(formatTime(displayTime)))
+            .accessibilityValue(Text(PlayerTimeFormatter.formatHMS(displayTime)))
     }
 
     // MARK: - Bar
@@ -172,28 +217,19 @@ struct TVPlayerScrubber: View {
         GeometryReader { geo in
             let width = geo.size.width
             ZStack(alignment: .leading) {
-                // Thin-line track: at 3pt the capsule glass adds nothing but
-                // cost, so the track is now a plain translucent white fill.
-                // The played region is pure white on top; the unplayed region
-                // reads at ~22% opacity — enough contrast against video
-                // without pulling attention from the frame.
+                // A plain translucent track; the played part is solid white.
                 Capsule(style: .continuous)
                     .fill(Color.white.opacity(isTimelineScrubbing ? 0.48 : isFocused ? 0.35 : 0.24))
                     .frame(height: trackHeight)
 
-                introRegion(barWidth: width)
+                introRegions(barWidth: width)
 
-                // Played / scrub-preview fill.
                 Capsule(style: .continuous)
                     .fill(Color.white)
                     .frame(width: width * progressFraction, height: trackHeight)
 
-                // Buffered-ahead sliver: only the region *between* the
-                // playhead and the end of the loaded range. Rendering from
-                // x=0 would put it entirely under the played fill (invisible)
-                // and mis-represent the semantic — buffer is inherently a
-                // forward-looking indicator. Vivid routes without comparable
-                // buffer telemetry leave `timelineBufferedAheadSeconds` at zero.
+                // Only the loaded range ahead of the playhead. Routes without
+                // buffer telemetry leave `timelineBufferedAheadSeconds` at 0.
                 let bufferedAhead = max(0, bufferedFraction - progressFraction)
                 if bufferedAhead > 0 {
                     Capsule(style: .continuous)
@@ -202,8 +238,8 @@ struct TVPlayerScrubber: View {
                         .offset(x: width * progressFraction)
                 }
 
-                // Playhead puck — only while focused so the bar reads as a
-                // passive progress indicator when the user is elsewhere.
+                // The puck only shows while focused, so the bar reads as a
+                // passive progress line otherwise.
                 if isFocused {
                     puck(barWidth: width)
                 }
@@ -212,48 +248,40 @@ struct TVPlayerScrubber: View {
         }
         .frame(height: Self.trackStackHeight)
         .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
-        // Deliberately no animation on `progressFraction` — it animated every
-        // tick of the playhead AND every transition between scrub preview and
-        // live position, which turned any state drift (keyframe snapping,
-        // filter-release handoff) into a visible 100 ms slide. With it
-        // removed, normal playback ticks step forward discretely (at the
-        // periodic observer's cadence) and seek commits snap cleanly.
+        // Progress is deliberately not animated: animating it turned every
+        // tick and every preview-to-playhead handoff into a visible slide.
     }
 
     @ViewBuilder
-    private func introRegion(barWidth: CGFloat) -> some View {
+    private func introRegions(barWidth: CGFloat) -> some View {
         ForEach(Array(viewModel.openingSkipRanges.enumerated()), id: \.offset) { _, introRange in
             if viewModel.duration > 0 {
-            let start = min(max(introRange.start / viewModel.duration, 0), 1)
-            let end = min(max(introRange.end / viewModel.duration, 0), 1)
-            if end > start {
-                Capsule(style: .continuous)
-                    .fill(Color.cyan.opacity(isTimelineScrubbing || isFocused ? 0.45 : 0.34))
-                    .frame(width: barWidth * (end - start), height: trackHeight)
-                    .offset(x: barWidth * start)
+                let start = TVTimelineScrubMath.fraction(of: introRange.start, duration: viewModel.duration)
+                let end = TVTimelineScrubMath.fraction(of: introRange.end, duration: viewModel.duration)
+                if end > start {
+                    Capsule(style: .continuous)
+                        .fill(Color.cyan.opacity(isTimelineScrubbing || isFocused ? 0.45 : 0.34))
+                        .frame(width: barWidth * (end - start), height: trackHeight)
+                        .offset(x: barWidth * start)
+                }
             }
-        }
         }
     }
 
     private func puck(barWidth: CGFloat) -> some View {
-        let size = isTimelineScrubbing ? Self.activePuckSize : Self.puckSize
+        let width = (isTimelineScrubbing ? Self.activePuckSize : Self.puckSize) + 10
         return Ellipse()
             .fill(Color.white)
-            .frame(width: size + 10, height: isTimelineScrubbing ? 20 : 17)
+            .frame(width: width, height: isTimelineScrubbing ? 20 : 17)
             .overlay(
                 Ellipse().stroke(Color.white.opacity(isTimelineScrubbing ? 0.55 : 0), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.48), radius: 8, y: 3)
-            .offset(x: barWidth * CGFloat(progressFraction) - (size + 10) / 2)
+            .offset(x: barWidth * CGFloat(progressFraction) - width / 2)
     }
 
     private var trackHeight: CGFloat {
         isTimelineScrubbing ? Self.activeBarHeight : Self.barHeight
-    }
-
-    private var isTimelineAutoSeeking: Bool {
-        timelineAutoSeekRate != 0
     }
 
     private var timelineAutoSeekChip: some View {
@@ -275,30 +303,22 @@ struct TVPlayerScrubber: View {
     // MARK: - Input
 
     private func handleArrowTap(_ direction: TVPressCaptureView.ArrowDirection) {
-        if isTimelineAutoSeeking {
-            switch direction {
-            case .left:
-                adjustTimelineAutoSeekRate(delta: -1)
-            case .right:
-                adjustTimelineAutoSeekRate(delta: 1)
-            case .up, .down:
-                break
-            }
-            return
-        }
-
         switch direction {
         case .left:
-            if isTimelineScrubbing {
-                stepTimeline(by: -Self.scrubBackwardStep)
+            if isTimelineAutoSeeking {
+                adjustTimelineAutoSeekRate(delta: -1)
+            } else if isTimelineScrubbing {
+                stepTimeline(by: -TVTimelineScrubMath.backwardStep)
             } else {
-                viewModel.skipBackward(Self.scrubBackwardStep)
+                viewModel.skipBackward(TVTimelineScrubMath.backwardStep)
             }
         case .right:
-            if isTimelineScrubbing {
-                stepTimeline(by: Self.scrubForwardStep)
+            if isTimelineAutoSeeking {
+                adjustTimelineAutoSeekRate(delta: 1)
+            } else if isTimelineScrubbing {
+                stepTimeline(by: TVTimelineScrubMath.forwardStep)
             } else {
-                viewModel.skipForward(Self.scrubForwardStep)
+                viewModel.skipForward(TVTimelineScrubMath.forwardStep)
             }
         case .up, .down:
             break
@@ -308,64 +328,47 @@ struct TVPlayerScrubber: View {
     private func handleArrowHoldBegin(_ direction: TVPressCaptureView.ArrowDirection) {
         switch direction {
         case .left:
-            beginTimelineAutoSeek(direction: -1)
+            beginTimelineAutoSeek(rate: -1)
         case .right:
-            beginTimelineAutoSeek(direction: 1)
+            beginTimelineAutoSeek(rate: 1)
         case .up, .down:
             break
         }
     }
 
-    private func beginTimelineHoldIfNeeded() {
-        guard !isTimelineScrubbing else { return }
-        guard viewModel.duration > 0 else { return }
-        resumePlaybackAfterTimelineSelection = viewModel.isPlaying
-        let base = viewModel.isScrubbing ? viewModel.scrubPreviewTime : viewModel.currentTime
-        viewModel.beginScrub(fraction: min(max(base / viewModel.duration, 0), 1))
-        isTimelineScrubbing = true
-    }
-
-    private func beginTimelineAutoSeek(direction: Int) {
-        beginTimelineHoldIfNeeded()
-        timelineAutoSeekRate = direction < 0 ? -1 : 1
-        startTimelineAutoSeekTask()
-    }
-
-    private func startTimelineAutoSeekTask() {
-        timelineAutoSeekTask?.cancel()
-        timelineAutoSeekTask = Task { @MainActor in
-            while !Task.isCancelled {
-                let rate = timelineAutoSeekRate
-                if rate == 0 { break }
-                stepTimeline(by: Self.timelineAutoSeekBaseStep * Double(rate))
-                try? await Task.sleep(nanoseconds: Self.timelineAutoSeekTickNanos)
+    private func handleMove(_ direction: MoveCommandDirection) {
+        // A swipe during a drag also arrives here as Left and Right move
+        // commands. The drag owns the preview, so the steps stay quiet.
+        let panOwnsTimeline = isPanScrubbing && isTimelineScrubbing && !isTimelineAutoSeeking
+        switch direction {
+        case .left:
+            guard viewModel.duration > 0 else { return }
+            if isTimelineAutoSeeking {
+                adjustTimelineAutoSeekRate(delta: -1)
+            } else if isTimelineScrubbing, !panOwnsTimeline {
+                stepTimeline(by: -TVTimelineScrubMath.backwardStep)
             }
+        case .right:
+            guard viewModel.duration > 0 else { return }
+            if isTimelineAutoSeeking {
+                adjustTimelineAutoSeekRate(delta: 1)
+            } else if isTimelineScrubbing, !panOwnsTimeline {
+                stepTimeline(by: TVTimelineScrubMath.forwardStep)
+            }
+        case .down:
+            break
+        case .up:
+            // During a scrub an upward swipe is almost always drag spillover,
+            // so the preview stays until Select commits or Menu cancels it.
+            guard !isTimelineScrubbing, !viewModel.isScrubbing else { return }
+            onMoveToTransport()
+        @unknown default:
+            break
         }
     }
 
-    private func adjustTimelineAutoSeekRate(delta: Int) {
-        guard isTimelineAutoSeeking else { return }
-        guard let currentIdx = Self.timelineAutoSeekRates.firstIndex(of: timelineAutoSeekRate) else { return }
-        let newIdx = max(0, min(Self.timelineAutoSeekRates.count - 1, currentIdx + delta))
-        timelineAutoSeekRate = Self.timelineAutoSeekRates[newIdx]
-    }
-
-    private func stopTimelineAutoSeek() {
-        timelineAutoSeekTask?.cancel()
-        timelineAutoSeekTask = nil
-        timelineAutoSeekRate = 0
-    }
-
-    private func cancelTimelineScrub() {
-        guard isTimelineScrubbing || viewModel.isScrubbing else { return }
-        stopTimelineAutoSeek()
-        isTimelineScrubbing = false
-        resumePlaybackAfterTimelineSelection = false
-        viewModel.cancelScrub()
-    }
-
-    /// Select on an in-flight scrub commits the preview immediately instead
-    /// of waiting for the debounce to fire.
+    /// Select commits a scrub in flight straight away, without waiting for
+    /// the skip debounce, or starts a timeline selection.
     private func commitScrub() {
         onSelectInteraction()
         if isTimelineScrubbing || viewModel.isScrubbing {
@@ -379,77 +382,76 @@ struct TVPlayerScrubber: View {
             guard viewModel.duration > 0 else { return }
             resumePlaybackAfterTimelineSelection = viewModel.isPlaying
             viewModel.pauseForTimelineSelection()
-            let fraction = viewModel.currentTime / viewModel.duration
-            viewModel.beginScrub(fraction: fraction)
+            viewModel.beginScrub(fraction: viewModel.currentTime / viewModel.duration)
             isTimelineScrubbing = true
         }
     }
 
-    /// Continuous trackpad drag: translation maps linearly onto the
-    /// timeline. A deadzone filters out the contact jitter from clicks; once
-    /// crossed, every subsequent delta moves the preview directly.
-    private func handlePanChanged(_ deltaX: CGFloat) {
-        guard isTimelineScrubbing, viewModel.duration > 0 else { return }
-        var translation = deltaX
-        if !panEngaged {
-            panAccumulated += deltaX
-            guard abs(panAccumulated) >= Self.panDeadzone else { return }
-            panEngaged = true
-            translation = panAccumulated
-        }
-        let base = viewModel.isScrubbing ? viewModel.scrubPreviewTime : viewModel.currentTime
-        let deltaSeconds = Double(translation / Self.panPointsForFullTimeline) * viewModel.duration
-        let target = min(max(base + deltaSeconds, 0), viewModel.duration)
-        if target != base {
-            hasTimelineSelectionMoved = true
-        }
-        viewModel.updateScrub(fraction: target / viewModel.duration)
+    private func cancelTimelineScrub() {
+        guard isTimelineScrubbing || viewModel.isScrubbing else { return }
+        stopTimelineAutoSeek()
+        isTimelineScrubbing = false
+        resumePlaybackAfterTimelineSelection = false
+        viewModel.cancelScrub()
     }
 
-    private func handleMove(_ direction: MoveCommandDirection) {
-        // While a trackpad drag is in flight the same swipe also surfaces
-        // here as discrete left/right move commands — the pan owns the
-        // playhead, so the fixed-step path must stay quiet.
-        let panOwnsTimeline = isPanScrubbing && isTimelineScrubbing && !isTimelineAutoSeeking
-        switch direction {
-        case .left:
-            guard viewModel.duration > 0 else { return }
-            if isTimelineAutoSeeking {
-                adjustTimelineAutoSeekRate(delta: -1)
-            } else if isTimelineScrubbing, !panOwnsTimeline {
-                stepTimeline(by: -Self.scrubBackwardStep)
+    // MARK: - Timeline selection
+
+    /// A hold starts a timeline selection if one isn't running yet, without
+    /// pausing; it resumes on commit only if playback was running.
+    private func beginTimelineSelectionForHold() {
+        guard !isTimelineScrubbing, viewModel.duration > 0 else { return }
+        resumePlaybackAfterTimelineSelection = viewModel.isPlaying
+        viewModel.beginScrub(fraction: TVTimelineScrubMath.fraction(of: displayTime, duration: viewModel.duration))
+        isTimelineScrubbing = true
+    }
+
+    private func beginTimelineAutoSeek(rate: Int) {
+        beginTimelineSelectionForHold()
+        timelineAutoSeekRate = rate
+        timelineAutoSeekTask?.cancel()
+        timelineAutoSeekTask = Task { @MainActor in
+            while !Task.isCancelled {
+                let rate = timelineAutoSeekRate
+                if rate == 0 { break }
+                stepTimeline(by: TVTimelineScrubMath.autoSeekBaseStep * Double(rate))
+                try? await Task.sleep(nanoseconds: Self.timelineAutoSeekTickNanos)
             }
-        case .right:
-            guard viewModel.duration > 0 else { return }
-            if isTimelineAutoSeeking {
-                adjustTimelineAutoSeekRate(delta: 1)
-            } else if isTimelineScrubbing, !panOwnsTimeline {
-                stepTimeline(by: Self.scrubForwardStep)
-            }
-        case .down:
-            break
-        case .up:
-            // While a scrub is in flight, an upward swipe is almost always
-            // drag spillover, not an intent to leave — trapping it keeps the
-            // preview alive until the user commits (Select) or cancels (Menu).
-            guard !isTimelineScrubbing, !viewModel.isScrubbing else { return }
-            onMoveToTransport()
-        @unknown default:
-            break
         }
+    }
+
+    private func adjustTimelineAutoSeekRate(delta: Int) {
+        guard isTimelineAutoSeeking,
+              let rate = TVTimelineScrubMath.autoSeekRate(from: timelineAutoSeekRate, delta: delta)
+        else { return }
+        timelineAutoSeekRate = rate
+    }
+
+    private func stopTimelineAutoSeek() {
+        timelineAutoSeekTask?.cancel()
+        timelineAutoSeekTask = nil
+        timelineAutoSeekRate = 0
+    }
+
+    private func handlePanChanged(_ deltaX: CGFloat) {
+        guard isTimelineScrubbing, viewModel.duration > 0,
+              let translation = panTracker.translation(for: deltaX)
+        else { return }
+        let base = displayTime
+        let seconds = TVTimelineScrubMath.panSeconds(forTranslation: translation, duration: viewModel.duration)
+        movePreview(from: base, to: TVTimelineScrubMath.clampedTime(base + seconds, duration: viewModel.duration))
     }
 
     private func stepTimeline(by delta: Double) {
-        let base = viewModel.isScrubbing ? viewModel.scrubPreviewTime : viewModel.currentTime
-        let target = min(max(base + delta, 0), viewModel.duration)
+        let base = displayTime
+        movePreview(from: base, to: TVTimelineScrubMath.clampedTime(base + delta, duration: viewModel.duration))
+    }
+
+    private func movePreview(from base: Double, to target: Double) {
         if target != base {
             hasTimelineSelectionMoved = true
         }
         viewModel.updateScrub(fraction: target / viewModel.duration)
-    }
-
-    private func formatTime(_ seconds: Double) -> String {
-        PlayerTimeFormatter.formatHMS(seconds)
     }
 }
 #endif

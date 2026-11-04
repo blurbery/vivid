@@ -1,49 +1,119 @@
 #!/bin/bash
+# Checks the Siri Remote timeline maths the Apple TV scrubber uses: the swipe
+# deadzone and distance, the Left and Right steps and the hold-to-seek rate
+# ladder. The script keeps its old name, but circular "wheel" seeking was
+# removed so it wouldn't compete with horizontal swipes (see
+# docs/playback/README.md); swipes are what it tests now.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+source_file=iosApp/iosApp/Screens/Player/tvOS/TVPlayerScrubber.swift
 wheel_tmp=$(mktemp -d /private/tmp/vivid-wheel-check.XXXXXX)
 trap 'rm -rf "$wheel_tmp"' EXIT
+block=$(sed -n '/^\/\/ BEGIN TVTimelineScrubMath$/,/^\/\/ END TVTimelineScrubMath$/p' "$source_file")
+if [ -z "$block" ]; then
+    echo "error: no TVTimelineScrubMath block in $source_file" >&2
+    exit 1
+fi
 {
     echo 'import Foundation'
-    sed -n '/^struct TVRemoteWheelTracker {/,/^#endif/p' iosApp/iosApp/Screens/Player/tvOS/TVPressCaptureView.swift | sed '$d'
+    printf '%s\n' "$block"
     cat <<'SWIFT'
-func revolution(direction: Double) -> Double {
-    var tracker = TVRemoteWheelTracker()
-    var total = 0.0
-    for step in 0...120 {
-        let angle = direction * Double(step) * 2 * Double.pi / 120
-        total += tracker.update(x: cos(angle), y: sin(angle))
+func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000_001 }
+
+// Replays one drag the way TVPlayerScrubber does: deltas build up until they
+// cross the deadzone, then move the preview from wherever it is.
+func drag(_ deltas: [CGFloat], from start: Double, duration: Double) -> Double {
+    var tracker = TVTimelinePanTracker()
+    var time = start
+    for delta in deltas {
+        guard let translation = tracker.translation(for: delta) else { continue }
+        let seconds = TVTimelineScrubMath.panSeconds(forTranslation: translation, duration: duration)
+        time = TVTimelineScrubMath.clampedTime(time + seconds, duration: duration)
     }
-    return total
+    return time
 }
-precondition(abs(revolution(direction: -1) - 60) < 0.001, "Clockwise must seek forward across all quadrants")
-precondition(abs(revolution(direction: 1) + 60) < 0.001, "Counterclockwise must seek backward across all quadrants")
-var tracker = TVRemoteWheelTracker()
-precondition(tracker.update(x: 1, y: 0) == 0, "First contact must not jump")
-precondition(tracker.update(x: 0.99999, y: 0.00001) == 0, "Click jitter must not seek")
-precondition(tracker.update(x: 0, y: 0) == 0, "Lift must reset")
-precondition(tracker.update(x: -1, y: 0) == 0, "Repositioning after lift must not jump")
-precondition(tracker.update(x: 0.1, y: 0.1) == 0, "Leaving the ring must not jump")
-// Smaller and elliptical contacts used to enter linear mode and reverse
-// direction halfway around. Test every delta, not just the net total.
-for direction in [-1.0, 1.0] {
-    for radius in [0.25, 0.5, 0.8] {
-        var uneven = TVRemoteWheelTracker()
-        var sum = 0.0
-        for step in 0...240 {
-            let angle = direction * Double(step) * 2 * Double.pi / 240
-            let r = radius * (1 + 0.2 * sin(angle * 3))
-            let delta = uneven.update(x: r * cos(angle), y: r * 0.8 * sin(angle))
-            precondition(delta * direction <= 0, "Uneven circle must never reverse")
-            sum += delta
+
+// Swipes
+precondition(drag([3, -2, 4, 2], from: 600, duration: 3600) == 600, "Click jitter inside the deadzone must not move the preview")
+precondition(drag([-5, -6.9], from: 600, duration: 3600) == 600, "Jitter just inside the deadzone must not move the preview")
+precondition(near(drag([6, 6], from: 600, duration: 3600), 600 + 12.0 / 12000 * 3600), "Crossing the deadzone applies the whole build-up")
+precondition(near(drag([-12], from: 600, duration: 3600), 600 - 12.0 / 12000 * 3600), "Leftward drags cross the deadzone too")
+precondition(near(drag([12, 1, 1], from: 600, duration: 3600), 600 + 14.0 / 12000 * 3600), "Once engaged, every delta moves the preview")
+precondition(near(drag([12, -0.5], from: 600, duration: 3600), 600 + 11.5 / 12000 * 3600), "Once engaged, small deltas are not filtered")
+precondition(near(drag(Array(repeating: 100, count: 120), from: 0, duration: 3600), 3600), "12,000 points of drag covers the whole timeline")
+precondition(near(drag(Array(repeating: 100, count: 10), from: 0, duration: 7200), 600), "A 1,000 point swipe covers 1/12 of the timeline")
+precondition(drag([5000, 5000, 5000], from: 3500, duration: 3600) == 3600, "A drag stops at the end")
+precondition(drag([-5000, -5000], from: 100, duration: 3600) == 0, "A drag stops at the start")
+var tracker = TVTimelinePanTracker()
+precondition(tracker.translation(for: 20) == 20 && tracker.isEngaged, "A large first delta applies at once")
+tracker = TVTimelinePanTracker()
+precondition(!tracker.isEngaged && tracker.translation(for: 11) == nil, "A new drag starts inside the deadzone")
+
+// Steps
+precondition(TVTimelineScrubMath.backwardStep == 10 && TVTimelineScrubMath.forwardStep == 30, "Left steps back 10 seconds and Right forward 30")
+precondition(TVTimelineScrubMath.clampedTime(5 - 10, duration: 3600) == 0, "Steps stop at the start")
+precondition(TVTimelineScrubMath.clampedTime(3590 + 30, duration: 3600) == 3600, "Steps stop at the end")
+precondition(TVTimelineScrubMath.fraction(of: 900, duration: 3600) == 0.25, "Fractions follow the duration")
+precondition(TVTimelineScrubMath.fraction(of: 900, duration: 0) == 0, "No duration shows no progress")
+precondition(TVTimelineScrubMath.fraction(of: 4000, duration: 3600) == 1, "Progress stops at the end")
+precondition(TVTimelineScrubMath.fraction(of: -5, duration: 3600) == 0, "Progress stops at the start")
+
+// Hold to seek
+precondition(TVTimelineScrubMath.autoSeekBaseStep == 2, "Each 100 ms tick seeks 2 seconds times the rate")
+precondition(TVTimelineScrubMath.autoSeekRate(from: 1, delta: 1) == 2, "Right speeds up a forward seek")
+precondition(TVTimelineScrubMath.autoSeekRate(from: 1, delta: -1) == -1, "Left from 1x reverses without stopping at 0")
+precondition(TVTimelineScrubMath.autoSeekRate(from: -1, delta: 1) == 1, "Right from -1x reverses without stopping at 0")
+precondition(TVTimelineScrubMath.autoSeekRate(from: 32, delta: 1) == 32, "The ladder stops at 32x")
+precondition(TVTimelineScrubMath.autoSeekRate(from: -32, delta: -1) == -32, "The ladder stops at -32x")
+precondition(TVTimelineScrubMath.autoSeekRate(from: 0, delta: 1) == nil, "A rate off the ladder doesn't change")
+precondition(TVTimelineScrubMath.autoSeekRate(from: 3, delta: 1) == nil, "A rate off the ladder doesn't change")
+
+// The same inputs through the maths TVPlayerScrubber used before it moved
+// into TVTimelineScrubMath must give the same answers.
+func previousDrag(_ deltas: [CGFloat], from start: Double, duration: Double) -> Double {
+    var engaged = false
+    var accumulated: CGFloat = 0
+    var time = start
+    for deltaX in deltas {
+        var translation = deltaX
+        if !engaged {
+            accumulated += deltaX
+            guard abs(accumulated) >= 12 else { continue }
+            engaged = true
+            translation = accumulated
         }
-        precondition(abs(sum + direction * 60) < 0.001, "Uneven revolution should preserve angular distance")
+        let deltaSeconds = Double(translation / 12000) * duration
+        time = min(max(time + deltaSeconds, 0), duration)
+    }
+    return time
+}
+func previousRate(_ rate: Int, _ delta: Int) -> Int? {
+    let rates = [-32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32]
+    guard let index = rates.firstIndex(of: rate) else { return nil }
+    return rates[max(0, min(rates.count - 1, index + delta))]
+}
+var seed: UInt64 = 0x5eed
+func random(_ range: ClosedRange<Double>) -> Double {
+    seed = seed &* 6364136223846793005 &+ 1442695040888963407
+    return range.lowerBound + Double(seed >> 11) / Double(1 << 53) * (range.upperBound - range.lowerBound)
+}
+for _ in 0..<2000 {
+    let duration = random(1...14_400)
+    let start = random(0...duration)
+    let deltas = (0..<Int(random(1...40))).map { _ in CGFloat(random(-400...400) * random(0...1) * random(0...1)) }
+    precondition(drag(deltas, from: start, duration: duration) == previousDrag(deltas, from: start, duration: duration), "Swipe maths changed")
+    let base = random(-100...15_000)
+    for delta in [-10.0, 30.0, -64.0, 64.0] {
+        precondition(TVTimelineScrubMath.clampedTime(base + delta, duration: duration) == min(max(base + delta, 0), duration), "Step maths changed")
+    }
+    precondition(TVTimelineScrubMath.fraction(of: base, duration: duration) == min(max(base / duration, 0), 1), "Progress maths changed")
+}
+for rate in -40...40 {
+    for delta in [-2, -1, 1, 2] {
+        precondition(TVTimelineScrubMath.autoSeekRate(from: rate, delta: delta) == previousRate(rate, delta), "Rate ladder changed")
     }
 }
-tracker = TVRemoteWheelTracker()
-_ = tracker.update(x: 0.3, y: 0)
-precondition(tracker.update(x: 0.8, y: 0) == 0, "Radial movement must not become horizontal seeking")
-print("Remote wheel checks passed: directions, wrap, jitter, lift, small/uneven circles and radial movement.")
+print("Remote timeline checks passed: swipe deadzone and distance, clamping, steps, the rate ladder, and agreement with the previous maths.")
 SWIFT
 } > "$wheel_tmp/check.swift"
 xcrun swiftc "$wheel_tmp/check.swift" -o "$wheel_tmp/check"
