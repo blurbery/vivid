@@ -68,7 +68,7 @@ struct HoldSeekIndicator: View {
                 .font(.system(size: 44, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
                 .monospacedDigit()
-            Text(PlayerTimeFormatter.formatHMS(previewTime))
+            Text(verbatim: PlayerTimeFormatter.formatHMS(previewTime))
                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.75))
                 .monospacedDigit()
