@@ -370,7 +370,12 @@ struct VividLoadSpec {
         panelIsInHDRMode: Bool? = nil
     ) throws {
         try ApplePlaybackV3PlanAdapter.validate(plan)
-        let planURL = resolveURL.map { $0(plan.stream.url) } ?? URL(string: plan.stream.url)
+        let planURL: URL?
+        if let resolveURL {
+            planURL = resolveURL(plan.stream.url)
+        } else {
+            planURL = URL(string: plan.stream.url)
+        }
         guard let sourceURL = sourceURLOverride ?? planURL,
               ["http", "https", "file"].contains(sourceURL.scheme?.lowercased() ?? "") else {
             throw ValidationError.invalidStreamURL(plan.stream.url)
