@@ -1,19 +1,17 @@
-import AVFoundation
-import CoreGraphics
 import Foundation
 import OSLog
-import SwiftUI
-#if os(iOS) || os(tvOS)
-import UIKit
-#endif
 
+/// Silo's realtime channel: commands from the server or an administrator,
+/// events about the playing file, and the transient notices they show.
 extension PlayerViewModel {
+    // MARK: - Events
+
     @MainActor
     func handleRealtimeEvent(_ event: PlaybackRealtimeEventEnvelope) async {
         guard event.sessionId == activePlaybackSessionId else { return }
         switch event.name {
         case .markersUpdated:
-            // Server marker updates must not overwrite the selected Vivid source.
+            // Server marker updates must not replace the selected file's markers.
             break
         case .chapterThumbnailReady:
             break
@@ -53,29 +51,20 @@ extension PlayerViewModel {
         return item
     }
 
+    // MARK: - Commands
+
+    /// Carries out a command, or throws the reason it can't. Commands an
+    /// administrator issued also say so on screen.
     @MainActor
     func handleRealtimeCommand(_ command: PlaybackRealtimeCommandEnvelope) async throws {
+        let byAdmin = isAdminIssued(command)
         switch command.name {
         case .pause:
             vividPlaybackController.pause()
-            if isAdminIssued(command) {
-                showNotice(
-                    title: String(localized: "Playback paused by admin"),
-                    message: String(localized: "An administrator paused this session."),
-                    tone: .warning,
-                    duration: 6
-                )
-            }
+            if byAdmin { showAdminPlaybackNotice(paused: true) }
         case .unpause:
             vividPlaybackController.play()
-            if isAdminIssued(command) {
-                showNotice(
-                    title: String(localized: "Playback resumed by admin"),
-                    message: String(localized: "An administrator resumed this session."),
-                    tone: .info,
-                    duration: 6
-                )
-            }
+            if byAdmin { showAdminPlaybackNotice(paused: false) }
         case .playPause:
             let wasPaused = vividPlaybackController.isPaused
             if wasPaused {
@@ -83,29 +72,16 @@ extension PlayerViewModel {
             } else {
                 vividPlaybackController.pause()
             }
-            if isAdminIssued(command) {
-                showNotice(
-                    title: wasPaused ? String(localized: "Playback resumed by admin") : String(localized: "Playback paused by admin"),
-                    message: wasPaused
-                        ? String(localized: "An administrator resumed this session.")
-                        : String(localized: "An administrator paused this session."),
-                    tone: wasPaused ? .info : .warning,
-                    duration: 6
-                )
-            }
+            if byAdmin { showAdminPlaybackNotice(paused: !wasPaused) }
         case .seek:
             guard !isLoading else {
                 throw PlaybackRealtimeCommandExecutionError.playerNotReady
             }
-            guard let position = command.payload.number(
-                forKeys: "position",
-                "position_seconds",
-                "seconds"
-            ) else {
+            guard let position = command.payload.number(forKeys: "position", "position_seconds", "seconds") else {
                 throw PlaybackRealtimeCommandExecutionError.missingSeekPosition
             }
             applyRemoteSeek(to: position)
-            if isAdminIssued(command) {
+            if byAdmin {
                 showNotice(
                     title: String(localized: "Playback changed by admin"),
                     message: String(localized: "An administrator changed the playback position."),
@@ -116,11 +92,11 @@ extension PlayerViewModel {
         case .displayMessage:
             showNotice(
                 title: command.payload.string(forKeys: "title")
-                    ?? (isAdminIssued(command) ? String(localized: "Message from admin") : String(localized: "Playback notice")),
+                    ?? (byAdmin ? String(localized: "Message from admin") : String(localized: "Playback notice")),
                 message: command.payload.string(forKeys: "message")
                     ?? String(localized: "A server message was received."),
-                tone: isAdminIssued(command) ? .warning : .info,
-                duration: isAdminIssued(command) ? 10 : 8
+                tone: byAdmin ? .warning : .info,
+                duration: byAdmin ? 10 : 8
             )
         case .serverRestarting:
             showNotice(
@@ -140,44 +116,58 @@ extension PlayerViewModel {
             )
         case .stop, .terminate:
             vividPlaybackController.pause()
-            if isAdminIssued(command) {
-                let isTerminate = command.name == .terminate
-                showNotice(
-                    title: command.payload.string(forKeys: "title")
-                        ?? (isTerminate ? String(localized: "Session ended by admin") : String(localized: "Playback stopped by admin")),
-                    message: command.payload.string(forKeys: "message")
-                        ?? (isTerminate
-                            ? String(localized: "An administrator ended this playback session.")
-                            : String(localized: "An administrator stopped this playback session.")),
-                    tone: .warning,
-                    duration: 1.2
-                )
-                requestRemoteDismiss(after: 0.8)
-            } else {
+            guard byAdmin else {
                 requestRemoteDismiss()
+                return
             }
+            // A short notice, then the player closes.
+            let isTerminate = command.name == .terminate
+            showNotice(
+                title: command.payload.string(forKeys: "title")
+                    ?? (isTerminate ? String(localized: "Session ended by admin") : String(localized: "Playback stopped by admin")),
+                message: command.payload.string(forKeys: "message")
+                    ?? (isTerminate
+                        ? String(localized: "An administrator ended this playback session.")
+                        : String(localized: "An administrator stopped this playback session.")),
+                tone: .warning,
+                duration: 1.2
+            )
+            requestRemoteDismiss(after: 0.8)
         case .setVolume, .playMedia, .setAudioTrack, .setSubtitleTrack:
             throw PlaybackRealtimeCommandExecutionError.unsupportedCommand
         }
+    }
+
+    private func isAdminIssued(_ command: PlaybackRealtimeCommandEnvelope) -> Bool {
+        command.issuedBy?.kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "admin"
+    }
+
+    /// The notice for an administrator pausing or resuming this session.
+    private func showAdminPlaybackNotice(paused: Bool) {
+        showNotice(
+            title: paused ? String(localized: "Playback paused by admin") : String(localized: "Playback resumed by admin"),
+            message: paused
+                ? String(localized: "An administrator paused this session.")
+                : String(localized: "An administrator resumed this session."),
+            tone: paused ? .warning : .info,
+            duration: 6
+        )
     }
 
     @MainActor
     private func applyRemoteSeek(to seconds: Double) {
         skipDebounceTask?.cancel()
         skipDebounceTask = nil
-
-        let cappedTarget: Double
-        if duration > 0 {
-            cappedTarget = min(max(0, seconds), duration)
-        } else {
-            cappedTarget = max(0, seconds)
-        }
+        let cappedTarget = duration > 0 ? min(max(0, seconds), duration) : max(0, seconds)
         Self.logger.info(
             "[CMP-SEEK] remote seek requested seconds=\(seconds, privacy: .public) capped=\(cappedTarget, privacy: .public) duration=\(self.duration, privacy: .public)"
         )
         commitSeek(to: cappedTarget, source: "remoteCommand")
     }
 
+    // MARK: - Notices
+
+    /// Shows a transient notice, replacing any notice already up.
     @MainActor
     func showNotice(
         title: String,
@@ -196,13 +186,10 @@ extension PlayerViewModel {
         }
     }
 
+    /// Asks the player screen to close, after `delay` seconds. A notice shown
+    /// just before stays up until then; with no delay it goes at once.
     @MainActor
-    private func requestRemoteDismiss() {
-        requestRemoteDismiss(after: 0)
-    }
-
-    @MainActor
-    private func requestRemoteDismiss(after delay: TimeInterval) {
+    private func requestRemoteDismiss(after delay: TimeInterval = 0) {
         noticeDismissTask?.cancel()
         remoteDismissTask?.cancel()
         remoteDismissTask = Task { @MainActor [weak self] in
@@ -217,9 +204,5 @@ extension PlayerViewModel {
             self.remoteDismissToken = UUID()
             self.remoteDismissTask = nil
         }
-    }
-
-    private func isAdminIssued(_ command: PlaybackRealtimeCommandEnvelope) -> Bool {
-        command.issuedBy?.kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "admin"
     }
 }

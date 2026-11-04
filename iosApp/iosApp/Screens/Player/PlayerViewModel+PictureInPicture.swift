@@ -1,25 +1,26 @@
-import AVFoundation
-import CoreGraphics
 import Foundation
 import OSLog
-import SwiftUI
-#if os(iOS) || os(tvOS)
-import UIKit
-#endif
 
+#if os(iOS)
+/// Picture in Picture on iPhone and iPad: keeping the session alive while the
+/// full-screen player is gone, and answering AVKit's restore request
+/// truthfully.
+///
+/// AVKit takes the PiP window down whatever the restore answer is, so a
+/// `true` with nothing behind it would leave the engine playing to no
+/// surface with the server session still open.
 extension PlayerViewModel {
-    #if os(iOS)
     func playerPresentationDidAppear() {
         isPlayerPresentationVisible = true
-        // Only reached once SwiftUI really mounted the cover — for a restore,
-        // via `PlayerPresentationRestoration.consumeAdoption`. That is the
-        // first moment AVKit's restore can honestly be reported successful.
+        // Only reached once SwiftUI has really mounted the cover (for a
+        // restore, through `PlayerPresentationRestoration.consumeAdoption`).
+        // That's the first moment AVKit's restore can honestly succeed.
         resolvePendingPictureInPictureRestore(true)
     }
 
     /// SwiftUI can remove the full-screen player while AVKit is moving the
-    /// same Vivid graph into PiP. Defer final teardown only for that exact,
-    /// owner-scoped engagement; every ordinary dismissal still cleans up now.
+    /// same engine into PiP. Teardown waits only for that exact engagement,
+    /// owned by this view model; every ordinary dismissal cleans up now.
     func playerPresentationDidDisappear() {
         isPlayerPresentationVisible = false
         guard PictureInPictureCoordinator.shared.ownsEngagedSession(self) else {
@@ -33,8 +34,8 @@ extension PlayerViewModel {
         guard !isPlayerPresentationVisible else { return }
         // A restore still in flight owns the outcome: AVKit can report the
         // stop before the re-presented cover mounts, and cleaning up here
-        // would tear down the very session the user asked to come back to.
-        // The restore timeout is the backstop if the cover never arrives.
+        // would end the very session the viewer asked to come back to. The
+        // restore timeout is the backstop if the cover never arrives.
         guard pendingRestoreCompletion == nil else {
             Self.logger.info("Deferring player cleanup while a PiP restore is still pending")
             return
@@ -42,18 +43,14 @@ extension PlayerViewModel {
         cleanup()
     }
 
-    /// Answer AVKit's restore-user-interface request for this session.
-    ///
-    /// Three outcomes, and every one of them has to be truthful: AVKit tears the
-    /// PiP window down regardless, so an optimistic `true` with nothing behind it
-    /// leaves the engine playing to no surface with the server session still open.
+    /// Answers AVKit's restore request for this session.
     func restorePictureInPictureUserInterface(_ completion: @escaping (Bool) -> Void) {
         guard !isDisposed else {
             completion(false)
             return
         }
-        // Auto-PiP from inline never removed the cover, so it is already the
-        // interface AVKit is asking for.
+        // Automatic PiP from inline never removed the cover, so it's already
+        // the interface AVKit is asking for.
         if isPlayerPresentationVisible {
             completion(true)
             return
@@ -61,19 +58,19 @@ extension PlayerViewModel {
         guard PlayerPresentationRestoration.reopen(self) else {
             Self.logger.error("PiP restore found no player presentation owner; ending the session")
             completion(false)
-            // Nothing can come back, so the deferred teardown happens now rather
-            // than waiting for a stop callback that leaves playback headless.
+            // Nothing can come back, so tear down now rather than wait for a
+            // stop callback while playback carries on with no surface.
             cleanup()
             return
         }
         Self.logger.info("PiP restore re-presenting the full-screen player")
-        // Asking the router to re-present is not the same as the cover being
+        // Asking the router to re-present isn't the same as the cover being
         // on screen: another full-screen cover can keep SwiftUI from mounting
-        // this one. Reporting success there leaves AVKit's window gone,
+        // this one. Reporting success then would leave AVKit's window gone,
         // `handleDidStop` suppressed because the restore "worked", and a
-        // headless playing session parked on `pendingAdoption` forever. Hold
-        // AVKit's handler until `playerPresentationDidAppear` confirms the
-        // adoption, or until the timeout ends the session.
+        // playing session with no surface parked on `pendingAdoption` for
+        // good. AVKit's handler is held until `playerPresentationDidAppear`
+        // confirms the adoption, or the timeout ends the session.
         resolvePendingPictureInPictureRestore(false)
         pendingRestoreCompletion = completion
         pendingRestoreTimeoutTask = Task { @MainActor [weak self] in
@@ -83,7 +80,7 @@ extension PlayerViewModel {
         }
     }
 
-    /// Answer AVKit's held restore handler at most once and stop the timeout.
+    /// Answers AVKit's held restore handler at most once and stops the timeout.
     func resolvePendingPictureInPictureRestore(_ didRestore: Bool) {
         pendingRestoreTimeoutTask?.cancel()
         pendingRestoreTimeoutTask = nil
@@ -93,8 +90,8 @@ extension PlayerViewModel {
     }
 
     /// The re-presented cover never mounted. AVKit has taken the PiP window
-    /// down regardless, so the session ends here — final progress and the
-    /// server session stop — rather than playing on with no surface.
+    /// down anyway, so the session ends here (final progress and the server
+    /// session's stop) rather than playing on with no surface.
     private func abandonPictureInPictureRestore() {
         guard pendingRestoreCompletion != nil else { return }
         Self.logger.error("PiP restore never mounted the player; ending the session")
@@ -103,13 +100,10 @@ extension PlayerViewModel {
         cleanup()
     }
 
-    /// A Picture in Picture start that never happened is invisible to the user —
-    /// AVKit reports both cases to the delegate only, so the tapped button just
-    /// looks inert. Surface it on the same transient notice the player already
-    /// uses for replan rejections.
-    func reportPictureInPictureStartFailure(
-        _ failure: PictureInPictureCoordinator.StartFailure
-    ) {
+    /// AVKit tells only its delegate when Picture in Picture fails to start,
+    /// so the button would just look broken. The failure shows as a notice,
+    /// like a refused replan.
+    func reportPictureInPictureStartFailure(_ failure: PictureInPictureCoordinator.StartFailure) {
         guard !isDisposed else { return }
         switch failure {
         case .notReady:
@@ -128,5 +122,5 @@ extension PlayerViewModel {
             )
         }
     }
-    #endif
 }
+#endif

@@ -1,13 +1,101 @@
-import AVFoundation
-import CoreGraphics
 import Foundation
 import OSLog
-import SwiftUI
-#if os(iOS) || os(tvOS)
-import UIKit
-#endif
 
+/// Recap, intro and credits markers, and their skips.
+///
+/// The selected file's own markers are published first. For an episode,
+/// TheIntroDB then fills what the file lacks, and IntroDB fills anything
+/// still missing. Each lookup is fenced to the playback session, item and
+/// file it started for, and none of them ever blocks playback. Automatic
+/// skips happen at most once per session, file and marker range: the intro
+/// (or recap) after a five-second countdown the viewer can cancel, credits
+/// straight away.
 extension PlayerViewModel {
+    // MARK: - Loading markers
+
+    /// Re-reads markers after the Intro & Credit Skipper setting changes.
+    func refreshIntroDBPreference() {
+        if let detail = currentWatchDetail {
+            loadVividMarkers(for: detail)
+        } else {
+            applyMarkerRanges(intro: nil, credits: nil)
+        }
+    }
+
+    func loadVividMarkers(for detail: WatchDetail) {
+        introDBLookupTask?.cancel()
+        updateIntroDBSegments(nil)
+        guard VividSkipSource.isEnabled, offlinePlaybackContext == nil else { return }
+        // Only the selected file's markers, never another edition's
+        // item-level ones. They stay up if a public lookup fails.
+        let fileMarkers = VividIntroDBClient.Segments(
+            imdb_id: "", season: detail.seasonNumber ?? 0, episode: detail.episodeNumber ?? 0,
+            intro: .init(range: currentSelectedVersion?.intro),
+            outro: .init(range: currentSelectedVersion?.credits))
+        updateIntroDBSegments(fileMarkers)
+        guard detail.type == "episode", let seriesID = detail.seriesId,
+              let season = detail.seasonNumber, let episode = detail.episodeNumber else { return }
+        let sessionID = activePlaybackSessionId
+        let fileID = currentSelectedVersion?.fileId
+        introDBLookupTask = Task { @MainActor [weak self] in
+            /// Still enabled, and still the session, item and file the
+            /// lookup started for.
+            func isCurrent(_ model: PlayerViewModel) -> Bool {
+                !Task.isCancelled && VividSkipSource.isEnabled
+                    && model.activePlaybackSessionId == sessionID
+                    && model.currentWatchDetail?.contentId == detail.contentId
+                    && model.currentSelectedVersion?.fileId == fileID
+            }
+            do {
+                // The series' identity, never an episode-level TMDB ID.
+                let series = try await MetadataRequestPool.shared.itemDetail(contentId: seriesID)
+                try Task.checkCancellation()
+                guard VividSkipSource.isEnabled else { return }
+                let imdb = series.imdbId ?? ""
+                let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode,
+                                                          tmdbID: series.tmdbId.flatMap(Int.init))
+                guard identity.theIntroDBIdentifier != nil else { return }
+                // TheIntroDB first; its result is published straight away.
+                let fetched = try? await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
+                let markers = VividIntroDBClient.Segments(
+                    imdb_id: imdb, season: season, episode: episode,
+                    intro: fileMarkers.intro, outro: fileMarkers.outro, tmdb_id: identity.tmdbID
+                ).fillingMissing(from: fetched)
+                guard let self, isCurrent(self) else { return }
+                self.updateIntroDBSegments(markers)
+                // IntroDB only fills what's still missing, so a slow or failed
+                // lookup never delays a prompt that's already there.
+                guard markers.intro == nil || markers.outro == nil || markers.recap == nil else { return }
+                let gaps = try? await VividIntroDBClient.shared.introDBSegments(for: identity)
+                guard isCurrent(self),
+                      let gaps, gaps.intro != nil || gaps.outro != nil || gaps.recap != nil else { return }
+                self.updateIntroDBSegments(markers.fillingMissing(from: gaps))
+            } catch {
+                // Missing markers or a service outage never block playback.
+            }
+        }
+    }
+
+    /// Publishes a lookup's markers. The raw segments are kept so they can be
+    /// resolved again once the engine reports a finite duration, because a
+    /// fast or cached lookup can finish before probing does.
+    func updateIntroDBSegments(_ segments: VividIntroDBClient.Segments?) {
+        loadedIntroDBSegments = segments
+        publishMarkerRanges(from: segments)
+    }
+
+    /// Resolves the kept segments against a new duration.
+    func applyLoadedIntroDBSegments() {
+        guard let segments = loadedIntroDBSegments else { return }
+        publishMarkerRanges(from: segments)
+    }
+
+    private func publishMarkerRanges(from segments: VividIntroDBClient.Segments?) {
+        recapRange = segments?.recap?.range(duration: duration)
+        applyMarkerRanges(intro: segments?.intro?.range(duration: duration),
+                          credits: segments?.outro?.range(duration: duration))
+    }
+
     private func applyMarkerRanges(intro: TimeRange?, credits: TimeRange?) {
         introRange = validTimeRange(intro)
         creditsRange = validTimeRange(credits)
@@ -25,80 +113,6 @@ extension PlayerViewModel {
         autoSkipCreditsIfNeeded(at: currentTime)
     }
 
-    func refreshIntroDBPreference() {
-        if let detail = currentWatchDetail { loadVividMarkers(for: detail) }
-        else { applyMarkerRanges(intro: nil, credits: nil) }
-    }
-
-    func loadVividMarkers(for detail: WatchDetail) {
-        introDBLookupTask?.cancel()
-        updateIntroDBSegments(nil)
-        guard VividSkipSource.isEnabled, offlinePlaybackContext == nil else { return }
-        // Use only the selected file's markers, never another edition's
-        // item-level timestamps. Keep them visible if a public lookup fails.
-        let fileMarkers = VividIntroDBClient.Segments(
-            imdb_id: "", season: detail.seasonNumber ?? 0, episode: detail.episodeNumber ?? 0,
-            intro: .init(range: currentSelectedVersion?.intro),
-            outro: .init(range: currentSelectedVersion?.credits))
-        updateIntroDBSegments(fileMarkers)
-        guard detail.type == "episode", let seriesID = detail.seriesId,
-              let season = detail.seasonNumber, let episode = detail.episodeNumber else { return }
-        let sessionID = activePlaybackSessionId
-        let fileID = currentSelectedVersion?.fileId
-        introDBLookupTask = Task { @MainActor [weak self] in
-            do {
-                // Use the series identity, never an episode-level TMDB ID.
-                let series = try await MetadataRequestPool.shared.itemDetail(contentId: seriesID)
-                try Task.checkCancellation()
-                guard VividSkipSource.isEnabled else { return }
-                let imdb = series.imdbId ?? ""
-                let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode,
-                    tmdbID: series.tmdbId.flatMap(Int.init))
-                guard identity.theIntroDBIdentifier != nil else { return }
-                // TheIntroDB comes first. IntroDB only fills what it's missing.
-                let fetched = try? await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
-                let markers = VividIntroDBClient.Segments(
-                    imdb_id: imdb, season: season, episode: episode,
-                    intro: fileMarkers.intro, outro: fileMarkers.outro, tmdb_id: identity.tmdbID
-                ).fillingMissing(from: fetched)
-                guard let self, !Task.isCancelled, VividSkipSource.isEnabled,
-                      self.activePlaybackSessionId == sessionID,
-                      self.currentWatchDetail?.contentId == detail.contentId,
-                      self.currentSelectedVersion?.fileId == fileID else { return }
-                self.updateIntroDBSegments(markers)
-                // Publish the primary result immediately. A slow or failed
-                // IntroDB lookup must never delay an existing prompt.
-                guard markers.intro == nil || markers.outro == nil || markers.recap == nil else { return }
-                let gaps = try? await VividIntroDBClient.shared.introDBSegments(for: identity)
-                guard !Task.isCancelled, VividSkipSource.isEnabled,
-                      self.activePlaybackSessionId == sessionID,
-                      self.currentWatchDetail?.contentId == detail.contentId,
-                      self.currentSelectedVersion?.fileId == fileID else { return }
-                guard let gaps, gaps.intro != nil || gaps.outro != nil || gaps.recap != nil else { return }
-                let combined = markers.fillingMissing(from: gaps)
-                self.updateIntroDBSegments(combined)
-            } catch {
-                // Missing timestamps or temporary service failure never block playback.
-            }
-        }
-    }
-
-    // Keep the raw response until the engine supplies a finite duration. A
-    // fast/cached lookup can finish before probing, especially on native HLS.
-    func updateIntroDBSegments(_ segments: VividIntroDBClient.Segments?) {
-        loadedIntroDBSegments = segments
-        recapRange = segments?.recap?.range(duration: duration)
-        applyMarkerRanges(intro: segments?.intro?.range(duration: duration),
-                          credits: segments?.outro?.range(duration: duration))
-    }
-
-    func applyLoadedIntroDBSegments() {
-        guard let segments = loadedIntroDBSegments else { return }
-        recapRange = segments.recap?.range(duration: duration)
-        applyMarkerRanges(intro: segments.intro?.range(duration: duration),
-                          credits: segments.outro?.range(duration: duration))
-    }
-
     private func validTimeRange(_ range: TimeRange?) -> TimeRange? {
         guard let range,
               range.start.isFinite,
@@ -110,6 +124,10 @@ extension PlayerViewModel {
         return range
     }
 
+    // MARK: - Automatic intro skip
+
+    /// Starts the intro (or recap) countdown on entering its range, and
+    /// cancels it on leaving.
     func autoSkipIntroIfNeeded(at time: Double) {
         guard settings.introDBEnabled, settings.autoSkipIntro,
               !isLoading,
@@ -140,6 +158,8 @@ extension PlayerViewModel {
         beginIntroAutoSkipCountdown(key: key, range: introRange)
     }
 
+    /// Shows 5, 4, 3, 2, 1 a second apart, then skips if the playhead is
+    /// still in the range and nothing cancelled it.
     private func beginIntroAutoSkipCountdown(key: String, range: TimeRange) {
         pendingAutoSkipIntroKey = key
         autoSkipIntroCountdownTask?.cancel()
@@ -151,11 +171,7 @@ extension PlayerViewModel {
         autoSkipIntroCountdownTask = Task { @MainActor [weak self] in
             var remaining = Self.introAutoSkipCountdownDefaultSeconds
             while remaining > 0 {
-                guard let self,
-                      !Task.isCancelled,
-                      self.pendingAutoSkipIntroKey == key else {
-                    return
-                }
+                guard let self, !Task.isCancelled, self.pendingAutoSkipIntroKey == key else { return }
                 self.introAutoSkipCountdownSeconds = remaining
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 remaining -= 1
@@ -193,6 +209,8 @@ extension PlayerViewModel {
         introAutoSkipCountdownSeconds = nil
     }
 
+    // MARK: - Automatic credits skip
+
     func autoSkipCreditsIfNeeded(at time: Double) {
         let key = creditsRange.flatMap(currentCreditsSkipKey(for:))
         guard let target = CreditsAutoSkipPolicy.target(
@@ -206,8 +224,8 @@ extension PlayerViewModel {
             return
         }
 
-        // Set the latch before seeking: a synchronous backend time callback
-        // caused by the seek must see this marker as already handled.
+        // Latch before seeking: a time report the seek causes straight away
+        // must see this marker as handled.
         autoSkippedCreditsKey = key
         Self.logger.info(
             "[CMP-MARKERS] auto-skip credits target=\(target, privacy: .public) current=\(time, privacy: .public)"
@@ -215,14 +233,12 @@ extension PlayerViewModel {
         performCreditsSkip(to: target)
     }
 
+    /// Skips to the end of the credits. Credits that run to the end of the
+    /// file end the item through the normal end and Next Up path, because a
+    /// seek to the exact duration would leave the engine paused on the last
+    /// frame.
     func performCreditsSkip(to target: Double) {
-        // Vivid deliberately parks a programmatic seek at the exact duration
-        // in a paused state. TheIntroDB uses that exact bound when credits run
-        // to EOF, so complete the item through Silo's normal end/Next Up path
-        // instead of leaving a frozen final frame.
-        if duration.isFinite,
-           duration > 0,
-           target >= duration - 0.5 {
+        if duration.isFinite, duration > 0, target >= duration - 0.5 {
             currentTime = duration
             handleEndOfFile()
             return
@@ -230,6 +246,10 @@ extension PlayerViewModel {
         seekTo(seconds: target, revealingControls: false)
     }
 
+    // MARK: - Skip keys
+
+    /// Identifies one intro or recap range in one session and file, so each
+    /// is skipped automatically at most once.
     func currentIntroSkipKey(for range: TimeRange) -> String? {
         guard let sessionId = activePlaybackSessionId,
               let fileId = currentSelectedVersion?.fileId else {

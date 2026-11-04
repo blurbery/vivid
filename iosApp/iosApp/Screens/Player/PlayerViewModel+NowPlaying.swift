@@ -1,76 +1,77 @@
-import AVFoundation
-import CoreGraphics
 import Foundation
 import OSLog
-import SwiftUI
-#if os(iOS) || os(tvOS)
-import UIKit
-#endif
 
+/// The system's Now Playing: the lock screen, Control Center and Apple TV's
+/// What's Playing, and the remote commands that come back from them.
 extension PlayerViewModel {
-    /// Pushes the current item's poster into the Now Playing artwork field
-    /// so the lock-screen, Control Center, and Apple TV "What's Playing"
-    /// surface have a thumbnail. The poster URL is derived from the
-    /// content's library catalog entry rather than `WatchDetail`, which
-    /// doesn't expose image fields. The fetch runs in a background task on
-    /// the Vivid video Now Playing coordinator and is best-effort: any
-    /// failure leaves the existing artwork (or none) unchanged.
-    func pushNowPlayingArtwork(contentId: String) {
-        guard !contentId.isEmpty else { return }
-        // The presenter (e.g. ItemDetailView) already had the catalog
-        // item loaded — when it routed us through `applyArtworkURLHints`
-        // we can publish artwork without a second `/catalog/items/{id}`
-        // round-trip. Fall through to the fetch only when no hint was
-        // supplied.
-        if let candidate = preferredArtworkCandidate(),
-           let url = URL(string: candidate) {
-            nowPlaying.setArtworkURL(url)
+    // MARK: - Destination
+
+    func attachNowPlayingIfNeeded() {
+        syncNowPlayingDestination()
+    }
+
+    /// Rebinds commands and publication whenever the engine changes its video
+    /// route. Native video uses the engine's player-scoped session; software
+    /// video uses the shared fallback. Rebinding clears the previous
+    /// destination first.
+    func syncNowPlayingDestination() {
+        guard !isDisposed else {
+            nowPlaying.detach()
             return
         }
-        Task { [weak self] in
-            let detail: ItemDetail
-            do {
-                detail = try await VividAPI.shared.itemDetail(contentId: contentId)
-            } catch {
-                Self.logger.warning(
-                    "NowPlaying artwork itemDetail fetch failed for \(contentId, privacy: .public): \(String(describing: error), privacy: .public)"
-                )
-                return
-            }
-            // Prefer poster; fall back to backdrop for items (notably some
-            // episodes) that don't surface a dedicated poster.
-            let posterCandidate = detail.posterUrl?.isEmpty == false ? detail.posterUrl : nil
-            let backdropCandidate = detail.backdropUrl?.isEmpty == false ? detail.backdropUrl : nil
-            guard let candidate = posterCandidate ?? backdropCandidate,
-                  let url = URL(string: candidate) else {
-                return
-            }
-            guard let self else { return }
-            await MainActor.run {
-                self.nowPlaying.setArtworkURL(url)
-            }
+        #if os(tvOS)
+        nowPlaying.nativeMetadataHandler = { [weak engine = vividPlaybackController.engine] title, artwork in
+            engine?.updateNativeMetadata(title: title, artwork: artwork)
         }
+        #endif
+        let handlers = VividVideoNowPlayingCoordinator.Handlers(
+            play: { [weak self] in self?.handleNowPlayingPlay() },
+            pause: { [weak self] in self?.handleNowPlayingPause() },
+            isPaused: { [weak self] in
+                guard let self else { return true }
+                return self.hasReachedEndOfFile || self.vividPlaybackController.isPaused
+            },
+            currentTime: { [weak self] in self?.currentTime ?? 0 },
+            // Remote positions are on the source axis published here, and go
+            // through the view model so a bounded Silo transport can replan.
+            seek: { [weak self] seconds in self?.seekTo(seconds: seconds) },
+            // A command answered `.success` while the controller has no load
+            // reports work the system will never see happen.
+            hasActiveLoad: { [weak self] in
+                self?.vividPlaybackController.hasActiveLoad ?? false
+            }
+        )
+        #if os(iOS) || os(tvOS)
+        nowPlaying.attach(
+            session: vividPlaybackController.videoNowPlayingSession,
+            useSharedFallback: vividPlaybackController.shouldUseSharedVideoNowPlayingFallback,
+            handlers: handlers
+        )
+        #endif
     }
 
-    private func preferredArtworkCandidate() -> String? {
-        if let poster = artworkPosterURLHint, !poster.isEmpty {
-            return poster
-        }
-        if let backdrop = artworkBackdropURLHint, !backdrop.isEmpty {
-            return backdrop
-        }
-        return nil
+    // On Apple TV the remote's Play/Pause button can arrive through the
+    // player-scoped command centre instead of SwiftUI's `onPlayPauseCommand`.
+    // It reveals the controls, as Select does.
+
+    private func handleNowPlayingPlay() {
+        vividPlaybackController.play()
+        #if os(tvOS)
+        scheduleHideControls()
+        #endif
     }
 
-    /// Caller-supplied artwork URLs piped through `PlayerView.onAppear`.
-    /// Used by `pushNowPlayingArtwork` to skip its own catalog item fetch.
-    func applyArtworkURLHints(posterURL: String?, backdropURL: String?) {
-        artworkPosterURLHint = posterURL
-        artworkBackdropURLHint = backdropURL
+    private func handleNowPlayingPause() {
+        vividPlaybackController.pause()
+        #if os(tvOS)
+        scheduleHideControls()
+        #endif
     }
 
-    /// Push Now Playing at most every 2 seconds; the OS animates the
-    /// scrubber between updates using `playbackRate`.
+    // MARK: - Publishing
+
+    /// Publishes at most every two seconds; the system moves the timeline
+    /// between updates from the playback rate.
     func pushNowPlayingIfDue() {
         let now = Date()
         guard now.timeIntervalSince(lastNowPlayingPush) > 2.0 else { return }
@@ -89,65 +90,49 @@ extension PlayerViewModel {
         )
     }
 
-    func attachNowPlayingIfNeeded() {
-        syncNowPlayingDestination()
+    // MARK: - Artwork
+
+    /// Caller-supplied artwork URLs, passed on from `PlayerView.onAppear`, so
+    /// `pushNowPlayingArtwork` can skip its own item fetch.
+    func applyArtworkURLHints(posterURL: String?, backdropURL: String?) {
+        artworkPosterURLHint = posterURL
+        artworkBackdropURLHint = backdropURL
     }
 
-    /// Rebind commands and publication whenever Vivid swaps its effective
-    /// video route. Native video uses Vivid's player-scoped session;
-    /// software video (and macOS, where upstream has no video session) uses
-    /// the shared fallback. Rebinding clears the previous destination first.
-    func syncNowPlayingDestination() {
-        guard !isDisposed else {
-            nowPlaying.detach()
+    /// Publishes the item's poster (or its backdrop when it has no poster) as
+    /// Now Playing artwork. The presenter's hint is used when it gave one;
+    /// otherwise the item is fetched. Best effort: a failure leaves the
+    /// artwork as it was.
+    func pushNowPlayingArtwork(contentId: String) {
+        guard !contentId.isEmpty else { return }
+        if let hint = Self.nonEmptyURLString(artworkPosterURLHint) ?? Self.nonEmptyURLString(artworkBackdropURLHint),
+           let url = URL(string: hint) {
+            nowPlaying.setArtworkURL(url)
             return
         }
-        #if os(tvOS)
-        nowPlaying.nativeMetadataHandler = { [weak engine = vividPlaybackController.engine] title, artwork in
-            engine?.updateNativeMetadata(title: title, artwork: artwork)
-        }
-        #endif
-        let handlers = VividVideoNowPlayingCoordinator.Handlers(
-            // On tvOS the physical Play/Pause button can arrive through the
-            // player-scoped media command center instead of SwiftUI's
-            // `onPlayPauseCommand`. Keep that route visually consistent with
-            // Select by revealing the transport controls as playback changes.
-            play:        { [weak self] in self?.handleNowPlayingPlay() },
-            pause:       { [weak self] in self?.handleNowPlayingPause() },
-            isPaused:    { [weak self] in
-                guard let self else { return true }
-                return self.hasReachedEndOfFile || self.vividPlaybackController.isPaused
-            },
-            currentTime: { [weak self] in self?.currentTime ?? 0 },
-            // Remote-position events use the source axis published above and
-            // must pass through the VM so a bounded V3 transport can replan.
-            seek:        { [weak self] t in self?.seekTo(seconds: t) },
-            // A command answered `.success` while the controller has no load
-            // reports work the system will never observe.
-            hasActiveLoad: { [weak self] in
-                self?.vividPlaybackController.hasActiveLoad ?? false
+        Task { [weak self] in
+            let detail: ItemDetail
+            do {
+                detail = try await VividAPI.shared.itemDetail(contentId: contentId)
+            } catch {
+                Self.logger.warning(
+                    "NowPlaying artwork itemDetail fetch failed for \(contentId, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+                return
             }
-        )
-        #if os(iOS) || os(tvOS)
-        nowPlaying.attach(
-            session: vividPlaybackController.videoNowPlayingSession,
-            useSharedFallback: vividPlaybackController.shouldUseSharedVideoNowPlayingFallback,
-            handlers: handlers
-        )
-        #endif
+            guard let candidate = Self.nonEmptyURLString(detail.posterUrl) ?? Self.nonEmptyURLString(detail.backdropUrl),
+                  let url = URL(string: candidate) else {
+                return
+            }
+            // A slow fetch can finish after another item has started loading,
+            // and must not put this item's artwork on it.
+            guard let self, !self.isDisposed, self.currentWatchDetail?.contentId == contentId else { return }
+            self.nowPlaying.setArtworkURL(url)
+        }
     }
 
-    private func handleNowPlayingPlay() {
-        vividPlaybackController.play()
-        #if os(tvOS)
-        scheduleHideControls()
-        #endif
-    }
-
-    private func handleNowPlayingPause() {
-        vividPlaybackController.pause()
-        #if os(tvOS)
-        scheduleHideControls()
-        #endif
+    private static func nonEmptyURLString(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 }
