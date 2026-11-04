@@ -121,21 +121,18 @@ private struct MobileUtilityPage<Content: View>: View {
             .progressViewStyle(VividLoadingProgressStyle())
     }
 
+    /// A pull down from the top 120 points follows the finger, and closes the
+    /// page once it travels 110 points, or 60 with a flick heading past 220.
     private var dismissGesture: some Gesture {
         DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { value in
-                guard allowsPullToDismiss, value.startLocation.y <= 120,
-                      value.translation.height > 0,
-                      abs(value.translation.height) > abs(value.translation.width) else { return }
+                guard allowsPullToDismiss, Self.isDownwardPull(value) else { return }
                 dragOffset = value.translation.height
             }
             .onEnded { value in
-                let isDownwardPull = value.startLocation.y <= 120
-                    && value.translation.height > abs(value.translation.width)
-                let shouldDismiss = allowsPullToDismiss && isDownwardPull
-                    && (value.translation.height >= 110
-                        || (value.translation.height >= 60 && value.predictedEndTranslation.height >= 220))
-
+                let distance = value.translation.height
+                let shouldDismiss = allowsPullToDismiss && Self.isDownwardPull(value)
+                    && (distance >= 110 || (distance >= 60 && value.predictedEndTranslation.height >= 220))
                 if shouldDismiss {
                     onDismiss()
                 } else {
@@ -144,6 +141,10 @@ private struct MobileUtilityPage<Content: View>: View {
                     }
                 }
             }
+    }
+
+    private static func isDownwardPull(_ value: DragGesture.Value) -> Bool {
+        value.startLocation.y <= 120 && value.translation.height > abs(value.translation.width)
     }
 }
 
