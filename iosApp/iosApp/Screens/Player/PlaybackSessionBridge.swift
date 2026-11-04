@@ -103,8 +103,10 @@ actor PlaybackSessionBridge {
     private static let nearEndResumeSuppressionSeconds: Double = 5
     private static let pastEndResumeClampSeconds: Double = 0.25
     private static let orphanedSessionLogThreshold = 3
-    /// Plan attempts allowed in one playback attempt, counting the start
-    /// plan, so at most seven replans go through before recovery gives up.
+    /// Plan attempts allowed for one intent, counting its first plan: seven
+    /// fallback replans in a row before recovery gives up. A replan that
+    /// changes the intent (a track change) resets the count, and seek
+    /// re-anchors don't add to it.
     private static let protocolV3AttemptLimit = 8
 
     private let logger = Logger(
