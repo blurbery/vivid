@@ -9,6 +9,7 @@
     {"id": "overview", "name": "Overview and provenance", "notice": "README.txt"},
     {"id": "vivid", "name": "Vivid", "licence": "GPL 3.0", "text": "gpl-3.0"},
     {"id": "vivid-apple-distribution", "name": "Vivid: Apple distribution permission", "licence": "GPL 3.0 additional permission", "notice": "Vivid-Apple-Distribution.txt"},
+    {"id": "silo-apple", "name": "Silo Apple (portions)", "licence": "AGPL 3.0 or later", "notice": "Silo-Apple-AGPL-3.0-or-later.txt"},
     {"id": "vivid-apache", "name": "Earlier Apache-licensed code", "licence": "Apache 2.0", "text": "apache-2.0"},
     {"id": "mpv", "name": "mpv", "version": "0.41.0", "licence": "LGPL 2.1 or later", "notice": "mpv-LGPL-2.1-or-later.txt"},
     {"id": "ffmpeg", "name": "FFmpeg", "version": "8.0.1", "licence": "LGPL 2.1 or later", "notice": "FFmpeg-LGPL-2.1-or-later.txt"},

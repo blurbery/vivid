@@ -8,11 +8,12 @@
 
 ---
 
-Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). The [Vivid attribution terms](ATTRIBUTION.md) apply only to the covered material identified there. Third-party libraries retain their own licences.
+Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). The [Vivid attribution terms](ATTRIBUTION.md) apply only to the covered material identified there. Portions derived from Silo Apple remain under AGPL-3.0-or-later with the Silo Apple App Store exception (see the Silo Apple row below). Third-party libraries retain their own licences.
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
 | Lucid media engine package (`blurbery/lucid-engine`, product `LucidEngine`, release `0.1.0`) | `53ebeac793f251df987a8d80b997e7fe8064d1b7` | mpv and FFmpeg LGPL-2.1-or-later as built; every library's licence in the package's [NOTICE](https://github.com/blurbery/lucid-engine/blob/53ebeac793f251df987a8d80b997e7fe8064d1b7/NOTICE) |
+| Silo Apple (portions of the app's source, `Silo-Server/silo-apple`), copyright 2026 Silo Media L.L.C. and contributors | `463c140b6a94b910752ddedf7353b28ad98db07a` | AGPL-3.0-or-later with the Silo Apple App Store exception ([text](iosApp/Resources/OpenSourceLicenses/Silo-Apple-AGPL-3.0-or-later.txt)) |
 | CollectionHStack (tvOS Home rows) | `15baaaa759a0e252addae08431c79a49a25e4afc` | MIT |
 | DifferenceKit (CollectionHStack dependency) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | Apache-2.0 |
 | ThumbHash decoder (adapted) | `a652ce6ed691242f459f468f0a8756cda3b90a82` | MIT |
