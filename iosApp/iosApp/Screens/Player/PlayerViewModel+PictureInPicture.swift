@@ -67,7 +67,7 @@ extension PlayerViewModel {
         // Asking the router to re-present isn't the same as the cover being
         // on screen: another full-screen cover can keep SwiftUI from mounting
         // this one. Reporting success then would leave AVKit's window gone,
-        // the coordinator's stop handling skipped because the restore
+        // the player's postponed clean-up skipped because the restore
         // "worked", and a playing session waiting for good for a surface to
         // adopt it. AVKit's handler is held until `playerPresentationDidAppear`
         // confirms the adoption, or the timeout ends the session.
