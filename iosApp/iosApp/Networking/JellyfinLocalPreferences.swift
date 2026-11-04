@@ -1,9 +1,24 @@
 import Foundation
 
+/// Vivid's typed settings for Jellyfin accounts, kept on the device per server
+/// and user. Jellyfin has no settings contract of its own, so this answers the
+/// `/api/v1/settings/values/*` and contract capability routes with the same
+/// shapes a Silo server sends.
+///
+/// Rows are stored as one JSON object under
+/// `vivid.jellyfin.preferences.<server>.<user>`, keyed `<setting>.<scope>`, and
+/// resolve device, then family, then profile, then the contract default.
 actor JellyfinLocalPreferences {
     static let shared = JellyfinLocalPreferences()
+
+    private static let scopes = ["profile", "profile_client", "profile_device"]
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    /// The contract's default values.
     static let contractDefaults = (try? JSONSerialization.jsonObject(with: Data(#"""
 {
   "catalog.metadata_language": null,
@@ -71,59 +86,56 @@ actor JellyfinLocalPreferences {
   "ui.theme": "midnight-cinema",
   "ui.time_format": "auto"
 }
-"""#.utf8))) as? [String:Any] ?? [:]
+"""#.utf8))) as? [String: Any] ?? [:]
 
     nonisolated static func storageKey(serverID: String, userID: String) -> String {
         "vivid.jellyfin.preferences." + serverID + "." + userID
     }
 
-    func route(connection: JellyfinConnection, method: String, path: [String], query: [String:String], body: [String:Any]) async throws -> Any {
+    func route(connection: JellyfinConnection, method: String, path: [String], query: [String: String], body: [String: Any]) async throws -> Any {
         try await connection.validate()
         guard let account = connection.identity?.account, let user = connection.userID else { throw JellyfinError.signInRequired }
         let storageKey = Self.storageKey(serverID: account.serverId, userID: user)
-        return try apply(storageKey:storageKey,user:user,method:method,path:path,query:query,body:body)
+        return try apply(storageKey: storageKey, user: user, method: method, path: path, query: query, body: body)
     }
 
-    func playbackValues(connection: JellyfinConnection) async throws -> [String:Any] {
-        let result = try await route(connection:connection,method:"GET",path:["api","v1","settings","values","effective"],
-            query:["keys":"playback.subtitle_language,playback.subtitle_mode,playback.show_forced_subtitles,playback.audio_language"],body:[:]) as? [String:Any]
-        return Dictionary((result?["settings"] as? [[String:Any]] ?? []).compactMap { row in
+    /// The account's subtitle and audio settings, for watch details.
+    func playbackValues(connection: JellyfinConnection) async throws -> [String: Any] {
+        let keys = "playback.subtitle_language,playback.subtitle_mode,playback.show_forced_subtitles,playback.audio_language"
+        let result = try await route(
+            connection: connection, method: "GET", path: ["api", "v1", "settings", "values", "effective"],
+            query: ["keys": keys], body: [:]
+        ) as? [String: Any]
+        let pairs = (result?["settings"] as? [[String: Any]] ?? []).compactMap { row -> (String, Any)? in
             guard let key = row["key"] as? String, let value = row["value"] else { return nil }
-            return (key,value)
-        },uniquingKeysWith:{ _,last in last })
+            return (key, value)
+        }
+        return Dictionary(pairs) { _, last in last }
     }
 
-    func apply(storageKey: String, user: String, method: String, path: [String], query: [String:String], body: [String:Any]) throws -> Any {
-        var rows = defaults.data(forKey:storageKey).flatMap { try? JSONSerialization.jsonObject(with:$0) as? [String:[String:Any]] } ?? [:]
-        let retainedRows = rows.filter { !$0.key.hasPrefix("nav.shortcuts.") }
-        if retainedRows.count != rows.count {
-            rows = retainedRows
-            defaults.set(try JSONSerialization.data(withJSONObject: rows), forKey: storageKey)
+    func apply(storageKey: String, user: String, method: String, path: [String], query: [String: String], body: [String: Any]) throws -> Any {
+        var rows = try loadRows(storageKey)
+        switch path.last {
+        case "capabilities":
+            return Self.capabilities
+        case "effective":
+            let keys = (query["keys"] ?? "").split(separator: ",").map(String.init)
+            return ["settings": keys.map { Self.effectiveValue($0, rows: rows) }, "revision": SettingKey.revision]
+        default:
+            break
         }
-        if path.last == "capabilities" {
-            return ["api_version":1,"revision":SettingKey.revision,"contract_etag":"vivid-local-jellyfin","definition_count":Self.contractDefaults.count,
-                "scopes":["profile","profile_client","profile_device"],"supports_batched_effective":true,"supports_idempotent_writes":true,"supports_atomic_shortcuts":false]
+
+        guard path.count >= 5, let key = SettingKey(rawValue: path[4]), key != .navShortcuts else {
+            throw JellyfinError.unsupportedFeature
         }
-        if path.last == "effective" {
-            let keys = (query["keys"] ?? "").split(separator:",").map(String.init)
-            let values: [[String:Any]] = keys.map { key in
-                let row = rows[key + ".profile_device"] ?? rows[key + ".profile_client"] ?? rows[key + ".profile"]
-                var value: [String:Any] = ["key":key,"value":row?["value"] ?? Self.contractDefaults[key] ?? NSNull(),
-                    "source":row?["scope"] ?? "default","constrained":false]
-                for field in ["scope","profile_id","client_family","device_id"] { value[field] = row?[field] }
-                return value
-            }
-            return ["settings":values,"revision":SettingKey.revision]
-        }
-        guard path.count >= 5, let key = SettingKey(rawValue:path[4]) else { throw JellyfinError.unsupportedFeature }
-        guard key != .navShortcuts else { throw JellyfinError.unsupportedFeature }
         let scope = query["scope"] ?? "profile"
-        guard ["profile","profile_client","profile_device"].contains(scope) else { throw JellyfinError.unsupportedFeature }
-        let id = key.rawValue + "." + scope
+        guard Self.scopes.contains(scope) else { throw JellyfinError.unsupportedFeature }
+        let rowID = key.rawValue + "." + scope
+
         if method == "DELETE" {
-            rows.removeValue(forKey:id)
-            defaults.set(try JSONSerialization.data(withJSONObject:rows),forKey:storageKey)
-            return [:]
+            rows.removeValue(forKey: rowID)
+            try save(rows, storageKey)
+            return [String: Any]()
         }
         guard method == "PUT" else { throw JellyfinError.unsupportedFeature }
         let value = body["value"] ?? NSNull()
@@ -131,11 +143,51 @@ actor JellyfinLocalPreferences {
             let preference: PrimaryMenuPreference = try JellyfinAdapter.decode(value)
             guard preference.isValid else { throw JellyfinError.invalidResponse }
         }
-        var row: [String:Any] = ["key":key.rawValue,"scope":scope,"profile_id":user,"value":value,"revision":1]
+        var row: [String: Any] = ["key": key.rawValue, "scope": scope, "profile_id": user, "value": value, "revision": 1]
         if let family = query["client_family"] { row["client_family"] = family }
         if let device = query["device_id"] { row["device_id"] = device }
-        if value is NSNull { rows.removeValue(forKey:id) } else { rows[id] = row }
-        defaults.set(try JSONSerialization.data(withJSONObject:rows),forKey:storageKey)
+        // A null value clears the scope.
+        rows[rowID] = value is NSNull ? nil : row
+        try save(rows, storageKey)
         return row
+    }
+
+    private static var capabilities: [String: Any] {
+        [
+            "api_version": 1,
+            "revision": SettingKey.revision,
+            "contract_etag": "vivid-local-jellyfin",
+            "definition_count": contractDefaults.count,
+            "scopes": scopes,
+            "supports_batched_effective": true,
+            "supports_idempotent_writes": true,
+            "supports_atomic_shortcuts": false,
+        ]
+    }
+
+    private static func effectiveValue(_ key: String, rows: [String: [String: Any]]) -> [String: Any] {
+        let row = rows[key + ".profile_device"] ?? rows[key + ".profile_client"] ?? rows[key + ".profile"]
+        var value: [String: Any] = [
+            "key": key,
+            "value": row?["value"] ?? contractDefaults[key] ?? NSNull(),
+            "source": row?["scope"] ?? "default",
+            "constrained": false,
+        ]
+        for field in ["scope", "profile_id", "client_family", "device_id"] { value[field] = row?[field] }
+        return value
+    }
+
+    /// The stored rows. Rows for the retired `nav.shortcuts` setting are
+    /// dropped, and the store saved without them.
+    private func loadRows(_ storageKey: String) throws -> [String: [String: Any]] {
+        let stored = defaults.data(forKey: storageKey)
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: [String: Any]] } ?? [:]
+        let rows = stored.filter { !$0.key.hasPrefix("nav.shortcuts.") }
+        if rows.count != stored.count { try save(rows, storageKey) }
+        return rows
+    }
+
+    private func save(_ rows: [String: [String: Any]], _ storageKey: String) throws {
+        defaults.set(try JSONSerialization.data(withJSONObject: rows), forKey: storageKey)
     }
 }
