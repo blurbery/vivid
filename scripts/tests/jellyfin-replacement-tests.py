@@ -19,7 +19,8 @@ def method(marker):
 state = source[source.index('    private var embyPlayback:'):source.index('    func reportNativePlaybackStarted(')]
 methods = '\n'.join(method(marker) for marker in [
     '    func startSession(', '    func stopSession(', '    func reportProgress(',
-    '    private func adoptSession('])
+    '    private func adoptSession(', '    private static func usableResumePosition(',
+    '    private func initialVersion(', '    private func adoptJellyfinPlayback('])
 
 swift = r'''
 import Foundation
@@ -94,9 +95,9 @@ enum PlaybackProgressReportResult { case success, deferred, transientFailure, mi
 struct ProgressReport { let position: Double; let isPaused: Bool }
 struct VividAPI {
     static let shared = Self()
-    func get(_ path: String) async throws -> WatchDetail { throw Failure.expected }
-    func postVoid(_ path: String, body: ProgressReport) async throws { throw Failure.expected }
-    func delete(_ path: String) async throws { throw Failure.expected }
+    func watchDetail(contentId: String) async throws -> WatchDetail { throw Failure.expected }
+    func reportPlaybackProgress(sessionId: String, report: ProgressReport) async throws { throw Failure.expected }
+    func stopPlayback(sessionId: String) async throws { throw Failure.expected }
 }
 @MainActor final class Probe {
     static var all: [String: Probe] = [:]
