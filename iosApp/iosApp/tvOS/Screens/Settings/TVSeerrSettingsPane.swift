@@ -1,6 +1,7 @@
 #if os(tvOS)
 import SwiftUI
 
+/// The Seerr address and login for the active account and profile.
 struct TVSeerrSettingsPane: View {
     @State private var store = TVSeerrConnectionStore.shared
     @State private var url = ""
@@ -24,34 +25,49 @@ struct TVSeerrSettingsPane: View {
                 TVSettingsFieldRow(title: "Password", detail: store.isConfigured ? "Leave blank to keep the saved password." : "Saved securely in this Apple TV's Keychain.") {
                     SecureField("Password", text: $password)
                 }
-                Button {
-                    busy = true
-                    message = nil
-                    Task { @MainActor in
-                        do {
-                            try await store.connect(url: url, username: username, password: password)
-                            password = ""
-                            message = String(localized: "Connected. Available to request is now enabled in Search.")
-                        } catch { message = error.localizedDescription }
-                        busy = false
-                    }
-                } label: {
+                Button(action: save) {
                     TVSettingsRowLabel(title: busy ? "Connecting…" : "Save Connection", detail: "Validate this account and enable requests in Search.")
                 }
                 .buttonStyle(TVSettingsPaneRowStyle())
                 if store.isConfigured {
-                    Button {
-                        do { try store.disconnect(); password = ""; message = String(localized: "Disconnected. Request results are hidden.") }
-                        catch { message = error.localizedDescription }
-                    } label: { TVSettingsRowLabel(title: "Disconnect", detail: "Remove this Seerr connection from matching accounts and profiles across iCloud devices.") }
+                    Button(action: disconnect) {
+                        TVSettingsRowLabel(title: "Disconnect", detail: "Remove this Seerr connection from matching accounts and profiles across iCloud devices.")
+                    }
                     .buttonStyle(TVSettingsPaneRowStyle())
                 }
             }
             .disabled(busy)
-            if let message { Text(message).font(.tvSettings(20)).foregroundStyle(.secondary).padding(.horizontal, TVSettingsLayout.scaled(24)) }
+            if let message {
+                Text(message).font(.tvSettings(20)).foregroundStyle(.secondary).padding(.horizontal, TVSettingsLayout.scaled(24))
+            }
         }
         .onAppear {
             if let config = store.configuration { url = config.url; username = config.username }
+        }
+    }
+
+    private func save() {
+        busy = true
+        message = nil
+        Task { @MainActor in
+            do {
+                try await store.connect(url: url, username: username, password: password)
+                password = ""
+                message = String(localized: "Connected. Available to request is now enabled in Search.")
+            } catch {
+                message = error.localizedDescription
+            }
+            busy = false
+        }
+    }
+
+    private func disconnect() {
+        do {
+            try store.disconnect()
+            password = ""
+            message = String(localized: "Disconnected. Request results are hidden.")
+        } catch {
+            message = error.localizedDescription
         }
     }
 }

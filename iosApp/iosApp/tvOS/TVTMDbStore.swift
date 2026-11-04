@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 
+/// TMDb requests never follow a redirect.
 private final class TMDbRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
@@ -9,39 +10,78 @@ private final class TMDbRedirectPolicy: NSObject, URLSessionTaskDelegate, @unche
     }
 }
 
+/// Answers kept for a while, keyed by context and title. A full cache is
+/// emptied before the next answer goes in.
+private struct TimedCache<Value> {
+    let lifetime: TimeInterval
+    let limit: Int
+    private var entries: [String: (savedAt: Date, value: Value)] = [:]
+
+    init(lifetime: TimeInterval, limit: Int) {
+        self.lifetime = lifetime
+        self.limit = limit
+    }
+
+    /// The saved answer, or nil when there's none or it's too old. A saved
+    /// miss comes back as `.some(nil)`.
+    func value(for key: String) -> Value? {
+        guard let entry = entries[key], Date().timeIntervalSince(entry.savedAt) < lifetime else { return nil }
+        return entry.value
+    }
+
+    mutating func store(_ value: Value, for key: String) {
+        if entries.count >= limit { entries.removeAll() }
+        entries[key] = (Date(), value)
+    }
+
+    mutating func removeAll() { entries.removeAll() }
+}
+
+/// TMDb trailers, ratings, collections and the Studios & Networks lists,
+/// all through Vivid's relay.
+///
+/// Every answer is tied to a context: the server, account, profile, store
+/// revision and TMDb language. An answer that arrives after the context
+/// changed is dropped with a `CancellationError`.
 @Observable @MainActor
 final class TVTMDbStore {
     static let shared = TVTMDbStore()
     /// Vivid's relay answers every TMDb lookup with Vivid's own token, so
     /// nobody needs a TMDb key of their own.
     nonisolated static let relayBase = "https://tmdb.vividapp.co/3/"
+
     /// TMDb features are available: there's an active account.
     private(set) var isConfigured = false
     private(set) var revision = 0
+
     private let keychain = SharedKeychain(audience: .currentUser)
-    /// Where earlier versions kept a personal TMDb key for this account and profile.
-    private var savedKeyName: String {
-        VividCloudPreferences.activeCredentialKey("tmdb") ?? legacyKeyName
-    }
-    private var legacyKeyName: String {
-        #if os(iOS)
-        MobileProfilePreferenceKeys.key("vivid.tmdb.credential.v1")
-        #else
-        "vivid.tmdb.credential.v1"
-        #endif
-    }
-    private var loadedAccount: String?
     private let session: URLSession
-    private var videoCache: [String: (Date, [ItemVideo])] = [:]
-    private var membershipCache: [String: (Date, CollectionMembership?)] = [:]
-    private var collectionCache: [String: (Date, CollectionFilms)] = [:]
-    private var movieCache: [String: (Date, MovieSummary)] = [:]
-    private var seriesCache: [String: (Date, Series)] = [:]
-    private var ratingCache: [String: (Date, Double?)] = [:]
+    private var loadedAccount: String?
+
+    /// Collections and ratings rarely change, so they're kept for a day.
+    private static let dayLifetime: TimeInterval = 24 * 60 * 60
+    private var videoCache = TimedCache<[ItemVideo]>(lifetime: 30 * 60, limit: 40)
+    private var membershipCache = TimedCache<CollectionMembership?>(lifetime: TVTMDbStore.dayLifetime, limit: 200)
+    private var collectionCache = TimedCache<CollectionFilms>(lifetime: TVTMDbStore.dayLifetime, limit: 200)
+    private var movieCache = TimedCache<MovieSummary>(lifetime: TVTMDbStore.dayLifetime, limit: 200)
+    private var seriesCache = TimedCache<Series>(lifetime: TVTMDbStore.dayLifetime, limit: 200)
+    private var ratingCache = TimedCache<Double?>(lifetime: TVTMDbStore.dayLifetime, limit: 200)
     /// Concurrent readers of the same title share one request, so the rating
     /// and the collection row never both fetch `movie/{id}` before it's cached.
     private let movieFlights = MetadataSingleFlight<String, MovieSummary>()
     private let seriesFlights = MetadataSingleFlight<String, Series>()
+
+    init(sessionConfiguration: URLSessionConfiguration = .ephemeral) {
+        let config = sessionConfiguration
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 20
+        config.httpCookieStorage = nil
+        config.urlCache = nil
+        session = URLSession(configuration: config, delegate: TMDbRedirectPolicy(), delegateQueue: nil)
+        reloadForCurrentProfile()
+    }
+
+    // MARK: Account
 
     private var accountContext: String {
         #if os(tvOS)
@@ -59,16 +99,21 @@ final class TVTMDbStore {
          VividAppLanguage.tmdbLanguage ?? ""].joined(separator: "|")
     }
 
-    init(sessionConfiguration: URLSessionConfiguration = .ephemeral) {
-        let config = sessionConfiguration
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 20
-        config.httpCookieStorage = nil
-        config.urlCache = nil
-        session = URLSession(configuration: config, delegate: TMDbRedirectPolicy(), delegateQueue: nil)
-        reloadForCurrentProfile()
+    /// Where earlier versions kept a personal TMDb key for this account and profile.
+    private var savedKeyName: String {
+        VividCloudPreferences.activeCredentialKey("tmdb") ?? legacyKeyName
     }
 
+    private var legacyKeyName: String {
+        #if os(iOS)
+        MobileProfilePreferenceKeys.key("vivid.tmdb.credential.v1")
+        #else
+        "vivid.tmdb.credential.v1"
+        #endif
+    }
+
+    /// TMDb is on whenever there's a matching saved account. Moving to
+    /// another account deletes its old keys and empties every cache.
     func reloadForCurrentProfile(force: Bool = false) {
         guard VividCloudPreferences.matchingActiveAccount != nil else {
             isConfigured = false
@@ -102,12 +147,22 @@ final class TVTMDbStore {
         ratingCache.removeAll()
     }
 
+    private func checkContext(_ expected: String) throws {
+        try Task.checkCancellation()
+        guard isConfigured, contextKey == expected else { throw CancellationError() }
+    }
+
+    // MARK: Trailers
+
+    /// Up to three YouTube trailers, official ones first. A series puts its
+    /// latest season's trailers after its main one, and an episode uses its
+    /// series.
     func videos(contentId: String) async throws -> [ItemVideo] {
         reloadForCurrentProfile()
         guard isConfigured else { return [] }
         let context = contextKey
         let cacheKey = context + "|" + contentId
-        if let cached = videoCache[cacheKey], Date().timeIntervalSince(cached.0) < 1800 { return cached.1 }
+        if let cached = videoCache.value(for: cacheKey) { return cached }
         guard let source = try await source(contentId: contentId, context: context) else { return [] }
         try checkContext(context)
         let response: Videos = try await request("\(source.kind)/\(source.id)/videos")
@@ -117,12 +172,13 @@ final class TVTMDbStore {
         if source.kind == "tv" {
             do {
                 let series = try await seriesSummary(id: source.id, context: context)
-                if let latest = series.seasons.filter({ $0.season_number > 0 }).max(by: { $0.season_number < $1.season_number }) {
-                    let season: Videos = try await request("tv/\(source.id)/season/\(latest.season_number)/videos")
+                if let latest = series.seasons.map(\.season_number).filter({ $0 > 0 }).max() {
+                    let season: Videos = try await request("tv/\(source.id)/season/\(latest)/videos")
                     try checkContext(context)
                     candidates = Array(main.prefix(1)) + Self.rankedTrailers(season.results) + Array(main.dropFirst())
                 }
             } catch {
+                // The main trailers are enough, unless the context changed.
                 try checkContext(context)
             }
         }
@@ -131,11 +187,29 @@ final class TVTMDbStore {
             ItemVideo(kind: "trailer", site: "youtube", siteKey: $0.key,
                       name: $0.name, language: $0.iso_639_1, isOfficial: $0.official ?? false)
         }
-        if videoCache.count >= 40 { videoCache.removeAll() }
-        videoCache[cacheKey] = (Date(), videos)
+        videoCache.store(videos, for: cacheKey)
         return videos
     }
 
+    /// Official first, then the main trailer by name, then the newest.
+    private static func rankedTrailers(_ videos: [Video]) -> [Video] {
+        let mainNames: Set<String> = ["official trailer", "main trailer", "trailer"]
+        return videos.filter {
+            $0.site.lowercased() == "youtube" && $0.type.lowercased() == "trailer"
+                && $0.key.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil
+        }.sorted {
+            let firstOfficial = $0.official ?? false
+            let secondOfficial = $1.official ?? false
+            if firstOfficial != secondOfficial { return firstOfficial }
+            let firstMain = mainNames.contains(($0.name ?? "").lowercased())
+            let secondMain = mainNames.contains(($1.name ?? "").lowercased())
+            if firstMain != secondMain { return firstMain }
+            return ($0.published_at ?? "") > ($1.published_at ?? "")
+        }
+    }
+
+    /// The TMDb kind and ID of a library movie or series, or of an
+    /// episode's series.
     private func source(contentId: String, context: String) async throws -> (kind: String, id: Int)? {
         var detail = try await MetadataRequestPool.shared.itemDetail(contentId: contentId)
         try checkContext(context)
@@ -143,24 +217,53 @@ final class TVTMDbStore {
             detail = try await MetadataRequestPool.shared.itemDetail(contentId: seriesID)
             try checkContext(context)
         }
-        let kind: String
-        if detail.type == "movie" { kind = "movie" }
-        else if VividMediaType.isSeries(detail.type) { kind = "tv" }
-        else { return nil }
-        guard let id = try await tmdbID(kind: kind, detail: detail, context: context) else { return nil }
-        return (kind,id)
+        guard let kind = Self.kind(of: detail),
+              let id = try await tmdbID(kind: kind, detail: detail, context: context) else { return nil }
+        return (kind, id)
+    }
+
+    /// "movie" or "tv", or nil for anything else.
+    private static func kind(of detail: ItemDetail) -> String? {
+        if detail.type == "movie" { return "movie" }
+        if VividMediaType.isSeries(detail.type) { return "tv" }
+        return nil
     }
 
     /// The item's own TMDb ID, or a lookup by IMDb ID on servers that
     /// leave TMDb out of their provider IDs.
     private func tmdbID(kind: String, detail: ItemDetail, context: String) async throws -> Int? {
         if let id = Int(detail.tmdbId ?? ""), id > 0 { return id }
-        guard MediaServerProvider.active.usesNativeUser, let imdb = detail.imdbId, imdb.range(of:"^tt[0-9]{7,10}$",options:.regularExpression) != nil else { return nil }
-        let result: ExternalMatches = try await request("find/" + imdb,query:["external_source":"imdb_id"])
+        guard MediaServerProvider.active.usesNativeUser, let imdb = detail.imdbId,
+              imdb.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil else { return nil }
+        let result: ExternalMatches = try await request("find/" + imdb, query: ["external_source": "imdb_id"])
         try checkContext(context)
         let matches = kind == "movie" ? result.movie_results : result.tv_results
         guard let id = matches.first?.id, id > 0 else { return nil }
         return id
+    }
+
+    /// One `movie/{id}` read serves the collection row and the rating.
+    private func movieSummary(id: Int, context: String) async throws -> MovieSummary {
+        let cacheKey = context + "|movie|" + String(id)
+        if let cached = movieCache.value(for: cacheKey) { return cached }
+        let movie = try await movieFlights.value(for: cacheKey) { [self] in
+            try await request("movie/\(id)") as MovieSummary
+        }
+        try checkContext(context)
+        movieCache.store(movie, for: cacheKey)
+        return movie
+    }
+
+    /// One `tv/{id}` read serves trailers and the rating.
+    private func seriesSummary(id: Int, context: String) async throws -> Series {
+        let cacheKey = context + "|tv|" + String(id)
+        if let cached = seriesCache.value(for: cacheKey) { return cached }
+        let series = try await seriesFlights.value(for: cacheKey) { [self] in
+            try await request("tv/\(id)") as Series
+        }
+        try checkContext(context)
+        seriesCache.store(series, for: cacheKey)
+        return series
     }
 
     // MARK: Collections
@@ -194,10 +297,6 @@ final class TVTMDbStore {
         let parts: [MovieCollection.Part]
     }
 
-    /// Collections rarely change, so lookups are kept for a day. The films of
-    /// a collection are cached once for every movie in it.
-    private static let collectionLifetime: TimeInterval = 24 * 60 * 60
-
     /// The collection a library movie belongs to, or nil when it has none.
     func collection(for detail: ItemDetail) async throws -> MovieCollection? {
         reloadForCurrentProfile()
@@ -205,71 +304,49 @@ final class TVTMDbStore {
         let context = contextKey
         guard let membership = try await collectionMembership(for: detail, context: context),
               let collectionID = membership.collectionId else { return nil }
-        let collection = try await collection(id: collectionID, context: context)
-        return MovieCollection(id: collection.id, name: collection.name, movieId: membership.movieId, parts: collection.parts)
+        let films = try await collectionFilms(id: collectionID, context: context)
+        return MovieCollection(id: films.id, name: films.name, movieId: membership.movieId, parts: films.parts)
     }
 
     private func collectionMembership(for detail: ItemDetail, context: String) async throws -> CollectionMembership? {
         let cacheKey = context + "|" + detail.contentId
-        if let cached = membershipCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
+        if let cached = membershipCache.value(for: cacheKey) { return cached }
         guard let movieID = try await tmdbID(kind: "movie", detail: detail, context: context) else {
             // No TMDb match is cached too, so the IMDb lookup isn't repeated on every visit.
-            storeMembership(nil, for: cacheKey)
+            membershipCache.store(nil, for: cacheKey)
             return nil
         }
         let movie = try await movieSummary(id: movieID, context: context)
         let membership = CollectionMembership(movieId: movieID, collectionId: movie.belongs_to_collection?.id)
-        storeMembership(membership, for: cacheKey)
+        membershipCache.store(membership, for: cacheKey)
         return membership
-    }
-
-    /// One `movie/{id}` read serves the collection row and the rating.
-    private func movieSummary(id: Int, context: String) async throws -> MovieSummary {
-        let cacheKey = context + "|movie|" + String(id)
-        if let cached = movieCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let movie = try await movieFlights.value(for: cacheKey) { [self] in
-            try await request("movie/\(id)") as MovieSummary
-        }
-        try checkContext(context)
-        if movieCache.count >= 200 { movieCache.removeAll() }
-        movieCache[cacheKey] = (Date(), movie)
-        return movie
-    }
-
-    /// One `tv/{id}` read serves trailers and the rating.
-    private func seriesSummary(id: Int, context: String) async throws -> Series {
-        let cacheKey = context + "|tv|" + String(id)
-        if let cached = seriesCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let series = try await seriesFlights.value(for: cacheKey) { [self] in
-            try await request("tv/\(id)") as Series
-        }
-        try checkContext(context)
-        if seriesCache.count >= 200 { seriesCache.removeAll() }
-        seriesCache[cacheKey] = (Date(), series)
-        return series
-    }
-
-    private func storeMembership(_ membership: CollectionMembership?, for cacheKey: String) {
-        if membershipCache.count >= 200 { membershipCache.removeAll() }
-        membershipCache[cacheKey] = (Date(), membership)
     }
 
     /// The films stay in English, because their titles are matched against
     /// the library. Only the shown name is asked for in the app's language,
     /// keeping the English one when TMDb has no translation.
-    private func collection(id collectionID: Int, context: String) async throws -> CollectionFilms {
+    private func collectionFilms(id collectionID: Int, context: String) async throws -> CollectionFilms {
         let cacheKey = context + "|" + String(collectionID)
-        if let cached = collectionCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
+        if let cached = collectionCache.value(for: cacheKey) { return cached }
         async let localizedName = localizedCollectionName(id: collectionID)
         let response: CollectionDetail = try await request("collection/\(collectionID)")
         let localized = await localizedName
-        let shownName = localized.name ?? response.name
         try checkContext(context)
-        let date: (CollectionPart) -> String? = { part in
+        let films = CollectionFilms(id: response.id, name: localized.name ?? response.name,
+                                    parts: Self.releaseOrder(response.parts))
+        // A failed name lookup isn't kept, so the translated name is tried again.
+        guard !localized.failed else { return films }
+        collectionCache.store(films, for: cacheKey)
+        return films
+    }
+
+    /// Oldest first. Unreleased films without a date go last, keeping
+    /// TMDb's order.
+    private static func releaseOrder(_ parts: [CollectionPart]) -> [MovieCollection.Part] {
+        func date(_ part: CollectionPart) -> String? {
             part.release_date.flatMap { $0.isEmpty ? nil : $0 }
         }
-        let parts = response.parts.enumerated().sorted {
-            // Unreleased films without a date go last, keeping TMDb's order.
+        return parts.enumerated().sorted {
             switch (date($0.element), date($1.element)) {
             case let (first?, second?) where first != second: return first < second
             case (_?, nil): return true
@@ -283,12 +360,6 @@ final class TVTMDbStore {
                 originalTitle: part.original_title,
                 year: part.release_date.flatMap { Int($0.prefix(4)) })
         }
-        let films = CollectionFilms(id: response.id, name: shownName, parts: parts)
-        // A failed name lookup isn't kept, so the translated name is tried again.
-        guard !localized.failed else { return films }
-        if collectionCache.count >= 200 { collectionCache.removeAll() }
-        collectionCache[cacheKey] = (Date(), films)
-        return films
     }
 
     /// The collection's name in the app's language: nil in English or when
@@ -310,15 +381,11 @@ final class TVTMDbStore {
     /// a day per title, like collection lookups, and a miss is cached too.
     func rating(for detail: ItemDetail) async throws -> Double? {
         reloadForCurrentProfile()
-        guard isConfigured else { return nil }
-        let kind: String
-        if detail.type == "movie" { kind = "movie" }
-        else if VividMediaType.isSeries(detail.type) { kind = "tv" }
-        else { return nil }
+        guard isConfigured, let kind = Self.kind(of: detail) else { return nil }
         let context = contextKey
         let cacheKey = context + "|" + detail.contentId
-        if let cached = ratingCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let rating: Double?
+        if let cached = ratingCache.value(for: cacheKey) { return cached }
+        var rating: Double?
         if let id = try await tmdbID(kind: kind, detail: detail, context: context) {
             if kind == "movie" {
                 let movie = try await movieSummary(id: id, context: context)
@@ -327,11 +394,8 @@ final class TVTMDbStore {
                 let series = try await seriesSummary(id: id, context: context)
                 rating = Self.displayRating(average: series.vote_average, count: series.vote_count)
             }
-        } else {
-            rating = nil
         }
-        if ratingCache.count >= 200 { ratingCache.removeAll() }
-        ratingCache[cacheKey] = (Date(), rating)
+        ratingCache.store(rating, for: cacheKey)
         return rating
     }
 
@@ -379,11 +443,6 @@ final class TVTMDbStore {
         }
     }
 
-    private struct BrandDetail: Decodable {
-        let logoPath: String?
-        private enum CodingKeys: String, CodingKey { case logoPath = "logo_path" }
-    }
-
     /// One page of popularity-ordered titles from TMDb's discover endpoint.
     ///
     /// Titles and overviews are in English unless `localized` is true. Pass
@@ -393,15 +452,15 @@ final class TVTMDbStore {
     /// when one is missing.
     func discover(media: String, query: [String: String], page: Int, localized: Bool = false) async throws -> DiscoverPage {
         guard isConfigured else { throw Failure.unavailable }
-        var q = query
-        q["sort_by"] = "popularity.desc"
-        q["include_adult"] = "false"
-        q["page"] = String(page)
+        var query = query
+        query["sort_by"] = "popularity.desc"
+        query["include_adult"] = "false"
+        query["page"] = String(page)
         let path = "discover/\(media)"
-        guard localized, let language = VividAppLanguage.tmdbLanguage else { return try await request(path, query: q) }
-        var result: DiscoverPage = try await request(path, query: q, language: language)
+        guard localized, let language = VividAppLanguage.tmdbLanguage else { return try await request(path, query: query) }
+        var result: DiscoverPage = try await request(path, query: query, language: language)
         guard result.results.contains(where: { ($0.overview ?? "").isEmpty }),
-              let english: DiscoverPage = try? await request(path, query: q) else { return result }
+              let english: DiscoverPage = try? await request(path, query: query) else { return result }
         let overviews = Dictionary(english.results.map { ($0.id, $0.overview) }, uniquingKeysWith: { first, _ in first })
         for index in result.results.indices where (result.results[index].overview ?? "").isEmpty {
             if let overview = overviews[result.results[index].id] ?? nil { result.results[index].overview = overview }
@@ -425,10 +484,7 @@ final class TVTMDbStore {
         return detail.logoPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w500" + $0) }
     }
 
-    private func checkContext(_ expected: String) throws {
-        try Task.checkCancellation()
-        guard isConfigured, contextKey == expected else { throw CancellationError() }
-    }
+    // MARK: Requests
 
     /// Every request goes to Vivid's relay, which adds Vivid's TMDb token.
     /// The app never holds or sends a TMDb credential. `language` is sent
@@ -448,19 +504,6 @@ final class TVTMDbStore {
         path.range(of: "^((movie|tv|collection)/[0-9]+|discover/(movie|tv))$", options: .regularExpression) != nil
     }
 
-    private func request<T: Decodable>(_ path: String, query: [String:String] = [:], language: String? = nil) async throws -> T {
-        let request = Self.urlRequest(path, query: query, language: language)
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let response = response as? HTTPURLResponse else { throw Failure.unavailable }
-            if let failure = Self.failure(status: response.statusCode) { throw failure }
-            guard data.count <= 2_000_000 else { throw Failure.unavailable }
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch is CancellationError { throw CancellationError() }
-        catch let error as Failure { throw error }
-        catch { throw Failure.unavailable }
-    }
-
     /// What a response status means. Anything but success is a temporary
     /// problem: there's no key for anyone to get wrong.
     nonisolated static func failure(status: Int) -> Failure? {
@@ -471,43 +514,80 @@ final class TVTMDbStore {
         case unavailable
         var errorDescription: String? { String(localized: "TMDb is unavailable right now. Please try again.") }
     }
-    private static func rankedTrailers(_ videos: [Video]) -> [Video] {
-        videos.filter {
-            $0.site.lowercased() == "youtube" && $0.type.lowercased() == "trailer"
-                && $0.key.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil
-        }.sorted {
-            let first = $0.official ?? false
-            let second = $1.official ?? false
-            if first != second { return first }
-            let firstMain = ["official trailer", "main trailer", "trailer"].contains(($0.name ?? "").lowercased())
-            let secondMain = ["official trailer", "main trailer", "trailer"].contains(($1.name ?? "").lowercased())
-            if firstMain != secondMain { return firstMain }
-            return ($0.published_at ?? "") > ($1.published_at ?? "")
+
+    /// Answers over 2 MB are refused. Any failure other than cancellation
+    /// is reported as `.unavailable`.
+    private func request<T: Decodable>(_ path: String, query: [String: String] = [:], language: String? = nil) async throws -> T {
+        let request = Self.urlRequest(path, query: query, language: language)
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse else { throw Failure.unavailable }
+            if let failure = Self.failure(status: response.statusCode) { throw failure }
+            guard data.count <= 2_000_000 else { throw Failure.unavailable }
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as Failure {
+            throw error
+        } catch {
+            throw Failure.unavailable
         }
     }
+
+    // MARK: TMDb's answers
+
     private struct MovieSummary: Decodable {
         let belongs_to_collection: CollectionReference?
         let vote_average: Double?
         let vote_count: Int?
     }
-    private struct CollectionReference: Decodable { let id: Int }
-    private struct CollectionDetail: Decodable { let id: Int; let name: String; let parts: [CollectionPart] }
-    private struct CollectionName: Decodable { let name: String? }
-    private struct CollectionPart: Decodable {
-        let id: Int; let title: String?; let original_title: String?; let release_date: String?
+    private struct CollectionReference: Decodable {
+        let id: Int
     }
-    private struct ExternalMatches: Decodable { let movie_results: [ExternalMatch]; let tv_results: [ExternalMatch] }
-    private struct ExternalMatch: Decodable { let id: Int }
+    private struct CollectionDetail: Decodable {
+        let id: Int
+        let name: String
+        let parts: [CollectionPart]
+    }
+    private struct CollectionName: Decodable {
+        let name: String?
+    }
+    private struct CollectionPart: Decodable {
+        let id: Int
+        let title: String?
+        let original_title: String?
+        let release_date: String?
+    }
+    private struct ExternalMatches: Decodable {
+        let movie_results: [ExternalMatch]
+        let tv_results: [ExternalMatch]
+    }
+    private struct ExternalMatch: Decodable {
+        let id: Int
+    }
     private struct Series: Decodable {
         let seasons: [Season]
         let vote_average: Double?
         let vote_count: Int?
     }
-    private struct Season: Decodable { let season_number: Int }
-    private struct Videos: Decodable { let results: [Video] }
+    private struct Season: Decodable {
+        let season_number: Int
+    }
+    private struct Videos: Decodable {
+        let results: [Video]
+    }
     private struct Video: Decodable {
-        let key: String; let name: String?; let site: String; let type: String
-        let official: Bool?; let iso_639_1: String?; let published_at: String?
+        let key: String
+        let name: String?
+        let site: String
+        let type: String
+        let official: Bool?
+        let iso_639_1: String?
+        let published_at: String?
+    }
+    private struct BrandDetail: Decodable {
+        let logoPath: String?
+        private enum CodingKeys: String, CodingKey { case logoPath = "logo_path" }
     }
 }
 
@@ -560,10 +640,15 @@ final class MovieCollectionRowStore {
 
         var seen = Set<String>()
         let items: [SimilarPosterItem] = collection.parts.compactMap { part in
-            let item = part.id == collection.movieId
-                ? SimilarPosterItem(detail: detail)
-                : library.movie(tmdbId: part.id, titles: [part.title, part.originalTitle].compactMap { $0 }, year: part.year)
+            let item: SimilarPosterItem?
+            if part.id == collection.movieId {
+                item = SimilarPosterItem(detail: detail)
+            } else {
+                // Another copy of the movie being viewed isn't shown twice.
+                let titles = [part.title, part.originalTitle].compactMap { $0 }
+                item = library.movie(tmdbId: part.id, titles: titles, year: part.year)
                     .flatMap { $0.contentId == detail.contentId ? nil : $0 }
+            }
             guard let item, seen.insert(item.contentId).inserted else { return nil }
             return item
         }
