@@ -467,8 +467,9 @@ struct JellyfinAdapter {
     func home(library: String? = nil) async throws -> [String: Any] {
         let parent: String?
         if let library { parent = try await libraryID(library) } else { parent = nil }
-        var scope = ["Limit": "20", "MediaTypes": "Video", "Fields": Self.homeFields]
-        if let parent { scope["ParentId"] = parent }
+        var rowQuery = ["Limit": "20", "MediaTypes": "Video", "Fields": Self.homeFields]
+        if let parent { rowQuery["ParentId"] = parent }
+        let scope = rowQuery
 
         async let viewsRequest = libraryViews()
         async let userRequest = connection.object("GET", "/Users/\(userID)")

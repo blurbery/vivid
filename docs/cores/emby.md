@@ -96,7 +96,7 @@ Physical iPad testing, all audio layouts, transcoding routes and live Emby Intro
 
 ## Source ownership
 
-- [EmbyProvider](../../iosApp/iosApp/Networking/EmbyProvider.swift): connection, API translation, Home, collections, seasons and metadata.
+- [EmbyProvider](../../iosApp/iosApp/Networking/EmbyProvider.swift): connection, sign-in, Emby Connect and the library directory. The API translation is in [EmbyProvider+Items](../../iosApp/iosApp/Networking/EmbyProvider+Items.swift) (items, versions and tracks), [EmbyProvider+Home](../../iosApp/iosApp/Networking/EmbyProvider+Home.swift) (Home) and [EmbyProvider+Routes](../../iosApp/iosApp/Networking/EmbyProvider+Routes.swift) (collections, seasons, metadata and the routes it answers).
 - [EmbyLocalPreferences](../../iosApp/iosApp/Networking/EmbyLocalPreferences.swift): account-scoped Vivid preferences.
 - [EmbyPlayback](../../iosApp/iosApp/Screens/Player/EmbyPlayback.swift): source negotiation and session reporting.
 - [EmbyDownloads](../../iosApp/iosApp/Downloads/EmbyDownloads.swift): original-file downloads, season and series batches, conversion jobs and offline manifests.
