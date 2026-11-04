@@ -81,30 +81,6 @@ struct CreateProfileRequestBody: Codable {
     let allowedLibraryIds: [Int]
 }
 
-// MARK: - Discover
-
-struct DiscoverResponse: Codable {
-    let rows: [DiscoverRow]
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        rows = try container.decodeIfPresent([DiscoverRow].self, forKey: .rows) ?? []
-    }
-}
-
-struct DiscoverRow: Codable {
-    let type: String
-    let label: String
-    let items: [SectionItem]
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decode(String.self, forKey: .type)
-        label = try container.decode(String.self, forKey: .label)
-        items = try container.decodeIfPresent([SectionItem].self, forKey: .items) ?? []
-    }
-}
-
 // MARK: - Library collections
 
 /// One ordered section of a library's collections: a named group or the
