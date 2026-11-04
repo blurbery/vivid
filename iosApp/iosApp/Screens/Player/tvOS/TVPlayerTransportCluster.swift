@@ -1,17 +1,17 @@
 #if os(tvOS)
 import SwiftUI
 
-/// The round Subtitles and Options shortcuts above the timeline, in one
-/// native horizontal focus section. Each opens the HUD without touching the
-/// playback session.
+/// The two round shortcuts above the Apple TV timeline: Subtitles, then
+/// Options. Both open the HUD and leave playback alone. They share one native
+/// focus section, and Down hands focus back to the timeline.
 struct TVPlayerTransportCluster: View {
     let viewModel: PlayerViewModel
     let onOpenHUD: () -> Void
     let onOpenSubtitles: () -> Void
     let onMoveToScrubber: () -> Void
-    /// False while the scrubber owns focus or a timeline selection runs. It
-    /// takes both buttons out of the focus graph, so a move towards them from
-    /// the timeline finds no target and focus stays on the scrubber.
+    /// Turned off while the timeline is focused or selecting. With both
+    /// circles disabled, a move from the timeline has nowhere native to go,
+    /// so the timeline keeps focus and decides the hand-off itself.
     var allowsFocus: Bool = true
 
     @FocusState.Binding var focusedButton: FocusTarget?
@@ -20,71 +20,80 @@ struct TVPlayerTransportCluster: View {
         case subtitles, options
     }
 
+    private enum Metrics {
+        static let gap: CGFloat = 14
+        static let diameter: CGFloat = 52
+        static let subtitleGlyphSide: CGFloat = 28
+        static let optionsGlyphSize: CGFloat = 26
+        static let restingFillOpacity = 0.10
+        static let restingRingOpacity = 0.3
+        static let focusFade = 0.18
+    }
+
     var body: some View {
-        HStack(spacing: 14) {
-            subtitlesButton
-            optionsButton
+        HStack(spacing: Metrics.gap) {
+            circle(.subtitles, perform: onOpenSubtitles) { lit in
+                Image("PlayerSubtitlesIcon")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: Metrics.subtitleGlyphSide, height: Metrics.subtitleGlyphSide)
+                    .foregroundStyle(glyphColour(lit: lit))
+            }
+            .accessibilityLabel("Subtitles")
+            .accessibilityValue(currentSubtitleName)
+
+            circle(.options, perform: onOpenHUD) { lit in
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: Metrics.optionsGlyphSize, weight: .medium))
+                    .foregroundStyle(glyphColour(lit: lit))
+            }
+            .accessibilityLabel("Info and playback options")
         }
         .focusSection()
-        .onMoveCommand { direction in
-            if direction == .down {
-                onMoveToScrubber()
-            }
+        .onMoveCommand { move in
+            guard move == .down else { return }
+            onMoveToScrubber()
         }
     }
 
-    private var subtitlesButton: some View {
-        shortcutButton(.subtitles, action: onOpenSubtitles) { isFocused in
-            Image("PlayerSubtitlesIcon")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-                .foregroundStyle(isFocused ? .black : .white)
-        }
-        .accessibilityLabel("Subtitles")
-        .accessibilityValue(selectedSubtitleLabel)
+    /// The selected subtitle track's name for VoiceOver, or Off.
+    private var currentSubtitleName: String {
+        let selected = viewModel.subtitleTracks.first { $0.trackId == viewModel.selectedSubtitleId }
+        return selected?.primaryLabel ?? String(localized: "Off")
     }
 
-    private var optionsButton: some View {
-        shortcutButton(.options, action: onOpenHUD) { isFocused in
-            Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(isFocused ? .black : .white)
-        }
-        .accessibilityLabel("Info and playback options")
+    private func glyphColour(lit: Bool) -> Color {
+        lit ? .black : .white
     }
 
-    private var selectedSubtitleLabel: String {
-        viewModel.subtitleTracks.first(where: { $0.trackId == viewModel.selectedSubtitleId })?.primaryLabel
-            ?? String(localized: "Off")
-    }
-
-    /// A 52-point circle that turns white with a black icon when focused.
-    /// It draws its own focus look, so the system focus effect is off.
-    private func shortcutButton<Icon: View>(
+    /// A translucent ringed circle that fills white, with a black glyph, while
+    /// focused. It draws that look itself, so the system focus effect is off.
+    private func circle<Glyph: View>(
         _ target: FocusTarget,
-        action: @escaping () -> Void,
-        @ViewBuilder icon: (Bool) -> Icon
+        perform action: @escaping () -> Void,
+        @ViewBuilder glyph: (Bool) -> Glyph
     ) -> some View {
-        let isFocused = focusedButton == target
+        let lit = focusedButton == target
         return Button(action: action) {
-            icon(isFocused)
-                .frame(width: 52, height: 52)
-                .background(isFocused ? Color.white : Color.white.opacity(0.10), in: Circle())
+            glyph(lit)
+                .frame(width: Metrics.diameter, height: Metrics.diameter)
+                .background(lit ? Color.white : Color.white.opacity(Metrics.restingFillOpacity), in: Circle())
                 .overlay {
-                    Circle().strokeBorder(.white.opacity(isFocused ? 0 : 0.3), lineWidth: 1)
+                    Circle().strokeBorder(.white.opacity(lit ? 0 : Metrics.restingRingOpacity), lineWidth: 1)
                 }
         }
-        .buttonStyle(TVPlayerShortcutButtonStyle())
+        .buttonStyle(BareShortcutStyle())
         .disabled(!allowsFocus)
         .focused($focusedButton, equals: target)
         .focusEffectDisabled()
-        .animation(.easeOut(duration: 0.18), value: isFocused)
+        .animation(.easeOut(duration: Metrics.focusFade), value: lit)
     }
 }
 
-private struct TVPlayerShortcutButtonStyle: ButtonStyle {
+/// Shows the label as it is, with a capsule hit shape and no system focus
+/// effect, so the circle's own focus look is the only one.
+private struct BareShortcutStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .contentShape(Capsule())
