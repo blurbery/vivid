@@ -1,6 +1,9 @@
 import SwiftUI
 
 #if os(tvOS)
+/// The first step of setting up a server, or of adding one from Settings:
+/// a card for Silo, Emby and Jellyfin. First-run setup also offers to
+/// restore saved profiles from iCloud.
 struct TVProviderSelectionView: View {
     var onRestore: (() -> Void)? = nil
     var addingServer = false
@@ -121,17 +124,13 @@ struct TVProviderSelectionView: View {
         }
     }
 
-    private func providerCard(
-        _ provider: Provider,
-        width: CGFloat
-    ) -> some View {
+    private func providerCard(_ provider: Provider, width: CGFloat) -> some View {
         VStack(spacing: VividTheme.smallPadding) {
             Image(provider.imageName)
                 .resizable()
                 .scaledToFit()
                 .frame(width: width * 0.58, height: 100)
                 .accessibilityLabel(provider.rawValue)
-
         }
         .frame(width: width, height: width / VividTheme.backdropAspectRatio)
         .background(

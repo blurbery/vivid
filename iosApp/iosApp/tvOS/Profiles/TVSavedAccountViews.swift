@@ -1,6 +1,8 @@
 #if os(tvOS)
 import SwiftUI
 
+/// Who's watching: the saved profiles at launch. Choosing one plays the
+/// startup animation over the row before the app takes over.
 struct TVSavedProfilesScreen: View {
     let router: AppRouter
     @State private var store = TVSavedAccountStore.shared
@@ -64,6 +66,8 @@ struct TVSavedProfilesScreen: View {
     }
 }
 
+/// The row of saved profiles, on the profile picker and in Settings. A long
+/// press arranges them; the order syncs with the iCloud vault.
 struct TVSavedAccountCards: View {
     var isSettings = true
     @Environment(\.isEnabled) private var isEnabled
@@ -82,75 +86,53 @@ struct TVSavedAccountCards: View {
 
     var body: some View {
         GeometryReader { viewport in
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: metric(32)) {
-                ForEach(displayedAccounts) { account in
-                    if isEditingProfiles {
-                        if account.id == movingID {
-                            Button { finishArrangement() } label: {
-                                tile(account)
-                                    .overlay(alignment: .top) {
-                                        Circle().strokeBorder(.white, lineWidth: 3)
-                                            .frame(width: metric(112), height: metric(112))
-                                    }
-                                    .modifier(ProfileArrangeWobble(active: true))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: metric(32)) {
+                    ForEach(displayedAccounts) { account in
+                        if isEditingProfiles {
+                            if account.id == movingID {
+                                movingCard(account)
+                            } else {
+                                tile(account).modifier(ProfileArrangeWobble(active: true))
                             }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
-                            .focused($editingFocused)
-                            .onAppear { editingFocused = true }
-                            .onMoveCommand { direction in
-                                switch direction {
-                                case .left: moveDraft(account.id, by: -1)
-                                case .right: moveDraft(account.id, by: 1)
-                                default: break
-                                }
-                            }
-                            .onExitCommand { cancelArrangement() }
-                            .accessibilityLabel("Move \(account.displayName). Move left or right, then press centre to drop and save.")
                         } else {
-                            tile(account).modifier(ProfileArrangeWobble(active: true))
-                        }
-                    } else {
-                        Group {
-                            if (isSettings && account.id == store.activeID) || store.needsLogin(account) {
-                                NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
+                            Group {
+                                if (isSettings && account.id == store.activeID) || store.needsLogin(account) {
+                                    NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
+                                        .buttonStyle(TVAccountCircleStyle(scale: scale))
+                                        .focused($focusedAccount, equals: account.id)
+                                        .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
+                                } else {
+                                    Button {
+                                        if store.hasPIN(account.id) { pinAccount = account }
+                                        else { Task { await store.select(account, router: router) } }
+                                    } label: { tile(account) }
                                     .buttonStyle(TVAccountCircleStyle(scale: scale))
                                     .focused($focusedAccount, equals: account.id)
                                     .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
-
-                            } else {
-                                Button {
-                                    if store.hasPIN(account.id) { pinAccount = account }
-                                    else { Task { await store.select(account, router: router) } }
-                                } label: { tile(account) }
-                                .buttonStyle(TVAccountCircleStyle(scale: scale))
-                                    .focused($focusedAccount, equals: account.id)
-                                    .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
-
+                                }
                             }
+                            .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
+                            .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
                         }
-                        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
-                        .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
+                    }
+                    if store.canAddAccount {
+                        NavigationLink(value: TVAccountRoute.editor(nil)) {
+                            VStack(spacing: metric(14)) {
+                                Image(systemName: "plus").font(.system(size: metric(46), weight: .medium))
+                                    .frame(width: metric(108), height: metric(108))
+                                    .background(.white.opacity(0.12), in: Circle())
+                                Text("Add Profile").font(.system(size: metric(20), weight: .medium))
+                            }.frame(width: metric(142))
+                        }
+                        .buttonStyle(TVAccountCircleStyle(scale: scale))
+                        .disabled(isEditingProfiles)
                     }
                 }
-                if store.canAddAccount {
-                    NavigationLink(value: TVAccountRoute.editor(nil)) {
-                        VStack(spacing: metric(14)) {
-                            Image(systemName: "plus").font(.system(size: metric(46), weight: .medium))
-                                .frame(width: metric(108), height: metric(108))
-                                .background(.white.opacity(0.12), in: Circle())
-                            Text("Add Profile").font(.system(size: metric(20), weight: .medium))
-                        }.frame(width: metric(142))
-                    }
-                    .buttonStyle(TVAccountCircleStyle(scale: scale))
-                    .disabled(isEditingProfiles)
-                }
+                .padding(metric(16))
+                .frame(minWidth: viewport.size.width, alignment: isSettings ? .leading : .center)
             }
-            .padding(metric(16))
-            .frame(minWidth: viewport.size.width, alignment: isSettings ? .leading : .center)
-        }
-        .scrollClipDisabled()
+            .scrollClipDisabled()
         }
         .frame(height: metric(222))
         .disabled(store.busy || pinAccount != nil)
@@ -199,6 +181,33 @@ struct TVSavedAccountCards: View {
                 }
             }
         }
+    }
+
+    /// The profile being arranged: the one focus target while arranging.
+    /// Left and Right move it, Select drops it and saves the order, and Menu
+    /// puts it back.
+    private func movingCard(_ account: TVSavedAccount) -> some View {
+        Button { finishArrangement() } label: {
+            tile(account)
+                .overlay(alignment: .top) {
+                    Circle().strokeBorder(.white, lineWidth: 3)
+                        .frame(width: metric(112), height: metric(112))
+                }
+                .modifier(ProfileArrangeWobble(active: true))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .focused($editingFocused)
+        .onAppear { editingFocused = true }
+        .onMoveCommand { direction in
+            switch direction {
+            case .left: moveDraft(account.id, by: -1)
+            case .right: moveDraft(account.id, by: 1)
+            default: break
+            }
+        }
+        .onExitCommand { cancelArrangement() }
+        .accessibilityLabel("Move \(account.displayName). Move left or right, then press centre to drop and save.")
     }
 
     /// The row follows the settings scale inside Settings; the profile
@@ -323,6 +332,9 @@ struct TVAccountCircleStyle: ButtonStyle {
     }
 }
 
+/// One saved profile's settings, or adding a profile (and its server): the
+/// login, code sign-in, the Silo household, the account PIN, signing out and
+/// deleting.
 struct TVSavedAccountEditor: View {
     let accountID: String?
     var addingServer = false
@@ -383,8 +395,7 @@ struct TVSavedAccountEditor: View {
                                     store.error = nil
                                 } label: {
                                     HStack {
-                                        TVSettingsRowLabel(title: option,
-                                            detail: nil)
+                                        TVSettingsRowLabel(title: option, detail: nil)
                                         Spacer()
                                         if provider == option { Image(systemName: "checkmark") }
                                     }
@@ -415,69 +426,68 @@ struct TVSavedAccountEditor: View {
                     }
                 }
                 Group {
-                TVSettingsSectionHeader("ACCOUNT")
-                TVSettingsGroup {
-                    if account == nil {
-                        TVSettingsFieldRow(title: "Server address", detail: "The address of your media server.") {
-                            TextField("Server address", text: $serverURL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        }
-                    } else {
-                        TVSettingsInfoRow(title: "Server", value: ServerRegistry.shared.entry(with: account!.serverID)?.displayName ?? serverURL)
-                        if let name = account!.siloProfileName {
-                            TVSettingsInfoRow(title: "Profile", value: name)
-                        }
-                    }
-                    TVSettingsFieldRow(title: "Username", detail: "Your username on this server.") {
-                        TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .autocorrectionDisabled().textInputAutocapitalization(.never)
-                    }
-                    TVSettingsFieldRow(title: "Password", detail: "Enter the current password to update your saved login.") {
-                        SecureField("Password", text: $password).textContentType(.password)
-                    }
-                    Button {
-                        Task {
-                            _ = await store.authenticate(id: accountID, serverURL: serverURL,
-                                username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password, router: router, provider: selectedProvider)
-                            password = ""
-                        }
-                    } label: {
-                        TVSettingsRowLabel(title: account?.requiresLogin == true ? "Sign In" : (account == nil ? (addingServer ? "Add Server & Profile" : "Add Profile") : "Update Login"),
-                                           detail: "Validate and save this account’s login on the Apple TV.")
-                    }
-                    .buttonStyle(TVSettingsPaneRowStyle())
-                    .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && !selectedProvider.usesNativeUser))
-                    if let service = CodeSignIn.Service(selectedProvider) {
-                        // One row for starting and replacing a code, so focus stays put.
-                        Button { startCodeSignIn(service) } label: {
-                            TVSettingsRowLabel(title: codeSignIn.isActive ? Text(service.getNewTitle) : Text("Use \(service.title)"),
-                                               detail: codeSignIn.isActive ? Text(service.replaceBelowText) : Text(service.summary))
-                        }
-                        .buttonStyle(TVSettingsPaneRowStyle())
-                        .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                if account == nil {
-                    TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
-                }
-                if codeSignIn.isActive {
-                    TVSettingsSectionHeader(codeSignIn.service.title.uppercased())
+                    TVSettingsSectionHeader("ACCOUNT")
                     TVSettingsGroup {
-                        if let code = codeSignIn.code {
-                            TVSettingsInfoRow(title: codeSignIn.service.codeTitle, value: code)
+                        if account == nil {
+                            TVSettingsFieldRow(title: "Server address", detail: "The address of your media server.") {
+                                TextField("Server address", text: $serverURL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            }
+                        } else {
+                            TVSettingsInfoRow(title: "Server", value: ServerRegistry.shared.entry(with: account!.serverID)?.displayName ?? serverURL)
+                            if let name = account!.siloProfileName {
+                                TVSettingsInfoRow(title: "Profile", value: name)
+                            }
                         }
-                        if let status = codeSignIn.status {
-                            TVSettingsInfoRow(title: "Status", value: status)
+                        TVSettingsFieldRow(title: "Username", detail: "Your username on this server.") {
+                            TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                         }
-                        if let failure = codeSignIn.failure {
-                            TVSettingsInfoRow(title: "Status", value: failure)
+                        TVSettingsFieldRow(title: "Password", detail: "Enter the current password to update your saved login.") {
+                            SecureField("Password", text: $password).textContentType(.password)
                         }
-                        Button { if codeSignIn.canCancel { codeSignIn.cancel() } } label: {
-                            TVSettingsRowLabel(title: "Cancel \(codeSignIn.service.title)")
+                        Button {
+                            Task {
+                                _ = await store.authenticate(id: accountID, serverURL: serverURL,
+                                    username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password, router: router, provider: selectedProvider)
+                                password = ""
+                            }
+                        } label: {
+                            TVSettingsRowLabel(title: account?.requiresLogin == true ? "Sign In" : (account == nil ? (addingServer ? "Add Server & Profile" : "Add Profile") : "Update Login"),
+                                               detail: "Validate and save this account’s login on the Apple TV.")
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
+                        .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && !selectedProvider.usesNativeUser))
+                        if let service = CodeSignIn.Service(selectedProvider) {
+                            // One row for starting and replacing a code, so focus stays put.
+                            Button { startCodeSignIn(service) } label: {
+                                TVSettingsRowLabel(title: codeSignIn.isActive ? Text(service.getNewTitle) : Text("Use \(service.title)"),
+                                                   detail: codeSignIn.isActive ? Text(service.replaceBelowText) : Text(service.summary))
+                            }
+                            .buttonStyle(TVSettingsPaneRowStyle())
+                            .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
                     }
-                    TVSettingsFooter(codeSignIn.service.instructions)
-                }
+                    if account == nil {
+                        TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
+                    }
+                    if codeSignIn.isActive {
+                        TVSettingsSectionHeader(codeSignIn.service.title.uppercased())
+                        TVSettingsGroup {
+                            if let code = codeSignIn.code {
+                                TVSettingsInfoRow(title: codeSignIn.service.codeTitle, value: code)
+                            }
+                            if let status = codeSignIn.status {
+                                TVSettingsInfoRow(title: "Status", value: status)
+                            }
+                            if let failure = codeSignIn.failure {
+                                TVSettingsInfoRow(title: "Status", value: failure)
+                            }
+                            Button { if codeSignIn.canCancel { codeSignIn.cancel() } } label: {
+                                TVSettingsRowLabel(title: "Cancel \(codeSignIn.service.title)")
+                            }
+                            .buttonStyle(TVSettingsPaneRowStyle())
+                        }
+                        TVSettingsFooter(codeSignIn.service.instructions)
+                    }
                 }
                 if isActive, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
                     householdSection(account)
@@ -641,6 +651,7 @@ struct TVSavedAccountEditor: View {
     }
 }
 
+/// Asks for a profile's PIN before entering it.
 private struct TVSavedAccountPINPrompt: View {
     let account: TVSavedAccount
     let onPIN: (String) -> Void

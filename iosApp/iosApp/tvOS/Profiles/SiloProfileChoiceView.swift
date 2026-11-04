@@ -177,6 +177,5 @@ struct SiloProfileChoiceView: View {
               let account = VividCacheScope.accountID(for: server) else { return nil }
         return VividCacheScope.key(serverID: server, accountID: account, profileID: profile.id)
     }
-
 }
 #endif

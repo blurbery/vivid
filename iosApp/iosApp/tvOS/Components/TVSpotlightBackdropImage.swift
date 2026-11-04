@@ -2,6 +2,10 @@
 import SwiftUI
 import Vision
 
+/// A Home spotlight backdrop, cropped so the faces or people in it (or else
+/// its most eye-catching part) stay in view. `onReady` runs once the image is
+/// shown, or once it's clear there won't be one, so the spotlight can reveal
+/// itself either way.
 struct TVSpotlightBackdropImage: View {
     let url: String
     let size: CGSize
@@ -57,6 +61,7 @@ struct TVSpotlightBackdropImage: View {
     }
 }
 
+/// Finds the subject of a backdrop with Vision and places the image around it.
 enum TVSpotlightCrop {
     private actor SubjectPreparation {
         func prepare(_ image: UIImage, key: String) -> CGRect? {
@@ -76,6 +81,10 @@ enum TVSpotlightCrop {
         return cache
     }()
 
+    /// The subject's bounds as a fraction of the image, with the origin at the
+    /// top left, or nil when nothing stands out. Faces come first, then upper
+    /// bodies, then attention saliency. Answers, misses included, are cached
+    /// under `key`.
     static func subject(in image: UIImage, key: String) -> CGRect? {
         let cached = subjects.object(forKey: key as NSString)
         if let cached { return cached.cgRectValue.isNull ? nil : cached.cgRectValue }
@@ -132,6 +141,11 @@ enum TVSpotlightCrop {
         return topOrigin.isNull ? nil : topOrigin
     }
 
+    /// Where to draw the image in the viewport. It fills the viewport, or for
+    /// the spotlight scales no more than 1.2 times past fitting. Across, it
+    /// centres on the subject (or the middle) at 62% of the width; down, a
+    /// short image sits on the bottom edge and a tall one keeps the subject
+    /// below a little headroom, or shows mostly its top.
     static func layout(image: CGSize, viewport: CGSize, subject: CGRect?, fillsViewport: Bool = false) -> CGRect {
         guard image.width > 0, image.height > 0 else { return CGRect(origin: .zero, size: viewport) }
         let fit = min(viewport.width / image.width, viewport.height / image.height)
