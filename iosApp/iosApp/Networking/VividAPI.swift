@@ -5,8 +5,8 @@ import Foundation
 /// to Silo v2 where the server needs it, and hands Emby and Jellyfin accounts
 /// to their adapters. Session state comes from `TokenStore`.
 ///
-/// A few older call sites still use the path-based `get`, `postVoid`,
-/// `putVoid` and `delete`, which route a path to the typed call for it.
+/// A few older call sites still use the path-based `get`, `putVoid` and
+/// `delete`, which route a path to the typed call for it.
 actor VividAPI {
     static let shared = VividAPI()
 
@@ -78,22 +78,6 @@ actor VividAPI {
         if route.matches("api/v1/catalog") {
             return try cast(try await catalog(query: query))
         }
-        if let id = route.capture("api/v1/watch/*") {
-            return try cast(try await watchDetail(contentId: id))
-        }
-        throw APIError.unsupportedPath(path)
-    }
-
-    func postVoid(_ path: String, body: (any Encodable)? = nil) async throws {
-        let route = APIPath(path)
-        if let sessionId = route.capture("api/v1/playback/*/progress") {
-            try await reportPlaybackProgress(sessionId: sessionId, report: try requireBody(body, as: ProgressReport.self))
-            return
-        }
-        if let id = route.capture("api/v1/watched/*") {
-            try await setWatched(contentId: id, played: true)
-            return
-        }
         throw APIError.unsupportedPath(path)
     }
 
@@ -116,10 +100,6 @@ actor VividAPI {
             try await toggleFavorite(contentId: id, isFavorite: false)
         } else if let id = route.capture("api/v1/watchlist/*") {
             try await toggleWatchlist(contentId: id, isInWatchlist: false)
-        } else if let sessionId = route.capture("api/v1/playback/*") {
-            try await stopPlayback(sessionId: sessionId)
-        } else if let id = route.capture("api/v1/watched/*") {
-            try await setWatched(contentId: id, played: false)
         } else {
             throw APIError.unsupportedPath(path)
         }
@@ -551,17 +531,10 @@ actor VividAPI {
         }
         return typed
     }
-
-    private func requireBody<Body>(_ body: (any Encodable)?, as type: Body.Type) throws -> Body {
-        guard let typed = body as? Body else {
-            throw APIError.unsupportedBody(expected: String(describing: type))
-        }
-        return typed
-    }
 }
 
 /// A request path split at `/` (empty pieces dropped), for matching patterns
-/// such as `api/v1/watch/*`.
+/// such as `api/v1/favorites/*`.
 private struct APIPath {
     private let parts: [Substring]
 

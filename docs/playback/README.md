@@ -78,6 +78,7 @@ When playback that has reached its first frame (or, for audio-only playback, sta
 ## Source entry points
 
 - [VividPlaybackController](../../iosApp/iosApp/Screens/Player/VividPlaybackController.swift): video engine ownership, loads, transport and events.
+- [PlaybackSessionBridge](../../iosApp/iosApp/Screens/Player/PlaybackSessionBridge.swift): server playback sessions (start, progress, replans and stop) for Silo, Emby and Jellyfin. What it hands the player is in [PlaybackSessionModels](../../iosApp/iosApp/Screens/Player/PlaybackSessionModels.swift); the Silo capability check and the cancellation shield for `/api/v1/playback/start` are in [PlaybackV3CapabilityGate](../../iosApp/iosApp/Screens/Player/PlaybackV3CapabilityGate.swift) and [PlaybackCancellationShield](../../iosApp/iosApp/Screens/Player/PlaybackCancellationShield.swift).
 - [VividLoadSpec](../../iosApp/iosApp/Screens/Player/VividLoadSpec.swift): prepared online/offline source inputs.
 - [PlaybackTimelineMapper](../../iosApp/iosApp/Screens/Player/ProtocolV3/PlaybackTimelineMapper.swift): server, source and presentation clocks.
 - [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): app-facing playback state. Its behaviour is grouped by area in the `PlayerViewModel+<Area>.swift` extensions beside it, such as `+SessionLoad`, `+Recovery`, `+TrackSelection` and `+NextUp`.
