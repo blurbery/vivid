@@ -1,8 +1,8 @@
 import Foundation
 
-/// The server's `requests_enabled` flag, checked at sign-in and on each
-/// foreground, and reset on sign-out and profile or server switches (by `AuthService`,
-/// `ServerRegistry` and the app root).
+/// The server's `requests_enabled` flag. `AuthService` and `ServerRegistry`
+/// reset it on sign-out and profile or server switches, and the app root
+/// checks it again at session start and on each foreground.
 @MainActor
 @Observable
 final class RequestsFeatureStore {
