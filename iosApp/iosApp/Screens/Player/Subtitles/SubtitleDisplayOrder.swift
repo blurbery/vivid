@@ -1,31 +1,20 @@
-//
-//  SubtitleDisplayOrder.swift
-//  Vivid (iOS + tvOS + macOS)
-//
-//  Canonical language grouping + format-priority ordering for subtitle
-//  track lists, shared by every surface that lists subtitles:
-//    - the detail-page selector (`DetailPlaybackFormatting.subtitleOptions`)
-//    - the in-player picker (`PlayerViewModel.orderedSubtitleTracks`)
-//
-//  The rules, in priority order:
-//    1. Group by language. A language never splits into two groups —
-//       2-letter and 3-letter ISO codes ("en"/"eng") collapse to one key.
-//    2. Order the groups: the user's preferred subtitle language first,
-//       then the remaining languages alphabetically by English display
-//       name. Tracks with no usable language sort into a final group.
-//    3. Within a group, order by preferred format (SubRip › ASS › SSA ›
-//       WebVTT › TX3G › PGS/VobSub › unknown), then full-dialogue before
-//       forced before SDH, then default-flagged first, then original order.
-//
-//  The sort is stable: tracks that compare equal keep their incoming
-//  relative order. Reordering only changes *display* position — callers
-//  select tracks by a stable id (FFmpeg `index` on the detail page,
-//  `trackId` in the player) that travels with each row, so ordering never
-//  affects which track gets picked.
-//
-
 import Foundation
 
+/// The order subtitle lists are shown in, shared by the detail page
+/// (`DetailPlaybackFormatting.subtitleOptions`) and the player
+/// (`PlayerViewModel.orderedSubtitleTracks`):
+///
+/// 1. Group by language. 2-letter and 3-letter codes (`en`, `eng`) share a
+///    group, so a language never splits in two.
+/// 2. The preferred subtitle language's group comes first, then the others
+///    by English name. Tracks with no usable language come last.
+/// 3. Within a group: by format (SubRip, ASS, SSA, WebVTT, TX3G, PGS, then
+///    VobSub and DVB, then unknown), then full dialogue, forced, SDH, then
+///    default-flagged first, then list order.
+///
+/// The sort is stable. It only changes where rows are shown: callers select
+/// by an id that travels with each row (the FFmpeg `index` on the detail
+/// page, `trackId` in the player), so the order never changes the pick.
 enum SubtitleDisplayOrder {
 
     /// The minimal slice of a track the ordering needs. Both the
@@ -146,10 +135,10 @@ enum SubtitleDisplayOrder {
 
     // MARK: - Private
 
-    /// 3-letter ISO 639-2 (B and T) → 2-letter ISO 639-1, for the
+    /// 3-letter ISO 639-2 (B and T) > 2-letter ISO 639-1, for the
     /// languages that realistically appear in subtitle metadata. The
     /// server passes through whatever the source codec carried, mixing
-    /// both forms, so grouping has to canonicalize.
+    /// both forms, so grouping has to canonicalise.
     private static let iso639Alias: [String: String] = [
         "ara": "ar",
         "ben": "bn",

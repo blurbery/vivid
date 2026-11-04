@@ -68,10 +68,8 @@ with tempfile.TemporaryDirectory(prefix='vivid-mpv-tracks-') as temp:
     subprocess.run(['xcrun', 'swiftc', '-module-cache-path', str(folder / 'module-cache'), str(path), '-o', str(binary)], check=True, timeout=60)
     subprocess.run([str(binary)], check=True, timeout=10)
 
-# Run the production teardown/ownership block with deferred native-core doubles.
-start = source.index('        core?.delegate = nil\n', source.index('    func stop('))
-end = source.index('        core = nil; delegateProxy', start)
-teardown = source[start:end]
+# Run the production teardown/ownership method with deferred native-core doubles.
+teardown = method('retireCore')
 group_declaration = next(line.strip().removeprefix('private ') for line in source.splitlines()
                          if 'let audioTeardown = DispatchGroup()' in line)
 group_access = 'Self.audioTeardown' if group_declaration.startswith('static ') else 'audioTeardown'
@@ -102,8 +100,9 @@ final class Core {
         let token = UUID(); audioSessionToken = token; Self.audioSessionOwner = token
         core = Core()
     }
-    func stop(resetDisplayCriteria: Bool = true) {
 ''' + teardown + r'''
+    func stop(resetDisplayCriteria: Bool = true) {
+        retireCore(resetDisplayCriteria: resetDisplayCriteria)
         core = nil
     }
     func settled() async {

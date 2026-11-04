@@ -1,39 +1,23 @@
 import Foundation
 
-// MARK: - Canonical settings API
-
-/// The typed settings endpoints (`/api/v1/settings/contract*`,
-/// `/api/v1/settings/values/*`).
+/// The typed settings endpoints (`/api/v1/settings/contract/*` and
+/// `/api/v1/settings/values/*`). Unlike the older string settings calls on
+/// `VividAPI`, values here are typed JSON, every write names its scope, and
+/// only keys in the generated `SettingKey` contract can be named.
 ///
-/// The methods on ``VividAPI`` itself — `effectiveSettings`,
-/// `getUserSetting` — speak the legacy string-only
-/// registry: every value is a string, the scope is implied by which function
-/// you call, and an unknown key is accepted silently. These speak the contract
-/// instead: values are typed JSON, the scope is explicit and validated against
-/// the manifest, and a key that is not in the manifest cannot be named because
-/// ``SettingKey`` is generated from it.
+/// Everything goes through `SettingsWireCoding`, not the shared `HTTPClient`
+/// coders, so a value's own object keys never meet a key strategy (see
+/// SettingValueModels.swift).
 ///
-/// Everything here codes through ``SettingsWireCoding`` rather than the shared
-/// `HTTPClient` coders, so a setting value's own object keys never come near a
-/// key strategy. See the header of SettingValueModels.swift for the reasoning;
-/// the models decode identically under either coder either way.
+/// On Silo, the `ui.*` and `nav.*` keys are answered by
+/// `SiloLocalInterfaceSettings` on the device and never reach the server.
 extension VividAPI {
+    // MARK: - Contract
 
-    // MARK: Contract
-
-    /// What the connected server's settings contract supports.
-    ///
-    /// Returns a typed result rather than throwing, because the interesting
-    /// failure is not an error: a server may predate the canonical settings
-    /// API entirely or serve an older manifest revision than this build. The
-    /// UI must say "this server needs an upgrade" rather than render an empty
-    /// or incomplete settings screen, so that case is
-    /// ``SettingsCapabilitiesResult/serverUpgradeRequired`` instead of
-    /// dissolving into the generic error path.
-    ///
-    /// Needs no profile: the contract is the same for every profile on the
-    /// server, so this route sits outside the server's `RequireProfile` group
-    /// and can be probed before profile selection.
+    /// What the server's settings contract supports. A server too old for
+    /// the contract, or behind this build's revision, comes back as
+    /// `.serverUpgradeRequired` rather than an error, so the UI can say so.
+    /// Needs no profile, so it can run before a profile is chosen.
     func getContractCapabilities(
         requestIdentity: HTTPRequestIdentity? = nil
     ) async -> SettingsCapabilitiesResult {
@@ -41,37 +25,25 @@ extension VividAPI {
             let response = try await http.requestData(
                 method: "GET",
                 path: "/api/v1/settings/contract/capabilities",
-                // A 404 here is the documented "server is too old" signal, not
-                // a failure worth logging as one.
+                // 404 is how an older server says it has no contract.
                 quietStatuses: [404],
                 requestIdentity: requestIdentity
             )
             let capabilities = try SettingsWireCoding.makeDecoder()
                 .decode(SettingsContractCapabilities.self, from: response.data)
-            guard !capabilities.contractIsAheadOfServer else {
-                return .serverUpgradeRequired
-            }
-            return .available(capabilities)
+            return capabilities.contractIsAheadOfServer ? .serverUpgradeRequired : .available(capabilities)
         } catch {
             let mapped = SettingsAPIError.from(error)
             return mapped == .serverUpgradeRequired ? .serverUpgradeRequired : .failed(mapped)
         }
     }
 
-    // MARK: Read
+    // MARK: - Read
 
-    /// Resolve settings the way the server does, including the scope each
-    /// answer came from.
-    ///
-    /// Batched on purpose: a settings screen wants every key at once and a
-    /// season view wants several keys across many series, and the server
-    /// answers either in one store read. Passing no `keys` resolves every
-    /// remote definition in the server's contract.
-    ///
-    /// `libraryIds` and `seriesIds` widen the resolution context to those
-    /// content scopes — a key stored at `profile_library` only surfaces when
-    /// its library is named here. The profile and device halves of the context
-    /// come from the session headers.
+    /// Resolves settings as the server does, with the scope each answer came
+    /// from. No `keys` means every key. `libraryIds` and `seriesIds` add
+    /// those library and series scopes to the resolution; the profile and
+    /// device come from the session.
     func getEffectiveValues(
         keys: [SettingKey] = [],
         libraryIds: [Int] = [],
@@ -82,39 +54,30 @@ extension VividAPI {
         let serverId = await settingsServerId(requestIdentity)
         guard SiloLocalInterfaceSettings.applies(toServerID: serverId) else {
             return try await serverEffectiveValues(
-                keys: keys,
-                libraryIds: libraryIds,
-                seriesIds: seriesIds,
-                profileId: profileId,
-                requestIdentity: requestIdentity
+                keys: keys, libraryIds: libraryIds, seriesIds: seriesIds,
+                profileId: profileId, requestIdentity: requestIdentity
             )
         }
 
-        // On Silo, interface keys are answered on the device and only the
-        // rest are asked of the server. A call for interface keys alone never
-        // reaches it.
-        let localKeys = keys.isEmpty
-            ? SettingKey.allCases.filter { SiloLocalInterfaceSettings.owns($0) }
-            : keys.filter { SiloLocalInterfaceSettings.owns($0) }
-        let serverKeys = keys.filter { !SiloLocalInterfaceSettings.owns($0) }
+        // Interface keys come from the device and only the rest from the
+        // server, so a call for interface keys alone never reaches it.
+        let owned = { (key: SettingKey) in SiloLocalInterfaceSettings.owns(key) }
+        let localKeys = keys.isEmpty ? SettingKey.allCases.filter(owned) : keys.filter(owned)
+        let serverKeys = keys.filter { !owned($0) }
+
         var serverRows: [EffectiveSettingValue] = []
         var revision = SettingKey.revision
         if keys.isEmpty || !serverKeys.isEmpty {
             let response = try await serverEffectiveValues(
-                keys: serverKeys,
-                libraryIds: libraryIds,
-                seriesIds: seriesIds,
-                profileId: profileId,
-                requestIdentity: requestIdentity
+                keys: serverKeys, libraryIds: libraryIds, seriesIds: seriesIds,
+                profileId: profileId, requestIdentity: requestIdentity
             )
             serverRows = response.settings.filter { !SiloLocalInterfaceSettings.owns($0.key) }
             revision = response.revision
         }
         let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
         let localRows = await localInterfaceSettings.effectiveValues(
-            keys: localKeys,
-            serverId: serverId,
-            profileId: profile
+            keys: localKeys, serverId: serverId, profileId: profile
         )
         return EffectiveSettingValuesResponse(settings: serverRows + localRows, revision: revision)
     }
@@ -127,17 +90,10 @@ extension VividAPI {
         requestIdentity: HTTPRequestIdentity?
     ) async throws -> EffectiveSettingValuesResponse {
         let headers = try await profileHeaders(explicit: profileId)
-
         var query: [String: String] = [:]
-        if !keys.isEmpty {
-            query["keys"] = keys.map(\.rawValue).joined(separator: ",")
-        }
-        if !libraryIds.isEmpty {
-            query["library_ids"] = libraryIds.map(String.init).joined(separator: ",")
-        }
-        if !seriesIds.isEmpty {
-            query["series_ids"] = seriesIds.joined(separator: ",")
-        }
+        if !keys.isEmpty { query["keys"] = keys.map(\.rawValue).joined(separator: ",") }
+        if !libraryIds.isEmpty { query["library_ids"] = libraryIds.map(String.init).joined(separator: ",") }
+        if !seriesIds.isEmpty { query["series_ids"] = seriesIds.joined(separator: ",") }
 
         do {
             let response = try await http.requestData(
@@ -149,32 +105,23 @@ extension VividAPI {
             )
             let decoded = try SettingsWireCoding.makeDecoder()
                 .decode(EffectiveSettingValuesResponse.self, from: response.data)
-            guard !decoded.contractIsAheadOfServer else {
-                throw SettingsAPIError.serverUpgradeRequired
-            }
+            guard !decoded.contractIsAheadOfServer else { throw SettingsAPIError.serverUpgradeRequired }
             return decoded
         } catch {
             throw SettingsAPIError.from(error)
         }
     }
 
-    // MARK: Write
+    // MARK: - Write
 
-    /// Write one typed value at one scope.
+    /// Writes one value at one scope.
     ///
-    /// `mutationId` (sent as `X-Silo-Mutation-Id`) makes retries safe: create
-    /// it once per logical write with ``newSettingMutationId()`` and reuse it
-    /// for every retry of *that* write. A retry the server already applied
-    /// replays the recorded receipt rather than re-applying — the returned
-    /// receipt has `isIdempotentReplay == true` — while reusing an id for
-    /// different content fails with ``SettingsAPIError/mutationIdConflict``.
-    /// Generating a fresh id per retry defeats both.
-    ///
-    /// A value that exceeds a policy restriction is stored, not rejected: the
-    /// restriction filters what the preference does at resolution time, so a
-    /// successful write does not mean playback will use this value. Call
-    /// ``getEffectiveValues(keys:libraryIds:seriesIds:profileId:requestIdentity:)``
-    /// for that.
+    /// `mutationId` (sent as `X-Silo-Mutation-Id`) makes retries safe: make
+    /// one per write with `newSettingMutationId()` and reuse it for that
+    /// write's retries. A retry the server already applied comes back with
+    /// `isIdempotentReplay`; reusing an ID for different content throws
+    /// `.mutationIdConflict`. A value past a policy limit is stored, not
+    /// refused, so read the effective value to see what applies.
     @discardableResult
     func putValue(
         key: SettingKey,
@@ -184,27 +131,19 @@ extension VividAPI {
         profileId: String? = nil,
         requestIdentity: HTTPRequestIdentity? = nil
     ) async throws -> SettingValueWriteReceipt {
-        let trimmedMutationId = mutationId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedMutationId.isEmpty else {
+        let mutationId = mutationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mutationId.isEmpty else {
             throw SettingsAPIError.invalidValue(message: String(localized: "Mutation ID must not be blank."))
         }
-        if SiloLocalInterfaceSettings.owns(key) {
-            let serverId = await settingsServerId(requestIdentity)
-            if SiloLocalInterfaceSettings.applies(toServerID: serverId) {
-                let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
-                let stored = try await localInterfaceSettings.put(
-                    key: key,
-                    scope: scope,
-                    value: value,
-                    serverId: serverId,
-                    profileId: profile
-                )
-                return SettingValueWriteReceipt(value: stored, isIdempotentReplay: false)
-            }
+        if let local = try await localInterfaceTarget(for: key, profileId: profileId, requestIdentity: requestIdentity) {
+            let stored = try await localInterfaceSettings.put(
+                key: key, scope: scope, value: value, serverId: local.serverId, profileId: local.profileId
+            )
+            return SettingValueWriteReceipt(value: stored, isIdempotentReplay: false)
         }
-        var headers = try await profileHeaders(explicit: profileId)
-        headers["X-Silo-Mutation-Id"] = trimmedMutationId
 
+        var headers = try await profileHeaders(explicit: profileId)
+        headers["X-Silo-Mutation-Id"] = mutationId
         do {
             let body = try SettingsWireCoding.makeEncoder().encode(SettingValueWriteRequest(value: value))
             let response = try await http.requestData(
@@ -215,8 +154,7 @@ extension VividAPI {
                 headers: headers,
                 requestIdentity: requestIdentity
             )
-            let stored = try SettingsWireCoding.makeDecoder()
-                .decode(StoredSettingValue.self, from: response.data)
+            let stored = try SettingsWireCoding.makeDecoder().decode(StoredSettingValue.self, from: response.data)
             return SettingValueWriteReceipt(
                 value: stored,
                 isIdempotentReplay: response.header("X-Silo-Idempotent-Replay") == "true"
@@ -226,30 +164,22 @@ extension VividAPI {
         }
     }
 
-    /// Clear the explicit value at one scope, so the setting inherits again.
-    ///
-    /// Throws ``SettingsAPIError/noValueAtScope`` when nothing was stored
-    /// there (the server's 404). A caller retrying a clear should treat that
-    /// as already done.
+    /// Clears the value at one scope so the setting inherits again. When the
+    /// server has nothing stored there it throws `.noValueAtScope` (its 404),
+    /// which a retry can treat as done.
     func deleteValue(
         key: SettingKey,
         scope: SettingScopeIdentity,
         profileId: String? = nil,
         requestIdentity: HTTPRequestIdentity? = nil
     ) async throws {
-        if SiloLocalInterfaceSettings.owns(key) {
-            let serverId = await settingsServerId(requestIdentity)
-            if SiloLocalInterfaceSettings.applies(toServerID: serverId) {
-                let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
-                try await localInterfaceSettings.delete(
-                    key: key,
-                    scope: scope,
-                    serverId: serverId,
-                    profileId: profile
-                )
-                return
-            }
+        if let local = try await localInterfaceTarget(for: key, profileId: profileId, requestIdentity: requestIdentity) {
+            try await localInterfaceSettings.delete(
+                key: key, scope: scope, serverId: local.serverId, profileId: local.profileId
+            )
+            return
         }
+
         let headers = try await profileHeaders(explicit: profileId)
         do {
             _ = try await http.requestData(
@@ -265,19 +195,32 @@ extension VividAPI {
         }
     }
 
-    // MARK: Headers
+    // MARK: - Scope
 
-    /// The server a settings call is for: the captured identity's when the
-    /// caller has one, otherwise the session's.
-    private func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
-        if let serverId = requestIdentity?.serverId, !serverId.isEmpty {
-            return serverId
-        }
-        let active = await currentServerId()
-        return active.isEmpty ? ServerRegistry.activeServerIDSnapshot ?? "" : active
+    /// Where an interface key is kept on the device, or nil when the server
+    /// answers it (any other key, or a server that isn't Silo).
+    private func localInterfaceTarget(
+        for key: SettingKey,
+        profileId: String?,
+        requestIdentity: HTTPRequestIdentity?
+    ) async throws -> (serverId: String, profileId: String)? {
+        guard SiloLocalInterfaceSettings.owns(key) else { return nil }
+        let serverId = await settingsServerId(requestIdentity)
+        guard SiloLocalInterfaceSettings.applies(toServerID: serverId) else { return nil }
+        let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
+        return (serverId, profile)
     }
 
-    /// The profile whose on-device interface settings a call reads or writes.
+    /// The captured identity's server when there is one, otherwise the
+    /// session's.
+    private func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
+        if let serverId = requestIdentity?.serverId, !serverId.isEmpty { return serverId }
+        let current = await currentServerId()
+        return current.isEmpty ? ServerRegistry.activeServerIDSnapshot ?? "" : current
+    }
+
+    /// The profile whose on-device interface settings a call uses: the
+    /// caller's, then the captured identity's, then the session's.
     private func settingsProfileId(
         explicit profileId: String?,
         requestIdentity: HTTPRequestIdentity?
@@ -293,27 +236,16 @@ extension VividAPI {
         return current
     }
 
-    /// The `X-Profile-Id` header every `/settings/values/*` route needs.
-    ///
-    /// `HTTPClient` already attaches the session's profile to every request,
-    /// but only when one is selected. Each of these routes sits behind the
-    /// server's `RequireProfile` middleware, and `profile_device`,
-    /// `profile_library` and `profile_series` additionally take their profile
-    /// half from this header rather than the query — so a call made before
-    /// profile selection reaches the server without it and comes back as an
-    /// opaque 400. Resolving it here fails locally with a named error instead.
-    ///
-    /// Setting the header explicitly also lets a caller act for a profile
-    /// other than the session's, which is how a household parent edits a
-    /// child's settings.
+    /// The `X-Profile-Id` header every values route needs. The server puts
+    /// these routes behind its profile requirement, and the profile device,
+    /// library and series scopes take their profile from this header, so a
+    /// call with no profile fails here with a named error instead of an
+    /// unexplained 400. An explicit profile lets a parent edit a child's
+    /// settings.
     private func profileHeaders(explicit profileId: String?) async throws -> [String: String] {
-        var resolved = profileId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if resolved == nil || resolved?.isEmpty == true {
-            resolved = await currentProfileId()
-        }
-        guard let profile = resolved, !profile.isEmpty else {
-            throw SettingsAPIError.profileRequired
-        }
+        let explicit = profileId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let profile = explicit.isEmpty ? await currentProfileId() : explicit
+        guard let profile, !profile.isEmpty else { throw SettingsAPIError.profileRequired }
         return ["X-Profile-Id": profile]
     }
 }

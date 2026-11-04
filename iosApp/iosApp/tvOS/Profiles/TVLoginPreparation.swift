@@ -19,25 +19,14 @@ enum LoginPreparationFailure: Equatable {
     case unknown
 
     static func classify(_ error: Error, enteredPIN: Bool) -> LoginPreparationFailure {
-        var error = error
-        if case HTTPError.network(let underlying) = error { error = underlying }
+        let error = unwrapped(error)
         if let urlError = error as? URLError {
             switch urlError.code {
-            case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff:
-                return .offline
-            default:
-                return .unreachable
+            case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff: return .offline
+            default: return .unreachable
             }
         }
-        let status: Int?
-        if case HTTPError.http(let code, _) = error {
-            status = code
-        } else if case APIError.httpError(let code) = error {
-            status = code
-        } else {
-            status = nil
-        }
-        if let status {
+        if let status = httpStatus(of: error) {
             switch status {
             case 401, 403: return enteredPIN ? .wrongPIN : .signInExpired
             case 429: return .tooManyAttempts
@@ -56,13 +45,24 @@ enum LoginPreparationFailure: Equatable {
 
     /// Network failures that are worth one quiet retry before showing an error.
     static func isTemporary(_ error: Error) -> Bool {
-        var error = error
-        if case HTTPError.network(let underlying) = error { error = underlying }
+        let error = unwrapped(error)
         if let urlError = error as? URLError {
             return [.timedOut, .networkConnectionLost, .cannotConnectToHost, .notConnectedToInternet].contains(urlError.code)
         }
         if case HTTPError.http(let status, _) = error { return [502, 503, 504].contains(status) }
         return false
+    }
+
+    /// The transport error inside the HTTP client's network wrapper.
+    private static func unwrapped(_ error: Error) -> Error {
+        if case HTTPError.network(let underlying) = error { return underlying }
+        return error
+    }
+
+    private static func httpStatus(of error: Error) -> Int? {
+        if case HTTPError.http(let code, _) = error { return code }
+        if case APIError.httpError(let code) = error { return code }
+        return nil
     }
 
     var title: String {
@@ -139,6 +139,9 @@ enum LoginPreparationFailure: Equatable {
     }
 }
 
+/// Gets a signed-in account ready before Home appears: enters its viewing
+/// profile (asking for a PIN or a household member when needed), saves a new
+/// saved profile, and warms Home's local content.
 @Observable @MainActor
 final class TVLoginPreparation {
     static let shared = TVLoginPreparation()
@@ -161,6 +164,9 @@ final class TVLoginPreparation {
     private(set) var showsWelcome = false
     private var router: AppRouter?
     private let completionKey = "vivid.didCompleteFirstLoginPreparation"
+
+    /// Longest Home waits for a first Studios & Networks load.
+    static let studiosNetworksWait: TimeInterval = 120
 
     func begin(router: AppRouter, newSignIn: Bool = false) async {
         guard !isPresented else { return }
@@ -187,31 +193,7 @@ final class TVLoginPreparation {
             let store = TVSavedAccountStore.shared
             if !AuthService.shared.hasProfile {
                 let profiles = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchProfiles() }
-                let target: UserProfile
-                switch store.profileTarget(newSignIn: isNewSignIn) {
-                case .bound(let profileID):
-                    // A household member's saved profile never falls back to
-                    // the primary profile.
-                    guard let bound = profiles.first(where: { $0.id == profileID }) else {
-                        fail(.profileUnavailable)
-                        return
-                    }
-                    target = bound
-                case .choose where profiles.count > 1:
-                    store.beginProfileChoice()
-                    guard let chosen = chosenProfile.flatMap({ chosen in profiles.first { $0.id == chosen.id } }) else {
-                        chosenProfile = nil
-                        profileChoices = profiles.filter(\.isPrimary) + profiles.filter { !$0.isPrimary }
-                        return
-                    }
-                    target = chosen
-                case .choose, .primary:
-                    guard let primary = profiles.first(where: \.isPrimary) ?? (profiles.count == 1 ? profiles.first : nil) else {
-                        fail(.noPrimaryProfile)
-                        return
-                    }
-                    target = primary
-                }
+                guard let target = profileToEnter(in: profiles, store: store) else { return }
                 if target.hasPin, pin == nil {
                     pinProfile = target
                     return
@@ -220,22 +202,7 @@ final class TVLoginPreparation {
                 try await AuthService.shared.selectProfile(profileId: target.id, pin: pin, requiresPIN: target.hasPin)
                 store.noteChosenProfile(target, profileCount: profiles.count)
             }
-            // A new saved profile is saved once its viewing profile is entered.
-            if let pending = store.pendingProfileChoice {
-                if pending.profile == nil {
-                    // Entered before preparation began, such as the only profile.
-                    let profiles = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchProfiles() }
-                    guard let live = profiles.first(where: { $0.id == AuthService.shared.profileId }) else {
-                        fail(.unknown)
-                        return
-                    }
-                    store.noteChosenProfile(live, profileCount: profiles.count)
-                }
-                guard await store.commitProfileChoice() else {
-                    fail(.unknown)
-                    return
-                }
-            }
+            guard try await savePendingProfile(store) else { return }
             // Home hydrates its profile-scoped disk snapshot before its first
             // render. Fresh sections and libraries must not gate the handoff.
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
@@ -253,8 +220,54 @@ final class TVLoginPreparation {
         }
     }
 
-    /// Longest Home waits for a first Studios & Networks load.
-    static let studiosNetworksWait: TimeInterval = 120
+    /// The viewing profile to enter, or nil when preparation stopped to show
+    /// a failure or the household choice.
+    private func profileToEnter(in profiles: [UserProfile], store: TVSavedAccountStore) -> UserProfile? {
+        switch store.profileTarget(newSignIn: isNewSignIn) {
+        case .bound(let profileID):
+            // A household member's saved profile never falls back to the
+            // primary profile.
+            guard let bound = profiles.first(where: { $0.id == profileID }) else {
+                fail(.profileUnavailable)
+                return nil
+            }
+            return bound
+        case .choose where profiles.count > 1:
+            store.beginProfileChoice()
+            guard let chosen = chosenProfile.flatMap({ chosen in profiles.first { $0.id == chosen.id } }) else {
+                chosenProfile = nil
+                profileChoices = profiles.filter(\.isPrimary) + profiles.filter { !$0.isPrimary }
+                return nil
+            }
+            return chosen
+        case .choose, .primary:
+            guard let primary = profiles.first(where: \.isPrimary) ?? (profiles.count == 1 ? profiles.first : nil) else {
+                fail(.noPrimaryProfile)
+                return nil
+            }
+            return primary
+        }
+    }
+
+    /// A new saved profile is saved once its viewing profile is entered.
+    /// Returns false when that failed and the failure page is showing.
+    private func savePendingProfile(_ store: TVSavedAccountStore) async throws -> Bool {
+        guard let pending = store.pendingProfileChoice else { return true }
+        if pending.profile == nil {
+            // Entered before preparation began, such as the only profile.
+            let profiles = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchProfiles() }
+            guard let live = profiles.first(where: { $0.id == AuthService.shared.profileId }) else {
+                fail(.unknown)
+                return false
+            }
+            store.noteChosenProfile(live, profileCount: profiles.count)
+        }
+        guard await store.commitProfileChoice() else {
+            fail(.unknown)
+            return false
+        }
+        return true
+    }
 
     /// Home waits for Studios & Networks, so its row is there when Home first
     /// appears. Saved results are ready almost at once, so this only takes a
@@ -290,9 +303,11 @@ final class TVLoginPreparation {
         self.failure = failure
     }
 
+    /// Tries once more, a second later, after a temporary network failure.
     private func retryTemporaryFailure<T>(_ operation: () async throws -> T) async throws -> T {
-        do { return try await operation() }
-        catch {
+        do {
+            return try await operation()
+        } catch {
             guard LoginPreparationFailure.isTemporary(error) else { throw error }
             try await Task.sleep(for: .seconds(1))
             return try await operation()
@@ -614,6 +629,5 @@ private struct LoginPreparationSigningOutView: View {
     private let logoSize: CGFloat = 72
     #endif
 }
-
 
 #endif

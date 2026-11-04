@@ -1,17 +1,20 @@
 import Foundation
 
-/// Serial Home-cache I/O with at most one replaceable queued save per scope.
-/// Saves already running finish normally. Reads and deletions seal queued saves
-/// so later writes cannot move ahead of those operations by replacing a closure.
+/// Runs Home cache file work in order on one serial queue. Each scope keeps
+/// at most one queued save: a newer save replaces the queued one's work, and
+/// a save already running always finishes. Reads, deletions and `sync` seal
+/// the queued saves, so nothing submitted later can be folded into work that
+/// runs before them.
 final class HomeMetadataWriter: @unchecked Sendable {
-    private final class PendingWrite {
-        var operation: () -> Void
-        init(_ operation: @escaping () -> Void) { self.operation = operation }
+    /// A queued save whose work can still be swapped for a newer one.
+    private final class QueuedSave {
+        var work: () -> Void
+        init(_ work: @escaping () -> Void) { self.work = work }
     }
 
     private let queue: DispatchQueue
     private let lock = NSLock()
-    private var pending: [String: PendingWrite] = [:]
+    private var queuedSaves: [String: QueuedSave] = [:]
 
     init(queue: DispatchQueue = DispatchQueue(label: "vivid.home.metadata", qos: .utility)) {
         self.queue = queue
@@ -20,42 +23,42 @@ final class HomeMetadataWriter: @unchecked Sendable {
     func write(scope: String, operation: @escaping () -> Void) {
         lock.lock()
         defer { lock.unlock() }
-        if let save = pending[scope] {
-            save.operation = operation
+        if let queued = queuedSaves[scope] {
+            queued.work = operation
             return
         }
-        let save = PendingWrite(operation)
-        pending[scope] = save
+        let save = QueuedSave(operation)
+        queuedSaves[scope] = save
         queue.async { [self] in
             lock.lock()
-            if pending[scope] === save { pending.removeValue(forKey: scope) }
-            let operation = save.operation
+            if queuedSaves[scope] === save { queuedSaves.removeValue(forKey: scope) }
+            let work = save.work
             lock.unlock()
-            operation()
+            work()
         }
     }
 
-    /// Submit an ordered operation, such as deleting an account's snapshot.
-    /// Sealing stops subsequent writes from being folded into pre-delete work.
+    /// Runs an operation after everything submitted so far, such as deleting
+    /// an account's snapshot. Saves submitted afterwards queue behind it.
     func async(_ operation: @escaping () -> Void) {
         lock.lock()
-        pending.removeAll()
+        defer { lock.unlock() }
+        queuedSaves.removeAll()
         queue.async { operation() }
-        lock.unlock()
     }
 
-    /// Read after earlier saves without blocking the caller's actor.
+    /// Reads after the earlier saves without blocking the caller's actor.
     func read<Value>(_ operation: @escaping () -> Value) async -> Value {
         await withCheckedContinuation { continuation in
             async { continuation.resume(returning: operation()) }
         }
     }
 
-    /// Fallback for callers that have not prepared their snapshot yet.
-    /// Call from outside the writer queue, just like DispatchQueue.sync.
+    /// Blocking fallback for callers that haven't prepared their snapshot.
+    /// Like `DispatchQueue.sync`, never call it from the writer's own queue.
     func sync<Value>(_ operation: () -> Value) -> Value {
         lock.lock()
-        pending.removeAll()
+        queuedSaves.removeAll()
         lock.unlock()
         return queue.sync(execute: operation)
     }

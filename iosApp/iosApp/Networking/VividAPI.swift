@@ -1,24 +1,16 @@
 import Foundation
 
-/// Native Swift facade over the Vivid REST API.
+/// Typed calls to the app's server API. Requests are written against Silo's
+/// `/api/v1` routes and go through `HTTPClient`, which signs them, maps them
+/// to Silo v2 where the server needs it, and hands Emby and Jellyfin accounts
+/// to their adapters. Session state comes from `TokenStore`.
 ///
-/// Supports two interfaces:
-/// - **Path-based**: ``get(_:query:)``, ``post(_:body:)``, ``put(_:body:)``,
-///   ``delete(_:)``, etc. Legacy call sites use these; each path maps to a
-///   specific server endpoint plus any reshape logic (e.g. /discover →
-///   SectionsResponse).
-/// - **Typed methods**: convenience wrappers for every supported endpoint
-///   (e.g. ``homeSections()``, ``itemDetail(contentId:)``). Preferred for
-///   new code because they keep types at the call site.
-///
-/// All HTTP goes through ``HTTPClient/shared``; session state lives in
-/// ``TokenStore/shared``. Refer to [HTTPClient](x-source-tag://HTTPClient)
-/// for auth header injection and 401 refresh semantics.
+/// A few older call sites still use the path-based `get`, `postVoid`,
+/// `putVoid` and `delete`, which route a path to the typed call for it.
 actor VividAPI {
     static let shared = VividAPI()
 
-    /// Non-private so endpoint methods declared in extensions (e.g. the
-    /// downloads API) can reuse the same injected transport.
+    /// Shared with the endpoint extensions in other files.
     let http: HTTPClient
     private let tokenStore: TokenStore
     /// Vivid's own `ui.*` and `nav.*` settings on Silo servers.
@@ -34,7 +26,7 @@ actor VividAPI {
         self.localInterfaceSettings = localInterfaceSettings
     }
 
-    // MARK: - Session state accessors
+    // MARK: - Session
 
     func currentServerUrl() async -> String {
         await tokenStore.getServerUrl()
@@ -54,365 +46,104 @@ actor VividAPI {
         await tokenStore.getActiveServerId()
     }
 
-    // MARK: - Image size selection
+    // MARK: - Image sizes
 
-    /// Extra query entries asking the server to bake a larger image
-    /// variant into every image URL in the response.
-    ///
-    /// One place decides this for every image-bearing endpoint, so call
-    /// sites just merge it in. Empty off tvOS, and empty until (or
-    /// unless) the capability probe in ``ImageSizeCapability`` lands —
-    /// which makes iOS and macOS requests byte-identical to before.
+    /// Query entries asking a Silo server for larger artwork in every image
+    /// URL it returns. Empty for Emby and Jellyfin, off tvOS, and until (or
+    /// unless) `ImageSizeCapability` finds the server supports it. Concurrent
+    /// callers share one capability check.
     private var imageSizeQuery: [String: String] {
         get async {
-            // Gate only the artwork request, never launch/profile navigation.
-            // Concurrent startup prefetches join one probe, and older or
-            // unreachable servers fall back to an empty query.
             if MediaServerProvider.active.usesNativeUser { return [:] }
             await ImageSizeCapability.shared.refresh()
             return ImageSizeCapability.shared.requestQuery
         }
     }
 
-    /// Merge ``imageSizeQuery`` into a caller-built query. Caller-supplied
-    /// values win, so an explicit size is never overwritten.
+    /// `query` with the image size entries added. The caller's own values win.
     private func withImageSize(_ query: [String: String]) async -> [String: String] {
         query.merging(await imageSizeQuery) { caller, _ in caller }
     }
 
-    /// `GET /api/v1/images/capability`. Throws `HTTPError.http(404, _)`
-    /// on servers that predate image-size selection; the caller treats
-    /// that as "feature off".
+    /// `GET /api/v1/images/capability`. Servers without image sizes answer
+    /// 404, which the caller reads as off.
     func imageSizeCapability() async throws -> ImageSizeCapabilityResponse {
         try await http.get("/api/v1/images/capability")
     }
 
-    // MARK: - Path-based dispatcher (legacy)
+    // MARK: - Path-based calls
 
     func get<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
-        let components = pathComponents(path)
-
-        // Home / sections
-        if components == ["api", "v1", "home", "sections"] {
-            return try cast(try await homeSections())
-        }
-        if components == ["api", "v1", "recommendations", "discover"] {
-            return try cast(try await recommendationsDiscover())
-        }
-
-        // Catalog / items
-        if components == ["api", "v1", "catalog"] {
+        let route = APIPath(path)
+        if route.matches("api/v1/catalog") {
             return try cast(try await catalog(query: query))
         }
-        if components.count == 5,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "catalog", components[3] == "items" {
-            return try cast(try await itemDetail(contentId: components[4]))
+        if let id = route.capture("api/v1/watch/*") {
+            return try cast(try await watchDetail(contentId: id))
         }
-        if components.count == 6,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "catalog", components[3] == "series",
-           components[5] == "seasons" {
-            return try cast(try await seasons(seriesId: components[4]))
-        }
-        if components.count == 8,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "catalog", components[3] == "series",
-           components[5] == "seasons", components[7] == "episodes" {
-            guard let seasonNumber = Int(components[6]) else {
-                throw APIError.invalidPathParameter(name: "seasonNumber", value: components[6])
-            }
-            return try cast(try await episodes(seriesId: components[4], seasonNumber: seasonNumber))
-        }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "people" {
-            guard let personId = Int(components[3]) else {
-                throw APIError.invalidPathParameter(name: "personId", value: components[3])
-            }
-            return try cast(try await person(id: personId))
-        }
-
-        // Personal
-        if components == ["api", "v1", "favorites"] {
-            return try cast(try await favorites(
-                offset: queryInt(query["offset"]) ?? 0,
-                limit: queryInt(query["limit"]) ?? 100
-            ))
-        }
-        if components == ["api", "v1", "watchlist"] {
-            return try cast(try await watchlist(
-                offset: queryInt(query["offset"]) ?? 0,
-                limit: queryInt(query["limit"]) ?? 100
-            ))
-        }
-        if components == ["api", "v1", "history"] {
-            return try cast(try await history(
-                offset: queryInt(query["offset"]) ?? 0,
-                limit: queryInt(query["limit"]) ?? 100
-            ))
-        }
-
-        // Collections
-        if components == ["api", "v1", "collections"] {
-            return try cast(try await collections())
-        }
-        if components.count == 5,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "collections", components[4] == "items" {
-            return try cast(try await collectionItems(
-                collectionId: components[3],
-                offset: queryInt(query["offset"]) ?? 0,
-                limit: queryInt(query["limit"]) ?? 200
-            ))
-        }
-
-        // Libraries
-        if components == ["api", "v1", "libraries"] || components == ["api", "v1", "user", "libraries"] {
-            return try cast(try await libraries())
-        }
-
-        // Library-scoped
-        if components.count == 5,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "library" {
-            guard let libraryId = Int(components[3]) else {
-                throw APIError.invalidPathParameter(name: "libraryId", value: components[3])
-            }
-            if components[4] == "sections" {
-                return try cast(try await librarySections(libraryId: libraryId))
-            }
-            if components[4] == "collections" {
-                return try cast(try await libraryCollections(libraryId: libraryId))
-            }
-        }
-        if components.count == 7,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "library", components[4] == "collections",
-           components[6] == "items" {
-            guard let libraryId = Int(components[3]) else {
-                throw APIError.invalidPathParameter(name: "libraryId", value: components[3])
-            }
-            return try cast(try await libraryCollectionItems(
-                libraryId: libraryId,
-                collectionId: components[5],
-                offset: queryInt(query["offset"]) ?? 0,
-                limit: queryInt(query["limit"]) ?? 60,
-                snapshot: query["snapshot"],
-                includeTotal: query["include_total"] != "false"
-            ))
-        }
-        // Catalog filters
-        if components == ["api", "v1", "catalog", "filters"] {
-            let libraryId = queryInt(query["library_id"])
-            let includeTechnical = query["include_technical"].map { $0 == "true" } ?? true
-            return try cast(try await catalogFilters(
-                libraryId: libraryId,
-                includeTechnical: includeTechnical
-            ))
-        }
-
-        // Watch detail
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "watch" {
-            return try cast(try await watchDetail(contentId: components[3]))
-        }
-
-        if components == ["api", "v1", "user", "me"] || components == ["api", "v1", "auth", "me"] {
-            return try cast(try await currentUser())
-        }
-
-        // Profiles
-        if components == ["api", "v1", "profiles"] {
-            return try cast(try await listProfiles())
-        }
-
-        // Favorite / watchlist check (Bool)
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "favorites" {
-            return try cast(try await isFavorite(contentId: components[3]))
-        }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "watchlist" {
-            return try cast(try await isInWatchlist(contentId: components[3]))
-        }
-
-        throw APIError.unsupportedPath(path)
-    }
-
-    func post<T: Decodable>(_ path: String, body: (any Encodable)? = nil) async throws -> T {
-        let components = pathComponents(path)
-
-        if components == ["api", "v1", "playback", "start"] {
-            let request = try requireBody(body, as: StartPlaybackRequest.self)
-            return try cast(try await startPlayback(request: request))
-        }
-        if components == ["api", "v1", "playback", "transcode", "start"] {
-            let request = try requireBody(body, as: TranscodeStartRequest.self)
-            return try cast(try await startTranscode(request: request))
-        }
-        if components == ["api", "v1", "collections"] {
-            let request = try requireBody(body, as: CreateCollectionRequest.self)
-            return try cast(try await createCollection(
-                name: request.name,
-                collectionType: request.collectionType
-            ))
-        }
-        if components == ["api", "v1", "profiles"] {
-            let request = try requireBody(body, as: CreateProfileBody.self)
-            return try cast(try await createProfile(
-                name: request.name,
-                avatarEmoji: request.avatarEmoji,
-                pin: request.pin,
-                isChild: request.isChild
-            ))
-        }
-        if components.count == 5,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "people", components[4] == "refresh" {
-            guard let personId = Int(components[3]) else {
-                throw APIError.invalidPathParameter(name: "personId", value: components[3])
-            }
-            return try cast(try await refreshPerson(id: personId))
-        }
-
         throw APIError.unsupportedPath(path)
     }
 
     func postVoid(_ path: String, body: (any Encodable)? = nil) async throws {
-        let components = pathComponents(path)
-
-        if components.count == 5,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "playback", components[4] == "progress" {
-            let report = try requireBody(body, as: ProgressReport.self)
-            try await reportPlaybackProgress(sessionId: components[3], report: report)
+        let route = APIPath(path)
+        if let sessionId = route.capture("api/v1/playback/*/progress") {
+            try await reportPlaybackProgress(sessionId: sessionId, report: try requireBody(body, as: ProgressReport.self))
             return
         }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "watched" {
-            try await setWatched(contentId: components[3], played: true)
+        if let id = route.capture("api/v1/watched/*") {
+            try await setWatched(contentId: id, played: true)
             return
         }
-
-        throw APIError.unsupportedPath(path)
-    }
-
-    func put<T: Decodable>(_ path: String, body: (any Encodable)? = nil) async throws -> T {
         throw APIError.unsupportedPath(path)
     }
 
     func putVoid(_ path: String, body: (any Encodable)? = nil) async throws {
-        let components = pathComponents(path)
-
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "settings" {
-            let request = try requireBody(body, as: SetSettingBody.self)
-            try await setSetting(key: components[3], value: request.value)
+        let route = APIPath(path)
+        if let id = route.capture("api/v1/favorites/*") {
+            try await toggleFavorite(contentId: id, isFavorite: true)
             return
         }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "favorites" {
-            try await toggleFavorite(contentId: components[3], isFavorite: true)
+        if let id = route.capture("api/v1/watchlist/*") {
+            try await toggleWatchlist(contentId: id, isInWatchlist: true)
             return
         }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "watchlist" {
-            try await toggleWatchlist(contentId: components[3], isInWatchlist: true)
-            return
-        }
-
         throw APIError.unsupportedPath(path)
     }
 
     func delete(_ path: String) async throws {
-        let components = pathComponents(path)
-
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "settings" {
-            try await deleteSetting(key: components[3])
-            return
+        let route = APIPath(path)
+        if let id = route.capture("api/v1/favorites/*") {
+            try await toggleFavorite(contentId: id, isFavorite: false)
+        } else if let id = route.capture("api/v1/watchlist/*") {
+            try await toggleWatchlist(contentId: id, isInWatchlist: false)
+        } else if let sessionId = route.capture("api/v1/playback/*") {
+            try await stopPlayback(sessionId: sessionId)
+        } else if let id = route.capture("api/v1/watched/*") {
+            try await setWatched(contentId: id, played: false)
+        } else {
+            throw APIError.unsupportedPath(path)
         }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "favorites" {
-            try await toggleFavorite(contentId: components[3], isFavorite: false)
-            return
-        }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "watchlist" {
-            try await toggleWatchlist(contentId: components[3], isInWatchlist: false)
-            return
-        }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "collections" {
-            try await deleteCollection(id: components[3])
-            return
-        }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "playback" {
-            try await stopPlayback(sessionId: components[3])
-            return
-        }
-        if components.count == 4,
-           components[0] == "api", components[1] == "v1",
-           components[2] == "watched" {
-            try await setWatched(contentId: components[3], played: false)
-            return
-        }
-
-        throw APIError.unsupportedPath(path)
     }
 
-    // MARK: - Typed endpoint methods
-
-    // --- Auth ---
+    // MARK: - Account and settings
 
     func currentUser() async throws -> UserInfo {
         let user: AuthUser = try await http.get("/api/v1/auth/me")
-        return UserInfo(
-            id: String(user.id),
-            username: user.username,
-            isAdmin: user.role == "admin"
-        )
+        return UserInfo(id: String(user.id), username: user.username, isAdmin: user.role == "admin")
     }
 
-    func setSetting(key: String, value: String) async throws {
-        try await http.putVoid("/api/v1/settings/\(key)", body: SetSettingBody(value: value))
-    }
-
-    func deleteSetting(key: String) async throws {
-        try await http.delete("/api/v1/settings/\(key)")
-    }
-
-    /// Read a user-scoped setting (the `setting_user.user_id` partition,
-    /// distinct from `/settings/device/{key}` which is device-scoped).
-    /// The server returns 404 when the key is unset — callers that want
-    /// "default if absent" semantics catch `HTTPError.http(404, _)` and
-    /// fall through to their own defaults.
+    /// A setting stored for the user (not the device). An unset key answers
+    /// 404, which callers catch to fall back to their own default.
     func getUserSetting(key: String) async throws -> SettingEntryResponse {
         try await http.get("/api/v1/settings/\(key)")
     }
 
-    /// Read the server-wide overlay configuration: the admin kill
-    /// switch and the optional baseline `card_overlays` defaults for
-    /// users who haven't customized yet. Cached server-side for 60s.
+    /// The server-wide card overlay switch and default overlays.
     func overlayConfig() async throws -> OverlayConfigResponse {
         try await http.get("/api/v1/settings/overlay-config")
     }
 
-    // --- Home / sections ---
+    // MARK: - Home
 
     func homeSections() async throws -> SectionsResponse {
         try await http.get("/api/v1/home/sections", query: await imageSizeQuery)
@@ -425,8 +156,8 @@ actor VividAPI {
         )
     }
 
-    /// Next Up episodes carry no progress row, so the server keys their
-    /// dismissal on the parent series instead of `progress_updated_at`.
+    /// Next Up episodes have no progress row, so the server keys their
+    /// dismissal on the series.
     func dismissNextUpItem(contentId: String, seriesId: String) async throws {
         try await http.putVoid(
             "/api/v1/home/dismissals/next_up/\(contentId)",
@@ -434,57 +165,19 @@ actor VividAPI {
         )
     }
 
-    func librarySections(libraryId: Int) async throws -> SectionsResponse {
-        try await http.get("/api/v1/library/\(libraryId)/sections", query: await imageSizeQuery)
-    }
+    // MARK: - Catalogue
 
-    func recommendationsDiscover() async throws -> SectionsResponse {
-        let response: DiscoverResponse = try await http.get("/api/v1/recommendations/discover")
-        let resolved = response.rows.enumerated().map { index, row -> ResolvedSection in
-            ResolvedSection(
-                id: "discover_\(index)_\(row.type)",
-                sectionType: row.type,
-                title: row.label,
-                featured: false,
-                itemLimit: row.items.count,
-                totalCount: row.items.count,
-                isCustom: false,
-                customized: false,
-                items: row.items
-            )
-        }
-        return SectionsResponse(sections: resolved)
-    }
-
-    // --- Catalog ---
-
-    /// Every catalog-shaped list (browse, search, person credits,
-    /// collection items, section paging) funnels through here, so the
-    /// image-size entry only has to be merged in once.
+    /// Every catalogue list (browse, search, person credits, collection
+    /// items, section pages) comes through here, so image sizes are added in
+    /// one place.
     func catalog(query: [String: String]) async throws -> CatalogResponse {
         try await http.get("/api/v1/catalog", query: await withImageSize(query))
     }
 
-    /// A catalog page decoded into a caller-defined shape, for callers that
-    /// need fields `BrowseItem` doesn't keep, such as provider IDs.
+    /// A catalogue page decoded into the caller's own shape, for fields
+    /// `BrowseItem` doesn't keep, such as provider IDs.
     func catalog<Page: Decodable>(query: [String: String], as _: Page.Type) async throws -> Page {
         try await http.get("/api/v1/catalog", query: await withImageSize(query))
-    }
-
-    func historyCatalog(
-        offset: Int,
-        limit: Int,
-        snapshot: String? = nil,
-        includeTotal: Bool = true
-    ) async throws -> CatalogResponse {
-        var query: [String: String] = [
-            "source": "history",
-            "offset": String(offset),
-            "limit": String(limit),
-        ]
-        if let snapshot { query["snapshot"] = snapshot }
-        if !includeTotal { query["include_total"] = "false" }
-        return try await catalog(query: query)
     }
 
     func itemDetail(contentId: String) async throws -> ItemDetail {
@@ -494,32 +187,28 @@ actor VividAPI {
     func catalogFilters(libraryId: Int?, includeTechnical: Bool = true) async throws -> CatalogFilters {
         var query: [String: String] = [:]
         if let libraryId { query["library_id"] = String(libraryId) }
-        // include_technical unlocks the resolution / audio / subtitle facets.
+        // Adds the resolution, audio and subtitle filters.
         if includeTechnical { query["include_technical"] = "true" }
         return try await http.get("/api/v1/catalog/filters", query: query)
     }
 
     func seasons(seriesId: String) async throws -> SeasonsResponse {
-        try await http.get(
-            "/api/v1/catalog/series/\(seriesId)/seasons",
-            query: await imageSizeQuery
-        )
+        try await http.get("/api/v1/catalog/series/\(seriesId)/seasons", query: await imageSizeQuery)
     }
 
+    /// `jellyfinResumeEpisodeId` only goes to Jellyfin, which uses it to
+    /// find the season's resume point.
     func episodes(seriesId: String, seasonNumber: Int, jellyfinResumeEpisodeId: String? = nil) async throws -> EpisodesResponse {
         var query = await imageSizeQuery
         if MediaServerProvider.active == .jellyfin, let jellyfinResumeEpisodeId {
             query["resume_episode_id"] = jellyfinResumeEpisodeId
         }
-        return try await http.get(
-            "/api/v1/catalog/series/\(seriesId)/seasons/\(seasonNumber)/episodes",
-            query: query
-        )
+        return try await http.get("/api/v1/catalog/series/\(seriesId)/seasons/\(seasonNumber)/episodes", query: query)
     }
 
     /// Every original file of one episode. Emby lists one source per
-    /// episode, so download menus ask for the rest; Silo and Jellyfin list
-    /// them all.
+    /// episode, so download menus ask for the rest; Silo and Jellyfin
+    /// already list them all, so this is empty for them.
     func episodeFiles(contentId: String) async throws -> [EpisodeFile] {
         guard MediaServerProvider.active == .emby else { return [] }
         let response: EpisodeFilesResponse = try await http.get("/api/v1/catalog/items/\(contentId)/files")
@@ -530,8 +219,8 @@ actor VividAPI {
         try await http.get("/api/v1/watch/\(contentId)", query: await imageSizeQuery)
     }
 
-    /// Subtitles Silo stores for a file (downloaded, uploaded or AI-made),
-    /// which the catalogue's subtitle tracks leave out.
+    /// Subtitles Silo stores for a file (downloaded, uploaded or made by its
+    /// AI), which the catalogue's tracks leave out.
     func storedSubtitles(fileID: Int) async throws -> SiloStoredSubtitleList {
         try await http.get("/api/v1/subtitles/\(fileID)")
     }
@@ -544,21 +233,6 @@ actor VividAPI {
         try await http.post("/api/v1/people/\(id)/refresh")
     }
 
-    /// Ask the server to look for trailers for a movie or series.
-    ///
-    /// Three expected outcomes, all decoded from a body: `202` +
-    /// `{"status":"queued"}` when a refresh started, `200` +
-    /// `{"status":"cooldown","next_allowed_at":…}` when the item was checked
-    /// too recently, and `200` + `{"status":"disabled"}` when remote videos
-    /// are switched off for every library holding the item. Only `429`
-    /// (per-user rate limit) and the usual transport failures throw.
-    ///
-    /// There is no job id: observe completion by re-fetching item detail
-    /// until `videos` / `extras` change — see ``TrailerFetchCoordinator``.
-    func requestTrailersRefresh(contentId: String) async throws -> TrailerRefreshResponse {
-        try await http.post("/api/v1/items/\(contentId)/trailers/refresh")
-    }
-
     func personCatalogItems(
         personId: Int,
         type: String?,
@@ -566,7 +240,7 @@ actor VividAPI {
         limit: Int,
         snapshot: String? = nil
     ) async throws -> CatalogResponse {
-        var query: [String: String] = [
+        var query = [
             "source": "person",
             "person_id": String(personId),
             "offset": String(offset),
@@ -579,24 +253,21 @@ actor VividAPI {
         return try await catalog(query: query)
     }
 
-    // --- Libraries ---
+    // MARK: - Libraries
 
     func libraries() async throws -> LibrariesResponse {
-        let libs: [Library] = try await http.get("/api/v1/user/libraries")
-        return LibrariesResponse(libraries: libs)
+        let libraries: [Library] = try await http.get("/api/v1/user/libraries")
+        return LibrariesResponse(libraries: libraries)
     }
 
     func libraryCollections(libraryId: Int) async throws -> LibraryCollectionsResponse {
-        let wire: LibraryCollectionsWireResponse = try await http.get(
-            "/api/v1/library/\(libraryId)/collections"
-        )
+        let wire: LibraryCollectionsWireResponse = try await http.get("/api/v1/library/\(libraryId)/collections")
         return LibraryCollectionsResponse(collections: wire.collections, sections: wire.sections)
     }
 
-    /// `libraryCollections` for a page that reads every library at once.
-    /// The library list is the account's, so it can name a library the
-    /// profile hides or isn't allowed, which Silo answers with 404. That
-    /// library has no collections for this profile rather than failing.
+    /// `libraryCollections` for a page that reads every library. The library
+    /// list is the account's, so it can name a library this profile can't
+    /// see, which Silo answers with 404: that reads as no collections.
     func visibleLibraryCollections(libraryId: Int) async throws -> LibraryCollectionsResponse {
         do {
             return try await libraryCollections(libraryId: libraryId)
@@ -605,12 +276,12 @@ actor VividAPI {
         }
     }
 
-    /// The active profile's own collections, shaped like library collections
-    /// so they can sit beside the server's. A server without personal
-    /// collections answers 404, which reads as none.
+    /// The profile's own collections, shaped like library collections. A
+    /// server without personal collections answers 404, which reads as none.
     func personalCollections(profileID: String?) async throws -> [LibraryCollection] {
         do {
-            return (try await collections().collections ?? []).map { LibraryCollection(personal: $0, profileID: profileID) }
+            let personal = try await collections().collections ?? []
+            return personal.map { LibraryCollection(personal: $0, profileID: profileID) }
         } catch where Self.isNotFound(error) {
             return []
         }
@@ -630,20 +301,14 @@ actor VividAPI {
         snapshot: String? = nil,
         includeTotal: Bool = false
     ) async throws -> CatalogResponse {
-        try await catalogCollectionItems(
-            kind: .regular,
-            collectionId: collectionId,
-            offset: offset,
-            limit: limit,
-            snapshot: snapshot,
-            includeTotal: includeTotal
+        try await collectionCatalog(
+            kind: .regular, collectionId: collectionId, offset: offset,
+            limit: limit, snapshot: snapshot, includeTotal: includeTotal
         )
     }
 
-    /// User-collection items resolved through the unified catalog endpoint.
-    /// The raw `/api/v1/collections/{id}/items` route returns un-hydrated
-    /// join records; only the catalog resolver re-hydrates them into the
-    /// `CatalogResponse` shape that views expect.
+    /// A personal collection's items through the catalogue, which fills them
+    /// in. `/api/v1/collections/{id}/items` only returns bare join rows.
     func userCollectionItems(
         collectionId: String,
         offset: Int = 0,
@@ -651,17 +316,13 @@ actor VividAPI {
         snapshot: String? = nil,
         includeTotal: Bool = false
     ) async throws -> CatalogResponse {
-        try await catalogCollectionItems(
-            kind: .userCollections,
-            collectionId: collectionId,
-            offset: offset,
-            limit: limit,
-            snapshot: snapshot,
-            includeTotal: includeTotal
+        try await collectionCatalog(
+            kind: .userCollections, collectionId: collectionId, offset: offset,
+            limit: limit, snapshot: snapshot, includeTotal: includeTotal
         )
     }
 
-    private func catalogCollectionItems(
+    private func collectionCatalog(
         kind: LibraryCollectionKind,
         collectionId: String,
         offset: Int,
@@ -669,7 +330,7 @@ actor VividAPI {
         snapshot: String?,
         includeTotal: Bool
     ) async throws -> CatalogResponse {
-        var query: [String: String] = [
+        var query = [
             "source": kind.catalogSource,
             "collection_id": collectionId,
             "offset": String(offset),
@@ -680,38 +341,24 @@ actor VividAPI {
         return try await catalog(query: query)
     }
 
-    // --- Personal data ---
+    // MARK: - Personal lists
 
-    // These three build their own query rather than routing through
-    // `catalog(query:)`, so each merges the image-size entry itself.
-    // They back real poster grids on TV, and `historyCatalog` — the
-    // entry point the history screen actually uses — is already covered
-    // by `catalog(query:)`.
+    // These build their own query rather than going through `catalog`, so
+    // each adds image sizes itself.
 
     func favorites(offset: Int, limit: Int) async throws -> CatalogResponse {
-        try await http.get("/api/v1/favorites", query: await withImageSize([
-            "offset": String(offset),
-            "limit": String(limit),
-        ]))
+        try await http.get("/api/v1/favorites", query: await withImageSize(page(offset, limit)))
     }
 
     func watchlist(offset: Int, limit: Int) async throws -> CatalogResponse {
-        try await http.get("/api/v1/watchlist", query: await withImageSize([
-            "offset": String(offset),
-            "limit": String(limit),
-        ]))
+        try await http.get("/api/v1/watchlist", query: await withImageSize(page(offset, limit)))
     }
 
     func history(offset: Int, limit: Int) async throws -> CatalogResponse {
-        try await http.get("/api/v1/history", query: await withImageSize([
-            "offset": String(offset),
-            "limit": String(limit),
-        ]))
+        try await http.get("/api/v1/history", query: await withImageSize(page(offset, limit)))
     }
 
-    /// Server returns 204 when the item is a favorite and 404 otherwise.
-    /// ``HTTPClient/exists(_:query:)`` translates that into a boolean
-    /// without trying to decode the empty response body.
+    /// The server answers 204 for a favourite and 404 otherwise.
     func isFavorite(contentId: String) async throws -> Bool {
         try await http.exists("/api/v1/favorites/\(contentId)")
     }
@@ -728,6 +375,7 @@ actor VividAPI {
         }
     }
 
+    /// Also tells MDBList and Simkl sync, for the account that made the change.
     func toggleWatchlist(contentId: String, isInWatchlist: Bool) async throws {
         #if os(iOS) || os(tvOS)
         let auth = await tokenStore.captureOrdinaryRequestAuth()
@@ -743,22 +391,32 @@ actor VividAPI {
         #endif
     }
 
-    /// Mark a content item (movie / series / season / episode) as watched
-    /// or unwatched. Server resolves the leaf targets. With `expectedAuth`,
-    /// it's sent only while that sign-in and profile are still current.
+    /// Marks a movie, series, season or episode watched or unwatched; the
+    /// server works out the episodes. The request is pinned to the account
+    /// and profile captured first, or with `expectedAuth`, sent only while
+    /// that sign-in and profile are still current. Only a confirmed watch
+    /// goes on to MDBList and Simkl.
     func setWatched(contentId: String, played: Bool, expectedAuth: CapturedOrdinaryRequestAuth? = nil) async throws {
         #if os(iOS) || os(tvOS)
-        let auth: CapturedOrdinaryRequestAuth?
+        let captured: CapturedOrdinaryRequestAuth?
         if let expectedAuth {
-            auth = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: expectedAuth)
+            captured = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: expectedAuth)
         } else {
-            auth = await tokenStore.captureOrdinaryRequestAuth()
+            captured = await tokenStore.captureOrdinaryRequestAuth()
         }
-        guard let auth, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
-        let identity = HTTPRequestIdentity(serverId: auth.account.serverId, serverURL: auth.account.serverURL,
-            profileId: profile, clientFamily: "apple", credentialGenerationID: auth.account.credentialGenerationID)
-        _ = try await http.requestData(method: played ? "POST" : "DELETE",
-            path: "/api/v1/watched/\(contentId)", requestIdentity: identity)
+        guard let auth = captured, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
+        let identity = HTTPRequestIdentity(
+            serverId: auth.account.serverId,
+            serverURL: auth.account.serverURL,
+            profileId: profile,
+            clientFamily: "apple",
+            credentialGenerationID: auth.account.credentialGenerationID
+        )
+        _ = try await http.requestData(
+            method: played ? "POST" : "DELETE",
+            path: "/api/v1/watched/\(contentId)",
+            requestIdentity: identity
+        )
         if played {
             await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
             await SimklSyncStore.shared.completedWatch(contentID: contentId, expected: auth)
@@ -772,97 +430,44 @@ actor VividAPI {
         try await http.get("/api/v1/collections")
     }
 
-    func collectionItems(
-        collectionId: String,
-        offset: Int,
-        limit: Int
-    ) async throws -> CatalogResponse {
-        try await http.get("/api/v1/collections/\(collectionId)/items", query: [
-            "offset": String(offset),
-            "limit": String(limit),
-        ])
+    func collectionItems(collectionId: String, offset: Int, limit: Int) async throws -> CatalogResponse {
+        try await http.get("/api/v1/collections/\(collectionId)/items", query: page(offset, limit))
     }
 
-    func createCollection(name: String, collectionType: String) async throws -> UserCollection {
-        try await http.post(
-            "/api/v1/collections",
-            body: CreateCollectionRequest(name: name, collectionType: collectionType)
-        )
-    }
+    // MARK: - Profiles
 
-    func deleteCollection(id: String) async throws {
-        try await http.delete("/api/v1/collections/\(id)")
-    }
-
-    /// Move a personal collection between groups (pass `nil` for
-    /// Ungrouped). Returns the updated collection.
-    func moveCollectionToGroup(id: String, groupId: String?) async throws -> UserCollection {
-        try await http.put(
-            "/api/v1/collections/\(id)",
-            body: UpdateUserCollectionGroupBody(groupId: groupId)
-        )
-    }
-
-    // --- Collection groups (personal) ---
-
-    func createCollectionGroup(name: String) async throws -> CollectionGroup {
-        try await http.post(
-            "/api/v1/collections/groups",
-            body: CreateCollectionGroupRequest(name: name, slug: nil)
-        )
-    }
-
-    func renameCollectionGroup(id: String, name: String) async throws -> CollectionGroup {
-        try await http.put(
-            "/api/v1/collections/groups/\(id)",
-            body: UpdateCollectionGroupRequest(name: name)
-        )
-    }
-
-    func deleteCollectionGroup(id: String) async throws {
-        try await http.delete("/api/v1/collections/groups/\(id)")
-    }
-
-    // --- Profiles ---
-
-    /// The list is account-level, so it goes without the active profile's
-    /// headers. Silo refuses every request that names a removed profile, and
-    /// this list is how `AuthService.reconcileAvailableProfiles` finds out.
+    /// The list belongs to the account, so it goes without the active
+    /// profile. Silo refuses every request naming a removed profile, and this
+    /// list is how `AuthService.reconcileAvailableProfiles` finds out.
     func listProfiles() async throws -> [UserProfile] {
         let response: ProfilesResponse = try await http.get("/api/v1/profiles", sendsProfile: false)
         return response.profiles.map(\.asUserProfile)
     }
 
-    /// Verifies a protected profile without mutating process-wide identity.
-    /// `AuthService` uses this to finish the network round trip first, then
-    /// commit profile ID and proof together behind HTTPClient's transition
-    /// barrier.
+    /// Checks a profile choice without changing the session; `AuthService`
+    /// then commits the profile and its proof together. Emby and Jellyfin
+    /// have one profile, their own user. A Silo profile without a PIN has
+    /// nothing to verify (the server refuses an empty PIN), so only a PIN is
+    /// sent, and its proof token returned.
     func verifyProfileSelection(profileId: String, pin: String?) async throws -> String? {
-        if MediaServerProvider.active == .jellyfin {
+        switch MediaServerProvider.active {
+        case .jellyfin:
             let connection = try await JellyfinConnection.current()
             guard profileId == connection.userID else { throw JellyfinError.signInRequired }
             return nil
-        }
-        if MediaServerProvider.active == .emby {
+        case .emby:
             let connection = try await EmbyConnection.current()
             guard profileId == connection.userID else { throw EmbyError.signInRequired }
             return nil
-        }
-        // Profiles without a PIN: just record the selection locally; there's
-        // nothing to verify and the server's /verify-pin rejects empty PINs
-        // with 400. Mirrors `ProfileSelectionViewModel.onProfileTapped` on
-        // Android, which skips the verify call when `hasPin` is false.
-        if let pin, !pin.isEmpty {
+        case .silo:
+            guard let pin, !pin.isEmpty else { return nil }
             let response: VerifyPinResponse = try await http.post(
                 "/api/v1/profiles/\(profileId)/verify-pin",
                 body: VerifyPinRequest(pin: pin)
             )
-            guard response.valid else {
-                throw APIError.httpError(statusCode: 401)
-            }
+            guard response.valid else { throw APIError.httpError(statusCode: 401) }
             return response.profileToken
         }
-        return nil
     }
 
     func createProfile(
@@ -874,63 +479,42 @@ actor VividAPI {
         libraryRestrictionsEnabled: Bool = false,
         allowedLibraryIds: [Int] = []
     ) async throws -> UserProfile {
-        let profile: Profile = try await http.post(
-            "/api/v1/profiles",
-            body: CreateProfileRequestBody(
-                name: name,
-                avatar: avatarEmoji,
-                pin: pin,
-                isChild: isChild,
-                maxContentRating: maxContentRating,
-                libraryRestrictionsEnabled: libraryRestrictionsEnabled,
-                allowedLibraryIds: allowedLibraryIds
-            )
+        let body = CreateProfileRequestBody(
+            name: name,
+            avatar: avatarEmoji,
+            pin: pin,
+            isChild: isChild,
+            maxContentRating: maxContentRating,
+            libraryRestrictionsEnabled: libraryRestrictionsEnabled,
+            allowedLibraryIds: allowedLibraryIds
         )
+        let profile: Profile = try await http.post("/api/v1/profiles", body: body)
         return profile.asUserProfile
     }
 
-    // --- Playback ---
-
-    // Session planning can be slow on heavy files (stream probing, transcode
-    // spin-up), so both start calls opt out of the fail-fast timeout. A dead
-    // server is still caught early: connection-refused fails instantly, and
-    // the detail screen's own fetches run on the standard timeout.
-    func startPlayback(request: StartPlaybackRequest) async throws -> PlaybackSessionResponse {
-        try await http.post("/api/v1/playback/start", body: request, timeout: .extended)
-    }
+    // MARK: - Playback
 
     func playbackV3Capability() async throws -> PlaybackV3CapabilityResponse {
         try await http.get("/api/v1/playback/capability")
     }
 
+    /// Planning a session can be slow on heavy files (probing, starting a
+    /// transcode), so starts and replans use the extended timeout. A dead
+    /// server still fails fast, since a refused connection fails at once.
     func startPlaybackV3(request: PlaybackV3StartRequest) async throws -> PlaybackV3DecisionResponse {
         try await http.post("/api/v1/playback/start", body: request, timeout: .extended)
     }
 
-    func replanPlaybackV3(
-        sessionId: String,
-        request: PlaybackV3ReplanRequest
-    ) async throws -> PlaybackV3DecisionResponse {
-        try await http.post(
-            "/api/v1/playback/\(sessionId)/replan",
-            body: request,
-            timeout: .extended
-        )
+    func replanPlaybackV3(sessionId: String, request: PlaybackV3ReplanRequest) async throws -> PlaybackV3DecisionResponse {
+        try await http.post("/api/v1/playback/\(sessionId)/replan", body: request, timeout: .extended)
     }
 
     func reportPlaybackRouteEventV3(_ event: PlaybackV3RouteEvent) async throws {
         try await http.postVoid("/api/v1/playback/route-events", body: event)
     }
 
-    func startTranscode(request: TranscodeStartRequest) async throws -> TranscodeStartResponse {
-        try await http.post("/api/v1/playback/transcode/start", body: request, timeout: .extended)
-    }
-
     func reportPlaybackProgress(sessionId: String, report: ProgressReport) async throws {
-        try await http.postVoid(
-            "/api/v1/playback/\(sessionId)/progress",
-            body: report
-        )
+        try await http.postVoid("/api/v1/playback/\(sessionId)/progress", body: report)
     }
 
     func syncProgress(
@@ -939,17 +523,13 @@ actor VividAPI {
         duration: Double,
         forceOverwrite: Bool = false
     ) async throws {
-        try await http.postVoid(
-            "/api/v1/sync/progress",
-            body: SyncProgressRequest(items: [
-                SyncProgressItem(
-                    mediaItemId: mediaItemId,
-                    position: position,
-                    duration: duration,
-                    forceOverwrite: forceOverwrite
-                )
-            ])
+        let item = SyncProgressItem(
+            mediaItemId: mediaItemId,
+            position: position,
+            duration: duration,
+            forceOverwrite: forceOverwrite
         )
+        try await http.postVoid("/api/v1/sync/progress", body: SyncProgressRequest(items: [item]))
     }
 
     func stopPlayback(sessionId: String) async throws {
@@ -958,12 +538,8 @@ actor VividAPI {
 
     // MARK: - Helpers
 
-    private func pathComponents(_ path: String) -> [String] {
-        path.split(separator: "/").map(String.init)
-    }
-
-    private func queryInt(_ value: String?) -> Int? {
-        value.flatMap(Int.init)
+    private func page(_ offset: Int, _ limit: Int) -> [String: String] {
+        ["offset": String(offset), "limit": String(limit)]
     }
 
     private func cast<T>(_ value: Any) throws -> T {
@@ -976,38 +552,63 @@ actor VividAPI {
         return typed
     }
 
-    private func requireBody<B>(_ body: (any Encodable)?, as type: B.Type) throws -> B {
-        guard let typed = body as? B else {
+    private func requireBody<Body>(_ body: (any Encodable)?, as type: Body.Type) throws -> Body {
+        guard let typed = body as? Body else {
             throw APIError.unsupportedBody(expected: String(describing: type))
         }
         return typed
     }
 }
 
-// MARK: - Supporting Types
+/// A request path split at `/` (empty pieces dropped), for matching patterns
+/// such as `api/v1/watch/*`.
+private struct APIPath {
+    private let parts: [Substring]
+
+    init(_ path: String) {
+        parts = path.split(separator: "/")
+    }
+
+    func matches(_ pattern: String) -> Bool {
+        captures(pattern) != nil
+    }
+
+    /// The single piece standing in for the pattern's `*`.
+    func capture(_ pattern: String) -> String? {
+        captures(pattern)?.first
+    }
+
+    private func captures(_ pattern: String) -> [String]? {
+        let expected = pattern.split(separator: "/")
+        guard expected.count == parts.count else { return nil }
+        var captured: [String] = []
+        for (want, part) in zip(expected, parts) {
+            if want == "*" {
+                captured.append(String(part))
+            } else if want != part {
+                return nil
+            }
+        }
+        return captured
+    }
+}
 
 enum APIError: LocalizedError {
     case httpError(statusCode: Int)
-    case invalidPathParameter(name: String, value: String)
     case unsupportedPath(String)
     case unsupportedBody(expected: String)
     case typeMismatch(expected: String, actual: String)
-    case unsupportedMedia(String)
 
     var errorDescription: String? {
         switch self {
         case .httpError(let code):
-            return String(localized: "Server returned status \(code)")
-        case .invalidPathParameter(let name, let value):
-            return String(localized: "Invalid \(name): \(value)", comment: "Error for a malformed request parameter; both values are technical")
+            String(localized: "Server returned status \(code)")
         case .unsupportedPath(let path):
-            return String(localized: "Unsupported API path: \(path)")
+            String(localized: "Unsupported API path: \(path)")
         case .unsupportedBody(let expected):
-            return String(localized: "Unsupported request body. Expected \(expected).")
+            String(localized: "Unsupported request body. Expected \(expected).")
         case .typeMismatch(let expected, let actual):
-            return String(localized: "API returned \(actual), expected \(expected).")
-        case .unsupportedMedia(let message):
-            return message
+            String(localized: "API returned \(actual), expected \(expected).")
         }
     }
 }

@@ -1,10 +1,10 @@
 import Foundation
 
-/// The engine-facing interpretation of Playback Protocol V3's timeline.
+/// Protocol V3's timeline as the engine sees it.
 ///
-/// Vivid's load and clock use the transport/player axis. Silo progress,
-/// chapters, markers, and server commands use the source-media axis. Keeping
-/// this conversion in one value prevents an HLS reanchor from leaking into the
+/// The engine's load and clock use the transport (player) axis; Silo's
+/// progress, chapters, markers and commands use the source media axis. Doing
+/// the conversion in one value keeps an HLS re-anchor from leaking into the
 /// rest of the player as an ad-hoc offset.
 struct PlaybackTimelineMapper: Equatable, Sendable {
     enum ValidationError: Error, Equatable {
@@ -15,10 +15,10 @@ struct PlaybackTimelineMapper: Equatable, Sendable {
     }
 
     enum SeekDisposition: Equatable {
-        /// Vivid can execute this seek against the currently loaded source.
+        /// The loaded source can seek here.
         case local(playerSeconds: Double)
         /// The server must issue a plan whose transport contains this source
-        /// position before Vivid is loaded again.
+        /// position before the engine loads again.
         case replan(sourceSeconds: Double)
     }
 
@@ -31,6 +31,7 @@ struct PlaybackTimelineMapper: Equatable, Sendable {
     let canSeekAnywhere: Bool
     let seekRestoration: String
 
+    /// A source played as it is, where both axes are the same.
     init(directStartSeconds: Double) {
         let start = directStartSeconds.isFinite ? max(0, directStartSeconds) : 0
         sourceStartSeconds = start
@@ -43,28 +44,22 @@ struct PlaybackTimelineMapper: Equatable, Sendable {
         seekRestoration = "player_position"
     }
 
+    /// A plan's timeline. Every time must be finite and non-negative, the
+    /// seek window in order, and the restoration one this client knows.
     init(validating timeline: PlaybackV3Timeline) throws {
-        let required: [(String, Double)] = [
+        let fields: [(String, Double?)] = [
             ("source_start_seconds", timeline.sourceStartSeconds),
             ("stream_origin_seconds", timeline.streamOriginSeconds),
             ("player_start_seconds", timeline.playerStartSeconds),
             ("timeline_offset_seconds", timeline.timelineOffsetSeconds),
-        ]
-        for (field, value) in required {
-            guard value.isFinite else { throw ValidationError.nonFinite(field: field) }
-            guard value >= 0 else { throw ValidationError.negative(field: field) }
-        }
-        for (field, value) in [
             ("seek_window_start_seconds", timeline.seekWindowStartSeconds),
             ("seek_window_end_seconds", timeline.seekWindowEndSeconds),
-        ] {
-            guard let value else { continue }
+        ]
+        for case let (field, value?) in fields {
             guard value.isFinite else { throw ValidationError.nonFinite(field: field) }
             guard value >= 0 else { throw ValidationError.negative(field: field) }
         }
-        if let start = timeline.seekWindowStartSeconds,
-           let end = timeline.seekWindowEndSeconds,
-           start > end {
+        if let start = timeline.seekWindowStartSeconds, let end = timeline.seekWindowEndSeconds, start > end {
             throw ValidationError.invalidSeekWindow
         }
         guard ["player_position", "source_position"].contains(timeline.seekRestoration) else {
@@ -81,8 +76,8 @@ struct PlaybackTimelineMapper: Equatable, Sendable {
         seekRestoration = timeline.seekRestoration
     }
 
-    /// The position supplied to `VividEngine.load`. It is deliberately the
-    /// plan's player coordinate, not its source coordinate.
+    /// The position the engine loads at: the plan's player coordinate, not
+    /// its source one.
     var vividStartPosition: Double { playerStartSeconds }
 
     func sourcePosition(forPlayerTime playerSeconds: Double) -> Double {
@@ -95,40 +90,27 @@ struct PlaybackTimelineMapper: Equatable, Sendable {
         return max(0, sourceSeconds - timelineOffsetSeconds)
     }
 
-    /// Converts a sidecar cue timestamp into the active Vivid/player axis.
-    /// Artifact timestamps are relative to the artifact's declared source
-    /// origin; the active plan may have a different transport origin.
-    func playerPosition(
-        forArtifactTime artifactSeconds: Double,
-        timingOriginSeconds: Double
-    ) -> Double {
-        guard artifactSeconds.isFinite, timingOriginSeconds.isFinite else {
-            return playerStartSeconds
-        }
+    /// A sidecar cue time on the player axis. Artefact times count from the
+    /// artefact's own source origin, which can differ from the plan's.
+    func playerPosition(forArtifactTime artifactSeconds: Double, timingOriginSeconds: Double) -> Double {
+        guard artifactSeconds.isFinite, timingOriginSeconds.isFinite else { return playerStartSeconds }
         return playerPosition(forSourceTime: artifactSeconds + timingOriginSeconds)
     }
 
-    /// The earliest source position this transport can express.
-    ///
-    /// Player time is `source - timelineOffsetSeconds`, so a target below the
-    /// offset has no non-negative player coordinate at all. It is a property of
-    /// the loaded transport, not of the advertised seek window, which is why the
-    /// check below does not depend on one being published.
+    /// The earliest source position this transport can reach. Player time is
+    /// `source - timelineOffsetSeconds`, so anything earlier has no
+    /// non-negative player time, whatever the seek window says.
     var earliestLocalSourceSeconds: Double { timelineOffsetSeconds }
 
+    /// Whether the loaded source can seek to a source position. A target
+    /// before the transport's offset always needs a new plan: a re-anchored
+    /// transport often has no seek window, and seeking locally would clamp
+    /// to the transport's origin instead of the requested moment.
     func seekDisposition(forSourceTime requestedSeconds: Double) -> SeekDisposition {
         let sourceSeconds = requestedSeconds.isFinite ? max(0, requestedSeconds) : sourceStartSeconds
-        // A re-anchored transport (`timeline_offset_seconds > 0`) frequently
-        // arrives with no seek window, and the old window-only test then let a
-        // backward seek before the offset fall through to `playerPosition`,
-        // which clamps at zero. That silently played the transport's origin
-        // instead of the requested moment. Only the server can produce a
-        // transport that contains it, so ask for a plan regardless of whether a
-        // window was published or `can_seek_anywhere` was set.
-        if sourceSeconds < earliestLocalSourceSeconds {
+        if sourceSeconds < earliestLocalSourceSeconds || !canSeekAnywhere {
             return .replan(sourceSeconds: sourceSeconds)
         }
-        guard canSeekAnywhere else { return .replan(sourceSeconds: sourceSeconds) }
         if let start = seekWindowStartSeconds, sourceSeconds < start {
             return .replan(sourceSeconds: sourceSeconds)
         }

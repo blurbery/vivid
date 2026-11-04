@@ -1,55 +1,30 @@
-//
-//  SettingValueModels.swift
-//  Vivid (iOS + tvOS + macOS)
-//
-//  Wire types for the canonical settings API — the contract endpoints and
-//  the typed `/settings/values/*` routes:
-//
-//    GET    /api/v1/settings/contract/capabilities  — feature detection
-//    GET    /api/v1/settings/values/effective       — batched resolution
-//    PUT    /api/v1/settings/values/{key}           — write one scope
-//    DELETE /api/v1/settings/values/{key}           — clear one scope
-//
-//  These mirror `internal/api/handlers/settings_values.go` on the server.
-//  They are deliberately *not* the legacy `/settings/{key}` registry types in
-//  SubtitleAppearance.swift: values here are typed JSON rather than strings,
-//  every value names the scope it lives at, and a key that is not in the
-//  manifest cannot be expressed because `SettingKey` is generated from it.
-//
-//  Coding note — read before adding a call site. Every type here spells its
-//  wire field names out in explicit `CodingKeys` and MUST be coded through
-//  ``SettingsWireCoding``, a coder carrying no key strategy. Passing one of
-//  these types to `HTTPClient.get`/`put` instead is a silent-data-loss bug,
-//  not a style preference (SettingValuesAPITests pins the failure).
-//
-//  Why the models are built this way: setting values are opaque JSON authored
-//  by the contract, and their object keys must survive byte-for-byte —
-//  `playback.subtitle_appearance` is camelCase on the wire (`fontSize`), other
-//  schemas use snake_case. Foundation's key strategy happens not to reach into
-//  `[String: …]` payloads today, but that is an implementation detail rather
-//  than a documented guarantee, and a value whose keys get rewritten is
-//  corrupted silently and permanently in the user's stored settings.
-//
-//  Why that forces the rest: with no strategy, the envelope's snake_case field
-//  names have to be written out by hand. That inverts HTTPClient's convention
-//  (camelCase properties, CodingKeys only for genuinely odd names), and the two
-//  do not mix — `.convertFromSnakeCase` camel-cases an incoming key *before*
-//  matching it, so `profile_id` looks for a CodingKey named `profileId`, misses
-//  the `"profile_id"` one, and decodes as nil without throwing. Hence the rule
-//  at the top. Nothing here changes the app-wide convention: the generated
-//  bindings and every other model keep it.
-//
-
 import Foundation
+
+// Wire types for Silo's canonical settings API, mirroring the server's
+// `settings_values.go`:
+//
+//   GET    /api/v1/settings/contract/capabilities  feature detection
+//   GET    /api/v1/settings/values/effective       batched resolution
+//   PUT    /api/v1/settings/values/{key}           write one scope
+//   DELETE /api/v1/settings/values/{key}           clear one scope
+//
+// Values are typed JSON, every value names the scope it lives at, and a key
+// outside the manifest can't be named because `SettingKey` is generated from it.
+//
+// Read before adding a call site: these types spell their snake_case wire
+// names out in `CodingKeys` and must be coded through `SettingsWireCoding`,
+// never `HTTPClient.get`/`put`. The shared coders convert keys, and
+// `.convertFromSnakeCase` turns `profile_id` into `profileId` before matching,
+// misses the explicit `"profile_id"` key and decodes nil without throwing
+// (SettingValuesAPITests pins this). Setting values themselves are opaque JSON
+// whose object keys must survive byte for byte: `playback.subtitle_appearance`
+// is camelCase on the wire, other schemas are snake_case.
 
 // MARK: - Coding boundary
 
-/// JSON coders for the canonical settings API.
-///
-/// No key strategy in either direction: see the file header. Use these for
-/// anything that touches a setting *value*, including a caller decoding an
-/// object-valued setting into its own model — that keeps the value's keys out
-/// of reach of any strategy the app's shared coders carry now or later.
+/// JSON coders for the canonical settings API, with no key strategy either
+/// way. Use them for anything that touches a setting value, including a
+/// caller decoding an object-valued setting into its own model.
 enum SettingsWireCoding {
     static func makeDecoder() -> JSONDecoder {
         JSONDecoder()
@@ -57,10 +32,8 @@ enum SettingsWireCoding {
 
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
-        // Stable ordering keeps a re-encoded value byte-comparable, which is
-        // what lets a caller diff "what I sent" against "what came back" and
-        // what makes the server's mutation-id request hash stable across
-        // retries of the same logical write.
+        // Stable output keeps a re-encoded value byte-comparable and the
+        // server's mutation-id request hash stable across retries.
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return encoder
     }
@@ -68,11 +41,8 @@ enum SettingsWireCoding {
 
 // MARK: - Values
 
-/// One setting value, exactly as the contract defines it.
-///
-/// Settings are heterogeneous — bool, int, double, string, object, array, or
-/// null — so the client holds the JSON shape rather than pretending every
-/// value is a string the way the legacy registry did.
+/// One setting value, exactly as the contract defines it: bool, int, double,
+/// string, array, object or null.
 enum SettingJSONValue: Codable, Hashable, Sendable {
     case null
     case bool(Bool)
@@ -104,30 +74,20 @@ enum SettingJSONValue: Codable, Hashable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case .null:
-            try container.encodeNil()
-        case .bool(let value):
-            try container.encode(value)
-        case .int(let value):
-            try container.encode(value)
-        case .double(let value):
-            try container.encode(value)
-        case .string(let value):
-            try container.encode(value)
-        case .array(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
+        case .null: try container.encodeNil()
+        case .bool(let value): try container.encode(value)
+        case .int(let value): try container.encode(value)
+        case .double(let value): try container.encode(value)
+        case .string(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
         }
     }
 }
 
 extension SettingJSONValue {
-    /// Structural equality for contract values, treating the two Swift
-    /// representations of the same JSON number (`1` and `1.0`) as equivalent.
-    /// Other JSON types remain distinct, and arrays/objects compare
-    /// recursively so a numeric spelling nested inside a value behaves the
-    /// same way as one at the top level.
+    /// Structural equality that treats `1` and `1.0` as the same JSON number,
+    /// at any depth. Other types stay distinct.
     func isSemanticallyEquivalent(to other: SettingJSONValue) -> Bool {
         switch (self, other) {
         case (.null, .null):
@@ -145,15 +105,11 @@ extension SettingJSONValue {
         case (.string(let left), .string(let right)):
             return left == right
         case (.array(let left), .array(let right)):
-            guard left.count == right.count else { return false }
-            return zip(left, right).allSatisfy { lhs, rhs in
-                lhs.isSemanticallyEquivalent(to: rhs)
-            }
+            return left.count == right.count
+                && zip(left, right).allSatisfy { $0.isSemanticallyEquivalent(to: $1) }
         case (.object(let left), .object(let right)):
-            guard left.count == right.count else { return false }
-            return left.allSatisfy { key, value in
-                guard let counterpart = right[key] else { return false }
-                return value.isSemanticallyEquivalent(to: counterpart)
+            return left.count == right.count && left.allSatisfy { key, value in
+                right[key].map { value.isSemanticallyEquivalent(to: $0) } ?? false
             }
         default:
             return false
@@ -165,12 +121,11 @@ extension SettingJSONValue {
         return nil
     }
 
+    /// An int, or a whole-number double (`1` re-serialised as `1.0`).
     var intValue: Int? {
         switch self {
         case .int(let value): return value
-        // A whole-number double (`1` re-serialized as `1.0` by some
-        // intermediary) is still the integer the contract declared.
-        case .double(let value) where value == value.rounded(): return Int(exactly: value.rounded())
+        case .double(let value): return Int(exactly: value)
         default: return nil
         }
     }
@@ -203,33 +158,25 @@ extension SettingJSONValue {
         return false
     }
 
-    /// Decode an object- or array-valued setting into a caller model.
-    ///
-    /// Goes through ``SettingsWireCoding`` so the value's own key casing is
-    /// preserved — decoding `playback.subtitle_appearance` with the app's
-    /// shared snake_case decoder would look for `font_size`.
+    /// Decodes an object- or array-valued setting into a caller model, keeping
+    /// the value's own key casing.
     func decoded<T: Decodable>(as type: T.Type) throws -> T {
         let data = try SettingsWireCoding.makeEncoder().encode(self)
         return try SettingsWireCoding.makeDecoder().decode(T.self, from: data)
     }
 
-    /// Build a value from a caller model, without key rewriting.
+    /// Builds a value from a caller model, without key rewriting.
     static func encoding<T: Encodable>(_ value: T) throws -> SettingJSONValue {
         let data = try SettingsWireCoding.makeEncoder().encode(value)
         return try SettingsWireCoding.makeDecoder().decode(SettingJSONValue.self, from: data)
     }
 }
 
-/// Literal conveniences so a call site can write `putValue(…, value: "2160p")`
-/// rather than `.string("2160p")`.
+/// Literals, so a call site can write `"2160p"` rather than `.string("2160p")`.
 ///
-/// Deliberately *not* `ExpressibleByNilLiteral`, even though `.null` is a real
-/// case: it makes `nil` ambiguous wherever a `SettingJSONValue?` is in play.
-/// `storedValue = present ? try decode(…) : nil` type-checks with both branches
-/// as `SettingJSONValue`, turning the absent branch into `.some(.null)` — which
-/// silently erases exactly the distinction (field absent vs. authored JSON
-/// null) that the effective-value model exists to preserve. Write `.null` when
-/// that is what you mean.
+/// Deliberately not `ExpressibleByNilLiteral`: `nil` would then type-check as
+/// `.null` wherever a `SettingJSONValue?` is expected, erasing the difference
+/// between an absent field and an authored JSON null. Write `.null`.
 extension SettingJSONValue: ExpressibleByBooleanLiteral,
                             ExpressibleByIntegerLiteral,
                             ExpressibleByFloatLiteral,
@@ -248,16 +195,8 @@ extension SettingJSONValue: ExpressibleByBooleanLiteral,
 
 // MARK: - Scopes
 
-/// The scopes a value can be stored at.
-///
-/// `other` exists because `/api/v1` is additive: a newer server may resolve a
-/// value at a scope this build has never heard of, and one unfamiliar row must
-/// not fail the whole batch.
-///
-/// Coded by hand rather than by synthesis: these are open enums with an
-/// associated value, and Swift's derived `Codable` for such an enum emits a
-/// nested payload (`{"other":{"_0":"…"}}`) instead of the bare string the wire
-/// format uses.
+/// The scopes a value can be stored at. `other` keeps a scope from a newer
+/// server readable, so one unfamiliar row never fails a whole batch.
 enum SettingScope: RawRepresentable, Hashable, Sendable {
     case account
     case profile
@@ -292,8 +231,7 @@ enum SettingScope: RawRepresentable, Hashable, Sendable {
     }
 }
 
-/// Where a resolved value came from: the scope holding it, or the contract
-/// default when nothing was stored anywhere.
+/// Where a resolved value came from: a scope, or the contract default.
 enum SettingSource: RawRepresentable, Hashable, Sendable {
     case scope(SettingScope)
     case contractDefault
@@ -339,18 +277,11 @@ enum SettingConstraintKind: RawRepresentable, Hashable, Sendable {
     }
 }
 
-// Coding for the three open enums above: one bare wire string in, one out.
-//
-// Written out per type rather than derived. Synthesis is wrong here — a
-// derived `Codable` for an enum with an associated value emits a nested
-// payload (`{"other":{"_0":"…"}}`) instead of the bare string the wire uses —
-// and a blanket `extension RawRepresentable where RawValue == String: Codable`
-// would be worse still, silently replacing the synthesized coding of every
-// string-backed enum in the app.
-//
-// The point of each is the same: an unfamiliar member decodes to `.other`
-// rather than throwing, which is what keeps a newer server's row from taking a
-// whole batched resolution down with it.
+// The three open enums above code as one bare string, and an unfamiliar member
+// decodes to `.other` rather than throwing. Written per type: synthesis would
+// nest the associated value (`{"other":{"_0":"x"}}`), and a blanket
+// `RawRepresentable` extension would replace the coding of every string enum
+// in the app.
 
 extension SettingScope: Codable {
     init(from decoder: Decoder) throws {
@@ -385,13 +316,10 @@ extension SettingConstraintKind: Codable {
     }
 }
 
-/// A scope plus the ids that scope needs, as one value.
-///
-/// Modelled as an enum rather than a struct of optionals so an identity that
-/// the server would reject with 400 — `profile_library` with no library id —
-/// cannot be built in the first place. The profile and device parts are never
-/// carried here: the server takes those from the session headers so one
-/// profile cannot write another's settings by naming it in the query.
+/// A scope plus the ids it needs, so an identity the server would reject
+/// (`profile_library` without a library) can't be built. The profile and
+/// device come from the session headers, never from here, so one profile
+/// can't write another's settings by naming it in the query.
 enum SettingScopeIdentity: Hashable, Sendable {
     case account
     case profile
@@ -411,8 +339,7 @@ enum SettingScopeIdentity: Hashable, Sendable {
         }
     }
 
-    /// The query the scope travels in. Scope rides the query string rather
-    /// than the path so one route serves every scope.
+    /// The query the scope travels in, so one route serves every scope.
     var queryItems: [String: String] {
         var query = ["scope": scope.rawValue]
         switch self {
@@ -429,7 +356,7 @@ enum SettingScopeIdentity: Hashable, Sendable {
 
 // MARK: - Responses
 
-/// One explicitly stored value, as returned by a write.
+/// One explicitly stored value, as a write returns it.
 struct StoredSettingValue: Codable, Hashable, Sendable {
     let key: String
     let scope: SettingScope
@@ -439,9 +366,7 @@ struct StoredSettingValue: Codable, Hashable, Sendable {
     let libraryId: Int?
     let seriesId: String?
     let value: SettingJSONValue
-    /// Increments on every write to this row. A replayed mutation receipt
-    /// carries `0`: the receipt records what was written, not the row's
-    /// current state.
+    /// Goes up on every write to the row. A replayed receipt carries `0`.
     let revision: Int
     let updatedAt: String?
 
@@ -468,23 +393,15 @@ struct EffectiveSettingValue: Codable, Hashable, Sendable {
     let key: String
     let value: SettingJSONValue
     let source: SettingSource
-
-    /// The value the user actually authored, present only when policy
-    /// narrowed the answer. Reported rather than discarded so a client can say
-    /// "your choice is capped" instead of silently showing the cap.
-    ///
-    /// `nil` means the field was absent; `.null` means the authored value was
-    /// JSON null. `decodeIfPresent` would collapse those two, so this decodes
-    /// through an explicit `contains` check.
+    /// What the user authored, sent only when policy narrowed the answer.
+    /// `nil` means the field was absent and `.null` an authored JSON null.
     let storedValue: SettingJSONValue?
     let constrained: Bool
     let constraintKind: SettingConstraintKind?
-    /// Advisory picker values for an open setting. These never constrain
-    /// writes; they augment the generated contract floor.
+    /// Advisory picker values for an open setting. They never constrain writes.
     let suggestedValues: [String]?
-
-    /// The scope holding the value, so a reset can target exactly that row.
-    /// Absent for a contract default.
+    /// The row holding the value, so a reset can target it. Absent for a
+    /// contract default.
     let scope: SettingScope?
     let profileId: String?
     let clientFamily: String?
@@ -513,10 +430,11 @@ struct EffectiveSettingValue: Codable, Hashable, Sendable {
         key = try container.decode(String.self, forKey: .key)
         value = try container.decode(SettingJSONValue.self, forKey: .value)
         source = try container.decode(SettingSource.self, forKey: .source)
+        // `decodeIfPresent` would read an authored null as absent.
         if container.contains(.storedValue) {
             storedValue = try container.decode(SettingJSONValue.self, forKey: .storedValue)
         } else {
-            storedValue = SettingJSONValue?.none
+            storedValue = nil
         }
         constrained = try container.decodeIfPresent(Bool.self, forKey: .constrained) ?? false
         constraintKind = try container.decodeIfPresent(SettingConstraintKind.self, forKey: .constraintKind)
@@ -563,19 +481,17 @@ struct EffectiveSettingValue: Codable, Hashable, Sendable {
         SettingKey(rawValue: key)
     }
 
-    /// The identity a reset should target, or nil when the value is a
-    /// contract default and there is nothing to clear.
+    /// The identity a reset should target, or nil when there's nothing to
+    /// clear (a contract default, or a scope this build can't address).
     var storedAt: SettingScopeIdentity? {
-        guard let scope else { return nil }
         switch scope {
+        case nil, .other: return nil
         case .account: return .account
         case .profile: return .profile
         case .profileClient: return .profileClient
         case .profileDevice: return .profileDevice
         case .profileLibrary: return libraryId.map { .profileLibrary(libraryId: $0) }
         case .profileSeries: return seriesId.map { .profileSeries(seriesId: $0) }
-        // A scope this build does not know cannot be addressed for a reset.
-        case .other: return nil
         }
     }
 }
@@ -590,9 +506,8 @@ struct EffectiveSettingValuesResponse: Codable, Hashable, Sendable {
         case revision
     }
 
-    /// Resolved values addressed by generated key. Keys this build does not
-    /// know (a newer server's contract) are dropped here but stay in
-    /// ``settings``.
+    /// Values by generated key. Keys this build doesn't know are left out
+    /// here but stay in ``settings``.
     var byKey: [SettingKey: EffectiveSettingValue] {
         var map: [SettingKey: EffectiveSettingValue] = [:]
         for setting in settings {
@@ -607,18 +522,16 @@ struct EffectiveSettingValuesResponse: Codable, Hashable, Sendable {
         settings.first { $0.key == key.rawValue }
     }
 
-    /// True when this build was generated from a newer manifest than the
-    /// server used for this resolution. Applying the response would silently
-    /// substitute missing rows with this client's newer contract defaults.
+    /// True when this build's manifest is newer than the one the server
+    /// resolved with: applying the response would fill missing rows with this
+    /// build's defaults.
     var contractIsAheadOfServer: Bool {
         SettingKey.revision > revision
     }
 }
 
-/// What the connected server's settings contract supports.
-///
-/// Feature detection rather than version sniffing: `scopes` stays a raw string
-/// list precisely so a scope added after this build still reads back.
+/// What the connected server's settings contract supports. `scopes` stays a
+/// raw string list so a scope added after this build still reads back.
 struct SettingsContractCapabilities: Codable, Hashable, Sendable {
     let apiVersion: Int
     let revision: Int
@@ -627,9 +540,8 @@ struct SettingsContractCapabilities: Codable, Hashable, Sendable {
     let scopes: [String]
     let supportsBatchedEffective: Bool
     let supportsIdempotentWrites: Bool
-    /// Revision-5 semantic shortcut mutations. Whole-document shortcut PUTs
-    /// are intentionally not a safe fallback because concurrent clients can
-    /// otherwise replace one another's pins.
+    /// Revision 5 shortcut mutations. Whole-document shortcut writes aren't a
+    /// safe fallback: concurrent clients would replace each other's pins.
     let supportsAtomicShortcuts: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -672,36 +584,24 @@ struct SettingsContractCapabilities: Codable, Hashable, Sendable {
         scopes = try container.decode([String].self, forKey: .scopes)
         supportsBatchedEffective = try container.decode(Bool.self, forKey: .supportsBatchedEffective)
         supportsIdempotentWrites = try container.decode(Bool.self, forKey: .supportsIdempotentWrites)
-        // Older capability payloads predate the flag. Missing must fail
-        // closed, never silently opt into the atomic-only UI.
-        supportsAtomicShortcuts = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .supportsAtomicShortcuts
-        ) ?? false
+        // Older payloads predate the flag, and missing must fail closed.
+        supportsAtomicShortcuts = try container.decodeIfPresent(Bool.self, forKey: .supportsAtomicShortcuts) ?? false
     }
 
-    /// True when this build was generated from a newer manifest than the
-    /// server serves — the client must hide definitions the server does not
-    /// know rather than offer a choice it will refuse.
+    /// True when this build's manifest is newer than the server's, so
+    /// definitions the server doesn't know must be hidden.
     var contractIsAheadOfServer: Bool {
         SettingKey.revision > revision
     }
 
     var supportsUICustomizationRevision: Bool {
-        revision >= 5
-            && supportsBatchedEffective
-            && supportsIdempotentWrites
+        revision >= 5 && supportsBatchedEffective && supportsIdempotentWrites
     }
 }
 
-/// The result of probing the canonical settings contract.
-///
-/// A server that predates the canonical settings API has no
-/// `/api/v1/settings/contract` routes at all, while one on an older contract
-/// revision lacks definitions this build exposes. Both are actionable states:
-/// the UI must say "this server needs an upgrade" rather than render an empty
-/// or incomplete settings screen, so they are a typed case here instead of
-/// dissolving into the generic error path.
+/// The result of probing the settings contract. A server too old for the
+/// canonical API (or for this build's manifest) is its own case, so the UI
+/// can ask for a server upgrade instead of showing an empty screen.
 enum SettingsCapabilitiesResult: Equatable, Sendable {
     case available(SettingsContractCapabilities)
     case serverUpgradeRequired
@@ -716,15 +616,14 @@ enum SettingsCapabilitiesResult: Equatable, Sendable {
 /// The outcome of one write.
 struct SettingValueWriteReceipt: Equatable, Sendable {
     let value: StoredSettingValue
-    /// True when the server replayed a receipt it had already recorded for
-    /// this mutation id instead of applying the write again. The value is what
-    /// was written then, so `revision` is not meaningful on a replay.
+    /// True when the server replayed the receipt it recorded for this
+    /// mutation id instead of writing again. `revision` means nothing then.
     let isIdempotentReplay: Bool
 }
 
 // MARK: - Request body
 
-/// `PUT /settings/values/{key}` takes `{"value": …}`.
+/// The body of `PUT /settings/values/{key}`: `{"value": ...}`.
 struct SettingValueWriteRequest: Encodable, Sendable {
     let value: SettingJSONValue
 
@@ -735,43 +634,38 @@ struct SettingValueWriteRequest: Encodable, Sendable {
 
 // MARK: - Errors
 
-/// The failure modes of the canonical settings API, named rather than left as
-/// a status code so callers can act on them.
+/// The settings API's failures, named so callers can act on them.
 enum SettingsAPIError: Error, Equatable, Sendable {
-    /// The server does not serve the canonical settings routes at all.
+    /// The server doesn't serve the canonical settings routes.
     case serverUpgradeRequired
-    /// A profile-scoped call was made with no profile selected. Caught before
-    /// the request so the UI gets this instead of the server's generic 400.
+    /// A profile-scoped call with no profile selected, caught before the
+    /// request instead of the server's generic 400.
     case profileRequired
-    /// The key is not in the server's contract.
+    /// The key isn't in the server's contract.
     case unknownSetting(key: String)
-    /// The key is device-local and is never stored by the server.
+    /// The key is device-local and never stored by the server.
     case clientLocalSetting(key: String)
-    /// The contract does not allow this key at this scope.
+    /// The contract doesn't allow this key at this scope.
     case scopeNotAllowed(key: String, scope: SettingScope)
     /// The value failed the contract's schema.
     case invalidValue(message: String)
-    /// This mutation id was already used for a *different* write. Retrying
-    /// with a fresh id is wrong: work out which write actually landed first.
+    /// The mutation id was already used for a different write. Don't retry
+    /// with a fresh id: work out which write landed first.
     case mutationIdConflict
     /// Nothing is stored at the addressed scope.
     case noValueAtScope
     /// Any other HTTP failure, with the server's error envelope when present.
     case server(status: Int, code: String?, message: String?)
-    /// The request never reached the server, or the response did not parse.
+    /// The request never reached the server, or the reply didn't parse.
     case transport(description: String)
 
-    /// Maps a transport error onto the contract's vocabulary.
+    /// Maps any error onto the contract's vocabulary.
     ///
-    /// A 404 is the interesting one, and the distinction is the *envelope*,
-    /// not the status. Silo's own handlers always answer with
-    /// `{"error":…,"message":…}`, so a 404 carrying one came from a route that
-    /// exists — "unknown key", "nothing stored here", or some code this build
-    /// has not learned yet. A 404 with no envelope is chi's router saying the
-    /// route is not mounted at all, which on these paths means one thing: the
-    /// server predates the canonical settings API. Treating every 404 as
-    /// "upgrade your server" would tell a user to upgrade because they asked
-    /// for a key that does not exist.
+    /// For a 404 the envelope decides, not the status: Silo's handlers always
+    /// answer with `{"error":...,"message":...}`, so a 404 with one came from
+    /// a mounted route (unknown key, nothing stored). A 404 without one is the
+    /// router saying the route doesn't exist, which here means the server
+    /// predates the canonical settings API.
     static func from(_ error: Error, key: String? = nil, scope: SettingScope? = nil) -> SettingsAPIError {
         if let settingsError = error as? SettingsAPIError {
             return settingsError
@@ -807,12 +701,9 @@ enum SettingsAPIError: Error, Equatable, Sendable {
 
 // MARK: - Idempotency
 
-/// A fresh idempotency key for one settings write.
-///
-/// Generate one per logical write and hold it across retries: the server
-/// replays the recorded receipt for a repeated id with identical content, and
-/// rejects the id with 409 `mutation_id_conflict` when it was used for
-/// different content. Generating a new id per retry would defeat both.
+/// A fresh idempotency key for one logical settings write. Keep it across
+/// retries: the server replays the receipt for a repeated id with the same
+/// content and answers 409 `mutation_id_conflict` for different content.
 func newSettingMutationId() -> String {
     UUID().uuidString
 }

@@ -392,11 +392,7 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         Task.detached { [weak self] in
             let headers = await source.refresh()
             if let headers { source.update(headers) }
-            guard let self else { return }
-            self.condition.lock()
-            self.refreshFinished = true
-            self.condition.broadcast()
-            self.condition.unlock()
+            self?.finishRefresh()
         }
         while !refreshFinished, !cancelled {
             guard condition.wait(until: deadline) else { break }
@@ -404,6 +400,14 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         let finished = refreshFinished
         refreshInFlight = false
         return finished && !cancelled
+    }
+
+    /// Wakes the read waiting in `refreshLocked`.
+    private func finishRefresh() {
+        condition.lock()
+        refreshFinished = true
+        condition.broadcast()
+        condition.unlock()
     }
 
     fileprivate func receive(response: URLResponse, generation: Int) -> URLSession.ResponseDisposition {

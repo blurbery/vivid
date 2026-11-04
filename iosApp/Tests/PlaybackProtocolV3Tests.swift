@@ -2297,4 +2297,14 @@ final class PlaybackProtocolV3Tests: XCTestCase {
             srcId: srcId
         )
     }
+
+    func testRealtimePayloadIntSkipsNumbersOutsideIntRange() throws {
+        let message = #"{"type":"event","session_id":"s","name":"subtitle_ready","payload":{"file_id":1e300,"fallback":7.9,"big":-1e19}}"#
+        guard case .event(let event)? = parsePlaybackRealtimeInboundMessage(Data(message.utf8)) else {
+            return XCTFail("The event should parse")
+        }
+        XCTAssertNil(event.payload.int(forKeys: "file_id"))
+        XCTAssertNil(event.payload.int(forKeys: "big"))
+        XCTAssertEqual(event.payload.int(forKeys: "file_id", "fallback"), 7)
+    }
 }

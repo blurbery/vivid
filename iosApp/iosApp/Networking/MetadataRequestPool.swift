@@ -1,10 +1,10 @@
 import Foundation
 
-/// Coalesces only callers that are concurrently waiting for the same value.
+/// Joins callers that are waiting for the same value at the same time.
 ///
-/// This is intentionally not a response cache. A completed flight is removed,
-/// failures are retryable, and mutation/polling code can keep using
-/// `VividAPI` directly when it requires a new server read.
+/// This isn't a cache: a finished flight is removed, failures can be retried
+/// straight away, and code that needs a fresh server read (mutations,
+/// polling) can keep calling `VividAPI` directly.
 actor MetadataSingleFlight<Key: Hashable & Sendable, Value> {
     private struct Flight {
         let task: Task<Value, Error>
@@ -42,10 +42,10 @@ actor MetadataSingleFlight<Key: Hashable & Sendable, Value> {
         return try result.get()
     }
 
-    /// A shared request survives one view disappearing while another still
-    /// needs it. When the final waiter goes away, stop work that no screen can
-    /// consume. The waiter UUID also prevents a late completion from removing
-    /// a replacement flight for the same key.
+    /// A shared request outlives one screen going away while another still
+    /// wants it; once the last waiter has gone, the work is stopped. Matching
+    /// on the waiter's ID keeps a late cancellation from removing a newer
+    /// flight for the same key.
     private func cancelWaiter(_ waiterID: UUID, for key: Key) {
         guard var flight = flights[key], flight.waiters.remove(waiterID) != nil else {
             return
@@ -70,13 +70,13 @@ actor MetadataSingleFlight<Key: Hashable & Sendable, Value> {
     }
 }
 
-/// Opt-in shared flights for steady-state metadata reads.
+/// Shared flights for everyday metadata reads, used where callers opt in.
 ///
-/// Keys include the nonsecret account credential generation and profile so a
-/// profile/server transition cannot join a request dispatched for the prior
-/// identity. Callers whose freshness depends on an external revision can add
-/// that revision to `itemDetail`; mutation pollers should bypass this type and
-/// call `VividAPI` directly.
+/// Keys include the account's credential generation (not the credential
+/// itself) and the profile, so a request made after a profile or server
+/// switch never joins one sent for the previous identity. Callers whose
+/// freshness depends on an outside revision pass it as the item detail's
+/// `freshnessDiscriminator`; mutation pollers call `VividAPI` directly.
 final class MetadataRequestPool: @unchecked Sendable {
     static let shared = MetadataRequestPool()
 
@@ -136,16 +136,9 @@ final class MetadataRequestPool: @unchecked Sendable {
     }
 
     func episodes(seriesId: String, seasonNumber: Int) async throws -> EpisodesResponse {
-        let key = EpisodesKey(
-            scope: await requestScope(),
-            seriesID: seriesId,
-            seasonNumber: seasonNumber
-        )
+        let key = EpisodesKey(scope: await requestScope(), seriesID: seriesId, seasonNumber: seasonNumber)
         return try await episodesFlights.value(for: key) {
-            try await VividAPI.shared.episodes(
-                seriesId: seriesId,
-                seasonNumber: seasonNumber
-            )
+            try await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: seasonNumber)
         }
     }
 

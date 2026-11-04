@@ -1,10 +1,17 @@
 #if os(tvOS) || os(iOS)
 import Foundation
 
+/// Which Home rows feed the spotlight, up to three, saved for each server
+/// and profile. Separate from which rows Home shows.
 @Observable
 @MainActor
 final class TVHomeSpotlightPreferences {
     static let shared = TVHomeSpotlightPreferences()
+
+    private static let maximumRows = 3
+    private static let maximumSlides = 10
+
+    /// nil until a choice is saved; Home then uses its first three rows.
     private(set) var selectedRowIDs: [String]?
     private var loadedKey: String?
     private let defaults = SharedDefaults.shared
@@ -15,46 +22,35 @@ final class TVHomeSpotlightPreferences {
         let key = storageKey
         guard force || key != loadedKey else { return }
         loadedKey = key
-        selectedRowIDs = key.flatMap { key in
-            defaults.data(forKey: key).flatMap {
-                try? JSONDecoder().decode([String].self, from: $0)
-            }
-        }.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(3)) }
+        selectedRowIDs = key.flatMap(Self.savedRowIDs(forKey:))
     }
 
     static func savedRowIDs(server: String, profile: String) -> [String]? {
-        let key = "tvos.homeSpotlight.v1.\(server).\(profile)"
-        return SharedDefaults.shared.data(forKey: key).flatMap {
-            try? JSONDecoder().decode([String].self, from: $0)
-        }.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(3)) }
+        savedRowIDs(forKey: storageKey(server: server, profile: profile))
     }
 
-    /// Spotlight uses the same combined row choice as Home, independently
-    /// of Home visibility and its visible-row cap.
+    /// The rows the spotlight can draw from, with Continue Watching and Next
+    /// Up combined when Home combines them, regardless of which rows Home
+    /// shows or its row limit.
     func sourceSections(from sections: [ResolvedSection]) -> [ResolvedSection] {
         let home = HomeSectionPreferences.shared
         home.refresh()
         let provider = MediaServerProvider.active
-        let enabled = provider == .jellyfin ? home.combineJellyfinNextUp : home.combineEmbyNextUp
-        return Self.projectedSources(sections, combined: enabled, provider: provider)
+        let combined = provider == .jellyfin ? home.combineJellyfinNextUp : home.combineEmbyNextUp
+        return Self.projectedSources(sections, combined: combined, provider: provider)
     }
 
+    /// Home's combined rows. On Emby and Jellyfin the combined Continue
+    /// Watching row takes turns between resume and next-up items, so a full
+    /// resume row can't crowd every next episode out of the ten slides.
     nonisolated static func projectedSources(_ sections: [ResolvedSection], combined: Bool,
                                              provider: MediaServerProvider) -> [ResolvedSection] {
         let projected = HomeSectionPreferences.combinedSections(sections, enabled: combined, provider: provider)
         guard combined, provider.usesNativeUser else { return projected }
-        let rows = sections.filter { $0.sectionType == "continue_watching" }
+        let sources = sections.filter { $0.sectionType == "continue_watching" }
             + sections.filter { $0.sectionType == "next_up" }
         var seen = Set<String>()
-        var items: [SectionItem] = []
-        // Include both sources within Spotlight's ten-slide budget instead of
-        // allowing a full resume row to crowd out every next-up episode.
-        for index in 0..<(rows.map { $0.items.count }.max() ?? 0) {
-            for row in rows where row.items.indices.contains(index) {
-                let item = row.items[index]
-                if seen.insert(item.contentId).inserted { items.append(item) }
-            }
-        }
+        let items = interleaved(sources).filter { seen.insert($0.item.contentId).inserted }.map(\.item)
         return projected.map { row in
             guard row.sectionType == "continue_watching" else { return row }
             return ResolvedSection(id: row.id, sectionType: row.sectionType, title: row.title,
@@ -63,6 +59,9 @@ final class TVHomeSpotlightPreferences {
         }
     }
 
+    /// Saves a first choice of the first three rows with items, and starts
+    /// over when none of the saved rows exists any more. A saved Next Up row
+    /// that Home has merged into Continue Watching becomes the combined row.
     func initializeIfNeeded(from sections: [ResolvedSection]) {
         refresh()
         let sources = sourceSections(from: sections)
@@ -70,30 +69,33 @@ final class TVHomeSpotlightPreferences {
         if let selectedRowIDs, sections.contains(where: { $0.sectionType == "next_up" }),
            !sources.contains(where: { $0.sectionType == "next_up" }),
            let combined = sources.first(where: { $0.sectionType == "continue_watching" }) {
-            let mergedIDs = Set(sections.filter { $0.sectionType == "continue_watching" || $0.sectionType == "next_up" }.map(\.id))
+            let mergedIDs = Set(sections
+                .filter { $0.sectionType == "continue_watching" || $0.sectionType == "next_up" }
+                .map(\.id))
             var seen = Set<String>()
-            let normalized = selectedRowIDs.map { mergedIDs.contains($0) ? combined.id : $0 }
+            let normalised = selectedRowIDs.map { mergedIDs.contains($0) ? combined.id : $0 }
                 .filter { seen.insert($0).inserted }
-            if normalized != selectedRowIDs { save(normalized) }
+            if normalised != selectedRowIDs { save(normalised) }
         }
         guard !candidates.isEmpty, storageKey != nil else { return }
-        if let selectedRowIDs, !selectedRowIDs.isEmpty {
-            let available = Set(sources.map(\.id))
-            if selectedRowIDs.allSatisfy({ !available.contains($0) }) {
-                save(Array(candidates.prefix(3).map(\.id)))
-                return
-            }
+        let firstChoice = candidates.prefix(Self.maximumRows).map(\.id)
+        guard let selectedRowIDs else {
+            save(firstChoice)
+            return
         }
-        guard selectedRowIDs == nil else { return }
-        save(Array(candidates.prefix(3).map(\.id)))
+        let available = Set(sources.map(\.id))
+        if !selectedRowIDs.isEmpty, selectedRowIDs.allSatisfy({ !available.contains($0) }) {
+            save(firstChoice)
+        }
     }
 
+    /// Adds or removes a row. A fourth row is ignored.
     func toggle(_ rowID: String) {
         refresh()
         var ids = selectedRowIDs ?? []
         if ids.contains(rowID) {
             ids.removeAll { $0 == rowID }
-        } else if ids.count < 3 {
+        } else if ids.count < Self.maximumRows {
             ids.append(rowID)
         } else {
             return
@@ -103,35 +105,53 @@ final class TVHomeSpotlightPreferences {
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
     }
 
+    /// Up to ten slides, taking turns between the chosen rows and skipping
+    /// items already shown.
     func slides(from sections: [ResolvedSection]) -> [TVHomeSpotlightSlide] {
         let projected = sourceSections(from: sections)
-        let ids = selectedRowIDs ?? Array(projected.prefix(3).map(\.id))
+        let ids = selectedRowIDs ?? projected.prefix(Self.maximumRows).map(\.id)
+        let nextUpMerged = !projected.contains { $0.sectionType == "next_up" }
         let sources = ids.compactMap { id -> ResolvedSection? in
             if let row = projected.first(where: { $0.id == id }) { return row }
-            if sections.contains(where: { $0.id == id && $0.sectionType == "next_up" }),
-               !projected.contains(where: { $0.sectionType == "next_up" }) {
+            // A chosen Next Up row now lives in the combined Continue Watching row.
+            if nextUpMerged, sections.contains(where: { $0.id == id && $0.sectionType == "next_up" }) {
                 return projected.first { $0.sectionType == "continue_watching" }
             }
             return nil
         }
-        var slides: [TVHomeSpotlightSlide] = []
         var seen = Set<String>()
-        let longestRow = sources.map { $0.items.count }.max() ?? 0
-        for index in 0..<longestRow {
-            for section in sources where section.items.indices.contains(index) {
-                let item = section.items[index]
-                guard seen.insert(item.contentId).inserted else { continue }
-                slides.append(TVHomeSpotlightSlide(item: item, rowID: section.id, rowTitle: section.title))
-                if slides.count == 10 { return slides }
+        return Array(Self.interleaved(sources)
+            .filter { seen.insert($0.item.contentId).inserted }
+            .prefix(Self.maximumSlides)
+            .map { TVHomeSpotlightSlide(item: $0.item, rowID: $0.row.id, rowTitle: $0.row.title) })
+    }
+
+    /// Each row's first item, then each row's second, and so on.
+    nonisolated private static func interleaved(_ rows: [ResolvedSection]) -> [(item: SectionItem, row: ResolvedSection)] {
+        let longest = rows.map(\.items.count).max() ?? 0
+        return (0..<longest).flatMap { index in
+            rows.compactMap { row -> (item: SectionItem, row: ResolvedSection)? in
+                row.items.indices.contains(index) ? (row.items[index], row) : nil
             }
         }
-        return slides
     }
 
     private var storageKey: String? {
         guard let profile = AuthService.shared.profileId, !profile.isEmpty,
               let server = ServerRegistry.shared.activeServerId else { return nil }
-        return "tvos.homeSpotlight.v1.\(server).\(profile)"
+        return Self.storageKey(server: server, profile: profile)
+    }
+
+    nonisolated private static func storageKey(server: String, profile: String) -> String {
+        "tvos.homeSpotlight.v1.\(server).\(profile)"
+    }
+
+    /// The saved choice without repeats, at most three rows.
+    private static func savedRowIDs(forKey key: String) -> [String]? {
+        guard let data = SharedDefaults.shared.data(forKey: key),
+              let ids = try? JSONDecoder().decode([String].self, from: data) else { return nil }
+        let unique = NSOrderedSet(array: ids).array.compactMap { $0 as? String }
+        return Array(unique.prefix(maximumRows))
     }
 
     private func save(_ ids: [String]) {
@@ -147,52 +167,63 @@ struct TVHomeSpotlightSlide: Identifiable, Codable, Equatable {
     let rowID: String
     let rowTitle: String
     var id: String { item.contentId }
+
     #if os(tvOS)
+    /// The slide's text and artwork, with an episode's series background
+    /// once it's known.
     @MainActor var content: TVMarqueeContent {
         TVMarqueeContent(item: item, backdropUrl: HomeSeriesBackdrops.shared.art(for: item).url,
                          rowId: rowID, rowTitle: rowTitle)
     }
     #endif
 }
-/// Device-local card choices for Home, isolated by server and viewing profile.
-/// Home posters are always Large; only the captions can be chosen.
+
+/// Home card captions on this device, for each server and profile. Home
+/// posters are always Large; only the caption can be chosen.
 @Observable
 @MainActor
 final class TVHomeCardPreferences {
     static let shared = TVHomeCardPreferences()
+
+    /// Bumped on every change, so readers see it.
     private var revision = 0
     private let defaults = SharedDefaults.shared
-    private var key: String? {
+    /// Cards read `presentation` many times per body, so it's worked out once
+    /// per profile key and revision.
+    @ObservationIgnored private var cachedPresentation: (key: String?, revision: Int, value: CardPresentationPreference)?
+
+    private var captionKey: String? {
         guard let server = ServerRegistry.shared.activeServerId,
               let profile = AuthService.shared.profileId else { return nil }
-        return "tvos.homeCards.v1.\(server).\(profile)"
+        return "tvos.homeCards.v1.\(server).\(profile).captions"
     }
-    /// Cards read `presentation` many times per body. Read it once per
-    /// profile key and revision instead of on every access.
-    @ObservationIgnored private var cachedPresentation: (key: String?, revision: Int, value: CardPresentationPreference)?
+
     /// A poster size saved by an older build, or synced from a device still
     /// running one, is ignored.
     var presentation: CardPresentationPreference {
         let revision = revision
-        let key = key
+        let key = captionKey
         if let cached = cachedPresentation, cached.key == key, cached.revision == revision {
             return cached.value
         }
-        let caption = key.flatMap { defaults.string(forKey: $0 + ".captions") }
+        let caption = key.flatMap { defaults.string(forKey: $0) }
             .flatMap(CardCaptionStyle.init(rawValue:)) ?? .titleMetadata
         let value = CardPresentationPreference(posterSize: .large, caption: caption)
         cachedPresentation = (key, revision, value)
         return value
     }
+
     func cloudPreferencesChanged() { revision += 1 }
+
     func setCaptionStyle(_ caption: CardCaptionStyle) {
-        guard let key else { return }
-        defaults.set(caption.rawValue, forKey: key + ".captions")
+        guard let captionKey else { return }
+        defaults.set(caption.rawValue, forKey: captionKey)
         revision += 1
     }
+
     func reset() {
-        guard let key else { return }
-        defaults.removeObject(forKey: key + ".captions")
+        guard let captionKey else { return }
+        defaults.removeObject(forKey: captionKey)
         revision += 1
     }
 }

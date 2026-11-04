@@ -129,7 +129,7 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | `PlaybackSessionRecorder.swift` | iOS only, on the main actor: calls the static external-display role test on every connected scene's session role to fill the latest-playback report's `externalScreen` field. |
 | `iosApp/Tests/VividPlayerCoreTests.swift` | Among its tests, conforms a recorder to the delegate protocol, creates bare base instances, assigns `delegate`, calls `dispatchDelegateProperty` and `dispatchDelegateEvent` from a private serial queue entered with `sync` from the main actor, and calls `beginDisposal()`. |
 | `iosApp/Tests/PlayerSurfaceLayoutTests.swift` | Through the adapter, with real media in the simulator, asserts that the PiP source's layer is the core's `sampleBufferDisplayLayer`; that `layer.superlayer?.superlayer` is the host view's layer; that the layer reports `isReadyForDisplay` within 15 seconds; that layout and preview cycles leave the paused state and position unchanged; that the same layer survives presentation changes within one load; that a successor load has a different layer; and that the video route is the sample-buffer route with no `AVPlayer`. |
-| `scripts/tests/mpv-track-tests.py` | Slices the text of `VividMPVPlayer.stop()` between the line that clears the core's delegate and the line that resets the core and proxy, and runs it against a stand-in with `delegate` and `dispose(preserveDisplayCriteria:completion:)`. The text of `stop()` must not change. |
+| `scripts/tests/mpv-track-tests.py` | Copies the adapter's private `retireCore(resetDisplayCriteria:)` method, which `stop()` calls to clear the core's delegate, dispose it and release the audio session, and runs it against a stand-in. The stand-in provides everything the method uses: `core` with its `delegate` and `dispose(preserveDisplayCriteria:completion:)`, `audioSessionToken`, `deactivatesAudioSessionOnStop`, the `audioTeardown` and `audioSessionOwner` statics and `AVAudioSession.sharedInstance()`. A new member used in the method needs a matching stand-in. |
 
 No other file, script, plist or workflow names anything the bridge declares. `VividPlaybackBoundaryTests` and `VividPlaybackStatsProjectionTests` also drive real media through the bridge, via the adapter (section 16.1).
 
@@ -215,7 +215,7 @@ Until the switch-over, a selection file (`iosApp/iosApp/Playback/MPV/VividBridge
 
 | File | Uses |
 | --- | --- |
-| `VividMPVPlayer.swift` | `VividMPVCore` subclasses `VividPlayerCore`; `VividMPVDelegate` conforms to `VividPlayerCoreDelegate`; `VividMPVHostView.core` is a `VividPlayerCore?`. Nothing in `stop()` changed. |
+| `VividMPVPlayer.swift` | `VividMPVCore` subclasses `VividPlayerCore`; `VividMPVDelegate` conforms to `VividPlayerCoreDelegate`; `VividMPVHostView.core` is a `VividPlayerCore?`. The bridge switch-over changed nothing in `stop()`; its teardown later moved into `retireCore(resetDisplayCriteria:)`. |
 | `LucidSubtitleInventory.swift` | Converts the track list with a bare `VividPlayerCoreBase()`. |
 | `PlaybackSessionRecorder.swift` | Calls the role test on `VividExternalDisplay`. |
 
@@ -417,7 +417,7 @@ For context only (Vivid-owned, not rewritten), the adapter's options hook then s
 | `http-header-fields` | set with `mpv_set_option` and `MPV_FORMAT_NODE` as a string array |
 | `vividstream` protocol | registered with `mpv_stream_cb_add_ro` when the managed reader applies |
 
-The first group is applied by iterating a Swift dictionary, so its order is unspecified and must not matter. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
+The first group is applied as a fixed, ordered list, but its order must not matter, because these options are independent. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
 
 ### 6.4 Log level and log messages
 
@@ -1197,7 +1197,7 @@ The bridge prints only these lines, with Swift `print` to standard output (tvOS 
 | `mpv_initialize` failed | One line, starting with the tag, giving the `mpv_error_string` of the status. Wording free. |
 | `checkError` sees a negative status | Exactly `[VividPlayerCore] MPV error: <mpv_error_string>`, then ` option=<name>` when an option name was passed, then ` at <file>:<line>` from the `file` and `line` parameters. |
 
-`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its dictionary group and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The previous bridge used a different tag; nothing in the repository depends on the tag.
+`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its first group, the enhancement options and `tls-verify`, and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The previous bridge used a different tag; nothing in the repository depends on the tag.
 
 ### 10.3 Strings other code reads
 
@@ -1809,7 +1809,7 @@ Values and flags:
 - The three coalescing scenarios of section 6.10 are in `VividPlayerCoreTests`. An identical copy that tested whichever bridge the selection file chose was removed at the switch-over.
 - These engine-level tests drive real media through the bridge, via the adapter: `PlayerSurfaceLayoutTests` (section 4.1); `VividPlaybackBoundaryTests`, including `testInitialAudioOrdinalResolvesInsideTheFirstOpen` (the `on_preloaded` choice end to end) and `testEmbeddedPickerTracksRemainSelectableAfterPrimaryClears`; and `VividPlaybackStatsProjectionTests.testSimulatorPlaybackKeepsTransportWorkingThroughTelemetryUpdates` (in both test targets). The complete iOS suite (normal and optimised builds, as `.github/workflows/player-regression.yml` runs them) and the tvOS suite passed on simulators with the new bridge selected before the switch-over.
 - The behaviours under "Display criteria" in section 16.2 are covered by `VividPlayerDisplayCriteriaTests`, and playback-end recovery by `PlaybackEndRecoveryTests` and `VividEndOfStreamConfirmationTests`. The text-extraction script that checked the previous bridge's base file was removed at the switch-over.
-- `scripts/tests/mpv-track-tests.py` needs no change: the text of `VividMPVPlayer.stop()` stays identical.
+- `scripts/tests/mpv-track-tests.py` runs the adapter's own `retireCore(resetDisplayCriteria:)` method, which `stop()` calls, against stand-ins.
 
 ### 16.2 Automated (unit-testable) behaviours
 

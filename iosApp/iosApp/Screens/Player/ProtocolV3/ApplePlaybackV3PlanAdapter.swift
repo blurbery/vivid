@@ -1,5 +1,6 @@
 import Foundation
 
+/// A Protocol V3 plan with the attempt it belongs to.
 struct PreparedPlaybackV3: Equatable {
     let playbackAttemptId: String
     let planAttemptId: String
@@ -39,13 +40,18 @@ enum ApplePlaybackV3PlanError: LocalizedError, Equatable {
     }
 }
 
+/// Checks Protocol V3 plans against what the Apple apps can play, and maps
+/// them onto the player's session, picker and subtitle identities.
 enum ApplePlaybackV3PlanAdapter {
-    /// Recipes Vivid executes internally on an `original_http` load. Selecting
-    /// one changes nothing about how the load is issued — Vivid re-derives the
-    /// route from the bitstream and the live panel — so validation here only
-    /// confirms the server picked something this build can honour.
+    /// Recipes Lucid runs itself on an `original_http` load. Choosing one
+    /// doesn't change how the load is issued (Lucid works the route out from
+    /// the bitstream and the live panel), so validation only checks the
+    /// server picked one this build can honour.
     private static let clientTransformations = ["client_dv7_to_dv81", "client_dv7_to_hdr10"]
 
+    /// Throws unless the plan's delivery, transport, client transformation
+    /// (at most one, on `original_http`), embedded subtitle and runtime
+    /// corrections (none) are all ones this client can carry out.
     static func validate(_ plan: PlaybackV3Plan) throws {
         guard PlaybackProtocolV3.PlanDelivery.supported.contains(plan.delivery) else {
             throw ApplePlaybackV3PlanError.unsupportedDelivery(plan.delivery)
@@ -136,18 +142,15 @@ enum ApplePlaybackV3PlanAdapter {
                 url: url
             )
         }
-        // Inventory is authoritative in the neutral contract. Keep a narrow
-        // fallback for a selected sidecar artifact so an otherwise executable
-        // plan does not lose its active subtitle if a transitional server
-        // omitted that one inventory URL.
+        // The inventory is authoritative. A narrow fallback keeps the selected
+        // sidecar artefact when a transitional server left its inventory URL
+        // out, so an otherwise playable plan doesn't lose its subtitle.
         if let artifact = plan.subtitle.artifact,
            let selectedIndex = plan.selectedSubtitleCombinedIndex,
            !subtitleUrls.contains(where: { $0.index == selectedIndex }) {
-            // §8: the inventory is authoritative. Describe the track from its
-            // own entry when the server published one — a `burn_in_only` entry
-            // has no URL but still carries the correct identity. Only fall back
-            // to the counted catalog lookup when the inventory names no entry
-            // for this ordinal at all.
+            // Describe the track from its own inventory entry when there is
+            // one (a `burn_in_only` entry has no URL but the right identity),
+            // and from the counted catalogue only when there isn't.
             let published = plan.selectedSubtitleInventoryItem
             let selected = published == nil
                 ? subtitleTrack(atServerCombinedIndex: selectedIndex, in: selectedVersion)
@@ -199,11 +202,11 @@ enum ApplePlaybackV3PlanAdapter {
         )
     }
 
-    /// Keeps Vivid authoritative when it publishes audio tracks, but fills
-    /// the picker from the selected catalog version when a remote V3 route
-    /// exposes only its packaged rendition. Audio changes on that route are
-    /// already server-owned replans, so each fallback row carries the catalog
-    /// ordinal in `srcId` and the plan's selected ordinal drives the checkmark.
+    /// The engine's audio tracks when it lists any. A packaged V3 route only
+    /// exposes its one rendition, so the picker then lists the catalogue's
+    /// tracks instead: changing audio there is a server replan, so each row
+    /// carries its catalogue ordinal in `srcId` and the plan's ordinal is
+    /// ticked.
     static func audioPickerTracks(
         vividTracks: [PlayerTrack],
         plan: PlaybackV3Plan?,
@@ -235,17 +238,17 @@ enum ApplePlaybackV3PlanAdapter {
         }
     }
 
-    /// V3 subtitle identities are external-first combined ordinals. Apple’s
-    /// embedded picker carries FFmpeg stream indices instead, and watch detail
-    /// lists embedded tracks before external tracks, so the wire identity must
-    /// be translated rather than copied.
+    /// V3 subtitle identities are external-first combined ordinals. The
+    /// embedded picker carries FFmpeg stream indexes instead, and the watch
+    /// detail lists embedded tracks before external ones, so the wire
+    /// identity has to be translated rather than copied.
     ///
-    /// This overload derives the embedded base by counting the catalog's
-    /// external tracks, which §8 forbids: the combined space also contains a
-    /// downloaded range the catalog never exposes, and a `burn_in_only` track
-    /// still occupies its ordinal. It is correct only *before* any plan exists
-    /// — the initial start, where there is no inventory to consult yet. Use the
-    /// `inventory:` overload everywhere a plan is in hand.
+    /// This overload counts the catalogue's external tracks to find the
+    /// embedded base, which the contract forbids: the combined space also
+    /// holds stored subtitles the catalogue never lists, and a `burn_in_only`
+    /// track still takes its ordinal. It's only right before any plan exists
+    /// (the first start, with no inventory to read). Use the `inventory:`
+    /// overload whenever there's a plan.
     static func serverCombinedSubtitleIndex(
         ffmpegStreamIndex: Int,
         in version: FileVersion
@@ -263,11 +266,11 @@ enum ApplePlaybackV3PlanAdapter {
     /// Resolves an embedded FFmpeg stream index against the server's published
     /// combined ordinals instead of deriving one.
     ///
-    /// The inventory's `embedded` entries are in container stream order, which
-    /// is the same order the catalog lists them in, so the *n*-th embedded
-    /// catalog track is the *n*-th embedded inventory entry — and that entry
-    /// carries the authoritative `combined_index`. An empty inventory means no
-    /// plan has published one yet, so the counted derivation stands in.
+    /// The inventory's `embedded` entries are in container stream order, as
+    /// the catalogue lists them, so the *n*-th embedded catalogue track is the
+    /// *n*-th embedded inventory entry, which carries the authoritative
+    /// `combined_index`. An empty inventory means no plan has published one
+    /// yet, so the counted version stands in.
     static func serverCombinedSubtitleIndex(
         ffmpegStreamIndex: Int,
         in version: FileVersion,
@@ -300,10 +303,9 @@ enum ApplePlaybackV3PlanAdapter {
         inventory: [PlaybackV3SubtitleInventoryItem]
     ) -> Int? {
         if SubtitleTrackIdSpace.isSidecar(playerTrack.trackId) || playerTrack.isExternal {
-            // A sidecar player track is minted from a published `SubtitleUrl`,
-            // whose `index` *is* the server's combined ordinal — so this is an
-            // echo, not a derivation, and must not be re-mapped through the
-            // inventory's positions.
+            // A sidecar track comes from a published `SubtitleUrl`, whose
+            // `index` is the server's combined ordinal. Echo it; mapping it
+            // through the inventory's positions would be wrong.
             return playerTrack.srcId.flatMap { $0 >= 0 ? $0 : nil }
         }
         guard let ffmpegStreamIndex = playerTrack.ffIndex else { return nil }

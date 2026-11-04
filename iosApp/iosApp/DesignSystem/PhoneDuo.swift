@@ -94,14 +94,17 @@ enum PhoneDuo {
 
     @MainActor static func sideStrip(_ geometry: GeometryProxy) -> SideStrip? {
         guard let edge = sideBarEdge(geometry) else { return nil }
-        // A small view, such as a page's top controls, can't tell the screen
-        // from its own size, so check the window as well.
-        let isInner = isInnerScreen(geometry) || windowSize.map(isInnerScreen) == true
         return SideStrip(
             edge: edge,
             width: edge == .trailing ? geometry.safeAreaInsets.trailing : geometry.safeAreaInsets.leading,
-            isInnerScreen: isInner
+            isInnerScreen: isOnInnerScreen(geometry)
         )
+    }
+
+    /// A small view, such as a page's top controls, can't tell the screen
+    /// from its own size, so this checks the window as well.
+    @MainActor private static func isOnInnerScreen(_ geometry: GeometryProxy) -> Bool {
+        isInnerScreen(geometry) || windowSize.map(isInnerScreen) == true
     }
 
     @MainActor private static var windowSize: CGSize? {
@@ -133,8 +136,7 @@ enum PhoneDuo {
         if let strip = sideStrip(geometry) {
             return ControlCorner(edge: strip.edge, usualTop: strip.usualControlsTop)
         }
-        let isInner = isInnerScreen(geometry) || windowSize.map(isInnerScreen) == true
-        return isInner ? ControlCorner(edge: .trailing, usualTop: 76) : nil
+        return isOnInnerScreen(geometry) ? ControlCorner(edge: .trailing, usualTop: 76) : nil
     }
 
     /// The cover screen, and the inner screen in landscape, put the status

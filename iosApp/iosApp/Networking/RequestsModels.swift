@@ -1,23 +1,33 @@
 import Foundation
 
+// Media request models, shared by Silo's `/api/v1/requests` feature probe and
+// the Seerr connection. This file must compile on its own with Foundation
+// (`scripts/ci/check-seerr-client.sh` builds it next to the Seerr client).
+
+/// A string enum that reads any value it doesn't know as `unknown`, so a
+/// newer server can't fail a whole reply by adding a case.
+protocol RequestWireEnum: RawRepresentable, Decodable where RawValue == String {
+    static var unknown: Self { get }
+}
+
+extension RequestWireEnum {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
 // MARK: - Wire enums
 
-/// Media type for the requests domain (TMDB-shaped: movies + series only).
-/// `.all` exists solely as a search-filter query value; the server never
-/// returns it on a result. Unrecognized values decode as `.unknown` so a
-/// future server addition can't fail the whole payload.
-enum RequestMediaType: String, Codable, Hashable, CaseIterable, Identifiable {
+/// Movies and series only. `.all` is just a search filter value; results
+/// never carry it.
+enum RequestMediaType: String, Codable, Hashable, CaseIterable, Identifiable, RequestWireEnum {
     case movie
     case series
     case all
     case unknown
 
     var id: Self { self }
-
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = RequestMediaType(rawValue: raw) ?? .unknown
-    }
 
     var displayName: String {
         switch self {
@@ -29,9 +39,9 @@ enum RequestMediaType: String, Codable, Hashable, CaseIterable, Identifiable {
     }
 }
 
-/// Lifecycle status of a request (or of one fulfillment target). `failed`
-/// only appears on targets; requests express failure via `outcome`.
-enum RequestStatus: String, Codable, Hashable {
+/// Where a request (or one of its targets) is up to. Only targets use
+/// `failed`; a request shows failure through its `outcome`.
+enum RequestStatus: String, Codable, Hashable, RequestWireEnum {
     case pending
     case approved
     case queued
@@ -39,63 +49,46 @@ enum RequestStatus: String, Codable, Hashable {
     case completed
     case failed
     case unknown
-
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = RequestStatus(rawValue: raw) ?? .unknown
-    }
 }
 
-/// Terminal-vs-active axis, orthogonal to `RequestStatus`: a declined or
-/// cancelled request keeps its last status but flips its outcome.
-enum RequestOutcome: String, Codable, Hashable {
+/// Whether a request is still active. A declined or cancelled request keeps
+/// its last status and changes only this.
+enum RequestOutcome: String, Codable, Hashable, RequestWireEnum {
     case active
     case declined
     case cancelled
     case failed
     case unknown
-
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = RequestOutcome(rawValue: raw) ?? .unknown
-    }
 }
 
-enum RequestAvailability: String, Codable, Hashable {
+enum RequestAvailability: String, Codable, Hashable, RequestWireEnum {
     case missing
     case available
     case unknown
-
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = RequestAvailability(rawValue: raw) ?? .unknown
-    }
 }
 
 // MARK: - Feature status
 
-/// `GET /requests/status` — drives every entry point's visibility.
+/// `GET /api/v1/requests/status`.
 struct RequestsFeatureStatus: Codable {
     let requestsEnabled: Bool
 }
 
-// MARK: - Search / discover results
+// MARK: - Results
 
-/// The compact per-item request state embedded on every search/discover/
-/// detail result, computed server-side for the signed-in user — the client
-/// never has to reason about duplicates or quotas itself.
+/// The signed-in user's request state for one title, worked out by the
+/// server, so the app never reasons about duplicates or quotas itself.
 struct RequestState: Codable, Hashable {
     let status: RequestStatus?
     let requestable: Bool
-    /// Raw server token (`already_requested`, `quota_exceeded`, …) when not
-    /// requestable. Translated to copy via `RequestErrorCopy` — never
-    /// rendered verbatim.
+    /// The server's reason token (`already_requested`, `quota_exceeded` and
+    /// so on) when the title can't be requested. Shown through
+    /// `RequestErrorCopy`, never as is.
     let reason: String?
     let requestId: String?
 }
 
-/// One TMDB search/discover result annotated with this server's
-/// availability + request state.
+/// One search result with its availability on this server and request state.
 struct RequestMediaResult: Codable, Identifiable, Hashable {
     let mediaType: RequestMediaType
     let tmdbId: Int
@@ -120,28 +113,10 @@ struct RequestMediaPage: Codable {
     let results: [RequestMediaResult]
 }
 
-/// One curated TMDB carousel from `GET /requests/discover`. Keys are
-/// server-fixed (`trending_movies`, `popular_series`, …).
-struct RequestDiscoverySection: Codable, Identifiable {
-    let key: String
-    let title: String
-    let page: Int
-    let totalPages: Int
-    let totalResults: Int
-    let results: [RequestMediaResult]
-
-    var id: String { key }
-}
-
-struct RequestDiscoverResponse: Codable {
-    let sections: [RequestDiscoverySection]
-}
-
 // MARK: - Detail
 
-/// Full TMDB detail for a requestable title, annotated like `RequestMediaResult`.
-/// The wire payload also carries a `cast` array — not modeled until a
-/// requests surface renders it.
+/// Everything shown on a requestable title's page, with the same
+/// availability and request state as a result.
 struct RequestMediaDetail: Codable {
     let mediaType: RequestMediaType
     let tmdbId: Int
@@ -170,18 +145,16 @@ struct RequestMediaDetail: Codable {
     let request: RequestState
 }
 
-// MARK: - Request records
+// MARK: - Requests
 
-/// One fulfillment of a request against a single integration at a single
-/// quality; a request fans out to one target per resolved quality.
+/// One request sent to one integration at one quality.
 struct RequestTarget: Codable, Hashable {
     let quality: String?
     let status: RequestStatus
     let lastError: String?
 }
 
-/// Full request record from `/requests/mine`, `/requests/{id}`, and the
-/// create/cancel responses.
+/// A request the user has made.
 struct MediaRequest: Codable, Identifiable, Hashable {
     let id: String
     let mediaType: RequestMediaType
@@ -201,12 +174,7 @@ struct MediaRequest: Codable, Identifiable, Hashable {
     let completedAt: Date?
 }
 
-struct MediaRequestsResponse: Codable {
-    let requests: [MediaRequest]
-}
-
-// MARK: - Mutations
-
+/// What the app sends to create a request.
 struct CreateRequestInput: Encodable {
     let mediaType: RequestMediaType
     let tmdbId: Int
@@ -217,8 +185,4 @@ struct CreateRequestInput: Encodable {
     let overview: String?
     let posterPath: String?
     let backdropPath: String?
-}
-
-struct CancelRequestBody: Encodable {
-    let reason: String?
 }

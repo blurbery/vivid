@@ -1,5 +1,7 @@
 import Foundation
 
+/// The capped quality modes that drop to a lower bitrate once if playback
+/// keeps buffering. Each has a normal option and its fallback option.
 enum PlaybackFallbackMode: String, CaseIterable {
     case ultraHD = "vivid-2160p"
     case fullHD = "vivid-1080p"
@@ -12,7 +14,9 @@ enum PlaybackFallbackMode: String, CaseIterable {
         case .hd: "720p"
         }
     }
+
     var label: String { self == .ultraHD ? "4K" : resolution }
+
     var maximumKbps: Int {
         switch self {
         case .ultraHD: 80_000
@@ -20,6 +24,8 @@ enum PlaybackFallbackMode: String, CaseIterable {
         case .hd: 4_000
         }
     }
+
+    /// The bitrate it drops to while buffering.
     var fallbackKbps: Int {
         switch self {
         case .ultraHD: 20_000
@@ -27,29 +33,39 @@ enum PlaybackFallbackMode: String, CaseIterable {
         case .hd: 1_500
         }
     }
+
     var fallbackID: String { rawValue + "-fallback" }
+
     var detail: String {
         let bitrate = ApplePlaybackQuality.formatBitrate(kbps: fallbackKbps)
         return String(localized: "If buffering: up to \(bitrate).", comment: "Quality option detail: the bitrate it drops to while buffering")
     }
+
     var option: ApplePlaybackQualityOption {
         .init(id: rawValue, label: label, resolution: resolution, bitrateKbps: maximumKbps,
               isOriginal: false, isAuto: false)
     }
+
     var fallbackOption: ApplePlaybackQualityOption {
         .init(id: fallbackID, label: label, resolution: resolution, bitrateKbps: fallbackKbps,
               isOriginal: false, isAuto: false)
     }
+
     var preset: VividQualityPreset {
         .init(id: rawValue, label: label, description: detail, resolution: resolution,
               bitrateKbps: maximumKbps)
     }
+
+    /// The mode whose normal or fallback id this is.
     static func matching(_ id: String?) -> Self? {
         allCases.first { $0.rawValue == id || $0.fallbackID == id }
     }
+
     func isActive(qualityID: String) -> Bool { Self.matching(qualityID) == self }
 }
 
+/// Decides when a fallback mode drops to its lower bitrate: after
+/// ``delay`` seconds of continuous buffering while eligible, once per gate.
 struct PlaybackFallbackGate {
     static let delay: TimeInterval = 8
     private(set) var consumed = false
@@ -62,6 +78,7 @@ struct PlaybackFallbackGate {
         }
         if bufferingSince == nil { bufferingSince = now }
     }
+
     mutating func consumeIfReady(now: TimeInterval, eligible: Bool) -> Bool {
         guard eligible, !consumed, let start = bufferingSince,
               now - start >= Self.delay else { return false }
@@ -71,6 +88,7 @@ struct PlaybackFallbackGate {
     }
 }
 
+/// One quality choice. A zero bitrate means uncapped and is never sent as a cap.
 struct ApplePlaybackQualityOption: Identifiable, Hashable {
     let id: String
     let label: String
@@ -81,12 +99,8 @@ struct ApplePlaybackQualityOption: Identifiable, Hashable {
 
     var subtitle: String? {
         if let mode = PlaybackFallbackMode(rawValue: id) { return mode.detail }
-        if isOriginal {
-            return String(localized: "No transcoding; compatibility required.")
-        }
-        if isAuto {
-            return String(localized: "Direct when possible; transcodes if needed.")
-        }
+        if isOriginal { return String(localized: "No transcoding; compatibility required.") }
+        if isAuto { return String(localized: "Direct when possible; transcodes if needed.") }
         guard bitrateKbps > 0 else { return nil }
         return String(localized: "Up to \(bitrateLabel); may transcode.", comment: "Quality option detail, for example Up to 10 Mbps; may transcode.")
     }
@@ -98,11 +112,14 @@ struct ApplePlaybackQualityOption: Identifiable, Hashable {
     var labelWithBitrate: String {
         if isAuto { return String(localized: "Auto (Recommended)") }
         if isOriginal { return String(localized: "Original Quality") }
-        guard !isOriginal, !isAuto, bitrateKbps > 0 else { return label }
+        guard bitrateKbps > 0 else { return label }
         return String(localized: "\(label) (\(bitrateLabel))", comment: "Quality picker option: preset name and its bitrate, e.g. 1080p High (10 Mbps)")
     }
 }
 
+/// What a V3 request asks for: the id the player shows, the server's
+/// `preferred_quality`, its bandwidth cap, and whether the rung came from
+/// the server's plan rather than the local ladder.
 struct ApplePlaybackV3QualitySelection: Equatable {
     let clientQualityId: String
     let serverPreference: String
@@ -110,10 +127,12 @@ struct ApplePlaybackV3QualitySelection: Equatable {
     let isServerOwned: Bool
 }
 
+/// The Apple apps' quality ladder and the rules that map it onto Protocol V3
+/// plans and the stored settings.
 enum ApplePlaybackQuality {
     static let autoId = "auto"
     static let originalId = "original"
-    /// Contract-supported resolution with no fabricated local bitrate rung.
+    /// The contract's 4K resolution, with no local bitrate rung.
     static let ultraHDId = "2160p"
 
     static let original = ApplePlaybackQualityOption(
@@ -134,8 +153,7 @@ enum ApplePlaybackQuality {
         isAuto: true
     )
 
-    /// A contract resolution cap without an invented bandwidth rung. A zero
-    /// bitrate is a local sentinel for "uncapped" and is never sent as a cap.
+    /// A resolution cap without an invented bandwidth rung.
     static let ultraHD = ApplePlaybackQualityOption(
         id: ultraHDId,
         label: "4K",
@@ -158,27 +176,21 @@ enum ApplePlaybackQuality {
     ]
 
     static let settingsOptions: [ApplePlaybackQualityOption] = [auto, original, ultraHD] + tiers
+    /// Every id a request may name: the Settings options plus each fallback
+    /// mode's two options.
     static let requestOptions: [ApplePlaybackQualityOption] = settingsOptions
         + PlaybackFallbackMode.allCases.flatMap { [$0.option, $0.fallbackOption] }
 
+    /// A stored id as one of ``requestOptions``. `4k` and `uhd` are 4K, the
+    /// old `420p` is `328p`, and anything unknown is Auto.
     static func normalizeStoredId(_ raw: String?) -> String {
-        let value = raw?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
+        let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         switch value {
-        case "", autoId:
-            return autoId
-        case ultraHDId, "4k", "uhd":
-            return ultraHDId
-        case originalId:
-            return originalId
-        case "420p":
-            return "328p"
-        default:
-            if requestOptions.contains(where: { $0.id == value }) {
-                return value
-            }
-            return autoId
+        case "", autoId: return autoId
+        case ultraHDId, "4k", "uhd": return ultraHDId
+        case originalId: return originalId
+        case "420p": return "328p"
+        default: return requestOptions.contains(where: { $0.id == value }) ? value : autoId
         }
     }
 
@@ -194,17 +206,14 @@ enum ApplePlaybackQuality {
         return requestOptions.first(where: { $0.id == id })?.labelWithBitrate ?? id
     }
 
-    /// Build the in-player menu from the server's V3 plan. The server owns
-    /// which rungs are executable for this source; showing the wider Settings
-    /// catalog here would let the user request qualities the active plan never
-    /// offered.
+    /// The in-player menu: Auto, then the rungs the server's V3 plan offers
+    /// for this source, without repeats. The wider Settings ladder isn't
+    /// shown, as the plan couldn't play its other rungs.
     static func playbackOptions(
         serverQualities: [PlaybackV3AvailableQuality],
         fallbackVersion: FileVersion?
     ) -> [ApplePlaybackQualityOption] {
-        guard !serverQualities.isEmpty else {
-            return [auto]
-        }
+        guard !serverQualities.isEmpty else { return [auto] }
         var seen = Set<String>()
         let planned = serverQualities.compactMap { quality -> ApplePlaybackQualityOption? in
             let id = protocolV3QualityId(quality.label)
@@ -213,12 +222,8 @@ enum ApplePlaybackQuality {
             let height = quality.height ?? 0
             return ApplePlaybackQualityOption(
                 id: id,
-                label: playbackLabel(
-                    serverDisplayName: quality.displayName,
-                    id: id,
-                    height: height,
-                    isOriginal: isOriginal
-                ),
+                label: playbackLabel(serverDisplayName: quality.displayName, id: id,
+                                     height: height, isOriginal: isOriginal),
                 resolution: isOriginal || height <= 0 ? "" : "\(height)p",
                 bitrateKbps: max(0, quality.bitrateKbps),
                 isOriginal: isOriginal,
@@ -228,79 +233,57 @@ enum ApplePlaybackQuality {
         return [auto] + planned
     }
 
-    /// Quality labels in an active V3 plan are server-owned identifiers. Keep
-    /// unknown additive rungs instead of coercing them to Auto; only Settings
-    /// persistence uses the closed local catalog in `normalizeStoredId`.
+    /// A V3 plan's quality label as an id. Plan labels belong to the server,
+    /// so unknown rungs are kept as they are rather than becoming Auto; only
+    /// stored settings use the closed list in ``normalizeStoredId(_:)``.
     static func protocolV3QualityId(_ raw: String?) -> String {
-        let value = raw?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-        guard !value.isEmpty else { return autoId }
+        let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         switch value {
-        case "4k", "uhd":
-            return ultraHDId
-        case "420p":
-            return "328p"
-        default:
-            return value
+        case "": return autoId
+        case "4k", "uhd": return ultraHDId
+        case "420p": return "328p"
+        default: return value
         }
     }
 
-    /// Resolve an in-player V3 choice without confusing a server-owned rung
-    /// with a same-named Settings preset. Compound rung labels are exact plan
-    /// identities, and their bitrate comes from that plan rather than Apple's
-    /// independently maintained Settings ladder.
+    /// The V3 request for an in-player choice. A rung the plan offers is sent
+    /// as the plan names it, with the plan's bitrate as the cap (none for the
+    /// source). Anything else is split into the local ladder's axes, so a
+    /// Settings preset sends its resolution and cap.
     static func protocolV3Selection(
         requestedQualityId: String,
         availableQualities: [PlaybackV3AvailableQuality]
     ) -> ApplePlaybackV3QualitySelection {
         let clientQualityId = protocolV3QualityId(requestedQualityId)
         if clientQualityId == autoId {
-            return ApplePlaybackV3QualitySelection(
-                clientQualityId: autoId,
-                serverPreference: autoId,
-                bandwidthCapKbps: nil,
-                isServerOwned: true
-            )
+            return ApplePlaybackV3QualitySelection(clientQualityId: autoId, serverPreference: autoId,
+                                                   bandwidthCapKbps: nil, isServerOwned: true)
         }
-        if let offered = availableQualities.first(where: {
-            protocolV3QualityId($0.label) == clientQualityId
-        }) {
+        if let offered = availableQualities.first(where: { protocolV3QualityId($0.label) == clientQualityId }) {
             let preservesSource = offered.preservesSource || clientQualityId == originalId
             return ApplePlaybackV3QualitySelection(
                 clientQualityId: clientQualityId,
                 serverPreference: clientQualityId,
-                bandwidthCapKbps: preservesSource ? nil : positiveBitrate(offered.bitrateKbps),
+                bandwidthCapKbps: preservesSource || offered.bitrateKbps <= 0 ? nil : offered.bitrateKbps,
                 isServerOwned: true
             )
         }
-
         let axes = AppleQualityAxes.split(clientQualityId)
-        let serverPreference = requestOptions.contains(where: { $0.id == clientQualityId })
-            ? axes.resolution
-            : clientQualityId
+        let isLocalRung = requestOptions.contains(where: { $0.id == clientQualityId })
         return ApplePlaybackV3QualitySelection(
             clientQualityId: clientQualityId,
-            serverPreference: serverPreference,
+            serverPreference: isLocalRung ? axes.resolution : clientQualityId,
             bandwidthCapKbps: axes.bitrateKbps,
             isServerOwned: false
         )
     }
 
-    private static func positiveBitrate(_ bitrateKbps: Int) -> Int? {
-        bitrateKbps > 0 ? bitrateKbps : nil
-    }
-
-    private static func playbackLabel(
-        serverDisplayName: String?,
-        id: String,
-        height: Int,
-        isOriginal: Bool
-    ) -> String {
+    /// Original, the plan's display name, a name for a known height, the
+    /// local rung's label, or a height cap, in that order.
+    private static func playbackLabel(serverDisplayName: String?, id: String, height: Int, isOriginal: Bool) -> String {
         if isOriginal { return String(localized: "Original") }
-        if let serverDisplayName {
-            let normalized = serverDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !normalized.isEmpty { return normalized }
+        if let name = serverDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
         }
         switch height {
         case 2_160: return String(localized: "Up to 4K")
@@ -317,18 +300,18 @@ enum ApplePlaybackQuality {
     ///
     /// Original and the capped modes (including a buffering fallback) carry
     /// over. Auto, a Settings tier and this file's own resolution don't: the
-    /// next episode resolves its quality afresh from Settings, exactly as
-    /// pressing Play on it would, so Auto picks that episode's best version
-    /// (4K or 1080p) and plays it directly instead of being pinned to this
-    /// episode's resolution and transcoded down to it.
+    /// next episode works out its quality from Settings as pressing Play on
+    /// it would, so Auto picks that episode's best version (4K or 1080p) and
+    /// plays it directly instead of transcoding it down to this one's.
     static func nextEpisodeQualityOverride(activeQualityId: String) -> String? {
         let active = protocolV3QualityId(activeQualityId)
-        if active == originalId || PlaybackFallbackMode.matching(active) != nil {
-            return active
-        }
+        if active == originalId || PlaybackFallbackMode.matching(active) != nil { return active }
         return nil
     }
 
+    /// The id the menu marks as playing: the requested one when it's a
+    /// fallback mode or the plan offers it (by id, or for a local rung by
+    /// resolution), otherwise Auto.
     static func activeProtocolV3QualityId(
         requestedQualityId: String?,
         availableQualities: [PlaybackV3AvailableQuality]
@@ -339,15 +322,15 @@ enum ApplePlaybackQuality {
         let requestedResolution = requestOptions.contains(where: { $0.id == requested })
             ? AppleQualityAxes.split(requested).resolution
             : nil
-        return availableQualities.contains(where: { quality in
-            let offered = protocolV3QualityId(quality.label)
-            return offered == requested
-                || requestedResolution.map {
-                    AppleQualityAxes.split(offered).resolution == $0
-                } == true
-        }) ? requested : autoId
+        let offered = availableQualities.contains { quality in
+            let id = protocolV3QualityId(quality.label)
+            return id == requested
+                || requestedResolution.map { AppleQualityAxes.split(id).resolution == $0 } == true
+        }
+        return offered ? requested : autoId
     }
 
+    /// "12 Mbps", "1.5 Mbps" (in the current locale) or "700 kbps".
     static func formatBitrate(kbps: Int) -> String {
         if kbps >= 1000 {
             let mbps = Double(kbps) / 1000.0
@@ -359,5 +342,4 @@ enum ApplePlaybackQuality {
         }
         return String(localized: "\(kbps) kbps", comment: "Bitrate in kilobits per second")
     }
-
 }

@@ -6,6 +6,11 @@ import CoreGraphics
 import SwiftUI
 #endif
 
+/// Home's rows, spotlight slides and library list, saved on the device for
+/// each server, account and profile, so Home paints at once on the next
+/// launch. Only enabled rows are kept, and the artwork they show is warmed
+/// into the disk cache. It's a disposable cache: clearing it removes nothing
+/// from the server.
 @Observable
 @MainActor
 final class TVHomeMetadataCache {
@@ -16,6 +21,7 @@ final class TVHomeMetadataCache {
         let updatedAt: Date
     }
 
+    /// The saved file. Field names and the version are the on-disk format.
     struct Snapshot: Codable {
         var version = 1
         /// The language Vivid showed when this was saved, nil for English:
@@ -26,10 +32,11 @@ final class TVHomeMetadataCache {
         var spotlightUpdatedAt: Date?
         var details: [String: ItemDetail] = [:]
         var libraries: LibrariesResponse?
-        // Optional so existing full Home snapshots remain readable.
+        /// Optional, so snapshots saved before it existed still load.
         var spotlightPreparation: [String: SpotlightPreparation]?
     }
 
+    /// The crop and tint worked out for one spotlight artwork URL.
     struct SpotlightPreparation: Codable, Equatable {
         var cropVersion = 1
         var subject: CGRect?
@@ -37,6 +44,7 @@ final class TVHomeMetadataCache {
         var tint: [Double]?
     }
 
+    /// One entry on the Metadata settings page.
     struct Status: Identifiable {
         let id: String
         let title: String
@@ -44,29 +52,35 @@ final class TVHomeMetadataCache {
         let updatedAt: Date?
     }
 
+    static let spotlightID = "vivid.cache.spotlight"
+    nonisolated private static let maximumSnapshotBytes = 8 * 1024 * 1024
+    nonisolated private static let currentCropVersion = 1
+
     private(set) var snapshot = Snapshot()
     private(set) var storageError: String?
+
+    /// Spotlight crop and tint records, keyed by artwork URL.
     @ObservationIgnored private var preparedSpotlight: [String: SpotlightPreparation] = [:]
     #if os(tvOS)
     @ObservationIgnored private var cropTasks: [String: Task<CGRect?, Never>] = [:]
     @ObservationIgnored private var tintTasks: [String: Task<Color?, Never>] = [:]
     #endif
     @ObservationIgnored private var loadedScope: String?
+    /// Bumped whenever loaded state is replaced or cleared, so work started
+    /// before then can tell it's stale.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var enrichmentTask: Task<Void, Never>?
     @ObservationIgnored private var warmedURLs = Set<URL>()
     @ObservationIgnored private let writer: HomeMetadataWriter
     @ObservationIgnored private let snapshotDirectory: URL?
     @ObservationIgnored private let currentScope: () -> String?
-    @ObservationIgnored private var persistenceRevision: UInt64 = 0
+    /// Bumped on every save, so only the latest save reports its outcome.
+    @ObservationIgnored private var saveRevision: UInt64 = 0
     @ObservationIgnored private var preparedSnapshot: (scope: String, value: Snapshot?)?
     @ObservationIgnored private var preparation: (scope: String, task: Task<Snapshot?, Never>)?
     @ObservationIgnored private let prefetcher = VividImagePrefetcher(
         pipeline: VividImagePipeline.shared, destination: .diskCache, maxConcurrentRequestCount: 2
     )
-
-    nonisolated private static let maximumSnapshotBytes = 8 * 1024 * 1024
-    static let spotlightID = "vivid.cache.spotlight"
 
     init(writer: HomeMetadataWriter = HomeMetadataWriter(), snapshotDirectory: URL? = nil,
          currentScope: @escaping () -> String? = { VividCacheScope.current }) {
@@ -78,13 +92,18 @@ final class TVHomeMetadataCache {
     private var activeScope: String? { currentScope() }
 
     private func fileURL(for scope: String) -> URL {
-        (snapshotDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Vivid/HomeMetadata/v2", isDirectory: true))
-            .appendingPathComponent(scope + ".json")
+        let directory = snapshotDirectory
+            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Vivid/HomeMetadata/v2", isDirectory: true)
+        return directory.appendingPathComponent(scope + ".json")
     }
 
-    /// The existing launch/profile handoff awaits only local I/O. Home can
-    /// still hydrate synchronously from memory before its first render.
+    // MARK: Loading
+
+    /// Reads the current scope's snapshot on the writer queue, so launch and
+    /// profile changes wait only for local I/O. Home can then hydrate from
+    /// memory before its first render. Callers preparing the same scope share
+    /// one read.
     func prepare() async {
         guard let scope = activeScope, scope != loadedScope else { return }
         let expectedGeneration = generation
@@ -103,8 +122,8 @@ final class TVHomeMetadataCache {
         guard !Task.isCancelled, !task.isCancelled,
               generation == expectedGeneration, activeScope == scope,
               loadedScope != scope else { return }
-        // Activate without another await, so no save/clear can slip between
-        // validating this read and applying it. Other waiters are superseded.
+        // Activate without another await, so no save or clear can slip in
+        // between checking this read and applying it.
         preparedSnapshot = (scope, saved)
         activate()
     }
@@ -113,11 +132,14 @@ final class TVHomeMetadataCache {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size <= maximumSnapshotBytes,
               let data = try? Data(contentsOf: url),
-              let value = try? JSONDecoder().decode(Snapshot.self, from: data),
-              value.version == 1, value.language == VividAppLanguage.tmdbLanguage else { return nil }
-        return value
+              let saved = try? JSONDecoder().decode(Snapshot.self, from: data),
+              saved.version == 1,
+              saved.language == VividAppLanguage.tmdbLanguage else { return nil }
+        return saved
     }
 
+    /// Loads the current scope's snapshot, from a prepared read when there
+    /// is one, otherwise by reading it now.
     func activate() {
         let scope = activeScope
         guard loadedScope != scope else { return }
@@ -125,43 +147,38 @@ final class TVHomeMetadataCache {
         deactivate()
         loadedScope = scope
         guard let scope else { return }
-        let url = fileURL(for: scope)
         let saved: Snapshot?
         if let prepared, prepared.scope == scope {
             saved = prepared.value
         } else {
-            // Preserve first paint for direct callers outside startup. Normal
-            // startup and profile selection prepare on the writer queue.
+            // Keeps first paint for direct callers. Startup and profile
+            // selection prepare on the writer queue instead.
+            let url = fileURL(for: scope)
             saved = writer.sync { Self.readSnapshot(at: url) }
         }
         guard let saved else { return }
         snapshot = saved
         #if os(tvOS)
-        // Older Home snapshots included destination-page payloads. Do not
-        // retain or hydrate those on Apple TV; the Home response is sufficient.
+        // Older snapshots kept detail pages. Apple TV's Home doesn't use them.
         snapshot.details.removeAll()
         #endif
         preparedSpotlight = saved.spotlightPreparation ?? [:]
         if MediaServerProvider.active == .emby {
-            snapshot.rows.removeAll { EmbyAdapter.excludesHomeRow(id:$0.section.id,type:$0.section.sectionType,title:$0.section.title) }
-            snapshot.spotlight.removeAll { EmbyAdapter.excludesHomeRow(id:$0.rowID,type:"",title:$0.rowTitle) }
+            snapshot.rows.removeAll {
+                EmbyAdapter.excludesHomeRow(id: $0.section.id, type: $0.section.sectionType, title: $0.section.title)
+            }
+            snapshot.spotlight.removeAll { EmbyAdapter.excludesHomeRow(id: $0.rowID, type: "", title: $0.rowTitle) }
         }
         reconcilePreferences()
     }
 
+    /// Forgets the loaded scope and stops everything working for it.
     func deactivate() {
         generation += 1
         preparation?.task.cancel()
         preparation = nil
         preparedSnapshot = nil
-        #if os(tvOS)
-        cropTasks.values.forEach { $0.cancel() }
-        tintTasks.values.forEach { $0.cancel() }
-        cropTasks.removeAll()
-        tintTasks.removeAll()
-        #endif
-        enrichmentTask?.cancel()
-        enrichmentTask = nil
+        cancelSpotlightWork()
         prefetcher.stopPrefetching()
         warmedURLs.removeAll()
         loadedScope = nil
@@ -170,32 +187,42 @@ final class TVHomeMetadataCache {
         storageError = nil
     }
 
+    /// Fills the response cache from the snapshot where it has nothing yet,
+    /// so Home paints before the network answers.
     func hydrate() {
         activate()
-        if ResponseCache.shared.get(CacheKey.homeSections, as: SectionsResponse.self) == nil,
+        let responses = ResponseCache.shared
+        if responses.get(CacheKey.homeSections, as: SectionsResponse.self) == nil,
            !snapshot.rows.isEmpty || snapshot.spotlightUpdatedAt != nil {
             var sections = snapshot.rows.map(\.section)
-            for slide in snapshot.spotlight where !MediaServerProvider.active.usesNativeUser && !sections.contains(where: { $0.id == slide.rowID }) {
-                let items = snapshot.spotlight.filter { $0.rowID == slide.rowID }.map(\.item)
-                sections.append(ResolvedSection(
-                    id: slide.rowID, sectionType: "spotlight", title: slide.rowTitle,
-                    featured: false, itemLimit: 20, totalCount: nil,
-                    isCustom: nil, customized: nil, items: items
-                ))
+            // Silo's spotlight can come from rows Home hides. Rebuild those
+            // rows from their slides, so the spotlight paints too.
+            if !MediaServerProvider.active.usesNativeUser {
+                for slide in snapshot.spotlight where !sections.contains(where: { $0.id == slide.rowID }) {
+                    sections.append(ResolvedSection(
+                        id: slide.rowID, sectionType: "spotlight", title: slide.rowTitle,
+                        featured: false, itemLimit: 20, totalCount: nil,
+                        isCustom: nil, customized: nil,
+                        items: snapshot.spotlight.filter { $0.rowID == slide.rowID }.map(\.item)
+                    ))
+                }
             }
-            ResponseCache.shared.set(SectionsResponse(sections: sections), for: CacheKey.homeSections)
+            responses.set(SectionsResponse(sections: sections), for: CacheKey.homeSections)
         }
         if let libraries = snapshot.libraries,
-           ResponseCache.shared.get(CacheKey.userLibraries, as: LibrariesResponse.self) == nil {
-            ResponseCache.shared.set(libraries, for: CacheKey.userLibraries)
+           responses.get(CacheKey.userLibraries, as: LibrariesResponse.self) == nil {
+            responses.set(libraries, for: CacheKey.userLibraries)
         }
         #if os(iOS)
         for (id, detail) in snapshot.details {
-            ResponseCache.shared.set(detail, for: CacheKey.itemDetail(id))
+            responses.set(detail, for: CacheKey.itemDetail(id))
         }
         #endif
     }
 
+    // MARK: Updates
+
+    /// Every row cut to its first 20 items.
     static func capped(_ response: SectionsResponse) -> SectionsResponse {
         SectionsResponse(sections: response.sections.map { section in
             ResolvedSection(
@@ -207,24 +234,28 @@ final class TVHomeMetadataCache {
         })
     }
 
+    /// Saves a fresh Home response: the enabled rows and the spotlight they
+    /// feed. An unchanged response only retries artwork and preparation.
     func store(_ response: SectionsResponse) {
         activate()
         guard loadedScope != nil else { return }
-        let oldURLs = artworkURLs(in: snapshot)
+        let previousArtwork = artworkURLs(in: snapshot)
         #if os(iOS)
-        let oldSlides = Dictionary(snapshot.spotlight.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
+        let previousSlideItems = Dictionary(snapshot.spotlight.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
         #endif
         let now = Date()
         let limited = Self.capped(response)
-        HomeSectionPreferences.shared.refresh()
-        TVHomeSpotlightPreferences.shared.initializeIfNeeded(from: limited.sections)
-        let rows = limited.sections.filter { HomeSectionPreferences.shared.isVisible($0.id) }
-        let slides = TVHomeSpotlightPreferences.shared.slides(from: limited.sections)
+        let home = HomeSectionPreferences.shared
+        let spotlight = TVHomeSpotlightPreferences.shared
+        home.refresh()
+        spotlight.initializeIfNeeded(from: limited.sections)
+        let rows = limited.sections.filter { home.isVisible($0.id) }
+        let slides = spotlight.slides(from: limited.sections)
         if snapshot.rows.map(\.section) == rows, snapshot.spotlight == slides,
            snapshot.spotlightUpdatedAt != nil, storageError == nil {
-            // Keep failed or evicted artwork and missing details retryable,
-            // without rewriting an unchanged snapshot every refresh.
-            replaceArtwork(previous: oldURLs)
+            // Failed or evicted artwork and missing details stay retryable
+            // without rewriting an unchanged snapshot on every refresh.
+            replaceArtwork(previous: previousArtwork)
             enrichSpotlight()
             return
         }
@@ -232,9 +263,11 @@ final class TVHomeMetadataCache {
         snapshot.spotlight = slides
         snapshot.spotlightUpdatedAt = now
         #if os(iOS)
-        let slideIDs = Set(snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) })
+        let slideIDs = spotlightDetailIDs
         snapshot.details = snapshot.details.filter { slideIDs.contains($0.key) }
-        for slide in snapshot.spotlight where oldSlides[slide.id] != nil && oldSlides[slide.id] != slide.item {
+        // A slide whose item changed needs its details read again.
+        for slide in snapshot.spotlight {
+            guard let previous = previousSlideItems[slide.id], previous != slide.item else { continue }
             for id in Self.detailContentIDs(for: slide.item) {
                 snapshot.details.removeValue(forKey: id)
                 ResponseCache.shared.remove(CacheKey.itemDetail(id))
@@ -246,8 +279,8 @@ final class TVHomeMetadataCache {
             }
         }
         #endif
-        replaceArtwork(previous: oldURLs)
-        persist()
+        replaceArtwork(previous: previousArtwork)
+        save()
         enrichSpotlight()
     }
 
@@ -255,57 +288,59 @@ final class TVHomeMetadataCache {
         activate()
         guard loadedScope != nil else { return }
         snapshot.libraries = libraries
-        persist()
+        save()
     }
 
+    /// Drops rows the person has hidden and slides from rows the spotlight
+    /// no longer uses.
     func reconcilePreferences() {
         guard loadedScope != nil else { return }
-        HomeSectionPreferences.shared.refresh()
-        TVHomeSpotlightPreferences.shared.refresh()
-        let oldURLs = artworkURLs(in: snapshot)
-        snapshot.rows.removeAll { !HomeSectionPreferences.shared.isVisible($0.section.id) }
-        if let ids = TVHomeSpotlightPreferences.shared.selectedRowIDs {
+        let home = HomeSectionPreferences.shared
+        let spotlight = TVHomeSpotlightPreferences.shared
+        home.refresh()
+        spotlight.refresh()
+        let previousArtwork = artworkURLs(in: snapshot)
+        snapshot.rows.removeAll { !home.isVisible($0.section.id) }
+        if let ids = spotlight.selectedRowIDs {
             snapshot.spotlight.removeAll { !ids.contains($0.rowID) }
         }
-        let slideIDs = Set(snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) })
+        let slideIDs = spotlightDetailIDs
         snapshot.details = snapshot.details.filter { slideIDs.contains($0.key) }
-        replaceArtwork(previous: oldURLs)
-        persist()
+        replaceArtwork(previous: previousArtwork)
+        save()
     }
 
+    // MARK: Settings
+
+    /// Spotlight first, then the enabled rows in Home's order.
     var statuses: [Status] {
+        let home = HomeSectionPreferences.shared
         var statuses = [Status(id: Self.spotlightID, title: String(localized: "Spotlight"),
                                count: snapshot.spotlight.count, updatedAt: snapshot.spotlightUpdatedAt)]
         let live: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
         let sourceRows = live?.sections ?? snapshot.rows.map(\.section)
-        let sections = HomeSectionPreferences.shared.arrangedSections(sourceRows)
-            + sourceRows.filter { $0.items.isEmpty && HomeSectionPreferences.shared.isVisible($0.id) }
+        let sections = home.arrangedSections(sourceRows)
+            + sourceRows.filter { $0.items.isEmpty && home.isVisible($0.id) }
         for section in sections {
-            let row = snapshot.rows.first { $0.section.id == section.id }
+            let saved = snapshot.rows.first { $0.section.id == section.id }
             statuses.append(Status(id: section.id, title: section.title,
-                                   count: row?.section.items.count ?? 0, updatedAt: row?.updatedAt))
+                                   count: saved?.section.items.count ?? 0, updatedAt: saved?.updatedAt))
         }
-        for row in snapshot.rows where HomeSectionPreferences.shared.isVisible(row.section.id)
-            && !statuses.contains(where: { $0.id == row.section.id }) {
-            statuses.append(Status(id: row.section.id, title: row.section.title,
-                                   count: row.section.items.count, updatedAt: row.updatedAt))
+        for saved in snapshot.rows where home.isVisible(saved.section.id)
+            && !statuses.contains(where: { $0.id == saved.section.id }) {
+            statuses.append(Status(id: saved.section.id, title: saved.section.title,
+                                   count: saved.section.items.count, updatedAt: saved.updatedAt))
         }
         return statuses
     }
 
+    /// Clears one entry on the Metadata settings page: the spotlight, or one row.
     func clear(_ id: String) {
         activate()
         StartupContentPrefetcher.invalidateHomeSectionsInFlight()
         generation += 1
-        #if os(tvOS)
-        cropTasks.values.forEach { $0.cancel() }
-        tintTasks.values.forEach { $0.cancel() }
-        cropTasks.removeAll()
-        tintTasks.removeAll()
-        #endif
-        enrichmentTask?.cancel()
-        enrichmentTask = nil
-        let oldURLs = artworkURLs(in: snapshot)
+        cancelSpotlightWork()
+        let previousArtwork = artworkURLs(in: snapshot)
         if id == Self.spotlightID {
             preparedSpotlight.removeAll()
             snapshot.spotlight.removeAll()
@@ -315,62 +350,70 @@ final class TVHomeMetadataCache {
         } else {
             snapshot.rows.removeAll { $0.section.id == id }
         }
-        replaceArtwork(previous: oldURLs)
-        persist()
+        replaceArtwork(previous: previousArtwork)
+        save()
     }
+
+    // MARK: Account removal
 
     func deleteAccountCache(_ account: TVSavedAccount) async throws {
         guard let profileID = account.profile?.id else { return }
         let scope = VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: profileID)
         if loadedScope == scope || preparation?.scope == scope { deactivate() }
         let url = fileURL(for: scope)
-        let urls: Set<URL> = try await withCheckedThrowingContinuation { continuation in
+        let artwork: Set<URL> = try await withCheckedThrowingContinuation { continuation in
             writer.async {
-                do { continuation.resume(returning: try Self.deleteSnapshot(at: url)) }
-                catch { continuation.resume(throwing: error) }
+                continuation.resume(with: Result { try Self.deleteSnapshot(at: url) })
             }
         }
-        PosterImageCache.stopPrefetchingCardArtwork(Array(urls))
-        await VividImagePipeline.shared.removeCachedArtwork(for: urls, scope: scope)
+        PosterImageCache.stopPrefetchingCardArtwork(Array(artwork))
+        await VividImagePipeline.shared.removeCachedArtwork(for: artwork, scope: scope)
     }
 
+    /// Deletes a snapshot file and returns every web URL it named, so their
+    /// artwork can go too. A file that isn't valid JSON is still deleted.
     nonisolated static func deleteSnapshot(at url: URL) throws -> Set<URL> {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        func collect(_ value: Any) -> Set<URL> {
-            if let string = value as? String, let url = URL(string: string),
-               ["http", "https"].contains(url.scheme?.lowercased() ?? "") { return [url] }
-            if let values = value as? [Any] { return values.reduce(into: []) { $0.formUnion(collect($1)) } }
-            if let values = value as? [String: Any] { return values.values.reduce(into: []) { $0.formUnion(collect($1)) } }
-            return []
-        }
         let data = try Data(contentsOf: url)
-        let json = try? JSONSerialization.jsonObject(with: data)
-        let urls = json.map(collect) ?? []
-        // A corrupt metadata file must still be deletable.
+        let urls = (try? JSONSerialization.jsonObject(with: data)).map(webURLs(in:)) ?? []
         try FileManager.default.removeItem(at: url)
         return urls
     }
 
+    nonisolated private static func webURLs(in value: Any) -> Set<URL> {
+        if let string = value as? String, let url = URL(string: string),
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "") { return [url] }
+        if let values = value as? [Any] { return values.reduce(into: []) { $0.formUnion(webURLs(in: $1)) } }
+        if let values = value as? [String: Any] { return values.values.reduce(into: []) { $0.formUnion(webURLs(in: $1)) } }
+        return []
+    }
+
+    // MARK: Artwork
+
+    /// The base for Silo's relative artwork paths.
+    private var artworkBase: URL? {
+        MediaServerProvider.active == .silo ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+    }
+
+    /// The artwork the saved rows and slides show, series backgrounds included.
     private func artworkURLs(in value: Snapshot) -> Set<URL> {
+        let backdrops = HomeSeriesBackdrops.shared
         var strings: [String] = []
         for row in value.rows {
             if HomeSeriesBackdrops.applies(toSectionType: row.section.sectionType) {
-                // The artwork Home's cards show, series backgrounds included.
-                strings += row.section.items.map { HomeSeriesBackdrops.shared.art(for: $0).url }
-                continue
+                strings += row.section.items.map { backdrops.art(for: $0).url }
+            } else {
+                strings += row.section.items.compactMap(\.posterUrl)
             }
-            strings += row.section.items.compactMap { $0.posterUrl }
         }
         for slide in value.spotlight {
-            // The background the spotlight shows, series backgrounds included.
-            strings += [HomeSeriesBackdrops.shared.art(for: slide.item).url, slide.item.posterUrl, slide.item.logoUrl]
+            strings += [backdrops.art(for: slide.item).url, slide.item.posterUrl, slide.item.logoUrl]
                 .compactMap { $0 }.filter { !$0.isEmpty }
             #if os(iOS)
             strings += [value.details[slide.id]?.backdropUrl].compactMap { $0 }
             #endif
         }
-        let base = MediaServerProvider.active == .silo
-            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        let base = artworkBase
         return Set(strings.compactMap { raw in
             guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base),
                   ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
@@ -378,7 +421,10 @@ final class TVHomeMetadataCache {
         })
     }
 
+    /// Evicts artwork the snapshot no longer shows and warms what it does,
+    /// including anything a failed download or the system evicted.
     private func replaceArtwork(previous: Set<URL>) {
+        let pipeline = VividImagePipeline.shared
         let desired = artworkURLs(in: snapshot)
         let removed = previous.subtracting(desired)
         let retained = Set(desired.map(\.absoluteString))
@@ -386,20 +432,21 @@ final class TVHomeMetadataCache {
         prefetcher.stopPrefetching(with: Array(warmedURLs.subtracting(desired)))
         PosterImageCache.stopPrefetchingCardArtwork(Array(removed))
         for url in removed {
-            VividImagePipeline.shared.cache.removeCachedData(for: VividImageRequest(url: url))
-            VividImagePipeline.shared.cache.removeCachedImage(for: VividImageRequest(url: url), caches: .memory)
-            VividImagePipeline.shared.cache.removeCachedImage(for: PosterImageCache.cardWarmRequest(for: url), caches: .memory)
+            pipeline.cache.removeCachedData(for: VividImageRequest(url: url))
+            pipeline.cache.removeCachedImage(for: VividImageRequest(url: url), caches: .memory)
+            pipeline.cache.removeCachedImage(for: PosterImageCache.cardWarmRequest(for: url), caches: .memory)
         }
         prefetcher.priority = .low
-        // Re-queue cache misses too: a failed download or OS eviction must be retryable.
-        prefetcher.startPrefetching(with: desired.filter {
-            !VividImagePipeline.shared.cache.containsData(for: VividImageRequest(url: $0))
-        }.map { VividImageRequest(url: $0, priority: .low) })
+        prefetcher.startPrefetching(with: desired
+            .filter { !pipeline.cache.containsData(for: VividImageRequest(url: $0)) }
+            .map { VividImageRequest(url: $0, priority: .low) })
         warmedURLs = desired
     }
 
-    /// iOS episode spotlights display their parent series' year and ratings.
-    /// Keep that metadata in the same persistent cache as the slide itself.
+    // MARK: Spotlight details
+
+    /// iOS episode slides show their series' year and ratings, so the
+    /// series' details are saved alongside the episode's.
     static func detailContentIDs(for item: SectionItem) -> [String] {
         #if os(iOS)
         if MediaServerProvider.active.usesNativeUser, item.type == "episode",
@@ -416,97 +463,120 @@ final class TVHomeMetadataCache {
         return snapshot.details[id]
     }
 
+    private var spotlightDetailIDs: Set<String> {
+        Set(snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) })
+    }
+
+    /// iOS reads the details its spotlight labels use. Apple TV labels come
+    /// from the Home items, so it only prepares each slide's crop and tint.
     private func enrichSpotlight() {
         enrichmentTask?.cancel()
         let expectedGeneration = generation
         let scope = loadedScope
         enrichmentTask = Task { @MainActor in
+            let stillCurrent = { self.isCurrent(generation: expectedGeneration, scope: scope) }
             #if os(iOS)
-            // iOS uses these fields in its Spotlight labels. Apple TV reads
-            // its labels from SectionItem and must not prepare detail pages.
             var seen = Set<String>()
             let ids = snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) }
                 .filter { seen.insert($0).inserted }
             for id in ids where snapshot.details[id] == nil {
-                guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
-                let cached: ItemDetail? = ResponseCache.shared.get(CacheKey.itemDetail(id))
+                guard stillCurrent() else { return }
                 let detail: ItemDetail
-                if let cached {
+                if let cached: ItemDetail = ResponseCache.shared.get(CacheKey.itemDetail(id)) {
                     detail = cached
                 } else if let fetched = try? await MetadataRequestPool.shared.itemDetail(contentId: id) {
                     detail = fetched
                 } else {
                     continue
                 }
-                guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope,
-                      snapshot.spotlight.contains(where: { Self.detailContentIDs(for: $0.item).contains(id) }) else { return }
-                let oldURLs = artworkURLs(in: snapshot)
+                guard stillCurrent(),
+                      snapshot.spotlight.contains(where: { Self.detailContentIDs(for: $0.item).contains(id) })
+                else { return }
+                let previousArtwork = artworkURLs(in: snapshot)
                 snapshot.details[id] = detail
                 ResponseCache.shared.set(detail, for: CacheKey.itemDetail(id))
-                replaceArtwork(previous: oldURLs)
-                persist()
+                replaceArtwork(previous: previousArtwork)
+                save()
             }
             #endif
             #if os(tvOS)
-            // Prepare only current Spotlight art, sequentially, using the same
-            // analysis and persistent records as the visible carousel.
-            var urls = Set<String>()
-            let base = MediaServerProvider.active == .silo
-                ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+            // One at a time, with the same analysis and records the visible
+            // carousel uses.
+            var prepared = Set<String>()
+            let base = artworkBase
             for slide in snapshot.spotlight {
-                for raw in [slide.content.backdropUrl].compactMap({ $0 }) {
-                    guard urls.insert(raw).inserted else { continue }
-                    guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
-                    guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base) else { continue }
-                    let record = preparedSpotlight[raw]
-                    if record?.cropPrepared != true || record?.cropVersion != 1 {
-                        let request = PosterImageCache.displayRequest(url: url, pixelSize: CGSize(width: 768, height: 768), priority: .low)
-                        if let image = try? await VividImagePipeline.shared.image(for: request) {
-                            guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
-                            _ = await preparedSpotlightSubject(in: image, url: raw)
-                        }
+                guard let raw = slide.content.backdropUrl, prepared.insert(raw).inserted else { continue }
+                guard stillCurrent() else { return }
+                guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base) else { continue }
+                let record = preparedSpotlight[raw]
+                if record?.cropPrepared != true || record?.cropVersion != Self.currentCropVersion {
+                    let request = PosterImageCache.displayRequest(url: url, pixelSize: CGSize(width: 768, height: 768), priority: .low)
+                    if let image = try? await VividImagePipeline.shared.image(for: request) {
+                        guard stillCurrent() else { return }
+                        _ = await preparedSpotlightSubject(in: image, url: raw)
                     }
-                    guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
-                    _ = await preparedSpotlightTint(for: url)
                 }
+                guard stillCurrent() else { return }
+                _ = await preparedSpotlightTint(for: url)
             }
             #endif
         }
     }
 
+    /// Whether enrichment started for this generation and scope may go on.
+    private func isCurrent(generation expectedGeneration: Int, scope: String?) -> Bool {
+        !Task.isCancelled && expectedGeneration == generation && scope == activeScope
+    }
+
+    private func cancelSpotlightWork() {
+        #if os(tvOS)
+        cropTasks.values.forEach { $0.cancel() }
+        tintTasks.values.forEach { $0.cancel() }
+        cropTasks.removeAll()
+        tintTasks.removeAll()
+        #endif
+        enrichmentTask?.cancel()
+        enrichmentTask = nil
+    }
+
+    // MARK: Spotlight crop and tint
+
     #if os(tvOS)
+    /// A tint worked out earlier. Starts no work.
     func cachedSpotlightTint(for url: URL) -> Color? {
         guard let rgb = preparedSpotlight[url.absoluteString]?.tint, rgb.count == 3 else { return nil }
         return Color(red: rgb[0], green: rgb[1], blue: rgb[2])
     }
 
+    /// Where the subject sits in an artwork image, from the saved record or
+    /// worked out now. A slide that disappears doesn't cancel the shared
+    /// work another slide or the cache may be waiting on; account changes do.
     func preparedSpotlightSubject(in image: UIImage, url: String) async -> CGRect? {
-        if let record = preparedSpotlight[url], record.cropPrepared, record.cropVersion == 1 {
+        if let record = preparedSpotlight[url], record.cropPrepared, record.cropVersion == Self.currentCropVersion {
             return record.subject
         }
         let expectedGeneration = generation
         let scope = loadedScope
-        let cropKey = (scope ?? VividCacheScope.artwork) + "|" + url
         let task: Task<CGRect?, Never>
         if let existing = cropTasks[url] {
             task = existing
         } else {
-            task = Task.detached(priority: .utility) { await TVSpotlightCrop.prepareSubject(in: image, key: cropKey) }
+            let key = (scope ?? VividCacheScope.artwork) + "|" + url
+            task = Task.detached(priority: .utility) { await TVSpotlightCrop.prepareSubject(in: image, key: key) }
             cropTasks[url] = task
         }
-        // A disappearing slide must not cancel preparation another slide or
-        // the Home cache is awaiting. Account changes cancel the shared tasks.
         let subject = await task.value
         if expectedGeneration == generation { cropTasks.removeValue(forKey: url) }
         guard !Task.isCancelled, expectedGeneration == generation, scope == loadedScope else { return subject }
         updateSpotlightPreparation(url: url) {
-            $0.cropVersion = 1
+            $0.cropVersion = Self.currentCropVersion
             $0.cropPrepared = true
             $0.subject = subject
         }
         return subject
     }
 
+    /// The artwork's tint, from the saved record or worked out now.
     func preparedSpotlightTint(for url: URL) async -> Color? {
         if let tint = cachedSpotlightTint(for: url) { return tint }
         let expectedGeneration = generation
@@ -525,48 +595,51 @@ final class TVHomeMetadataCache {
               !Task.isCancelled, expectedGeneration == generation, scope == loadedScope else { return nil }
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         if UIColor(tint).getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
-            updateSpotlightPreparation(url: url.absoluteString) { $0.tint = [Double(red), Double(green), Double(blue)] }
+            updateSpotlightPreparation(url: key) { $0.tint = [Double(red), Double(green), Double(blue)] }
         }
         return tint
     }
 
+    /// Saves a record only for artwork the snapshot still shows, and only
+    /// when it changed.
     private func updateSpotlightPreparation(url: String, update: (inout SpotlightPreparation) -> Void) {
         guard loadedScope != nil, artworkURLs(in: snapshot).contains(where: { $0.absoluteString == url }) else { return }
         var record = preparedSpotlight[url] ?? SpotlightPreparation()
         update(&record)
         guard preparedSpotlight[url] != record else { return }
         preparedSpotlight[url] = record
-        persist()
+        save()
     }
     #endif
 
-    private func persist() {
+    // MARK: Saving
+
+    /// Queues a save of the snapshot. Only the latest save for the same
+    /// loaded state updates `storageError`.
+    private func save() {
         guard let scope = loadedScope else { return }
-        persistenceRevision &+= 1
-        let revision = persistenceRevision
+        saveRevision &+= 1
+        let revision = saveRevision
         let expectedGeneration = generation
         var value = snapshot
         value.spotlightPreparation = preparedSpotlight.isEmpty ? nil : preparedSpotlight
         let url = fileURL(for: scope)
         writer.write(scope: scope) {
+            let failure: String?
             do {
                 let data = try JSONEncoder().encode(value)
                 guard data.count <= Self.maximumSnapshotBytes else { throw CocoaError(.fileWriteOutOfSpace) }
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
-                Task { @MainActor [weak self] in
-                    guard let self, self.loadedScope == scope,
-                          self.generation == expectedGeneration,
-                          self.persistenceRevision == revision else { return }
-                    self.storageError = nil
-                }
+                failure = nil
             } catch {
-                Task { @MainActor [weak self] in
-                    guard let self, self.loadedScope == scope,
-                          self.generation == expectedGeneration,
-                          self.persistenceRevision == revision else { return }
-                    self.storageError = String(localized: "Couldn’t save the Home cache. It will retry on the next refresh.")
-                }
+                failure = String(localized: "Couldn’t save the Home cache. It will retry on the next refresh.")
+            }
+            Task { @MainActor [weak self] in
+                guard let self, self.loadedScope == scope,
+                      self.generation == expectedGeneration,
+                      self.saveRevision == revision else { return }
+                self.storageError = failure
             }
         }
     }

@@ -21,6 +21,7 @@ final class HomeSeriesBackdrops {
         let expiresAt: Date
     }
 
+    /// The file format on disk.
     private struct CacheFile: Codable {
         var version = 1
         var entries: [String: Artwork]
@@ -36,6 +37,8 @@ final class HomeSeriesBackdrops {
             return Scope(server: server, profile: profile)
         }
 
+        /// `Caches/HomeSeriesBackdrops/backdrops-v1-<token>.json`, creating
+        /// the folder.
         var cacheURL: URL? {
             let token = Data("\(server)|\(profile)".utf8).base64EncodedString()
                 .filter { $0.isLetter || $0.isNumber }
@@ -46,6 +49,17 @@ final class HomeSeriesBackdrops {
             return folder.appendingPathComponent("backdrops-v1-\(token).json")
         }
     }
+
+    /// Lookups that run at once, so a full row doesn't crowd out Home's own requests.
+    private static let lookupBatchSize = 4
+    /// How long before a saved link expires it's renewed.
+    private static let renewalLead: TimeInterval = 90 * 60
+    /// A saved link must stay valid this long to be shown.
+    private static let minimumRemainingLife: TimeInterval = 60 * 60
+    private static let retryAfterLookup: TimeInterval = 10 * 60
+    private static let retryAfterMissingBackdrop: TimeInterval = 60 * 60
+    /// A link without an expiry is still renewed weekly.
+    private static let lifeWithoutExpiry: TimeInterval = 7 * 86_400
 
     /// Bumped when a lookup lands, so the cards showing it redraw.
     private(set) var revision = 0
@@ -87,23 +101,21 @@ final class HomeSeriesBackdrops {
     }
 
     /// Looks up the series of Silo episodes in these rows that have no
-    /// background saved, or one whose link expires within 90 minutes. A
-    /// lookup that fails is tried again after ten minutes.
+    /// background saved, or one whose link expires within 90 minutes.
     func prepare(_ items: [SectionItem]) {
         guard MediaServerProvider.active == .silo else { return }
         loadIfNeeded()
         guard let scope = loadedScope else { return }
         let now = Date()
-        let wanted = seriesIDs(in: items).filter { id in
-            !inFlight.contains(id) && lookupDue(id) <= now
-        }.sorted()
+        let wanted = seriesIDs(in: items)
+            .filter { !inFlight.contains($0) && lookupDue($0) <= now }
+            .sorted()
         guard !wanted.isEmpty else { return }
         inFlight.formUnion(wanted)
         Task { [weak self] in
             var results: [String: ItemDetail?] = [:]
-            // Four at a time, so a full row doesn't crowd out Home's own requests.
-            for start in stride(from: 0, to: wanted.count, by: 4) {
-                let batch = wanted[start..<min(start + 4, wanted.count)]
+            for start in stride(from: 0, to: wanted.count, by: Self.lookupBatchSize) {
+                let batch = wanted[start..<min(start + Self.lookupBatchSize, wanted.count)]
                 await withTaskGroup(of: (String, ItemDetail?).self) { group in
                     for id in batch {
                         group.addTask { (id, try? await VividAPI.shared.itemDetail(contentId: id)) }
@@ -122,6 +134,7 @@ final class HomeSeriesBackdrops {
         }
     }
 
+    /// Series of episodes that don't already carry their series background.
     private func seriesIDs(in items: [SectionItem]) -> Set<String> {
         Set(items.compactMap { item -> String? in
             guard item.type.lowercased() == "episode", (item.seriesBackdropUrl ?? "").isEmpty,
@@ -130,39 +143,41 @@ final class HomeSeriesBackdrops {
         })
     }
 
-    /// When a series is next worth asking for: 90 minutes before its saved
-    /// link expires, so it's renewed while the card still shows it, but not
+    /// When a series is next worth asking for: shortly before its saved link
+    /// expires, so it's renewed while the card still shows it, but not
     /// before `askAgainAt`.
     private func lookupDue(_ seriesID: String) -> Date {
-        let renew = entries[seriesID].map { $0.expiresAt.addingTimeInterval(-90 * 60) } ?? .distantPast
+        let renew = entries[seriesID].map { $0.expiresAt.addingTimeInterval(-Self.renewalLead) } ?? .distantPast
         return max(renew, askAgainAt[seriesID] ?? .distantPast)
     }
 
+    /// The soonest lookup these rows need. One still running is checked
+    /// again in a minute.
     private func nextLookup(for items: [SectionItem]) -> Date? {
         guard MediaServerProvider.active == .silo, loadedScope != nil else { return nil }
-        // A lookup still running is checked again in a minute.
         return seriesIDs(in: items)
             .map { inFlight.contains($0) ? Date().addingTimeInterval(60) : lookupDue($0) }
             .min()
     }
 
     private func store(_ results: [String: ItemDetail?], scope: Scope) {
-        inFlight.subtract(results.keys)
+        // A profile switch has already cleared the lookups in flight, and
+        // the new profile may be looking up the same series itself.
         guard scope == loadedScope else { return }
+        inFlight.subtract(results.keys)
         let now = Date()
         for (id, detail) in results {
             guard let detail else {
-                askAgainAt[id] = now.addingTimeInterval(600)
+                askAgainAt[id] = now.addingTimeInterval(Self.retryAfterLookup)
                 continue
             }
             guard let url = detail.backdropUrl, !url.isEmpty else {
-                askAgainAt[id] = now.addingTimeInterval(3600)
+                askAgainAt[id] = now.addingTimeInterval(Self.retryAfterMissingBackdrop)
                 continue
             }
-            askAgainAt[id] = now.addingTimeInterval(600)
-            // A link without an expiry is still refreshed weekly.
+            askAgainAt[id] = now.addingTimeInterval(Self.retryAfterLookup)
             entries[id] = Artwork(url: url, thumbhash: detail.backdropThumbhash,
-                                  expiresAt: SiloAPICompatibility.artworkExpiry(url) ?? now.addingTimeInterval(7 * 86_400))
+                                  expiresAt: SiloAPICompatibility.artworkExpiry(url) ?? now.addingTimeInterval(Self.lifeWithoutExpiry))
         }
         entries = entries.filter { $0.value.expiresAt > now }
         if let fileURL = scope.cacheURL, let data = try? JSONEncoder().encode(CacheFile(entries: entries)) {
@@ -172,12 +187,14 @@ final class HomeSeriesBackdrops {
     }
 
     /// A saved background that stays valid for at least another hour.
-    private func saved(_ seriesID: String, at now: Date = Date()) -> Artwork? {
+    private func saved(_ seriesID: String) -> Artwork? {
         loadIfNeeded()
-        guard let artwork = entries[seriesID], artwork.expiresAt > now.addingTimeInterval(3600) else { return nil }
+        guard let artwork = entries[seriesID],
+              artwork.expiresAt > Date().addingTimeInterval(Self.minimumRemainingLife) else { return nil }
         return artwork
     }
 
+    /// Switches to the current server and profile's saved backgrounds.
     private func loadIfNeeded() {
         let scope = Scope.current
         guard scope != loadedScope else { return }

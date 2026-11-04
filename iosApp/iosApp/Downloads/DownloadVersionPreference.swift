@@ -14,25 +14,28 @@ struct DownloadVersionPreference: Hashable, Sendable {
         self.hdr = hdr
     }
 
+    /// The resolution classes, highest first.
     static let classes = [2160, 1080, 720, 480]
 
     /// "4K HDR", "1080p", "SD".
     var label: String {
-        let base: String
-        switch height {
-        case 2160: base = "4K"
-        case 480: base = "SD"
-        default: base = "\(height)p"
+        let name = switch height {
+        case 2160: "4K"
+        case 480: "SD"
+        default: "\(height)p"
         }
-        return hdr == true ? "\(base) HDR" : base
+        return hdr == true ? "\(name) HDR" : name
     }
 
-    // MARK: - Qualities
+    // MARK: Qualities
 
     /// The qualities a download of this resolution class may use. A 4K
     /// version only makes 4K transcodes; a smaller one may go down the whole
-    /// ladder. nil (Auto, or a file that doesn't say) offers everything.
-    static func formats(_ formats: [DownloadFormat], versionHeight: Int?, maxHeight: (DownloadFormat) -> Int?) -> [DownloadFormat] {
+    /// ladder below it. nil (Auto, or a file that doesn't say) offers
+    /// everything. Original, and a quality without a known height, always
+    /// stay.
+    static func formats(_ formats: [DownloadFormat], versionHeight: Int?,
+                        maxHeight: (DownloadFormat) -> Int?) -> [DownloadFormat] {
         guard let versionHeight else { return formats }
         return formats.filter { format in
             guard format != .original, let height = maxHeight(format) else { return true }
@@ -40,16 +43,16 @@ struct DownloadVersionPreference: Hashable, Sendable {
         }
     }
 
-    // MARK: - Matching
+    // MARK: Matching files
 
     /// A file's resolution class, or nil when its resolution is unknown.
-    /// Accepts "1080p", "4K" and "1920x1080" (Emby and Jellyfin report
+    /// Reads "1080p", "4K" and "1920x1080" alike (Emby and Jellyfin name
     /// files under 720p by their height, such as "576p").
     static func heightClass(of resolution: String?) -> Int? {
-        guard let raw = resolution?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-              !raw.isEmpty else { return nil }
-        if raw == "4k" || raw == "uhd" { return 2160 }
-        let numbers = raw.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        guard let text = resolution?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !text.isEmpty else { return nil }
+        if text == "4k" || text == "uhd" { return 2160 }
+        let numbers = text.split { !$0.isNumber }.compactMap { Int($0) }
         guard let height = numbers.last, height > 0 else { return nil }
         switch height {
         case 2000...: return 2160
@@ -63,23 +66,23 @@ struct DownloadVersionPreference: Hashable, Sendable {
     /// class, split into HDR and SDR only where a class has files known to
     /// be each. A file that doesn't say counts as neither.
     static func options(for files: [EpisodeFile]) -> [DownloadVersionPreference] {
-        var ranges: [Int: Set<Bool?>] = [:]
+        var rangesByClass: [Int: Set<Bool?>] = [:]
         for file in files {
             guard let height = heightClass(of: file.resolution) else { continue }
-            ranges[height, default: []].insert(file.hdr)
+            rangesByClass[height, default: []].insert(file.hdr)
         }
         return classes.flatMap { height -> [DownloadVersionPreference] in
-            guard let found = ranges[height] else { return [] }
-            if found.contains(true), found.contains(false) {
-                return [DownloadVersionPreference(height: height, hdr: true), DownloadVersionPreference(height: height, hdr: false)]
+            guard let ranges = rangesByClass[height] else { return [] }
+            if ranges.contains(true), ranges.contains(false) {
+                return [Self(height: height, hdr: true), Self(height: height, hdr: false)]
             }
-            return [DownloadVersionPreference(height: height, hdr: found.contains(true) ? true : nil)]
+            return [Self(height: height, hdr: ranges.contains(true) ? true : nil)]
         }
     }
 
-    /// The file this version picks from one item's files: the same class
-    /// and a file known to have the wanted HDR range, then the same class
-    /// either way. nil leaves the choice to the server.
+    /// The file this version picks from one item's files: one in the same
+    /// class known to have the wanted HDR range, then any in the same class.
+    /// nil leaves the choice to the server.
     func match<File>(_ files: [File], resolution: (File) -> String?, hdr: (File) -> Bool?) -> File? {
         let sameClass = files.filter { Self.heightClass(of: resolution($0)) == height }
         if let wanted = self.hdr, let exact = sameClass.first(where: { hdr($0) == wanted }) {
