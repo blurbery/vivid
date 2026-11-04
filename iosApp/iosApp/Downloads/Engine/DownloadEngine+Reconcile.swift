@@ -156,15 +156,15 @@ extension DownloadManager {
 
     // MARK: Series monitoring
 
-    // Each request goes under the scope's own sign-in and profile, and its
-    // answer is only mirrored while that scope is still the current one.
+    // Each request goes under the scope's own sign-in and profile. The
+    // server's answer is saved to that scope even after a switch, so a
+    // subscription the server made can still be listed and stopped there.
 
     func startMonitoring(seriesId: String, seriesTitle: String?, rule: MonitoringRule, seasonNumbers: [Int]?,
                          deleteWatched: Bool, maxStorageBytes: Int64) async throws {
         guard let scope = currentScope, let identity = await scopeIdentity() else {
             throw HTTPError.requestIdentityChanged
         }
-        let generation = self.generation
         let request = CreateSubscriptionRequest(
             seriesId: seriesId, mode: rule.rawValue,
             seasonNumbers: rule == .chosenSeasons ? seasonNumbers : nil,
@@ -175,10 +175,8 @@ extension DownloadManager {
         Task { await LocalNotificationAuthorization.requestIfNeeded() }
         #endif
         let response = try await VividAPI.shared.createSubscription(request, auth: identity)
-        guard currentScope == scope, self.generation == generation else { return }
-        mirror(response.subscription, seriesTitle: seriesTitle)
-        persist()
-        await reconcile(runningQueue: true)
+        keep(response.subscription, seriesTitle: seriesTitle, in: scope)
+        if currentScope == scope { await reconcile(runningQueue: true) }
     }
 
     func changeMonitoring(id: String, rule: MonitoringRule?, seasonNumbers: [Int]?, deleteWatched: Bool?,
@@ -186,7 +184,6 @@ extension DownloadManager {
         guard let scope = currentScope, let identity = await scopeIdentity() else {
             throw HTTPError.requestIdentityChanged
         }
-        let generation = self.generation
         let seriesTitle = file.subscriptions.first { $0.id == id }?.seriesTitle
         let request = UpdateSubscriptionRequest(
             mode: rule?.rawValue, seasonNumbers: seasonNumbers, deleteWatched: deleteWatched,
@@ -196,10 +193,8 @@ extension DownloadManager {
         if active == true { Task { await LocalNotificationAuthorization.requestIfNeeded() } }
         #endif
         let response = try await VividAPI.shared.updateSubscription(id: id, request, auth: identity)
-        guard currentScope == scope, self.generation == generation else { return }
-        mirror(response.subscription, seriesTitle: seriesTitle)
-        persist()
-        await reconcile(runningQueue: true)
+        keep(response.subscription, seriesTitle: seriesTitle, in: scope)
+        if currentScope == scope { await reconcile(runningQueue: true) }
     }
 
     /// Deletes the subscription on the server, then the local copy. If the
@@ -209,32 +204,33 @@ extension DownloadManager {
     @discardableResult
     func stopMonitoring(id: String) async -> Bool {
         guard let scope = currentScope, let identity = await scopeIdentity() else { return false }
-        let generation = self.generation
         do {
             try await VividAPI.shared.deleteSubscription(id: id, auth: identity)
         } catch {
             guard DownloadEngine.MonitoringRules.deleteRemovesLocalCopy(after: error) else {
-                DownloadEngine.log.error("Couldn't stop monitoring a series: \(error.localizedDescription, privacy: .public)")
+                DownloadEngine.log.error("Couldn't stop monitoring a series: \(error.localizedDescription, privacy: .private)")
                 return false
             }
         }
-        guard currentScope == scope, self.generation == generation else { return false }
-        file.subscriptions.removeAll { $0.id == id }
-        persist()
+        if currentScope == scope {
+            file.subscriptions.removeAll { $0.id == id }
+            persist()
+        } else {
+            saveToScope(scope) { $0.subscriptions.removeAll { $0.id == id } }
+        }
         return true
     }
 
-    private func mirror(_ subscription: DownloadEngine.ServerSubscription, seriesTitle: String?) {
-        let copy = MonitoredSeries(
-            id: subscription.id, seriesId: subscription.seriesId, seriesTitle: seriesTitle, mode: subscription.mode,
-            targetSeason: subscription.targetSeason, seasonNumbers: subscription.seasonNumbers,
-            deleteWatched: subscription.deleteWatched, maxStorageBytes: subscription.maxStorageBytes,
-            active: subscription.active
-        )
-        if let index = file.subscriptions.firstIndex(where: { $0.id == subscription.id }) {
-            file.subscriptions[index] = copy
+    /// Saves the server's copy of a subscription to the scope that asked for
+    /// it: in memory while it's current, otherwise straight to its file.
+    private func keep(_ subscription: DownloadEngine.ServerSubscription, seriesTitle: String?, in scope: DownloadScope) {
+        if currentScope == scope {
+            DownloadEngine.MonitoringRules.mirror(subscription, seriesTitle: seriesTitle, into: &file.subscriptions)
+            persist()
         } else {
-            file.subscriptions.append(copy)
+            saveToScope(scope) {
+                DownloadEngine.MonitoringRules.mirror(subscription, seriesTitle: seriesTitle, into: &$0.subscriptions)
+            }
         }
     }
 
@@ -286,6 +282,21 @@ extension DownloadEngine {
         /// local copy: only when the server no longer has the subscription.
         static func deleteRemovesLocalCopy(after error: Error) -> Bool {
             (error as? HTTPError)?.statusCode == 404
+        }
+
+        /// Adds the server's copy of a subscription, or replaces the saved one.
+        static func mirror(_ subscription: ServerSubscription, seriesTitle: String?, into subscriptions: inout [MonitoredSeries]) {
+            let copy = MonitoredSeries(
+                id: subscription.id, seriesId: subscription.seriesId, seriesTitle: seriesTitle, mode: subscription.mode,
+                targetSeason: subscription.targetSeason, seasonNumbers: subscription.seasonNumbers,
+                deleteWatched: subscription.deleteWatched, maxStorageBytes: subscription.maxStorageBytes,
+                active: subscription.active
+            )
+            if let index = subscriptions.firstIndex(where: { $0.id == subscription.id }) {
+                subscriptions[index] = copy
+            } else {
+                subscriptions.append(copy)
+            }
         }
     }
 }

@@ -144,6 +144,18 @@ final class DownloadManager {
         }
     }
 
+    /// Changes another scope's saved state, such as a scope left while a
+    /// monitoring request was out. Runs after the saves already asked for.
+    func saveToScope(_ scope: DownloadScope, change: @escaping @Sendable (inout DownloadStoreFile) -> Void) {
+        let previous = saveChain
+        saveChain = Task { @MainActor in
+            await previous?.value
+            var state = await DownloadEngine.Store.shared.load(scope)
+            change(&state)
+            await DownloadEngine.Store.shared.save(state, to: scope)
+        }
+    }
+
     /// The same ordered write, throwing its failure. Used by the Silo
     /// progress snapshot, which may write a staged copy of the state.
     func checkedSave(_ state: DownloadStoreFile) async throws {

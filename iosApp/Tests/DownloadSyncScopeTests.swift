@@ -145,6 +145,23 @@ final class DownloadSyncScopeTests: XCTestCase {
             XCTAssertFalse(DownloadEngine.MonitoringRules.deleteRemovesLocalCopy(after: error), "\(error)")
         }
     }
+
+    /// The server's answer is added once and then replaces the saved copy,
+    /// which is how it reaches the scope that asked even after a switch.
+    func testTheServersSubscriptionIsAddedThenReplaced() {
+        func subscription(deleteWatched: Bool) -> DownloadEngine.ServerSubscription {
+            DownloadEngine.ServerSubscription(
+                id: "subscription-1", seriesId: "series-1", mode: "every_season", targetSeason: nil, seasonNumbers: nil,
+                deleteWatched: deleteWatched, maxStorageBytes: 0, active: true, createdAt: nil, updatedAt: nil
+            )
+        }
+        var saved: [MonitoredSeries] = []
+        DownloadEngine.MonitoringRules.mirror(subscription(deleteWatched: false), seriesTitle: "Series", into: &saved)
+        DownloadEngine.MonitoringRules.mirror(subscription(deleteWatched: true), seriesTitle: "Series", into: &saved)
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(saved.first?.deleteWatched, true)
+        XCTAssertEqual(saved.first?.seriesTitle, "Series")
+    }
 }
 
 /// Records every request and answers 200: `{"registered":2}` for the
