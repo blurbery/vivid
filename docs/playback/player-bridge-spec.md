@@ -129,7 +129,7 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | `PlaybackSessionRecorder.swift` | iOS only, on the main actor: calls the static external-display role test on every connected scene's session role to fill the latest-playback report's `externalScreen` field. |
 | `iosApp/Tests/VividPlayerCoreTests.swift` | Among its tests, conforms a recorder to the delegate protocol, creates bare base instances, assigns `delegate`, calls `dispatchDelegateProperty` and `dispatchDelegateEvent` from a private serial queue entered with `sync` from the main actor, and calls `beginDisposal()`. |
 | `iosApp/Tests/PlayerSurfaceLayoutTests.swift` | Through the adapter, with real media in the simulator, asserts that the PiP source's layer is the core's `sampleBufferDisplayLayer`; that `layer.superlayer?.superlayer` is the host view's layer; that the layer reports `isReadyForDisplay` within 15 seconds; that layout and preview cycles leave the paused state and position unchanged; that the same layer survives presentation changes within one load; that a successor load has a different layer; and that the video route is the sample-buffer route with no `AVPlayer`. |
-| `scripts/tests/mpv-track-tests.py` | Copies the adapter's private `retireCore(resetDisplayCriteria:)` method, which `stop()` calls to clear the core's delegate, dispose it and release the audio session, and runs it against a stand-in with `delegate` and `dispose(preserveDisplayCriteria:completion:)`. That method may use only those two members, the audio session statics and `deactivatesAudioSessionOnStop`. |
+| `scripts/tests/mpv-track-tests.py` | Copies the adapter's private `retireCore(resetDisplayCriteria:)` method, which `stop()` calls to clear the core's delegate, dispose it and release the audio session, and runs it against a stand-in. The stand-in provides everything the method uses: `core` with its `delegate` and `dispose(preserveDisplayCriteria:completion:)`, `audioSessionToken`, `deactivatesAudioSessionOnStop`, the `audioTeardown` and `audioSessionOwner` statics and `AVAudioSession.sharedInstance()`. A new member used in the method needs a matching stand-in. |
 
 No other file, script, plist or workflow names anything the bridge declares. `VividPlaybackBoundaryTests` and `VividPlaybackStatsProjectionTests` also drive real media through the bridge, via the adapter (section 16.1).
 
@@ -215,7 +215,7 @@ Until the switch-over, a selection file (`iosApp/iosApp/Playback/MPV/VividBridge
 
 | File | Uses |
 | --- | --- |
-| `VividMPVPlayer.swift` | `VividMPVCore` subclasses `VividPlayerCore`; `VividMPVDelegate` conforms to `VividPlayerCoreDelegate`; `VividMPVHostView.core` is a `VividPlayerCore?`. Nothing in `stop()` changed. |
+| `VividMPVPlayer.swift` | `VividMPVCore` subclasses `VividPlayerCore`; `VividMPVDelegate` conforms to `VividPlayerCoreDelegate`; `VividMPVHostView.core` is a `VividPlayerCore?`. The bridge switch-over changed nothing in `stop()`; its teardown later moved into `retireCore(resetDisplayCriteria:)`. |
 | `LucidSubtitleInventory.swift` | Converts the track list with a bare `VividPlayerCoreBase()`. |
 | `PlaybackSessionRecorder.swift` | Calls the role test on `VividExternalDisplay`. |
 
