@@ -1,15 +1,14 @@
-
 import CoreGraphics
 import Foundation
 
-/// Owns disposable still extraction for the active Vivid load generation.
+/// Scrub preview stills for the current load, on iPhone and iPad.
 ///
-/// Vivid's controls speak in source-media time while Vivid's still APIs use
-/// the active player/transport axis. Keeping the conversion and generation
-/// fences here prevents a late frame from a replaced V3 plan appearing over
-/// the next item. Cache-backed native stills are preferred because they do
-/// not open a second connection; software playback falls back to Vivid's
-/// session-coupled `FrameExtractor` over the exact load URL and headers.
+/// The controls work in source-media time, while the engine's frame
+/// extractor works on the loaded transport's own timeline. Keeping the
+/// conversion and the generation fences here stops a late frame from a
+/// replaced Silo plan appearing over the next item. The extractor reads the
+/// exact URL and headers the load was opened with. Apple TV shows no
+/// thumbnails, so there it never starts.
 @MainActor
 final class VividScrubPreviewProvider {
     struct Preview {
@@ -43,13 +42,12 @@ final class VividScrubPreviewProvider {
         self.engine = engine
     }
 
-    /// Binds previews to a successfully loaded Vivid generation. The
-    /// explicit URL/header overload is intentional: it guarantees an
-    /// authenticated V3 transport is extracted with the same inputs that
-    /// were validated by `VividLoadSpec`.
+    /// Binds previews to a load that has opened. The extractor gets the
+    /// load's URL and headers explicitly, so an authenticated Silo transport
+    /// is read with the same inputs `VividLoadSpec` checked.
     func activate(_ spec: VividLoadSpec) {
         endSession()
-        // tvOS keeps timeline scrubbing without starting thumbnail work.
+        // Apple TV keeps timeline scrubbing without any thumbnail work.
         #if !os(tvOS)
         sessionGeneration &+= 1
         activeSpec = spec
@@ -60,9 +58,8 @@ final class VividScrubPreviewProvider {
         #endif
     }
 
-    /// Starts one interaction. Prewarming is elective and Vivid will yield
-    /// it while playback is starved; the first requested still is therefore
-    /// never allowed to compete with startup/recovery media.
+    /// Starts one interaction, clearing the previous still and opening a
+    /// fresh extractor if the last interaction retired it.
     func begin(atSourceTime sourceTime: Double) {
         guard let spec = activeSpec else { return }
         onPreview?(nil)
@@ -73,19 +70,16 @@ final class VividScrubPreviewProvider {
     }
 
     /// Requests only the latest scrub target. The short trailing debounce,
-    /// single pending slot, and prompt extractor shutdown bound work during a
-    /// fast drag. A valid local request keeps the last successful still visible
-    /// until a replacement succeeds; cache misses are not lifecycle boundaries.
-    /// Both session and request generations fence late cache/decode results
-    /// before publication.
+    /// the single pending slot and the prompt extractor shutdown bound the
+    /// work during a fast drag. A valid request keeps the last still up until
+    /// a newer one succeeds; a miss doesn't clear it. Session and request
+    /// generations both fence late results before they're published.
     ///
-    /// Targets the loaded transport cannot express — chiefly a backward scrub
-    /// before a re-anchored HLS plan's `timeline_offset_seconds` — are dropped
-    /// with a neutral (nil) publication. Converting them through
-    /// `playerPosition(forSourceTime:)` clamps to player time 0, which would
-    /// present the transport's first frame as if it were the requested source
-    /// moment. Only a server replan can produce a transport containing them,
-    /// and server-backed preview fetching is out of scope here.
+    /// A target the loaded transport can't reach (chiefly a scrub back before
+    /// a re-anchored HLS plan's `timeline_offset_seconds`) publishes no still.
+    /// Converting it with `playerPosition(forSourceTime:)` would clamp to the
+    /// transport's first frame and show that as the requested moment. Only a
+    /// server replan could produce a transport that holds it.
     func request(atSourceTime sourceTime: Double) {
         guard sourceTime.isFinite, sourceTime >= 0 else {
             // An invalid target still supersedes whatever was decoding: fence
