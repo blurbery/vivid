@@ -11,9 +11,10 @@ struct StreamRequest {
     ///
     /// - A `file://` URL is a local file with no headers, refused when the
     ///   media must be header-authenticated.
-    /// - Native v2 (`nativeApiMajor == 2`) takes only a relative
-    ///   `/api/v2/` stream path carrying a session-scoped signed reference.
-    ///   The bearer stays a header and never leaves the API origin.
+    /// - Native v2 (`nativeApiMajor == 2`) takes only a relative `/api/v2/`
+    ///   media path, whose query may carry the session-scoped signed
+    ///   reference (`st`). The bearer stays a header and never leaves the API
+    ///   origin.
     /// - Header-authenticated V3 takes only the two API-relative route
     ///   families the contract promises (`/stream/` and
     ///   `/playback/transcode/`). An absolute URL is a contract breach even

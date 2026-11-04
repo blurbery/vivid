@@ -85,11 +85,13 @@ enum BufferAheadMode: String, CaseIterable {
 
 /// The player's preferences on this device.
 ///
-/// Everything is local. Values live in `UserDefaults` under keys partitioned
-/// by server, profile and device (``currentScopeIdentifier``), falling back to
-/// the bare key when there's no active scope. Installed apps already hold
-/// values under these keys, so none of them may change. Each property writes
-/// itself back when it changes.
+/// Everything is local. Most values live in `UserDefaults` under keys
+/// partitioned by server, profile and device (``currentScopeIdentifier``),
+/// falling back to the bare key when there's no active scope. The exceptions
+/// are the IntroDB switch (``VividSkipSource/defaultsKey``, scoped on iOS
+/// only) and the legacy autoplay key and its migration owner, which are read
+/// unscoped. Installed apps already hold values under these keys, so none of
+/// them may change. Each property writes itself back when it changes.
 @Observable
 final class PlayerSettings {
     enum RefreshResult: Equatable {
