@@ -215,14 +215,14 @@ final class TVLightTouchObserverView: TVWindowRemoteObserverView {
     }
 
     override func buildRecognizers() -> [UIGestureRecognizer] {
-        let contact = TVLightTouchRecognizer(target: self, action: #selector(contactChanged(_:)))
+        let restingFinger = TVLightTouchRecognizer(target: self, action: #selector(contactChanged(_:)))
         // tvOS gives custom recognisers Select by default. This one handles
         // touches only, so a Select press would never finish in it and could
         // stop the focused button activating (Apple 111175673).
-        contact.listenToClickpadOnly()
-        contact.reportAlongside(self)
-        contact.delaysTouchesBegan = false
-        contact.delaysTouchesEnded = false
+        restingFinger.listenToClickpadOnly()
+        restingFinger.reportAlongside(self)
+        restingFinger.delaysTouchesBegan = false
+        restingFinger.delaysTouchesEnded = false
 
         let arrows: [UIPress.PressType] = [.leftArrow, .rightArrow, .upArrow, .downArrow]
         let clicks: [UIGestureRecognizer] = arrows.map { arrow in
@@ -232,7 +232,7 @@ final class TVLightTouchObserverView: TVWindowRemoteObserverView {
             click.reportAlongside(self)
             return click
         }
-        return [contact] + clicks
+        return [restingFinger] + clicks
     }
 
     override func recognizersWillDetach() {

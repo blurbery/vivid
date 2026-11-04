@@ -195,10 +195,10 @@ struct TVPlayerControls: View {
         // wake the transport is still mounted, so its `onAppear` seed doesn't
         // run, nothing has focus and Menu never reaches PlayerView's
         // `onExitCommand`. Seed focus again once the scene is active.
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChange(of: scenePhase) { _, phaseNow in
             // A turn later, once the focus engine has the scene back; a claim
             // in the same transaction can be lost.
-            if newPhase == .active {
+            if phaseNow == .active {
                 DispatchQueue.main.async { refocusAfterWake() }
             }
         }
@@ -441,8 +441,8 @@ struct TVPlayerControls: View {
         let title = viewModel.metadata.primaryTitle.isEmpty ? viewModel.title : viewModel.metadata.primaryTitle
         if !title.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
-                if let series = viewModel.metadata.seriesTitle, !series.isEmpty {
-                    Text(series)
+                if let showName = viewModel.metadata.seriesTitle, !showName.isEmpty {
+                    Text(showName)
                         .font(.vividSmall.weight(.medium))
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
@@ -452,8 +452,8 @@ struct TVPlayerControls: View {
                         .font(.vividHeadline)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    if let episode = viewModel.metadata.episodeTag {
-                        Text(episode)
+                    if let episodeLabel = viewModel.metadata.episodeTag {
+                        Text(episodeLabel)
                             .font(.vividSmall)
                             .foregroundStyle(.white.opacity(0.6))
                     }
