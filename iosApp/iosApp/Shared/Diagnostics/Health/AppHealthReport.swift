@@ -97,23 +97,25 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
         recentEvents: [String]? = nil,
         fingerprintSeed: String
     ) {
-        self.format = Self.formatVersion
-        self.kind = kind
-        self.source = source
-        self.recordedAt = recordedAt
-        self.app = app
-        self.details = details
-        self.context = context
-        self.callStackTree = callStackTree
-        self.recentEvents = recentEvents?.isEmpty == true ? nil : recentEvents
-        self.occurrences = nil
-        self.lastSeenAt = nil
         // The seed identifies the underlying event, so a payload MetricKit
         // delivers twice (live and again through the past payloads) is stored
         // once.
-        self.id = DiagnosticsSHA256.shortHex(
+        let id = DiagnosticsSHA256.shortHex(
             data: Data("\(kind.rawValue)|\(source.rawValue)|\(fingerprintSeed)".utf8),
             count: 24
+        )
+        self.init(
+            id: id,
+            kind: kind,
+            source: source,
+            recordedAt: recordedAt,
+            app: app,
+            details: details,
+            context: context,
+            callStackTree: callStackTree,
+            recentEvents: recentEvents?.isEmpty == true ? nil : recentEvents,
+            occurrences: nil,
+            lastSeenAt: nil
         )
     }
 }

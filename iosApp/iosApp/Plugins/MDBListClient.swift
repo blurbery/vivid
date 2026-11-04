@@ -54,7 +54,8 @@ private final class MDBListRedirectPolicy: NSObject, URLSessionTaskDelegate, @un
     }
 }
 
-/// Separate transport: media-server credentials never enter MDBList requests.
+/// MDBList's API, on its own session: media-server credentials never enter
+/// MDBList requests, and the personal key goes only in the `apikey` query.
 final class MDBListClient: @unchecked Sendable {
     private let session: URLSession
     init(configuration: URLSessionConfiguration = .ephemeral) {
@@ -73,23 +74,39 @@ final class MDBListClient: @unchecked Sendable {
     }
 
     func history(key: String) async throws -> [MDBListHistoryItem] {
-        var result: [MDBListHistoryItem] = []
-        for type in ["movie", "episode"] {
+        try await allPages("/sync/watched", types: ["movie", "episode"], key: key,
+                           parse: Self.parseHistory, nextCursor: Self.historyNextCursor)
+    }
+
+    /// Every page of a cursor-paged list, for each media type in turn. A
+    /// repeated cursor, or more than 1,000 pages, means the list can't be
+    /// read in full.
+    private func allPages<Item>(
+        _ path: String, types: [String], key: String,
+        parse: ([String: Any], String) throws -> [Item],
+        nextCursor: ([String: Any], Int) throws -> String?
+    ) async throws -> [Item] {
+        var result: [Item] = []
+        for type in types {
             var cursor: String?
             var seen = Set<String>()
             for page in 0..<1000 {
-                try Task.checkCancellation()
                 var query = ["mediatype": type, "limit": "1000"]
                 if let cursor { query["cursor"] = cursor }
-                let response = try await request("/sync/watched", key: key, query: query)
-                let items = try Self.parseHistory(response, type: type)
+                let response = try await request(path, key: key, query: query)
+                let items = try parse(response, type)
                 result += items
-                guard let next = try Self.historyNextCursor(response, itemCount: items.count) else { break }
+                guard let next = try nextCursor(response, items.count) else { break }
                 guard seen.insert(next).inserted, page < 999 else { throw MDBListFailure.incomplete }
                 cursor = next
             }
         }
         return result
+    }
+
+    /// MDBList sends IDs as strings or numbers.
+    private static func idString(_ value: Any?) -> String? {
+        (value as? String) ?? (value as? NSNumber)?.stringValue
     }
 
     static func historyNextCursor(_ response: [String: Any], itemCount: Int) throws -> String? {
@@ -130,10 +147,8 @@ final class MDBListClient: @unchecked Sendable {
             guard let item = row[type] as? [String: Any], let ids = item["ids"] as? [String: Any] else {
                 throw MDBListFailure.invalidResponse
             }
-            let resolved = Set(["tmdb", "imdb", "tvdb"].compactMap { provider -> MDBListItemID? in
-                let raw = ids[provider]
-                let value = (raw as? String) ?? (raw as? NSNumber)?.stringValue
-                return MDBListItemID(type: type, provider: provider, value: value)
+            let resolved = Set(["tmdb", "imdb", "tvdb"].compactMap { provider in
+                MDBListItemID(type: type, provider: provider, value: idString(ids[provider]))
             })
             return MDBListHistoryItem(ids: resolved)
         }
@@ -170,29 +185,15 @@ final class MDBListClient: @unchecked Sendable {
         for play in response["plays"] as? [[String: Any]] ?? [] {
             guard let type = play["type"] as? String, let ids = play["ids"] as? [String: Any] else { continue }
             for (provider, value) in ids {
-                if let id = MDBListItemID(type: type, provider: provider, value: (value as? String) ?? (value as? NSNumber)?.stringValue) { confirmed.insert(id) }
+                if let id = MDBListItemID(type: type, provider: provider, value: Self.idString(value)) { confirmed.insert(id) }
             }
         }
         return Set(items.map { $0.0 }).intersection(confirmed)
     }
 
     func watchlist(key: String) async throws -> [MDBListWatchlistItem] {
-        var result: [MDBListWatchlistItem] = []
-        for type in ["movie", "show"] {
-            var cursor: String?
-            var seen = Set<String>()
-            for page in 0..<1000 {
-                var query = ["mediatype": type, "limit": "1000"]
-                if let cursor { query["cursor"] = cursor }
-                let response = try await request("/watchlist/items", key: key, query: query)
-                let items = try Self.parseWatchlist(response, type: type)
-                result += items
-                guard let next = try Self.watchlistNextCursor(response, itemCount: items.count) else { break }
-                guard seen.insert(next).inserted, page < 999 else { throw MDBListFailure.incomplete }
-                cursor = next
-            }
-        }
-        return result
+        try await allPages("/watchlist/items", types: ["movie", "show"], key: key,
+                           parse: Self.parseWatchlist, nextCursor: Self.watchlistNextCursor)
     }
 
     static func watchlistNextCursor(_ response: [String: Any], itemCount: Int) throws -> String? {
@@ -226,11 +227,8 @@ final class MDBListClient: @unchecked Sendable {
         }
         return try rows.map { row in
             let ids = row["ids"] as? [String: Any] ?? [:]
-            func string(_ value: Any?) -> String? {
-                (value as? String) ?? (value as? NSNumber)?.stringValue
-            }
             guard let item = MDBListWatchlistItem(type: type, title: row["title"] as? String ?? "",
-                tmdb: string(ids["tmdb"] ?? row["id"]), imdb: string(ids["imdb"] ?? row["imdb_id"])) else {
+                tmdb: idString(ids["tmdb"] ?? row["id"]), imdb: idString(ids["imdb"] ?? row["imdb_id"])) else {
                 throw MDBListFailure.invalidResponse
             }
             return item

@@ -117,16 +117,8 @@ struct AppHealthExitMarker: Codable, Equatable {
     /// An exit with no recorded signal: the system ended the app. The cause is
     /// a best guess from what the marker saw.
     func report(detectedAt: Date, app: AppHealthAppInfo, recentEvents: [String] = []) -> AppHealthReport {
-        let cause: String
-        if hangInProgressMs != nil {
-            cause = "hang"
-        } else if context.memoryWarnings > 0 {
-            cause = "memory"
-        } else {
-            cause = "unknown"
-        }
         var details: [String: DiagnosticsJSONValue] = [
-            "likely_cause": .string(cause),
+            "likely_cause": .string(likelyCause),
             "session_started": .string(ISO8601DateFormatter().string(from: armedAt)),
         ]
         if let hangInProgressMs { details["hang_in_progress_ms"] = .int(hangInProgressMs) }
@@ -141,6 +133,14 @@ struct AppHealthExitMarker: Codable, Equatable {
             recentEvents: recentEvents,
             fingerprintSeed: "\(build)|\(armedAt.timeIntervalSince1970)"
         )
+    }
+
+    /// An exit during a long hang reads as a watchdog kill, and one after a
+    /// memory warning as a memory termination.
+    private var likelyCause: String {
+        if hangInProgressMs != nil { return "hang" }
+        if context.memoryWarnings > 0 { return "memory" }
+        return "unknown"
     }
 
     /// A crash the signal handler saw. `marker` is nil when the app was in the

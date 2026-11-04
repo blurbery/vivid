@@ -35,6 +35,22 @@ final class AppHealthStore: Sendable {
         return base.appendingPathComponent("HealthReports", isDirectory: true)
     }
 
+    /// Repeats of the same issue within this window update one report.
+    static let repeatWindow: TimeInterval = 24 * 60 * 60
+
+    static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
+    }()
+
+    static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
     private let directory: URL
     private let limits: Limits
     private let lock = NSLock()
@@ -46,44 +62,46 @@ final class AppHealthStore: Sendable {
         self.now = now
     }
 
-    /// Stores a report unless one with the same ID is already kept. Returns
-    /// whether it was added.
+    // MARK: - Reports
+
+    /// Stores a report unless one with the same ID is already kept. A repeat
+    /// of a problem already kept is counted on that report instead. Returns
+    /// whether a new report was added.
     @discardableResult
     func add(_ report: AppHealthReport) -> Bool {
-        var counted = false
-        var repeatedID: String?
-        let added: Bool = lock.withLock {
-            guard prepareDirectory() else { return false }
-            if Self.countsRepeats(report), let existing = repeatTarget(for: report),
-               existing.report.id != report.id {
+        let outcome: AddOutcome = lock.withLock {
+            guard prepareDirectory() else { return .unchanged }
+            if Self.countsRepeats(report), let existing = repeatTarget(for: report), existing.report.id != report.id {
                 // The same problem again: count it on the report already kept
                 // rather than listing it once per launch.
-                if let data = try? Self.encoder.encode(existing.report.repeated(at: report.recordedAt)) {
-                    counted = (try? data.write(to: existing.url, options: [.atomic])) != nil
-                    if counted { repeatedID = existing.report.id }
-                }
-                return false
+                return write(existing.report.repeated(at: report.recordedAt), to: existing.url)
+                    ? .counted(id: existing.report.id) : .unchanged
             }
             let url = fileURL(for: report.id)
-            guard !FileManager.default.fileExists(atPath: url.path),
-                  let data = try? Self.encoder.encode(report) else { return false }
-            do {
-                try data.write(to: url, options: [.atomic])
-            } catch {
-                return false
-            }
+            guard !FileManager.default.fileExists(atPath: url.path), write(report, to: url) else { return .unchanged }
             prune()
-            return FileManager.default.fileExists(atPath: url.path)
+            return FileManager.default.fileExists(atPath: url.path) ? .added : .unchanged
         }
-        // A repeat after the report was sent hasn't been sent itself, so the
-        // report counts as new again instead of still showing Sent.
-        if let repeatedID { AppHealthSendState.markUnsent(id: repeatedID) }
-        if added || counted { notifyChange() }
-        return added
+        switch outcome {
+        case .added:
+            notifyChange()
+            return true
+        case .counted(let id):
+            // A repeat after the report was sent hasn't been sent itself, so the
+            // report counts as new again instead of still showing Sent.
+            AppHealthSendState.markUnsent(id: id)
+            notifyChange()
+            return false
+        case .unchanged:
+            return false
+        }
     }
 
-    /// Repeats of the same issue within this window update one report.
-    static let repeatWindow: TimeInterval = 24 * 60 * 60
+    private enum AddOutcome {
+        case added
+        case counted(id: String)
+        case unchanged
+    }
 
     /// Problems that can recur on every launch or playback. Crashes, exits
     /// and MetricKit reports stay separate, since each carries its own
@@ -99,17 +117,6 @@ final class AppHealthStore: Sendable {
         }
     }
 
-    /// The kept report for the same issue, first seen within the repeat
-    /// window. Caller holds `lock`.
-    private func repeatTarget(for report: AppHealthReport) -> StoredReport? {
-        let issueID = report.issueID
-        return loadAll().first {
-            $0.report.issueID == issueID
-                && $0.report.source == report.source
-                && report.recordedAt.timeIntervalSince($0.report.recordedAt) < Self.repeatWindow
-        }
-    }
-
     /// Folds a MetricKit crash into the report the crash capture already made
     /// for the same process, so one crash is not listed twice. Returns false
     /// when there is no such report.
@@ -119,8 +126,8 @@ final class AppHealthStore: Sendable {
                 ($0.report.kind == .crash || $0.report.kind == .unexpectedExit)
                     && $0.report.details["pid"] == .int(pid)
                     && $0.report.callStackTree == nil
-            }), let data = try? Self.encoder.encode(match.report.merging(metricKit: incoming)) else { return false }
-            return (try? data.write(to: match.url, options: [.atomic])) != nil
+            }) else { return false }
+            return write(match.report.merging(metricKit: incoming), to: match.url)
         }
         if merged { notifyChange() }
         return merged
@@ -164,31 +171,44 @@ final class AppHealthStore: Sendable {
         directory.appendingPathComponent(id).appendingPathExtension("json")
     }
 
+    /// Whether the report was written in full.
+    private func write(_ report: AppHealthReport, to url: URL) -> Bool {
+        guard let data = try? Self.encoder.encode(report) else { return false }
+        return (try? data.write(to: url, options: [.atomic])) != nil
+    }
+
     private func prepareDirectory() -> Bool {
         let fileManager = FileManager.default
-        if !fileManager.fileExists(atPath: directory.path) {
-            do {
-                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            } catch {
-                return false
-            }
-            #if os(iOS)
-            // Reports describe this device only; keep them out of backups.
-            var url = directory
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            try? url.setResourceValues(values)
-            #endif
+        guard !fileManager.fileExists(atPath: directory.path) else { return true }
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            return false
         }
+        #if os(iOS)
+        // Reports describe this device only; keep them out of backups.
+        var url = directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+        #endif
         return true
+    }
+
+    /// The kept report for the same issue, first seen within the repeat
+    /// window. Caller holds `lock`.
+    private func repeatTarget(for report: AppHealthReport) -> StoredReport? {
+        let issueID = report.issueID
+        return loadAll().first {
+            $0.report.issueID == issueID
+                && $0.report.source == report.source
+                && report.recordedAt.timeIntervalSince($0.report.recordedAt) < Self.repeatWindow
+        }
     }
 
     /// Newest first. Unreadable files are removed rather than kept forever.
     private func loadAll() -> [StoredReport] {
-        let urls = (try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        )) ?? []
+        let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         var stored: [StoredReport] = []
         for url in urls where url.pathExtension == "json" {
             guard let data = try? Data(contentsOf: url),
@@ -236,21 +256,9 @@ final class AppHealthStore: Sendable {
             NotificationCenter.default.post(name: Self.didChange, object: nil)
         }
     }
-
-    static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }()
-
-    static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
 }
 
+/// The file sent to Vivid: the chosen reports, and the tester's note.
 struct AppHealthExport: Codable {
     /// One report as sent: its plain title and issue ID alongside the data.
     struct Entry: Codable {

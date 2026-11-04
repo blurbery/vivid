@@ -12,6 +12,7 @@ struct TVDiagnosticsSettingsPane: View {
     @State private var loaded = false
     @State private var showsDeleteConfirm = false
     @State private var latestPlayback: PlaybackSessionReport?
+    @State private var reloadGeneration = 0
 
     private var groups: [AppHealthReportGroup] { AppHealthReportGroup.grouping(reports) }
     private var unsent: [AppHealthReport] { AppHealthSendState.unsent(in: reports, sentIDs: sentIDs) }
@@ -95,10 +96,17 @@ struct TVDiagnosticsSettingsPane: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Reloads can overlap (on appear and after every store change); only the
+    /// latest may publish, so an older load can't bring back deleted reports.
     private func reload() async {
-        (reports, sentIDs) = await Task.detached(priority: .userInitiated) {
+        reloadGeneration += 1
+        let generation = reloadGeneration
+        let (loadedReports, loadedSentIDs) = await Task.detached(priority: .userInitiated) {
             (AppHealthStore.shared.reports(), AppHealthSendState.sentIDs())
         }.value
+        guard generation == reloadGeneration else { return }
+        reports = loadedReports
+        sentIDs = loadedSentIDs
         loaded = true
     }
 }
@@ -177,23 +185,8 @@ private struct TVDiagnosticsReportPage: View {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: report.displaySummary, subtitle: report.kind.title)
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
-                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
-                        Text(section.title).font(.tvSettings(27, weight: .semibold))
-                        ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.tvSettings(20, design: .monospaced)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(TVSettingsLayout.scaled(18))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
-                            .strokeBorder(.white.opacity(focusedSection == index ? 0.85 : 0), lineWidth: 2)
-                    }
-                    .focusable()
-                    .focused($focusedSection, equals: index)
-                    .focusEffectDisabled()
-                    .accessibilityElement(children: .combine)
+                    TVDiagnosticsReadingSection(index: index, title: section.title, lines: section.lines,
+                                                focusedSection: $focusedSection)
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
@@ -214,6 +207,35 @@ private struct TVDiagnosticsReportPage: View {
             default: return nil
             }
         }
+    }
+}
+
+/// One block of a reading page. Each is focusable so the remote can scroll
+/// the page, following the Privacy Policy page.
+private struct TVDiagnosticsReadingSection: View {
+    let index: Int
+    let title: String
+    let lines: [String]
+    var focusedSection: FocusState<Int?>.Binding
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
+            Text(title).font(.tvSettings(27, weight: .semibold))
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line).font(.tvSettings(20, design: .monospaced)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TVSettingsLayout.scaled(18))
+        .overlay {
+            RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
+                .strokeBorder(.white.opacity(focusedSection.wrappedValue == index ? 0.85 : 0), lineWidth: 2)
+        }
+        .focusable()
+        .focused(focusedSection, equals: index)
+        .focusEffectDisabled()
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -265,23 +287,8 @@ private struct TVLatestPlaybackPage: View {
                 }
                 TVSettingsFooter("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
-                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
-                        Text(section.title).font(.tvSettings(27, weight: .semibold))
-                        ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.tvSettings(20, design: .monospaced)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(TVSettingsLayout.scaled(18))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
-                            .strokeBorder(.white.opacity(focusedSection == index ? 0.85 : 0), lineWidth: 2)
-                    }
-                    .focusable()
-                    .focused($focusedSection, equals: index)
-                    .focusEffectDisabled()
-                    .accessibilityElement(children: .combine)
+                    TVDiagnosticsReadingSection(index: index, title: section.title, lines: section.lines,
+                                                focusedSection: $focusedSection)
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
