@@ -698,6 +698,14 @@ final class PlayerSettingsTests: XCTestCase {
         )
     }
 
+    func testTimeFormatsHandleDurationsTooLargeForInt() {
+        for seconds in [1e30, Double.greatestFiniteMagnitude] {
+            XCTAssertFalse(PlayerTimeFormatter.formatHMS(seconds).isEmpty)
+            XCTAssertFalse(PlayerTimeFormatter.formatRuntime(seconds).isEmpty)
+        }
+        XCTAssertEqual(PlayerTimeFormatter.formatHMS(3_661), "1:01:01")
+        XCTAssertEqual(PlayerTimeFormatter.formatHMS(61), "1:01")
+    }
 }
 
 @MainActor

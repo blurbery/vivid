@@ -1,15 +1,9 @@
-//
-//  SystemCaptionSelectionPreferences.swift
-//  Vivid (iOS + tvOS + macOS)
-//
-//  Read-only bridge for the non-visual half of Apple's Subtitles &
-//  Captioning preferences. Vivid never writes these values: the active
-//  system profile remains the single source of truth.
-//
-
 import Foundation
 import MediaAccessibility
 
+/// The non-visual half of Apple's Subtitles & Captioning settings: when to
+/// show subtitles and in which languages. Read only; the system profile is
+/// the source of truth and Vivid never writes it.
 struct SystemCaptionSelectionPreferences: Equatable {
     enum DisplayMode: Equatable {
         case forcedOnly

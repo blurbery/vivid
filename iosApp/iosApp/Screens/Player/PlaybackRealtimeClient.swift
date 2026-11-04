@@ -1,6 +1,11 @@
 import Foundation
 import OSLog
 
+/// Keeps Silo's playback control websocket open for the bound session:
+/// connects (with a ticket on API v2, a bearer otherwise), says hello,
+/// acknowledges and runs each command once and reports its result, and
+/// passes events on. Reconnects with backoff until the binding changes or
+/// too many attempts in a row fail.
 actor PlaybackRealtimeClient {
     typealias CommandHandler = @MainActor (PlaybackRealtimeCommandEnvelope) async throws -> Void
     typealias EventHandler = @MainActor (PlaybackRealtimeEventEnvelope) async -> Void
@@ -20,9 +25,8 @@ actor PlaybackRealtimeClient {
         2_000_000_000,
         5_000_000_000,
     ]
-    /// After this many consecutive connection failures, stop reconnecting.
-    /// Local playback continues; only
-    /// remote command/event delivery is degraded.
+    /// After this many failures in a row, stop reconnecting. Playback carries
+    /// on; only remote commands and events stop arriving.
     private static let consecutiveFailureCircuitBreakerThreshold = 8
 
     private var boundSessionId: String?
@@ -128,51 +132,22 @@ actor PlaybackRealtimeClient {
                 guard event.sessionId == sessionId else { continue }
                 await eventHandler?(event)
             case .command(let command):
-                guard command.sessionId == sessionId else { continue }
-                if seenCommandIds.contains(command.commandId) {
-                    continue
-                }
-                seenCommandIds.insert(command.commandId)
-
-                try await send(
-                    makePlaybackRealtimeAck(
-                        sessionId: sessionId,
-                        commandId: command.commandId
-                    ),
-                    on: socket
-                )
-
+                // Each command runs once per connection, however often it's resent.
+                guard command.sessionId == sessionId,
+                      seenCommandIds.insert(command.commandId).inserted else { continue }
+                try await send(makePlaybackRealtimeAck(sessionId: sessionId, commandId: command.commandId), on: socket)
+                let rejection: String?
                 do {
                     try await commandHandler(command)
-                    try await send(
-                        makePlaybackRealtimeResult(
-                            sessionId: sessionId,
-                            commandId: command.commandId,
-                            status: .completed
-                        ),
-                        on: socket
-                    )
+                    rejection = nil
                 } catch let error as PlaybackRealtimeCommandExecutionError {
-                    try await send(
-                        makePlaybackRealtimeResult(
-                            sessionId: sessionId,
-                            commandId: command.commandId,
-                            status: .rejected,
-                            error: error.rejectionReason
-                        ),
-                        on: socket
-                    )
+                    rejection = error.rejectionReason
                 } catch {
-                    try await send(
-                        makePlaybackRealtimeResult(
-                            sessionId: sessionId,
-                            commandId: command.commandId,
-                            status: .rejected,
-                            error: PlaybackRealtimeCommandExecutionError.commandFailed.rejectionReason
-                        ),
-                        on: socket
-                    )
+                    rejection = PlaybackRealtimeCommandExecutionError.commandFailed.rejectionReason
                 }
+                try await send(makePlaybackRealtimeResult(sessionId: sessionId, commandId: command.commandId,
+                                                          status: rejection == nil ? .completed : .rejected,
+                                                          error: rejection), on: socket)
             }
         }
     }

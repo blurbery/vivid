@@ -20,7 +20,7 @@ enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// Point sizes are interpreted inside the overlay's 1080-line reference
+    /// Point sizes are measured in the overlay's 1080-line reference
     /// and scale with the displayed video rect, so they read the same in any
     /// orientation. The ladder is rebased ~1.4x from the original values
     /// (large = old xxlarge) after the overlay switched from full-screen to
@@ -39,7 +39,7 @@ enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
         // old medium) after the defaults read one size too big in the living
         // room. Each preset now takes the prior rung's value; small is a new
         // ~1.2x step below medium. Large (the default) was then eased from 63
-        // to 58 — 63 read a touch too big and medium's 51 a touch too small,
+        // to 58: 63 read a touch too big and medium's 51 a touch too small,
         // so the default now lands between the two.
         switch self {
         case .small: return 43
@@ -52,8 +52,9 @@ enum SubtitleFontSizePreset: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-// Future: add a "system" appearance source that maps Apple's Media
-// Accessibility caption preferences into this model before overlay styling.
+/// A subtitle font family: one of the three generic families, or any
+/// installed family by name. Blank names aren't allowed; a blank stored
+/// value decodes as sans-serif.
 struct SubtitleFontFamilyPreset: RawRepresentable, Codable, CaseIterable, Hashable, Identifiable {
     let rawValue: String
 
