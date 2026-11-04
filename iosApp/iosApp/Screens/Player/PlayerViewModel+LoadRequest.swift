@@ -139,8 +139,9 @@ extension PlayerViewModel {
         /// Autoplay from the Next Up postroll: time-limited, and a failure
         /// goes back to the postroll with `nextUpStartError`.
         case autoplay
-        /// Automatic recovery. A failure stays on the player surface with a
-        /// notice instead of using the postroll.
+        /// Automatic recovery: time-limited like autoplay (only a viewer's
+        /// own pick has no limit). A failure stays on the player surface
+        /// with a notice instead of using the postroll.
         case recovery
     }
 

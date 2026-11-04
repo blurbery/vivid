@@ -604,7 +604,7 @@ class PlayerViewModel {
     /// sidecar locally.
     var pendingServerRenderedSubtitleTrackId: Int64?
     /// Auto's inputs for the current item, applied once the engine lists its
-    /// embedded tracks and cleared on cleanup.
+    /// embedded tracks and cleared when the next load starts.
     var prefsForCurrentItem: PrefsSnapshot?
     struct PrefsSnapshot {
         let preferredLanguage: String?

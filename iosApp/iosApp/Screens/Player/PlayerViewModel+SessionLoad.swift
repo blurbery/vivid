@@ -484,8 +484,9 @@ extension PlayerViewModel {
             Self.logger.warning(
                 "[CMP] beginFreshLoad recovered from autoplay failure: \(MediaLogRedactor.sanitize(message), privacy: .public)"
             )
-            // The same teardown as the Retry screen, but no `error`: this
-            // surface stays recoverable.
+            // Only the engine dispose and the loading and playing flags are
+            // shared with the Retry screen's teardown, and there's no
+            // `error`: this surface stays recoverable.
             stopAfterRecoverableLoadFailure()
             // Drop the candidate episode so the panel shows its Finished state
             // with the start error.
@@ -522,9 +523,10 @@ extension PlayerViewModel {
         isPlaying = false
     }
 
-    /// Ends the current item at the Retry screen. With `handleEndOfFile`, one
-    /// of the two places every load and recovery finishes, so a diagnostics
-    /// report always shows how playback ended.
+    /// Ends the current item at the Retry screen and writes the "playback
+    /// ended in failure" breadcrumb. A failed autoplay load goes back to
+    /// Next Up and a failed recovery load shows a notice instead; neither
+    /// comes through here.
     func finalizeTerminalPlaybackError(_ message: String) {
         #if DEBUG
         testRecorder?.record(.terminalError(message))

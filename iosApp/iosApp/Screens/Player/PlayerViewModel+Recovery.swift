@@ -15,8 +15,9 @@ import OSLog
 ///   (`attemptStaleSessionRenewal`, in `+SessionLoad`), when the server says
 ///   the session is gone.
 ///
-/// Anything that can't recover ends at the Retry screen through
-/// `finalizeTerminalPlaybackError`.
+/// A playback failure that can't recover ends at the Retry screen through
+/// `finalizeTerminalPlaybackError`; a failed recovery load shows a notice
+/// instead.
 extension PlayerViewModel {
     // MARK: Entry point
 

@@ -275,8 +275,8 @@ extension PlayerViewModel {
     /// Latched per epoch, because it has two sources that must never both
     /// count: the first frame for anything with a picture, and the audio
     /// route starting for an audio-only load. Everything a started load owes
-    /// the server hangs off this call: progress reporting, keepalives and
-    /// Silo's first-frame report. It also ends a Next Up hand-off and starts
+    /// the server hangs off this call: progress reporting and Silo's
+    /// first-frame report. It also ends a Next Up hand-off and starts
     /// the Next Up and On Deck fetches held for it.
     private func handleVividStartupMilestone(epoch: VividPlaybackController.LoadEpoch) {
         guard startedVividLoadEpoch != epoch else { return }
