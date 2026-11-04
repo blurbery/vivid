@@ -4,8 +4,7 @@ import AVFoundation
 import Combine
 import Foundation
 
-
-/// Vivid-owned branding; upstream package and licence identities remain intact.
+/// Vivid's name for its engine. Upstream package and licence identities stay as they are.
 enum LucidCore {
     static let name = "Lucid"
     static let path = "Lucid/mpv"
@@ -15,8 +14,18 @@ enum VividPlaybackEngineIdentity {
     static let name = LucidCore.name
 }
 
-enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
-enum PlaybackPhase: Equatable { case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended, error(String) }
+// MARK: - Playback state
+
+enum PlaybackState: Equatable {
+    case idle, loading, playing, paused, seeking, ended, error(String)
+}
+
+enum PlaybackPhase: Equatable {
+    case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended, error(String)
+}
+
+/// How the picture reaches the screen. Lucid uses `sampleBuffer`, or
+/// `audio` for an audio-only load.
 enum VideoRoute: String {
     case none, remoteBypass, loopback, sampleBuffer, audio
 
@@ -31,7 +40,9 @@ enum VideoRoute: String {
         }
     }
 }
+
 enum VividNativeFrameReadiness {
+    /// The current item's first frame, once, and never the outgoing item's.
     static func accepts(item: AnyObject, current: AnyObject?, outgoing: AnyObject?, alreadyPresented: Bool) -> Bool {
         !alreadyPresented && item === current && item !== outgoing
     }
@@ -45,6 +56,7 @@ struct VividNativeSubtitleHandoff {
         let track: Int?
         let active: Bool
     }
+
     private var applied: Selection?
 
     mutating func needsUpdate(item: AnyObject, track: Int?, active: Bool) -> Bool {
@@ -54,10 +66,17 @@ struct VividNativeSubtitleHandoff {
         return true
     }
 
-    mutating func reset() { applied = nil }
+    mutating func reset() {
+        applied = nil
+    }
 }
 
-enum VideoFormat { case sdr, hdr10, hdr10Plus, dolbyVision, hlg }
+enum VideoFormat {
+    case sdr, hdr10, hdr10Plus, dolbyVision, hlg
+}
+
+// MARK: - Errors
+
 struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
     enum Kind: String {
         case sourceRefused, vodSourceFailed, nativeItemFailed, noPlayableTrackWithinBudget
@@ -67,27 +86,35 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
         /// the stream, so recovery must never step down to another route.
         case audioSessionUnavailable
     }
+
     let kind: Kind
+    /// English, because recovery, diagnostics and the server read it.
+    /// `PlaybackFailureText` shows it in the app's language.
     let message: String
     var underlyingDomain: String? = nil
     var underlyingCode: Int? = nil
+
     var errorDescription: String? { message }
 
+    /// The URL error code of a refused source that a reload may recover from.
     var transientSourceCode: Int? {
         guard kind == .sourceRefused, underlyingDomain == NSURLErrorDomain,
               let code = underlyingCode, VividTransientRecoveryBudget.recognises(code) else { return nil }
         return code
     }
 
+    /// Whether the error, or one it wraps (up to eight deep), is an HTTP
+    /// authentication refusal.
     static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
         guard depth < 8 else { return false }
-                if let typed = error as? PlaybackErrorInfo {
-            return (typed.kind == .sourceRefused
+        if let typed = error as? PlaybackErrorInfo {
+            let refused401 = typed.kind == .sourceRefused
                 && (typed.underlyingDomain == nil || typed.underlyingDomain == NSURLErrorDomain)
-                && typed.underlyingCode == 401)
-                || (typed.kind == .nativeItemFailed
-                    && typed.underlyingDomain == NSURLErrorDomain
-                    && typed.underlyingCode == NSURLErrorUserAuthenticationRequired)
+                && typed.underlyingCode == 401
+            let nativeAuthentication = typed.kind == .nativeItemFailed
+                && typed.underlyingDomain == NSURLErrorDomain
+                && typed.underlyingCode == NSURLErrorUserAuthenticationRequired
+            return refused401 || nativeAuthentication
         }
         let native = error as NSError
         if native.domain == NSURLErrorDomain && native.code == NSURLErrorUserAuthenticationRequired {
@@ -97,7 +124,10 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
         return isHTTPAuthenticationFailure(underlying, depth: depth + 1)
     }
 }
+
 typealias PlaybackErrorKind = PlaybackErrorInfo.Kind
+
+// MARK: - Failure messages
 
 /// Vivid's own playback failure messages, as people see them.
 ///
@@ -256,6 +286,8 @@ enum PlaybackFailureText {
     ]
 }
 
+// MARK: - Tracks and load options
+
 struct TrackInfo: Identifiable, Equatable {
     let id: Int
     var name: String = ""
@@ -266,23 +298,32 @@ struct TrackInfo: Identifiable, Equatable {
     var isDefault = false
     var isForced = false
     var isHearingImpaired = false
-    var isCommentary = false
     var isAtmos = false
-    var assHeader: String? = nil
     var isExternal = false
     var isNativelyRenderedSubtitle = false
     var sourceStreamIndex: Int? = nil
+
     init(id: Int, name: String = "", codec: String = "", language: String? = nil, channels: Int = 0,
-         bitrate: Int64 = 0, isDefault: Bool = false, isForced: Bool = false,
-         isHearingImpaired: Bool = false, isCommentary: Bool = false, isAtmos: Bool = false,
-         assHeader: String? = nil, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false, sourceStreamIndex: Int? = nil) {
-        self.id=id; self.name=name; self.codec=codec; self.language=language; self.channels=channels
-        self.bitrate=bitrate; self.isDefault=isDefault; self.isForced=isForced
-        self.isHearingImpaired=isHearingImpaired; self.isCommentary=isCommentary; self.isAtmos=isAtmos
-        self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
+         bitrate: Int64 = 0, isDefault: Bool = false, isForced: Bool = false, isHearingImpaired: Bool = false,
+         isAtmos: Bool = false, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false,
+         sourceStreamIndex: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.codec = codec
+        self.language = language
+        self.channels = channels
+        self.bitrate = bitrate
+        self.isDefault = isDefault
+        self.isForced = isForced
+        self.isHearingImpaired = isHearingImpaired
+        self.isAtmos = isAtmos
+        self.isExternal = isExternal
+        self.isNativelyRenderedSubtitle = isNativelyRenderedSubtitle
         self.sourceStreamIndex = sourceStreamIndex
     }
-    }
+}
+
+/// A subtitle file outside the media, downloaded or read by Vivid.
 struct ExternalSubtitleTrack: Equatable, Sendable {
     let url: URL
     var name: String? = nil
@@ -293,8 +334,10 @@ struct ExternalSubtitleTrack: Equatable, Sendable {
     var httpHeaders: [String: String]? = nil
     var formatHint: String? = nil
     var sourceStreamIndex: Int32? = nil
+    /// How far the file's timeline is known to run ahead of the media's.
     var nativeTimelineOffsetSeconds: Double = 0
 }
+
 struct LoadOptions: Equatable, Sendable {
     var httpHeaders: [String: String] = [:]
     var matchContentEnabled = true
@@ -315,6 +358,7 @@ struct LoadOptions: Equatable, Sendable {
     /// refreshed credentials reach the live stream.
     var managedHTTPReader = false
 }
+
 /// Volume Boost and Enhanced Dialogue, as one load applies them.
 struct VividAudioEnhancement: Equatable, Sendable {
     /// The boost levels Settings offers, as a percentage of the standard level.
@@ -338,18 +382,39 @@ struct VividAudioEnhancement: Equatable, Sendable {
     /// The offered level nearest to a stored one, so a value written by
     /// another build still reads back as one of the choices.
     static func boostLevel(_ percent: Int) -> Int {
-        // Bounded first, so a corrupt stored value cannot overflow the distance.
+        // Bounded first, so a corrupt stored value can't overflow the distance.
         let percent = min(max(percent, 0), 1_000)
         return boostLevels.min { abs($0 - percent) < abs($1 - percent) } ?? defaultBoostLevel
     }
 }
-struct MediaChapter: Identifiable { let id: Int; let name: String; let startSeconds: Double }
-struct SystemCaptionRequest { let language: String? }
-struct StartupProgress { let checkpoint: String }
-@MainActor final class PlaybackClock: ObservableObject {
+
+struct MediaChapter: Identifiable {
+    let id: Int
+    let name: String
+    let startSeconds: Double
+}
+
+struct SystemCaptionRequest {
+    let language: String?
+}
+
+struct StartupProgress {
+    let checkpoint: String
+}
+
+@MainActor
+final class PlaybackClock: ObservableObject {
     @Published var currentTime: Double = 0
 }
-struct SubtitleColor: Equatable { let r: UInt8; let g: UInt8; let b: UInt8 }
+
+// MARK: - Subtitle cues
+
+struct SubtitleColor: Equatable {
+    let r: UInt8
+    let g: UInt8
+    let b: UInt8
+}
+
 struct SubtitleTextRun {
     let text: String
     var color: SubtitleColor? = nil
@@ -367,20 +432,35 @@ struct SubtitleTextRun {
             && fontName == other.fontName && fontSize == other.fontSize
     }
 }
-struct SubtitleTextPlacement { var alignment: Int? = nil; var position: CGPoint? = nil }
+
+struct SubtitleTextPlacement {
+    /// An ASS `\an` alignment, 1 to 9.
+    var alignment: Int? = nil
+    var position: CGPoint? = nil
+}
+
 struct SubtitleImage {
     let cgImage: CGImage
     let position: CGRect
     let canvasSize: CGSize
 }
+
 struct SubtitleCue: Identifiable {
-    enum Body { case text(String), richText([SubtitleTextRun]), image(SubtitleImage) }
+    enum Body {
+        case text(String)
+        case richText([SubtitleTextRun])
+        case image(SubtitleImage)
+    }
+
     let id: Int
     let startTime: Double
     let endTime: Double
     let body: Body
     var placement: SubtitleTextPlacement? = nil
 }
+
+// MARK: - Statistics and Picture in Picture
+
 struct LiveTelemetry: Equatable {
     var forwardBufferSeconds: Double? = nil
     var displayCushionSeconds: Double? = nil
@@ -399,21 +479,40 @@ struct LiveTelemetry: Equatable {
     var producerRestartCount: Int = 0
     var rssMb: Int = 0
 }
-@MainActor final class VividDiagnostics: ObservableObject {
+
+@MainActor
+final class VividDiagnostics: ObservableObject {
     @Published var liveTelemetry: LiveTelemetry?
 }
-@MainActor final class SampleBufferPiPSource {
+
+/// What Picture in Picture needs from the engine for the core's layer.
+@MainActor
+final class SampleBufferPiPSource {
     let layer: AVSampleBufferDisplayLayer
     private weak var engine: VividEngine?
-    init(layer: AVSampleBufferDisplayLayer, engine: VividEngine) { self.layer = layer; self.engine = engine }
+
+    init(layer: AVSampleBufferDisplayLayer, engine: VividEngine) {
+        self.layer = layer
+        self.engine = engine
+    }
+
     var isPaused: Bool { engine?.state != .playing }
-    func setPlaying(_ value: Bool) { if value { engine?.play() } else { engine?.pause() } }
+
+    func setPlaying(_ value: Bool) {
+        if value { engine?.play() } else { engine?.pause() }
+    }
+
+    /// The whole duration once it's known, otherwise an open range.
     func timeRange() -> CMTimeRange {
-        guard let engine, engine.duration > 0 else { return CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity) }
+        guard let engine, engine.duration > 0 else {
+            return CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
+        }
         return CMTimeRange(start: .zero, duration: CMTime(seconds: engine.duration, preferredTimescale: 600))
     }
+
     func skip(by seconds: Double) {
         guard let engine else { return }
-        Task { await engine.seek(to: min(max(0, engine.currentTime + seconds), engine.duration > 0 ? engine.duration : .greatestFiniteMagnitude)) }
+        let end = engine.duration > 0 ? engine.duration : .greatestFiniteMagnitude
+        Task { await engine.seek(to: min(max(0, engine.currentTime + seconds), end)) }
     }
 }
