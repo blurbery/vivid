@@ -11,34 +11,37 @@ private struct TVHomeCollectionPoster: View {
     private var height: CGFloat { width * 1.5 }
 
     var body: some View {
-        Group {
-            if !loadsArtwork {
-                Color.white.opacity(0.06)
-            } else if let url = collection.posterUrl, !url.isEmpty {
-                CachedAsyncImage(
-                    url: url,
-                    targetSize: CGSize(width: width, height: height),
-                    thumbhash: collection.posterThumbhash,
-                    contentMode: .fill
-                )
-            } else {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color(hue: hue, saturation: 0.5, brightness: 0.42),
-                                 Color(hue: hue, saturation: 0.32, brightness: 0.22)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                    Image(systemName: "square.stack.fill")
-                        .font(.system(size: width * 0.24, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.85))
-                }
-            }
-        }
-        .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(10), style: .continuous))
+        artwork
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(10), style: .continuous))
     }
 
-    /// Stable hue, as on For You's collection cards.
+    @ViewBuilder
+    private var artwork: some View {
+        if !loadsArtwork {
+            Color.white.opacity(0.06)
+        } else if let url = collection.posterUrl, !url.isEmpty {
+            CachedAsyncImage(
+                url: url,
+                targetSize: CGSize(width: width, height: height),
+                thumbhash: collection.posterThumbhash,
+                contentMode: .fill
+            )
+        } else {
+            ZStack {
+                LinearGradient(
+                    colors: [Color(hue: hue, saturation: 0.5, brightness: 0.42),
+                             Color(hue: hue, saturation: 0.32, brightness: 0.22)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+                Image(systemName: "square.stack.fill")
+                    .font(.system(size: width * 0.24, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+            }
+        }
+    }
+
+    /// A steady hue per collection, as on For You's collection cards.
     private var hue: Double {
         var hasher = Hasher()
         hasher.combine(collection.id)
@@ -48,8 +51,8 @@ private struct TVHomeCollectionPoster: View {
 
 // MARK: - Home row
 
-/// Always the last row on Home, below the server's own rows. Cards match
-/// the other Home rows and open the collection's page.
+/// Always the last row on Home, below the server's own rows. Cards match the
+/// other Home rows and open the collection's page.
 struct TVHomeCollectionsRow: View {
     /// Increments when Home returns focus here from a collection's page.
     let enterRequest: Int
@@ -75,23 +78,7 @@ struct TVHomeCollectionsRow: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 40) {
                     ForEach(store.rowCollections) { entry in
-                        MediaCard(
-                            title: entry.collection.name,
-                            posterUrl: entry.collection.posterUrl ?? "",
-                            thumbhash: entry.collection.posterThumbhash,
-                            subtitle: entry.collection.itemCount.map { String(localized: "\($0) titles") },
-                            action: {
-                                lastCard = entry.id
-                                onOpen()
-                                router.navigate(to: .libraryCollection(
-                                    libraryId: entry.libraryID, collectionId: entry.id,
-                                    title: entry.collection.name, kind: entry.collection.kind ?? .regular
-                                ))
-                            },
-                            focusedItemId: $focusedCard,
-                            contentId: entry.id,
-                            cardWidthOverride: VividTheme.Skyline.densePosterCardWidth
-                        )
+                        card(entry)
                     }
                 }
                 .padding(.vertical, TVHomeRowGeometry.cardPadding)
@@ -112,12 +99,35 @@ struct TVHomeCollectionsRow: View {
             focusedCard = lastCard.flatMap { ids.contains($0) ? $0 : nil } ?? ids.first
         }
     }
+
+    private func card(_ entry: HomeCollection) -> some View {
+        MediaCard(
+            title: entry.collection.name,
+            posterUrl: entry.collection.posterUrl ?? "",
+            thumbhash: entry.collection.posterThumbhash,
+            subtitle: entry.collection.itemCount.map { String(localized: "\($0) titles") },
+            action: { open(entry) },
+            focusedItemId: $focusedCard,
+            contentId: entry.id,
+            cardWidthOverride: VividTheme.Skyline.densePosterCardWidth
+        )
+    }
+
+    private func open(_ entry: HomeCollection) {
+        lastCard = entry.id
+        onOpen()
+        router.navigate(to: .libraryCollection(
+            libraryId: entry.libraryID, collectionId: entry.id,
+            title: entry.collection.name, kind: entry.collection.kind ?? .regular
+        ))
+    }
 }
 
 // MARK: - Settings
 
 struct TVHomeCollectionsSettingsView: View {
     @State private var store = HomeCollectionsStore.shared
+    /// The preview poster picked up to move, while arranging.
     @State private var movingID: String?
     /// Carousels whose posters have loaded. Focus adds the carousels around
     /// it, and loaded ones stay loaded, so scrolling back never blanks them.
@@ -154,22 +164,7 @@ struct TVHomeCollectionsSettingsView: View {
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($focus, equals: .done)
                 }
-
-                switch store.status {
-                case .ready:
-                    readyContent
-                case .loading, .idle:
-                    TVSettingsGroup {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, TVSettingsLayout.scaled(28))
-                    }
-                case .failed:
-                    Button("Try Again") { Task { await store.loadIfNeeded(force: true) } }
-                        .buttonStyle(TVHomeSectionsControlButtonStyle())
-                case .needsAccount:
-                    EmptyView()
-                }
+                statusContent
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
             .padding(.horizontal, TVSettingsLayout.scaled(72))
@@ -180,6 +175,25 @@ struct TVHomeCollectionsSettingsView: View {
         .task { await store.loadIfNeeded(force: true) }
         .onExitCommand {
             if movingID != nil { movingID = nil } else { dismiss() }
+        }
+    }
+
+    @ViewBuilder
+    private var statusContent: some View {
+        switch store.status {
+        case .ready:
+            readyContent
+        case .loading, .idle:
+            TVSettingsGroup {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, TVSettingsLayout.scaled(28))
+            }
+        case .failed:
+            Button("Try Again") { Task { await store.loadIfNeeded(force: true) } }
+                .buttonStyle(TVHomeSectionsControlButtonStyle())
+        case .needsAccount:
+            EmptyView()
         }
     }
 
@@ -199,28 +213,7 @@ struct TVHomeCollectionsSettingsView: View {
                 : "Move left or right, then press centre to drop. Press Play/Pause to remove.")
 
             TVSettingsSectionHeader("ALL COLLECTIONS")
-            let picked = Set(store.picks)
-            let isFull = store.picks.count >= HomeCollectionsStore.maxPicks
-            // Not lazy: carousels below the screen must exist for Down to
-            // land on them, otherwise focus could skip to Reset.
-            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(32)) {
-                ForEach(Array(store.carousels.enumerated()), id: \.offset) { index, carousel in
-                    TVCollectionPickCarousel(
-                        index: index,
-                        entries: carousel,
-                        picked: picked.intersection(carousel.map(\.id)),
-                        isFull: isFull,
-                        loadsArtwork: artworkCarousels.contains(index),
-                        onToggle: { store.toggle($0) },
-                        onFocus: { index in
-                            let nearby = Set(max(0, index - 3)...(index + 5))
-                            if !nearby.isSubset(of: artworkCarousels) { artworkCarousels.formUnion(nearby) }
-                        }
-                    )
-                    .equatable()
-                }
-            }
-            .disabled(movingID != nil)
+            pickCarousels
             TVSettingsFooter("Select a collection to add it to Home or remove it. Up to \(HomeCollectionsStore.maxPicks) can be chosen. Automatic shows the \(HomeCollectionsStore.maxPicks) server collections with the most titles.")
 
             Button("Reset to Automatic") { store.resetToAutomatic() }
@@ -228,6 +221,34 @@ struct TVHomeCollectionsSettingsView: View {
                 .focused($focus, equals: .reset)
                 .frame(maxWidth: .infinity)
         }
+    }
+
+    /// Not lazy: carousels below the screen must exist for Down to land on
+    /// them, otherwise focus could skip to Reset.
+    private var pickCarousels: some View {
+        let picked = Set(store.picks)
+        let isFull = store.picks.count >= HomeCollectionsStore.maxPicks
+        return VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(32)) {
+            ForEach(Array(store.carousels.enumerated()), id: \.offset) { index, carousel in
+                TVCollectionPickCarousel(
+                    index: index,
+                    entries: carousel,
+                    picked: picked.intersection(carousel.map(\.id)),
+                    isFull: isFull,
+                    loadsArtwork: artworkCarousels.contains(index),
+                    onToggle: { store.toggle($0) },
+                    onFocus: loadArtwork(near:)
+                )
+                .equatable()
+            }
+        }
+        .disabled(movingID != nil)
+    }
+
+    /// Loads the posters of the carousels around the focused one.
+    private func loadArtwork(near index: Int) {
+        let nearby = Set(max(0, index - 3)...(index + 5))
+        if !nearby.isSubset(of: artworkCarousels) { artworkCarousels.formUnion(nearby) }
     }
 
     // MARK: Preview with arrange mode
@@ -273,7 +294,6 @@ struct TVHomeCollectionsSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func slot(_ entry: HomeCollection) -> some View {
         let id = entry.id
         let name = entry.collection.name
@@ -281,7 +301,7 @@ struct TVHomeCollectionsSettingsView: View {
         // One button for both states. Swapping it for another view when the
         // poster is picked up tears down the focused view, and focus falls
         // back to Done before the poster can move.
-        Button { if isMoving { movingID = nil } } label: {
+        return Button { if isMoving { movingID = nil } } label: {
             TVHomeCollectionPoster(collection: entry.collection, width: previewWidth)
                 .opacity(movingID != nil && !isMoving ? 0.8 : 1)
                 .modifier(ProfileArrangeWobble(active: movingID != nil))
@@ -310,10 +330,10 @@ struct TVHomeCollectionsSettingsView: View {
     }
 }
 
-/// One carousel of up to 20 small posters, A to Z, without names: the
-/// artwork says which collection it is, and VoiceOver reads the name. It
-/// only redraws when its own posters, choices or artwork loading change,
-/// and builds the posters near the screen as it scrolls.
+/// One carousel of up to 20 small posters, A to Z, without names: the artwork
+/// says which collection it is, and VoiceOver reads the name. It only redraws
+/// when its own posters, choices or artwork loading change, and builds the
+/// posters near the screen as it scrolls.
 private struct TVCollectionPickCarousel: View, Equatable {
     let index: Int
     let entries: [HomeCollection]
@@ -332,6 +352,7 @@ private struct TVCollectionPickCarousel: View, Equatable {
     private static let gutter: CGFloat = TVSettingsLayout.scaled(24)
     static let posterWidth: CGFloat = (TVSettingsLayout.contentWidth - spacing * 7) / 8
 
+    /// The closures are left out: they never change what the carousel shows.
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.index == rhs.index && lhs.entries == rhs.entries && lhs.picked == rhs.picked
             && lhs.isFull == rhs.isFull && lhs.loadsArtwork == rhs.loadsArtwork
@@ -356,10 +377,6 @@ private struct TVCollectionPickCarousel: View, Equatable {
     private func tile(_ entry: HomeCollection) -> some View {
         let isPicked = picked.contains(entry.id)
         let unavailable = !isPicked && isFull
-        let name = entry.collection.name
-        var label = name
-        if isPicked { label = String(localized: "\(label), chosen") }
-        if unavailable { label = String(localized: "\(label), unavailable") }
         // Unavailable posters stay focusable but do nothing, so every
         // carousel can still be reached and scrolled.
         return Button { if !unavailable { onToggle(entry.id) } } label: {
@@ -371,7 +388,14 @@ private struct TVCollectionPickCarousel: View, Equatable {
         .buttonStyle(.card)
         .focused($focused, equals: entry.id)
         .opacity(unavailable ? 0.4 : 1)
-        .accessibilityLabel(label)
+        .accessibilityLabel(spokenName(entry.collection.name, isPicked: isPicked, unavailable: unavailable))
+    }
+
+    private func spokenName(_ name: String, isPicked: Bool, unavailable: Bool) -> String {
+        var label = name
+        if isPicked { label = String(localized: "\(label), chosen") }
+        if unavailable { label = String(localized: "\(label), unavailable") }
+        return label
     }
 }
 #endif
