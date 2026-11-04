@@ -1,62 +1,34 @@
-import AVFoundation
-import CoreGraphics
 import Foundation
 import OSLog
-import SwiftUI
-#if os(iOS) || os(tvOS)
-import UIKit
-#endif
 
+/// The end of an item. An end of stream completes the item and opens Next Up
+/// only when its timing confirms it; any other end is recovered as a failure
+/// of the current item.
 extension PlayerViewModel {
+    static let prematureSourceEndMessage = "The media stream ended before playback completion could be confirmed."
+
+    /// Hides Next Up for a failure, without changing the viewer's autoplay
+    /// choice.
     func suppressNextUpForPlaybackFailure() {
-        // Cancel the task without changing the user's autoplay preference.
         cancelNextUpCountdown()
         showNextUpScreen = false
         nextUpScreenVideoEnded = false
     }
 
-    func recoverPendingUnexpectedEnd() {
-        guard let epoch = pendingUnexpectedEndEpoch else { return }
-        guard !isDisposed, epoch == activeVividLoadEpoch else {
-            pendingUnexpectedEndEpoch = nil
-            return
-        }
-        guard !freshLoadOwnsFailureHandling, protocolV3ReplanTask == nil else { return }
-        pendingUnexpectedEndEpoch = nil
-        if attemptPrematureEndReload() { return }
-        handlePlaybackError(Self.prematureSourceEndMessage)
-    }
-
-    static let prematureSourceEndMessage = "The media stream ended before playback completion could be confirmed."
-
-    /// A stream that ends early has usually lost its connection, and the
-    /// engine's own reconnect is refused once the bearer it opened with has
-    /// expired (it can't swap headers on a live reader). Reopen the same route
-    /// at the current position with current credentials before asking the
-    /// server to adapt, which can fail outright when no remux route exists.
-    private func attemptPrematureEndReload() -> Bool {
-        guard vividPlaybackController.activeSpec?.options.nativeRemoteHLS == false else { return false }
-        #if DEBUG
-        testRecorder?.record(.sameRouteReopenRequest)
-        #endif
-        return beginProtocolV3SameRouteReload(
-            fallbackClassification: PlaybackErrorKind.softwarePipelineFailed.rawValue,
-            fallbackMessage: Self.prematureSourceEndMessage,
-            prematureSourceEnd: true
-        )
-    }
-
-    /// Validate terminal timing before completing an item or showing Next Up.
+    /// Handles the engine's end of stream.
+    ///
+    /// A confirmed end (finite source timing within eight seconds of the
+    /// duration, `PlayerNextUpCompletionPolicy`) runs once per load: pause on
+    /// the last frame, show the controls, complete the item and start the
+    /// Next Up postroll. Anything earlier never completes the item or writes
+    /// watched state. It first tries reopening the same route, and otherwise
+    /// takes the current item's failure path, which ends at Retry. While a
+    /// load or replan owns failures, the end is held for it instead.
     func handleEndOfFile() {
         guard !hasReachedEndOfFile else { return }
         let observedPosition = currentTime
         let safeDuration = duration
-        guard PlayerNextUpCompletionPolicy.isConfirmedEnd(
-            currentTime: observedPosition, duration: safeDuration
-        ) else {
-            // Do not latch completion or write watched history for a truncated
-            // stream. The existing recovery path retains the current item,
-            // source position and track selections; failure offers Retry.
+        guard PlayerNextUpCompletionPolicy.isConfirmedEnd(currentTime: observedPosition, duration: safeDuration) else {
             Self.logger.warning(
                 "Unexpected source end at \(observedPosition, privacy: .public)/\(safeDuration, privacy: .public); recovering current item"
             )
@@ -73,14 +45,13 @@ extension PlayerViewModel {
             suppressNextUpForPlaybackFailure()
             if freshLoadOwnsFailureHandling || protocolV3ReplanTask != nil
                 || (activePreparedProtocolV3 != nil && committedProtocolV3LoadEpoch == nil) {
-                // An EOF does not throw from load(). Retain it until the
-                // owning load settles, instead of silently dropping it.
+                // An end doesn't throw from the load, so hold it until the
+                // owning load settles rather than dropping it.
                 pendingUnexpectedEndEpoch = activeVividLoadEpoch
                 return
             }
             if attemptPrematureEndReload() { return }
-            handleVividFailure(PlaybackErrorInfo(kind: .softwarePipelineFailed,
-                message: Self.prematureSourceEndMessage))
+            handleVividFailure(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: Self.prematureSourceEndMessage))
             return
         }
         hasReachedEndOfFile = true
@@ -95,9 +66,7 @@ extension PlayerViewModel {
             attrs: [
                 "reason": .string("natural_end"),
                 "play_method": .string(activeRouteLabel),
-                "position_ms": .int(
-                    PlaybackSessionBridge.diagnosticsPositionMilliseconds(observedPosition)
-                ),
+                "position_ms": .int(PlaybackSessionBridge.diagnosticsPositionMilliseconds(observedPosition)),
             ]
         )
         #endif
@@ -124,5 +93,37 @@ extension PlayerViewModel {
 
         updatePlaybackCompletion(at: currentTime, endedNaturally: true)
         beginNextUpPostroll(videoEnded: true)
+    }
+
+    /// Recovers an early end held while a load or replan owned failures, once
+    /// that owner has settled. Dropped when another load has replaced the one
+    /// it belonged to.
+    func recoverPendingUnexpectedEnd() {
+        guard let epoch = pendingUnexpectedEndEpoch else { return }
+        guard !isDisposed, epoch == activeVividLoadEpoch else {
+            pendingUnexpectedEndEpoch = nil
+            return
+        }
+        guard !freshLoadOwnsFailureHandling, protocolV3ReplanTask == nil else { return }
+        pendingUnexpectedEndEpoch = nil
+        if attemptPrematureEndReload() { return }
+        handlePlaybackError(Self.prematureSourceEndMessage)
+    }
+
+    /// A stream that ends early has usually lost its connection, and the
+    /// engine's own reconnect is refused once the bearer it opened with has
+    /// expired (it can't swap headers on a live reader). Reopen the same route
+    /// at the current position with current credentials before asking the
+    /// server to adapt, which can fail outright when no remux route exists.
+    private func attemptPrematureEndReload() -> Bool {
+        guard vividPlaybackController.activeSpec?.options.nativeRemoteHLS == false else { return false }
+        #if DEBUG
+        testRecorder?.record(.sameRouteReopenRequest)
+        #endif
+        return beginProtocolV3SameRouteReload(
+            fallbackClassification: PlaybackErrorKind.softwarePipelineFailed.rawValue,
+            fallbackMessage: Self.prematureSourceEndMessage,
+            prematureSourceEnd: true
+        )
     }
 }

@@ -561,6 +561,38 @@ final class PlaybackEndRecoveryTests: XCTestCase {
         XCTAssertEqual(watchedMutations(fixture.recorder.entries), 0)
     }
 
+    // MARK: 17. A replan a new load replaced
+
+    func testReplanReplacedByANewLoadLeavesTheNewLoadsWorkAlone() async throws {
+        let fixture = try makeFixture(.silo)
+        let model = fixture.model
+        XCTAssertTrue(model.attemptProtocolV3Replan(
+            position: 1_200, classification: "playback_error", message: "The replaced replan failed.",
+            completesQualitySwitch: true
+        ))
+        let replaced = try XCTUnwrap(model.protocolV3ReplanTask)
+
+        // What a new load does before the replan runs: cancel it, move the
+        // stream generation on and start its own work.
+        replaced.cancel()
+        model.streamLoadGeneration &+= 1
+        let newWork = longRunningTask()
+        model.protocolV3ReplanTask = newWork
+        model.isQualitySwitching = true
+        model.pendingProtocolV3SeekReanchorPosition = 600
+        await replaced.value
+
+        // The session bridge refuses the replan, which ends a current item
+        // in an error, but not one a new load has taken over.
+        XCTAssertEqual(serverReplans(fixture.recorder.entries), 1)
+        XCTAssertEqual(terminalErrors(fixture.recorder.entries), [])
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.protocolV3ReplanTask, newWork)
+        XCTAssertTrue(model.isQualitySwitching)
+        XCTAssertEqual(model.pendingProtocolV3SeekReanchorPosition, 600)
+        newWork.cancel()
+    }
+
     // MARK: - Fixture
 
     private func makeFixture(

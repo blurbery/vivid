@@ -1,13 +1,26 @@
-import AVFoundation
-import CoreGraphics
 import Foundation
 import OSLog
-import SwiftUI
-#if os(iOS) || os(tvOS)
-import UIKit
-#endif
 
+/// Recovery of the current item after the engine or its source fails.
+///
+/// There are three ways back, tried in this order by the callers in
+/// `+EngineEvents` and `+PlaybackEnd`:
+///
+/// - **Same-route reload.** Reopen the committed Silo plan at the current
+///   position with fresh request headers. Used for an expired bearer, a
+///   transient connection error and a stream that ended early.
+/// - **Replan.** Ask Silo for another route (`attemptProtocolV3Replan`). Track,
+///   quality, output route and seek-reanchor changes use the same path.
+/// - **Stale-session renewal.** Start a new session at the current position
+///   (`attemptStaleSessionRenewal`, in `+SessionLoad`), when the server says
+///   the session is gone.
+///
+/// A playback failure that can't recover ends at the Retry screen through
+/// `finalizeTerminalPlaybackError`; a failed recovery load shows a notice
+/// instead.
 extension PlayerViewModel {
+    // MARK: Entry point
+
     func handlePlaybackError(_ message: String, failure: PlaybackErrorInfo? = nil) {
         let logMessage = MediaLogRedactor.sanitize(message)
         Self.logger.error("Player error: \(logMessage, privacy: .public)")
@@ -16,15 +29,13 @@ extension PlayerViewModel {
             return
         }
         suppressNextUpForPlaybackFailure()
-        if activePreparedProtocolV3 != nil,
-           committedProtocolV3LoadEpoch != nil {
+        if activePreparedProtocolV3 != nil, committedProtocolV3LoadEpoch != nil {
             attemptProtocolV3Recovery(after: message)
             return
         }
-        if isPlaybackSessionMissingMessage(message) || isExpiredPlaybackSessionSource(failure) {
-            if attemptStaleSessionRenewal(reason: "player_error", observedPosition: currentTime) {
-                return
-            }
+        if isPlaybackSessionMissingMessage(message) || isExpiredPlaybackSessionSource(failure),
+           attemptStaleSessionRenewal(reason: "player_error", observedPosition: currentTime) {
+            return
         }
         progressTask?.cancel()
         finalizeTerminalPlaybackError(message)
@@ -41,28 +52,30 @@ extension PlayerViewModel {
         }
     }
 
-    /// Rebuilds the committed plan with the account bearer currently held by
-    /// `VividAPI`. Protocol V3 media URLs are stable across access-token
-    /// refreshes, but Vivid/AVPlayer freezes request headers at asset load.
-    /// A normal authenticated progress request first gives the shared HTTP
-    /// client a chance to refresh an expired token; the reload proceeds only
-    /// when that produced a different Authorization value.
+    // MARK: Credentials
+
+    /// Rebuilds the committed plan with the account bearer `VividAPI` holds
+    /// now. Protocol V3 media URLs don't change when the access token is
+    /// refreshed, but the engine fixes its request headers when it opens the
+    /// source. The reload goes ahead only when the refresh produced a
+    /// different Authorization value.
     @discardableResult
-    func attemptProtocolV3AuthenticationReload(
-        after failure: PlaybackErrorInfo
-    ) -> Bool {
-        guard VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(failure) else {
-            return false
-        }
+    func attemptProtocolV3AuthenticationReload(after failure: PlaybackErrorInfo) -> Bool {
+        guard VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(failure) else { return false }
         return beginProtocolV3SameRouteReload(
             fallbackClassification: failure.kind.rawValue,
             fallbackMessage: failure.message
         )
     }
 
-    /// Progress owns token refresh. Adopt new headers only when the engine can
-    /// preserve the active reader. Unsupported updates wait for actual media
-    /// authentication failure, which retains same-route reload recovery.
+    /// The periodic progress report owns token refresh. After a successful
+    /// report, hand changed headers to the engine only when it can keep its
+    /// current reader. When it can't, nothing changes here: a real media
+    /// authentication failure later takes the same-route reload instead.
+    ///
+    /// `scripts/tests/playback-auth-refresh-tests.py` compiles this method's
+    /// body against a stand-in player, so it sticks to the members that
+    /// harness provides.
     func updateProtocolV3AuthenticationAfterProgress(
         _ result: PlaybackProgressReportResult
     ) async {
@@ -86,10 +99,11 @@ extension PlayerViewModel {
                   session: session,
                   additionalHeaders: protocolV3.plan.stream.headers,
                   requiresHeaderAuthenticatedMedia: true,
-                  allowsAuthorizedMediaOrigins:
-                      protocolV3.negotiatedAuthorizedMediaOrigins,
+                  allowsAuthorizedMediaOrigins: protocolV3.negotiatedAuthorizedMediaOrigins,
                   nativeApiMajor: protocolV3.plan.nativeApiMajor
               ),
+              // Everything below is read again after the awaits, so a reply
+              // that lands after a replan or a new load changes nothing.
               activePlaybackSessionId == sessionId,
               activePreparedProtocolV3?.plan.planId == protocolV3.plan.planId,
               vividPlaybackController.activeLoadEpoch == loadEpoch,
@@ -104,12 +118,19 @@ extension PlayerViewModel {
             return
         }
 
-        if vividPlaybackController.updateSourceHeaders(streamRequest.headers, for: loadEpoch,
-            expectedHeaders: failedSpec.options.httpHeaders, sourceURL: streamRequest.url) {
+        if vividPlaybackController.updateSourceHeaders(
+            streamRequest.headers,
+            for: loadEpoch,
+            expectedHeaders: failedSpec.options.httpHeaders,
+            sourceURL: streamRequest.url
+        ) {
             Self.logger.info("Stream recovery reason=authorization_rotated outcome=headers_updated")
         }
     }
 
+    /// The engine asks for this when its source answers 401. Refresh the
+    /// session's credentials and hand back headers it can use on the same
+    /// reader, or nil to let the failure take its usual path.
     func refreshDirectSourceHeaders(
         epoch: VividPlaybackController.LoadEpoch,
         generation: UInt64
@@ -120,35 +141,39 @@ extension PlayerViewModel {
               committedProtocolV3LoadEpoch == epoch,
               let spec = vividPlaybackController.activeSpec, !spec.options.nativeRemoteHLS,
               let protocolV3 = activePreparedProtocolV3,
-              (protocolV3.plan.nativeApiMajor == 2 || protocolV3.serverFeatures.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature)),
+              protocolV3.refreshesMediaHeaders,
               protocolV3.plan.planId == spec.planID,
               let sessionId = activePlaybackSessionId, sessionId == spec.sessionID else { return nil }
         do {
-            try await sessionBridge.refreshPlaybackAuthentication(sessionId: sessionId,
+            try await sessionBridge.refreshPlaybackAuthentication(
+                sessionId: sessionId,
                 position: progressIsEligible && currentTime.isFinite ? max(0, currentTime) : 0,
-                isPaused: !vividPlaybackController.shouldPlayWhenReady)
+                isPaused: !vividPlaybackController.shouldPlayWhenReady
+            )
             try requireCurrentStreamLoad(generation)
             guard vividPlaybackController.activeLoadEpoch == epoch,
                   let session = await sessionBridge.committedProtocolV3Session(
-                    planId: spec.planID, sessionId: sessionId),
-                  let request = await makeStreamRequest(session: session,
-                    additionalHeaders: protocolV3.plan.stream.headers,
-                    requiresHeaderAuthenticatedMedia: true,
-                    allowsAuthorizedMediaOrigins: protocolV3.negotiatedAuthorizedMediaOrigins,
-                    nativeApiMajor: protocolV3.plan.nativeApiMajor) else { return nil }
+                      planId: spec.planID, sessionId: sessionId
+                  ),
+                  let request = await makeHeaderAuthenticatedStreamRequest(session: session, protocolV3: protocolV3)
+            else { return nil }
             try requireCurrentStreamLoad(generation)
             guard vividPlaybackController.activeLoadEpoch == epoch,
                   activePlaybackSessionId == sessionId,
                   activePreparedProtocolV3?.plan.planId == spec.planID,
                   request.url == spec.sourceURL,
                   let current = vividPlaybackController.activeSpec else { return nil }
+            // Another refresh already installed newer headers.
             if current.options.httpHeaders != spec.options.httpHeaders {
                 return current.options.httpHeaders
             }
             guard VividAuthenticationRecoveryPolicy.shouldReload(
-                failedHeaders: spec.options.httpHeaders, refreshedHeaders: request.headers),
-                  vividPlaybackController.updateSourceHeaders(request.headers, for: epoch,
-                    expectedHeaders: spec.options.httpHeaders, sourceURL: request.url) else { return nil }
+                      failedHeaders: spec.options.httpHeaders, refreshedHeaders: request.headers
+                  ),
+                  vividPlaybackController.updateSourceHeaders(
+                      request.headers, for: epoch,
+                      expectedHeaders: spec.options.httpHeaders, sourceURL: request.url
+                  ) else { return nil }
             Self.logger.info("Stream recovery reason=http_401 outcome=headers_updated")
             return request.headers
         } catch {
@@ -157,6 +182,21 @@ extension PlayerViewModel {
         }
     }
 
+    // MARK: Same-route reload
+
+    /// Reopens the committed Silo plan at the current position with current
+    /// credentials. Returns false when this load can't (another replan is
+    /// running, the plan can't take refreshed headers, or the reason's budget
+    /// is spent), so the caller tries the next recovery. Returns true once
+    /// the reload owns the outcome, including when the authentication budget
+    /// is spent and it went straight to Retry.
+    ///
+    /// - `prematureSourceEnd`: the stream ended early. Bounded by
+    ///   `prematureEndRecoveryGate`; reopens even with an unchanged bearer.
+    /// - `transientFailureCode`: a recognised connection error. Bounded by
+    ///   `transientRecoveryBudget`; no credential refresh first.
+    /// - Neither: an expired bearer. Bounded by `authenticationRecoveryBudget`
+    ///   and only reloads when the refresh changed the Authorization header.
     @discardableResult
     func beginProtocolV3SameRouteReload(
         fallbackClassification: String,
@@ -166,9 +206,7 @@ extension PlayerViewModel {
     ) -> Bool {
         guard protocolV3ReplanTask == nil,
               let protocolV3 = activePreparedProtocolV3,
-              (protocolV3.plan.nativeApiMajor == 2 || protocolV3.serverFeatures.contains(
-                  PlaybackProtocolV3.headerAuthenticatedMediaFeature
-              )),
+              protocolV3.refreshesMediaHeaders,
               let sessionId = activePlaybackSessionId,
               let watchDetail = currentWatchDetail,
               let selectedVersion = currentSelectedVersion,
@@ -183,13 +221,13 @@ extension PlayerViewModel {
         let resumePosition = currentTime.isFinite ? max(0, currentTime) : 0
         let failedHeaders = failedSpec.options.httpHeaders
         let recoveryEpisode = freshLoadGeneration
+        let isCredentialReload = !prematureSourceEnd && transientFailureCode == nil
         if prematureSourceEnd {
             guard prematureEndRecoveryGate.begin() else { return false }
         } else if transientFailureCode != nil {
             guard transientRecoveryBudget.beginReload() else { return false }
         }
-        guard prematureSourceEnd || transientFailureCode != nil
-                || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
+        if isCredentialReload, !authenticationRecoveryBudget.begin(generation: recoveryEpisode) {
             progressTask?.cancel()
             finalizeTerminalPlaybackError(fallbackMessage)
             return true
@@ -218,7 +256,7 @@ extension PlayerViewModel {
 
         protocolV3ReplanTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
-            var shouldFallbackToReplan = true
+            var shouldFallBackToReplan = true
             var finalClassification = fallbackClassification
             var finalMessage = fallbackMessage
             defer {
@@ -226,35 +264,18 @@ extension PlayerViewModel {
                 if self.authenticationReloadGeneration == recoveryGeneration {
                     self.authenticationReloadGeneration = nil
                 }
-                if !self.isDisposed,
-                   recoveryGeneration == self.streamLoadGeneration {
+                // A newer load or replan owns the handle and the queues once
+                // the generation has moved on.
+                if !self.isDisposed, recoveryGeneration == self.streamLoadGeneration {
                     self.protocolV3ReplanTask = nil
-                    if shouldFallbackToReplan {
-                        // A refused audio session would refuse every route too,
-                        // so it stops at Retry instead of stepping down a rung.
-                        if finalClassification == "authentication"
-                            || finalClassification == PlaybackErrorKind.audioSessionUnavailable.rawValue {
-                            self.finalizeTerminalPlaybackError(finalMessage)
-                        } else if !self.attemptProtocolV3Replan(
-                            position: self.currentTime.isFinite ? max(0, self.currentTime) : resumePosition,
+                    if shouldFallBackToReplan {
+                        self.fallBackFromSameRouteReload(
                             classification: finalClassification,
-                            message: finalMessage
-                        ) {
-                            self.finalizeTerminalPlaybackError(finalMessage)
-                        }
-                    } else if let queuedTrackChange = self.pendingProtocolV3TrackChange {
-                        self.pendingProtocolV3TrackChange = nil
-                        self.attemptProtocolV3Replan(
-                            position: self.currentTime,
-                            classification: queuedTrackChange.classification,
-                            message: queuedTrackChange.message,
-                            requeueWhenBusy: true,
-                            trackTarget: queuedTrackChange.target
+                            message: finalMessage,
+                            resumePosition: resumePosition
                         )
-                    } else if let queuedTarget = self.pendingProtocolV3SeekReanchorPosition {
-                        self.pendingProtocolV3SeekReanchorPosition = nil
-                        self.commitSeek(to: queuedTarget, source: "queuedAuthReloadReanchor")
                     } else {
+                        self.drainQueuedProtocolV3Work(seekSource: "queuedAuthReloadReanchor")
                     }
                 }
             }
@@ -268,10 +289,11 @@ extension PlayerViewModel {
                         position: self.progressIsEligible ? resumePosition : 0,
                         isPaused: !self.vividPlaybackController.shouldPlayWhenReady
                     )
-                } else if transientFailureCode == nil {
-                    // This request uses the normal API transport, whose 401 path
-                    // refreshes TokenStore before retrying. Its result is otherwise
-                    // best-effort; the header comparison below is authoritative.
+                } else if isCredentialReload {
+                    // This request goes through the normal API transport, whose
+                    // 401 handling refreshes TokenStore before retrying. Its
+                    // answer is otherwise best effort; the header comparison
+                    // below decides.
                     try await self.sessionBridge.refreshPlaybackAuthentication(
                         sessionId: sessionId,
                         position: self.progressIsEligible ? resumePosition : 0,
@@ -297,20 +319,15 @@ extension PlayerViewModel {
                     bandwidthCap: self.activeBandwidthCap,
                     protocolV3: protocolV3
                 )
-                guard let streamRequest = await self.makeStreamRequest(
-                    session: session,
-                    additionalHeaders: protocolV3.plan.stream.headers,
-                    requiresHeaderAuthenticatedMedia: true,
-                    allowsAuthorizedMediaOrigins:
-                        protocolV3.negotiatedAuthorizedMediaOrigins,
-                    nativeApiMajor: protocolV3.plan.nativeApiMajor
+                guard let streamRequest = await self.makeHeaderAuthenticatedStreamRequest(
+                    session: session, protocolV3: protocolV3
                 ) else {
                     throw VividLoadSpec.ValidationError.invalidStreamURL(session.streamUrl)
                 }
                 try self.requireCurrentStreamLoad(recoveryGeneration)
-                // An early end reopens even with an unchanged bearer: the
-                // connection was lost, not necessarily the credential.
-                guard prematureSourceEnd || transientFailureCode != nil || VividAuthenticationRecoveryPolicy.shouldReload(
+                // An early end or a dropped connection reopens even with the
+                // same bearer: the connection was lost, not the credential.
+                guard !isCredentialReload || VividAuthenticationRecoveryPolicy.shouldReload(
                     failedHeaders: failedHeaders,
                     refreshedHeaders: streamRequest.headers
                 ) else {
@@ -321,31 +338,21 @@ extension PlayerViewModel {
                     return
                 }
 
-                // A local in-window seek can finish while the refresh request
-                // is suspended. Sample the source-axis position again at the
-                // last synchronous point before beginLoad replaces the epoch,
-                // so credential recovery never jumps back over that seek.
-                let reloadPosition = self.currentTime.isFinite
-                    ? max(0, self.currentTime)
-                    : resumePosition
+                // A local seek inside the window can finish while the refresh
+                // was suspended. Read the position again at the last
+                // synchronous point before `beginLoad` replaces the epoch, so
+                // the reload never jumps back over that seek.
+                let reloadPosition = self.currentTime.isFinite ? max(0, self.currentTime) : resumePosition
                 let shouldPlayWhenReady = self.vividPlaybackController.shouldPlayWhenReady
                 self.pendingAudioFfIndex = self.resolvedAudioTrackIndexForResume()
                 self.pendingSubtitleFfIndex = self.resolvedSubtitleTrackIndexForResume()
                 if let subtitle = self.selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(subtitle) {
-                    switch Self.protocolV3SidecarRestoreIntent(
+                    self.armSidecarRestore(Self.protocolV3SidecarRestoreIntent(
                         snapshot: subtitle,
                         selectedSubtitleIndex: protocolV3.plan.selectedTracks.subtitle?.index,
                         subtitleMode: protocolV3.plan.subtitle.mode,
                         isEmbedded: protocolV3.plan.subtitle.embedded != nil
-                    ) {
-                    case .renderLocally(let trackId):
-                        self.pendingSidecarSubtitleTrackId = trackId
-                        self.pendingServerRenderedSubtitleTrackId = nil
-                    case .serverRendered(let trackId):
-                        self.pendingSidecarSubtitleTrackId = nil
-                        self.pendingServerRenderedSubtitleTrackId = trackId
-                    case nil: break
-                    }
+                    ))
                 }
                 self.resolvedServerUrl = streamRequest.serverUrl
                 try await self.loadVivid(
@@ -362,17 +369,17 @@ extension PlayerViewModel {
                 }
                 self.applySecondarySubtitleTrackSelection(self.selectedSecondarySubtitleId)
                 self.markProtocolV3VividLoadCommitted()
-                try await self.confirmAuthenticationRecovery(generation: recoveryGeneration,
-                    transientRecovery: transientFailureCode != nil)
+                try await self.confirmAuthenticationRecovery(
+                    generation: recoveryGeneration,
+                    transientRecovery: transientFailureCode != nil
+                )
                 if transientFailureCode == nil {
                     self.authenticationRecoveryBudget.recovered(generation: recoveryEpisode)
                 }
-                shouldFallbackToReplan = false
-                Self.logger.info(
-                    "Stream recovery outcome=recovered"
-                )
+                shouldFallBackToReplan = false
+                Self.logger.info("Stream recovery outcome=recovered")
             } catch is CancellationError {
-                shouldFallbackToReplan = false
+                shouldFallBackToReplan = false
                 Self.logger.info("Stream recovery outcome=cancelled")
             } catch {
                 let failure = VividAuthenticationRecoveryPolicy.finalFailure(error)
@@ -387,6 +394,25 @@ extension PlayerViewModel {
         return true
     }
 
+    /// A same-route reload that didn't recover. An authentication failure
+    /// would fail on every route, and a refused audio session too, so those
+    /// stop at Retry; anything else asks Silo for the next route.
+    private func fallBackFromSameRouteReload(classification: String, message: String, resumePosition: Double) {
+        if classification == "authentication"
+            || classification == PlaybackErrorKind.audioSessionUnavailable.rawValue {
+            finalizeTerminalPlaybackError(message)
+        } else if !attemptProtocolV3Replan(
+            position: currentTime.isFinite ? max(0, currentTime) : resumePosition,
+            classification: classification,
+            message: message
+        ) {
+            finalizeTerminalPlaybackError(message)
+        }
+    }
+
+    /// Waits up to 12 seconds for the reopened source to show it plays: ready,
+    /// and advancing (or settled while paused). Throws the engine's failure
+    /// if one arrives first.
     private func confirmAuthenticationRecovery(generation: UInt64, transientRecovery: Bool = false) async throws {
         let engine = vividPlaybackController.engine
         let deadline = ProcessInfo.processInfo.systemUptime + 12
@@ -394,40 +420,73 @@ extension PlayerViewModel {
         while ProcessInfo.processInfo.systemUptime < deadline {
             try requireCurrentStreamLoad(generation)
             if let failure = engine.errorInfo { throw failure }
-            let time = engine.clock.currentTime
-            let wantsPlayback = vividPlaybackController.shouldPlayWhenReady
             let ready = engine.currentAVPlayer.map { $0.currentItem?.status == .readyToPlay }
                 ?? (engine.hasFirstFrameReadyForDisplay || engine.videoRoute == .audio)
-            if readiness.observe(time: time, ready: ready,
-                wantsPlayback: wantsPlayback,
-                playing: engine.state == .playing, paused: engine.state == .paused,
-                seeking: engine.isSeeking || seekTargetTime != nil) { return }
+            if readiness.observe(
+                time: engine.clock.currentTime,
+                ready: ready,
+                wantsPlayback: vividPlaybackController.shouldPlayWhenReady,
+                playing: engine.state == .playing,
+                paused: engine.state == .paused,
+                seeking: engine.isSeeking || seekTargetTime != nil
+            ) { return }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        throw PlaybackErrorInfo(kind: .vodSourceFailed,
-            message: transientRecovery ? "Playback did not resume after reconnecting the media source." : "Playback did not resume after renewing authentication.",
-            underlyingDomain: NSURLErrorDomain, underlyingCode: NSURLErrorTimedOut)
+        throw PlaybackErrorInfo(
+            kind: .vodSourceFailed,
+            message: transientRecovery
+                ? "Playback did not resume after reconnecting the media source."
+                : "Playback did not resume after renewing authentication.",
+            underlyingDomain: NSURLErrorDomain,
+            underlyingCode: NSURLErrorTimedOut
+        )
     }
 
-    /// The track a queued change is actually asking for. `.subtitle(nil)` is
-    /// "turn subtitles off", which is why this is an enum and not two optional
-    /// ids.
+    private func makeHeaderAuthenticatedStreamRequest(
+        session: PlaybackSessionResponse,
+        protocolV3: PreparedPlaybackV3
+    ) async -> StreamRequest? {
+        await makeStreamRequest(
+            session: session,
+            additionalHeaders: protocolV3.plan.stream.headers,
+            requiresHeaderAuthenticatedMedia: true,
+            allowsAuthorizedMediaOrigins: protocolV3.negotiatedAuthorizedMediaOrigins,
+            nativeApiMajor: protocolV3.plan.nativeApiMajor
+        )
+    }
+
+    // MARK: Queued track changes
+
+    /// The track a queued change asks for. `.subtitle(nil)` turns subtitles
+    /// off, which is why this is an enum and not two optional IDs.
     ///
-    /// Each case carries both the Vivid `trackId` the user tapped and the
-    /// server-side identity the deferred replan will actually be resolved from
-    /// — the audio selection ordinal (`srcId ?? ffIndex`) and the subtitle
-    /// combined index. The interim replan can repackage streams, so an Vivid
-    /// id recorded before it can vanish or land on a different stream by drain
-    /// time; the server identity is what `resolvedAudioTrackIndexForResume` /
-    /// `resolvedProtocolV3SubtitleIndexForResume` send, and it survives that.
+    /// Each case carries the Vivid `trackId` the viewer tapped and the server
+    /// identity the deferred replan is resolved from: the audio selection
+    /// ordinal (`srcId ?? ffIndex`) and the subtitle combined index. The
+    /// replan in flight can repackage streams, so a Vivid ID recorded before
+    /// it can vanish or name another stream by the time the queue drains; the
+    /// server identity survives that.
     enum QueuedProtocolV3TrackTarget {
         case audio(trackId: Int64, selectionIndex: Int?)
         case subtitle(trackId: Int64?, combinedIndex: Int?)
     }
 
-    /// Server-side ordinal a queued audio pick must resolve back to.
     func queuedTrackTarget(forAudio track: PlayerTrack) -> QueuedProtocolV3TrackTarget {
         .audio(trackId: track.trackId, selectionIndex: audioSelectionIndex(for: track))
+    }
+
+    /// A track change waiting for the replan in flight to settle.
+    ///
+    /// The position isn't stored: playback keeps moving while it waits, so
+    /// it's read when the queue drains. The target is stored: the replan in
+    /// flight publishes its own plan's tracks on the way through, and
+    /// `adoptVividInventory` republishes the selection from the engine, so
+    /// reading the selection at drain time would ask for the track the viewer
+    /// was already on and drop the tap.
+    struct QueuedProtocolV3TrackChange {
+        let classification: String
+        let message: String
+        let target: QueuedProtocolV3TrackTarget?
     }
 
     private func serverCombinedSubtitleIndex(for track: PlayerTrack) -> Int? {
@@ -439,38 +498,15 @@ extension PlayerViewModel {
         )
     }
 
-    /// A track change deferred until the in-flight replan settles. Position
-    /// is deliberately absent: it is re-read when the queue drains, because
-    /// playback keeps moving while the earlier replan completes.
+    /// Puts a queued pick back in the selection just before the deferred
+    /// replan reads it, undoing any republish from the interim plan.
     ///
-    /// The target, unlike the position, is *not* re-read. The in-flight replan
-    /// publishes its own plan's inventory on the way through, and
-    /// `adoptVividInventory` republishes `selectedAudioId`/`selectedSubtitleId`
-    /// from the engine as it does — so by drain time the optimistic selection
-    /// the user's tap wrote has been overwritten by the interim plan's. A
-    /// deferred replan that re-read the selection would therefore ask the
-    /// server for the track the user was already on and silently drop the tap.
-    struct QueuedProtocolV3TrackChange {
-        let classification: String
-        let message: String
-        let target: QueuedProtocolV3TrackTarget?
-    }
-
-    /// Re-publishes a queued track pick just before the deferred replan reads
-    /// the selection back, undoing any interim `adoptVividInventory`.
-    ///
-    /// The recorded Vivid id is tried first; if the interim plan repackaged
-    /// the streams and that id is gone, the pick is re-found by the server
-    /// identity captured at queue time — the same ordinal the replan would
-    /// have sent — so a renumbered stream still restores the user's tap.
-    ///
-    /// A target that resolves to neither is dropped rather than forced: the
-    /// interim plan may not carry that track at all, and a selection pointing
-    /// at nothing resolves to no index, which is a worse answer than the one
-    /// the engine is actually rendering.
-    private func restoreQueuedProtocolV3TrackSelection(
-        _ target: QueuedProtocolV3TrackTarget
-    ) {
+    /// The recorded Vivid ID is tried first, then the server identity
+    /// captured at queue time, so a renumbered stream still finds the tap. A
+    /// target that matches neither is dropped: the interim plan may not carry
+    /// that track, and a selection pointing at nothing resolves to no index,
+    /// which is worse than the track that's playing.
+    private func restoreQueuedProtocolV3TrackSelection(_ target: QueuedProtocolV3TrackTarget) {
         switch target {
         case .audio(let trackId, let selectionIndex):
             let resolved = audioTracks.first { $0.trackId == trackId }
@@ -500,6 +536,38 @@ extension PlayerViewModel {
         }
     }
 
+    /// Runs the queued track change, or else the queued seek, once the replan
+    /// or reload that held them has settled. The track change goes first: its
+    /// replan drains a still-pending seek in turn, so both survive and the
+    /// seek lands last.
+    /// `canIssue` false still empties the queue but sends nothing.
+    private func drainQueuedProtocolV3Work(seekSource: String, canIssue: Bool = true) {
+        if let queued = pendingProtocolV3TrackChange {
+            pendingProtocolV3TrackChange = nil
+            guard canIssue else { return }
+            attemptProtocolV3Replan(
+                position: currentTime,
+                classification: queued.classification,
+                message: queued.message,
+                requeueWhenBusy: true,
+                trackTarget: queued.target
+            )
+        } else if let target = pendingProtocolV3SeekReanchorPosition {
+            pendingProtocolV3SeekReanchorPosition = nil
+            guard canIssue else { return }
+            commitSeek(to: target, source: seekSource)
+        }
+    }
+
+    // MARK: Replan
+
+    /// Asks Silo for a new plan and reloads onto it. Used for recovery and
+    /// for track, quality, output route and seek-reanchor changes.
+    ///
+    /// Returns false when nothing was started: a track target with no server
+    /// identity, no current item, or a replan already running (a seek
+    /// reanchor and a `requeueWhenBusy` track change queue instead and
+    /// return true). Returns true once the replan owns the outcome.
     @discardableResult
     func attemptProtocolV3Replan(
         position: Double,
@@ -512,13 +580,11 @@ extension PlayerViewModel {
         trackTarget: QueuedProtocolV3TrackTarget? = nil,
         outputRouteSnapshot: ApplePlaybackV3CapabilitySnapshot? = nil
     ) -> Bool {
-        // One classification of the user's target. A track change must have a
-        // stable server ordinal before it is queued or issued: falling back to
-        // the currently published engine selection would turn an unmappable tap
-        // into a successful replan for the track that was already playing.
-        //
-        // The dimension the user did not touch stays `nil` here and is read
-        // back from the player below, after any queued pick is re-published.
+        // A track change needs a stable server ordinal before it's queued or
+        // sent. Falling back to the engine's current selection would turn a
+        // tap that can't be mapped into a replan for the track already
+        // playing. The dimension the viewer didn't touch stays nil and is
+        // read back from the player below, after any queued pick is restored.
         let explicitAudioTrackIndex: Int?
         let explicitSubtitleTrackIndex: Int?
         let targetsSubtitle: Bool
@@ -531,7 +597,7 @@ extension PlayerViewModel {
             targetsSubtitle = false
         case .subtitle(let trackId, let combinedIndex):
             explicitAudioTrackIndex = nil
-            // Nil subtitle with a nil track id is explicit Off.
+            // No track ID is an explicit Off.
             explicitSubtitleTrackIndex = trackId == nil ? nil : combinedIndex
             targetsSubtitle = true
         case nil:
@@ -541,17 +607,15 @@ extension PlayerViewModel {
         }
         if protocolV3ReplanTask != nil {
             if operation == PlaybackProtocolV3.ReplanOperation.seekReanchor {
-                // Rapid windowed seeks are latest-wins. Re-issue the newest
-                // target after the in-flight route transition settles.
+                // Rapid seeks in the window are latest-wins, issued once the
+                // route change in flight settles.
                 pendingProtocolV3SeekReanchorPosition = position
                 return true
             }
             if requeueWhenBusy {
-                // A user track change. The UI already shows the new
-                // selection, so dropping the switch here would leave the
-                // player permanently disagreeing with itself. Latest-wins,
-                // same as a seek: re-issued when the in-flight replan
-                // settles, at whatever position playback has reached by then.
+                // A track change the UI already shows. Dropping it would leave
+                // the player disagreeing with itself, so it's queued,
+                // latest-wins, and sent at whatever position playback reaches.
                 pendingProtocolV3TrackChange = QueuedProtocolV3TrackChange(
                     classification: classification,
                     message: message,
@@ -566,23 +630,17 @@ extension PlayerViewModel {
             if completesQualitySwitch { isQualitySwitching = false }
             return false
         }
-        // This replan is about to read the current selection back. On the
-        // deferred path that selection may have been republished from the
-        // interim plan's inventory while the user's pick waited, so reassert
-        // the pick first. On the direct path the pick is already published and
-        // this is a no-op.
+        // On the deferred path the selection may have been republished from
+        // the interim plan while the pick waited, so put the pick back before
+        // reading it. On the direct path this changes nothing.
         if let trackTarget {
             restoreQueuedProtocolV3TrackSelection(trackTarget)
         }
         let selectedSubtitleSnapshot = selectedSubtitleId
-        // The user-facing selection can be republished from Vivid while the
-        // async replan task is waiting to start (inventory/store discovery is
-        // still active after a replacement load). A user track change already
-        // carries the stable server identity captured at tap time; freeze the
-        // request indices here instead of re-reading mutable player state from
+        // The selection can be republished by the engine while the task waits
+        // to start, so the request's indices are fixed here rather than read
         // inside the task.
-        let requestedAudioTrackIndex = explicitAudioTrackIndex
-            ?? resolvedAudioTrackIndexForResume()
+        let requestedAudioTrackIndex = explicitAudioTrackIndex ?? resolvedAudioTrackIndexForResume()
         let requestedSubtitleTrackIndex = targetsSubtitle
             ? explicitSubtitleTrackIndex
             : resolvedProtocolV3SubtitleIndexForResume()
@@ -598,68 +656,38 @@ extension PlayerViewModel {
         isLoadingSubtitles = false
         bufferingProgress = nil
         streamLoadGeneration &+= 1
-        let currentStreamLoadGeneration = streamLoadGeneration
+        let replanGeneration = streamLoadGeneration
         protocolV3ReplanTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
-            let priorActivePlaybackSessionId = self.activePlaybackSessionId
-            let priorVividLoadEpoch = self.activeVividLoadEpoch
-            let priorWatchDetail = self.currentWatchDetail
-            let priorSelectedVersion = self.currentSelectedVersion
-            let priorPreparedProtocolV3 = self.activePreparedProtocolV3
-            let priorLastLoadRequest = self.lastLoadRequest
-            let priorPendingAudioFfIndex = self.pendingAudioFfIndex
-            let priorPendingSubtitleFfIndex = self.pendingSubtitleFfIndex
-            let priorPendingSidecarSubtitleTrackId = self.pendingSidecarSubtitleTrackId
-            let priorPendingServerRenderedSubtitleTrackId = self.pendingServerRenderedSubtitleTrackId
-            let priorDuration = self.duration
-            let priorCurrentTime = self.currentTime
-            let priorActiveQualityId = self.activeQualityId
-            let priorActiveBandwidthCap = self.activeBandwidthCap
-            let priorQualityOptions = self.qualityOptions
-            let priorResolvedServerUrl = self.resolvedServerUrl
-            let priorPrefsForCurrentItem = self.prefsForCurrentItem
-            let priorPrefsResolvedForCurrentItem = self.prefsResolvedForCurrentItem
+            let rollback = ProtocolV3ReplanRollback(capturing: self)
             var uncommittedPrepared: PreparedPlayback?
             var chainedLoadFailureRecovery: (position: Double, classification: String, message: String)?
             defer {
                 defer { self.recoverPendingUnexpectedEnd() }
-                self.protocolV3ReplanTask = nil
-                if completesQualitySwitch { self.isQualitySwitching = false }
-                if let recovery = chainedLoadFailureRecovery {
-                    self.attemptProtocolV3Replan(
-                        position: recovery.position,
-                        classification: recovery.classification,
-                        message: recovery.message
-                    )
-                } else if let queuedTrackChange = self.pendingProtocolV3TrackChange {
-                    // Drained before the queued seek: this replan will pick
-                    // up any still-pending reanchor in its own defer, so both
-                    // user intents survive and the seek lands last.
-                    self.pendingProtocolV3TrackChange = nil
-                    if !self.isDisposed, self.activePreparedProtocolV3 != nil {
+                // Once a new load or teardown has moved the generation on, the
+                // handle, the quality switch flag and the queues belong to it.
+                if replanGeneration == self.streamLoadGeneration {
+                    self.protocolV3ReplanTask = nil
+                    if completesQualitySwitch { self.isQualitySwitching = false }
+                    if let recovery = chainedLoadFailureRecovery {
                         self.attemptProtocolV3Replan(
-                            position: self.currentTime,
-                            classification: queuedTrackChange.classification,
-                            message: queuedTrackChange.message,
-                            requeueWhenBusy: true,
-                            trackTarget: queuedTrackChange.target
+                            position: recovery.position,
+                            classification: recovery.classification,
+                            message: recovery.message
+                        )
+                    } else {
+                        self.drainQueuedProtocolV3Work(
+                            seekSource: "queuedReanchor",
+                            canIssue: !self.isDisposed && self.activePreparedProtocolV3 != nil
                         )
                     }
-                } else if let queuedTarget = self.pendingProtocolV3SeekReanchorPosition {
-                    self.pendingProtocolV3SeekReanchorPosition = nil
-                    if !self.isDisposed, self.activePreparedProtocolV3 != nil {
-                        self.commitSeek(to: queuedTarget, source: "queuedReanchor")
-                    }
-                } else if currentStreamLoadGeneration == self.streamLoadGeneration {
-                    // Runs only once this task handle is cleared, so a policy
-                    // replan it issues is accepted rather than rejected as busy.
                 }
             }
             do {
                 #if DEBUG
                 self.testRecorder?.record(.serverReplan(classification: classification))
                 #endif
-                guard let prepared = try await self.sessionBridge.replanProtocolV3(
+                let answer = try await self.sessionBridge.replanProtocolV3(
                     watchDetail: watchDetail,
                     position: position,
                     classification: classification,
@@ -669,7 +697,10 @@ extension PlayerViewModel {
                     audioTrackIndex: requestedAudioTrackIndex,
                     subtitleTrackIndex: requestedSubtitleTrackIndex,
                     outputRouteSnapshot: outputRouteSnapshot
-                ) else {
+                )
+                guard let prepared = answer else {
+                    // A refusal ends this item, but only if it's still current.
+                    try self.requireCurrentStreamLoad(replanGeneration)
                     self.finalizeTerminalPlaybackError(message)
                     return
                 }
@@ -682,16 +713,12 @@ extension PlayerViewModel {
                     )
                 }
                 uncommittedPrepared = prepared
-                guard !Task.isCancelled,
-                      !self.isDisposed,
-                      currentStreamLoadGeneration == self.streamLoadGeneration else {
-                    throw CancellationError()
-                }
+                try self.requireCurrentStreamLoad(replanGeneration)
 
-                // The replacement load starts with subtitles off, and Silo is
-                // asked for none because Vivid renders them. Read the playing
-                // subtitle back now, after the wait (a pick or Off made
-                // meanwhile counts) and while the old plan still describes it.
+                // The replacement starts with subtitles off and Silo is asked
+                // for none, because Vivid draws them. Read the playing subtitle
+                // back now, after the wait (a pick or Off made meanwhile
+                // counts) and while the old plan still describes it.
                 let subtitleIndexForReload = targetsSubtitle ? nil : self.resolvedSubtitleTrackIndexForResume()
                 let previousSessionId = self.activePlaybackSessionId
                 self.activePlaybackSessionId = prepared.session.sessionId
@@ -704,58 +731,36 @@ extension PlayerViewModel {
                         // A track (or Off) picked for this item comes back.
                         self.pendingSubtitleFfIndex = subtitleIndexForReload
                     } else {
-                        // The automatic pick runs again on the new tracks,
-                        // with the audio this replan may have switched.
+                        // Auto runs again on the new tracks, with the audio
+                        // this replan may have switched.
                         self.prefsForCurrentItem = self.prefsForCurrentItem
                             ?? self.automaticSubtitlePrefsSnapshot()
                         self.prefsResolvedForCurrentItem = false
                     }
                 }
-                switch Self.protocolV3SidecarRestoreIntent(
+                self.armSidecarRestore(Self.protocolV3SidecarRestoreIntent(
                     snapshot: selectedSubtitleSnapshot,
                     selectedSubtitleIndex: prepared.protocolV3?.plan.selectedTracks.subtitle?.index,
                     subtitleMode: prepared.protocolV3?.plan.subtitle.mode,
                     isEmbedded: prepared.protocolV3?.plan.subtitle.embedded != nil
-                ) {
-                case .renderLocally(let trackId):
-                    self.pendingSidecarSubtitleTrackId = trackId
-                    self.pendingServerRenderedSubtitleTrackId = nil
-                case .serverRendered(let trackId):
-                    self.pendingSidecarSubtitleTrackId = nil
-                    self.pendingServerRenderedSubtitleTrackId = trackId
-                case nil:
-                    break
-                }
+                ))
                 self.duration = prepared.session.durationSeconds ?? prepared.selectedVersion.duration ?? self.duration
                 self.currentTime = self.movieTime(for: prepared.session)
                 self.activeQualityId = prepared.activeQualityId
                 self.activeBandwidthCap = prepared.bandwidthCap
-                self.qualityOptions = prepared.nativeQualityOptions ?? ApplePlaybackQuality.playbackOptions(
-                    serverQualities: prepared.protocolV3?.plan.availableQualities ?? [],
-                    fallbackVersion: prepared.selectedVersion
-                )
+                self.qualityOptions = Self.playbackQualityOptions(for: prepared)
 
-                try self.requireCurrentStreamLoad(currentStreamLoadGeneration)
-                guard let streamRequest = await self.makeStreamRequest(
-                    session: prepared.session,
-                    additionalHeaders: prepared.protocolV3?.plan.stream.headers ?? [:],
-                    requiresHeaderAuthenticatedMedia: prepared.protocolV3?.serverFeatures.contains(
-                        PlaybackProtocolV3.headerAuthenticatedMediaFeature
-                    ) == true,
-                    allowsAuthorizedMediaOrigins:
-                        prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true,
-                    nativeApiMajor: prepared.protocolV3?.plan.nativeApiMajor
-                ) else {
+                try self.requireCurrentStreamLoad(replanGeneration)
+                guard let streamRequest = await self.makeStreamRequest(for: prepared) else {
                     throw VividLoadSpec.ValidationError.invalidStreamURL(prepared.session.streamUrl)
                 }
-                try self.requireCurrentStreamLoad(currentStreamLoadGeneration)
+                try self.requireCurrentStreamLoad(replanGeneration)
                 self.resolvedServerUrl = streamRequest.serverUrl
-                let shouldPlayWhenReady = self.vividPlaybackController.shouldPlayWhenReady
                 try await self.loadVivid(
                     prepared: prepared,
                     streamRequest: streamRequest,
-                    expectedStreamLoadGeneration: currentStreamLoadGeneration,
-                    shouldPlayWhenReady: shouldPlayWhenReady
+                    expectedStreamLoadGeneration: replanGeneration,
+                    shouldPlayWhenReady: self.vividPlaybackController.shouldPlayWhenReady
                 )
                 guard await self.sessionBridge.commitPendingProtocolV3Transition(prepared) else {
                     throw CancellationError()
@@ -772,77 +777,37 @@ extension PlayerViewModel {
                 }
                 await self.sessionBridge.reportProtocolV3PlanExecutionStarted(prepared)
             } catch is CancellationError {
-                // Same rule as the fresh-load arm: an abandoned replan load
-                // must not leave the engine reading a retired session. Only
-                // once `loadVivid` moved the epoch does the engine hold the
-                // candidate source; before that the prior source still plays.
-                if currentStreamLoadGeneration == self.streamLoadGeneration,
-                   self.activeVividLoadEpoch != priorVividLoadEpoch {
+                // Same rule as a fresh load: an abandoned replacement mustn't
+                // leave the engine reading a retired session. The engine only
+                // holds the candidate once `loadVivid` moved the epoch; before
+                // that the previous source is still playing.
+                if replanGeneration == self.streamLoadGeneration,
+                   self.activeVividLoadEpoch != rollback.vividLoadEpoch {
                     _ = self.disposeVividPlayback()
                 }
                 if let uncommittedPrepared {
                     await self.sessionBridge.rollbackPendingProtocolV3Transition(uncommittedPrepared)
                 }
-                if currentStreamLoadGeneration == self.streamLoadGeneration {
-                    self.activePlaybackSessionId = priorActivePlaybackSessionId
-                    self.currentWatchDetail = priorWatchDetail
-                    self.currentSelectedVersion = priorSelectedVersion
-                    self.activePreparedProtocolV3 = priorPreparedProtocolV3
-                    self.lastLoadRequest = priorLastLoadRequest
-                    self.pendingAudioFfIndex = priorPendingAudioFfIndex
-                    self.pendingSubtitleFfIndex = priorPendingSubtitleFfIndex
-                    self.pendingSidecarSubtitleTrackId = priorPendingSidecarSubtitleTrackId
-                    self.pendingServerRenderedSubtitleTrackId = priorPendingServerRenderedSubtitleTrackId
-                    self.duration = priorDuration
-                    self.currentTime = priorCurrentTime
-                    self.activeQualityId = priorActiveQualityId
-                    self.activeBandwidthCap = priorActiveBandwidthCap
-                    self.qualityOptions = priorQualityOptions
-                    self.resolvedServerUrl = priorResolvedServerUrl
-                    self.prefsForCurrentItem = priorPrefsForCurrentItem
-                    self.prefsResolvedForCurrentItem = priorPrefsResolvedForCurrentItem
+                if replanGeneration == self.streamLoadGeneration {
+                    rollback.restore(into: self)
                 }
                 return
             } catch {
                 let loadFailure = Self.protocolV3LoadFailureRecovery(error)
                 if let uncommittedPrepared {
-                    if loadFailure.shouldAdvanceRoute {
-                        // Vivid rejected the replacement before it could
-                        // commit. Preserve that exact failed plan as the V3
-                        // attempt being reported, then advance the bounded
-                        // route ladder. No realtime/first-frame/success event
-                        // is published.
-                        if await self.sessionBridge.promotePendingProtocolV3TransitionForRecovery(
-                            uncommittedPrepared
-                        ) {
-                            chainedLoadFailureRecovery = (
-                                position,
-                                loadFailure.classification,
-                                loadFailure.message
-                            )
-                            return
-                        }
+                    // The engine refused the replacement before it committed.
+                    // Report that exact failed plan and step down the bounded
+                    // route ladder. No realtime, first-frame or success event
+                    // goes out for it.
+                    if loadFailure.shouldAdvanceRoute,
+                       await self.sessionBridge.promotePendingProtocolV3TransitionForRecovery(uncommittedPrepared) {
+                        chainedLoadFailureRecovery = (position, loadFailure.classification, loadFailure.message)
+                        return
                     }
                     await self.sessionBridge.rollbackPendingProtocolV3Transition(uncommittedPrepared)
                 }
-                if currentStreamLoadGeneration == self.streamLoadGeneration {
-                    self.activePlaybackSessionId = priorActivePlaybackSessionId
-                    self.currentWatchDetail = priorWatchDetail
-                    self.currentSelectedVersion = priorSelectedVersion
-                    self.activePreparedProtocolV3 = priorPreparedProtocolV3
-                    self.lastLoadRequest = priorLastLoadRequest
-                    self.pendingAudioFfIndex = priorPendingAudioFfIndex
-                    self.pendingSubtitleFfIndex = priorPendingSubtitleFfIndex
-                    self.pendingSidecarSubtitleTrackId = priorPendingSidecarSubtitleTrackId
-                    self.pendingServerRenderedSubtitleTrackId = priorPendingServerRenderedSubtitleTrackId
-                    self.duration = priorDuration
-                    self.currentTime = priorCurrentTime
-                    self.activeQualityId = priorActiveQualityId
-                    self.activeBandwidthCap = priorActiveBandwidthCap
-                    self.qualityOptions = priorQualityOptions
-                    self.resolvedServerUrl = priorResolvedServerUrl
-                    self.prefsForCurrentItem = priorPrefsForCurrentItem
-                    self.prefsResolvedForCurrentItem = priorPrefsResolvedForCurrentItem
+                if replanGeneration == self.streamLoadGeneration {
+                    rollback.restore(into: self)
                 }
                 guard !Task.isCancelled, !self.isDisposed else { return }
                 Self.logger.error(
@@ -861,6 +826,90 @@ extension PlayerViewModel {
         return true
     }
 
+    /// Arms the restore of a Silo subtitle file picked before a reload: drawn
+    /// by Vivid, or burned in by the server and kept selected in the picker.
+    private func armSidecarRestore(_ intent: ProtocolV3SidecarRestoreIntent?) {
+        switch intent {
+        case .renderLocally(let trackId):
+            pendingSidecarSubtitleTrackId = trackId
+            pendingServerRenderedSubtitleTrackId = nil
+        case .serverRendered(let trackId):
+            pendingSidecarSubtitleTrackId = nil
+            pendingServerRenderedSubtitleTrackId = trackId
+        case nil:
+            break
+        }
+    }
+
+    /// What a replan changes before its replacement commits, captured when it
+    /// starts so a failed or cancelled replan puts the item back as it was.
+    private struct ProtocolV3ReplanRollback {
+        let vividLoadEpoch: VividPlaybackController.LoadEpoch?
+        let playbackSessionId: String?
+        let watchDetail: WatchDetail?
+        let selectedVersion: FileVersion?
+        let preparedProtocolV3: PreparedPlaybackV3?
+        let lastLoadRequest: LoadRequest?
+        let pendingAudioFfIndex: Int?
+        let pendingSubtitleFfIndex: Int?
+        let pendingSidecarSubtitleTrackId: Int64?
+        let pendingServerRenderedSubtitleTrackId: Int64?
+        let duration: Double
+        let currentTime: Double
+        let activeQualityId: String
+        let activeBandwidthCap: CarriedBandwidthCap
+        let qualityOptions: [ApplePlaybackQualityOption]
+        let resolvedServerUrl: String
+        let prefsForCurrentItem: PrefsSnapshot?
+        let prefsResolvedForCurrentItem: Bool
+
+        @MainActor
+        init(capturing model: PlayerViewModel) {
+            vividLoadEpoch = model.activeVividLoadEpoch
+            playbackSessionId = model.activePlaybackSessionId
+            watchDetail = model.currentWatchDetail
+            selectedVersion = model.currentSelectedVersion
+            preparedProtocolV3 = model.activePreparedProtocolV3
+            lastLoadRequest = model.lastLoadRequest
+            pendingAudioFfIndex = model.pendingAudioFfIndex
+            pendingSubtitleFfIndex = model.pendingSubtitleFfIndex
+            pendingSidecarSubtitleTrackId = model.pendingSidecarSubtitleTrackId
+            pendingServerRenderedSubtitleTrackId = model.pendingServerRenderedSubtitleTrackId
+            duration = model.duration
+            currentTime = model.currentTime
+            activeQualityId = model.activeQualityId
+            activeBandwidthCap = model.activeBandwidthCap
+            qualityOptions = model.qualityOptions
+            resolvedServerUrl = model.resolvedServerUrl
+            prefsForCurrentItem = model.prefsForCurrentItem
+            prefsResolvedForCurrentItem = model.prefsResolvedForCurrentItem
+        }
+
+        @MainActor
+        func restore(into model: PlayerViewModel) {
+            model.activePlaybackSessionId = playbackSessionId
+            model.currentWatchDetail = watchDetail
+            model.currentSelectedVersion = selectedVersion
+            model.activePreparedProtocolV3 = preparedProtocolV3
+            model.lastLoadRequest = lastLoadRequest
+            model.pendingAudioFfIndex = pendingAudioFfIndex
+            model.pendingSubtitleFfIndex = pendingSubtitleFfIndex
+            model.pendingSidecarSubtitleTrackId = pendingSidecarSubtitleTrackId
+            model.pendingServerRenderedSubtitleTrackId = pendingServerRenderedSubtitleTrackId
+            model.duration = duration
+            model.currentTime = currentTime
+            model.activeQualityId = activeQualityId
+            model.activeBandwidthCap = activeBandwidthCap
+            model.qualityOptions = qualityOptions
+            model.resolvedServerUrl = resolvedServerUrl
+            model.prefsForCurrentItem = prefsForCurrentItem
+            model.prefsResolvedForCurrentItem = prefsResolvedForCurrentItem
+        }
+    }
+
+    // MARK: Failure classification
+
+    /// The classification sent with a replan for an untyped error message.
     private static func protocolV3FailureClassification(_ message: String) -> String {
         let value = message.lowercased()
         if value.contains("decoder") || value.contains("videotoolbox") || value.contains("-129") {
@@ -886,29 +935,33 @@ extension PlayerViewModel {
         .audioSessionUnavailable,
     ]
 
+    /// Whether a load that failed before its plan committed should step down
+    /// to Silo's next route, and the classification and message to send.
     static func protocolV3LoadFailureRecovery(
         _ error: Error
     ) -> (shouldAdvanceRoute: Bool, classification: String, message: String) {
-        if let error = error as? ApplePlaybackV3PlanError,
-           case .invalidEmbeddedSubtitle = error {
+        if let error = error as? ApplePlaybackV3PlanError, case .invalidEmbeddedSubtitle = error {
             return (true, "subtitle_embedded_failed", error.localizedDescription)
         }
         if let failure = error as? VividPlaybackController.EmbeddedSubtitleSelectionError {
             return (true, "subtitle_embedded_failed", failure.localizedDescription)
         }
         if let loadFailure = error as? VividPlaybackController.LoadFailure {
+            // Every other typed open failure is useful evidence for the route
+            // ladder, which the bridge's attempt limit keeps bounded.
             let failure = loadFailure.failure
-            // Route-independent failures are not evidence that another
-            // decode/remux rung is suitable. All other typed open failures are
-            // useful V3 ladder evidence and remain bounded by the bridge's
-            // attempt limit.
-            return (
-                !routeIndependentFailureKinds.contains(failure.kind),
-                failure.kind.rawValue,
-                failure.message
-            )
+            return (!routeIndependentFailureKinds.contains(failure.kind), failure.kind.rawValue, failure.message)
         }
         let message = error.localizedDescription
         return (true, protocolV3FailureClassification(message), message)
+    }
+}
+
+fileprivate extension PreparedPlaybackV3 {
+    /// Whether a load of this plan can be reopened with refreshed request
+    /// headers: Silo's v2 API, or a server that advertises header
+    /// authenticated media.
+    var refreshesMediaHeaders: Bool {
+        plan.nativeApiMajor == 2 || serverFeatures.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature)
     }
 }
