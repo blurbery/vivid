@@ -1,5 +1,6 @@
 import Foundation
 
+/// One subtitle file from a search. `id` is OpenSubtitles' file ID.
 struct OpenSubtitleResult: Identifiable, Sendable {
     let id: Int
     let name: String
@@ -7,6 +8,8 @@ struct OpenSubtitleResult: Identifiable, Sendable {
     let hearingImpaired: Bool
 }
 
+/// What a search asks for: the title, and the season and episode for an
+/// episode. Anything that isn't an episode searches as a movie.
 struct OpenSubtitleQuery: Equatable, Sendable {
     let title: String
     let type: String
@@ -45,6 +48,9 @@ enum OpenSubtitlesError: LocalizedError {
     }
 }
 
+/// An API request only follows a search redirect on the same endpoint, which
+/// keeps the key. A file download follows redirects between OpenSubtitles'
+/// own HTTPS hosts and nowhere else.
 private final class OpenSubtitlesRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
@@ -57,6 +63,8 @@ private final class OpenSubtitlesRedirectPolicy: NSObject, URLSessionTaskDelegat
     }
 }
 
+/// OpenSubtitles' REST API, on its own session with no cookies or cache.
+/// Requests carry only the person's API key, never server credentials.
 final class OpenSubtitlesClient: @unchecked Sendable {
     private let session: URLSession
     init(configuration: URLSessionConfiguration = .ephemeral) {
@@ -164,13 +172,17 @@ final class OpenSubtitlesClient: @unchecked Sendable {
             case 406, 429: throw OpenSubtitlesError.quota
             default: throw OpenSubtitlesError.httpStatus(http.statusCode)
             }
+            // An unknown length (-1) passes here and is held to the limit below.
             guard response.expectedContentLength <= limit else { throw OpenSubtitlesError.file }
             var data = Data()
+            if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
             for try await byte in bytes {
-                try Task.checkCancellation()
                 guard data.count < limit else { throw OpenSubtitlesError.file }
                 data.append(byte)
+                // Checked every 64 KB rather than every byte.
+                if data.count % 65_536 == 0 { try Task.checkCancellation() }
             }
+            try Task.checkCancellation()
             return data
         } catch let error as OpenSubtitlesError { throw error }
         catch let error as URLError { try Task.checkCancellation(); throw OpenSubtitlesError.network(error.code) }

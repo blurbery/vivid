@@ -513,11 +513,15 @@ final class SimklClient: @unchecked Sendable {
                            scope: object["scope"] as? String ?? "")
     }
 
+    /// Each library list and the key its rows keep the title under. Anime
+    /// rows use `show`, even for an anime film.
+    private static let libraryBuckets = [("movies", "movie"), ("shows", "show"), ("anime", "show")]
+
     /// Accepts the empty shapes Simkl uses for an empty library: `{}`, `[]` or `null`.
     static func parseLibrary(_ json: Any?) throws -> [SimklLibraryItem] {
         guard let object = try libraryObject(json) else { return [] }
         var items: [SimklLibraryItem] = []
-        for (bucket, key) in [("movies", "movie"), ("shows", "show"), ("anime", "show")] {
+        for (bucket, key) in libraryBuckets {
             for row in try rows(object[bucket]) {
                 guard let media = row[key] as? [String: Any] else { throw SimklFailure.invalidResponse }
                 let ids = SimklIDs(json: media["ids"] as? [String: Any])
@@ -537,7 +541,7 @@ final class SimklClient: @unchecked Sendable {
     static func parseLibraryIDs(_ json: Any?) throws -> Set<Int> {
         guard let object = try libraryObject(json) else { return [] }
         var result = Set<Int>()
-        for (bucket, key) in [("movies", "movie"), ("shows", "show"), ("anime", "show")] {
+        for (bucket, key) in libraryBuckets {
             for row in try rows(object[bucket]) {
                 guard let simkl = SimklIDs(json: (row[key] as? [String: Any])?["ids"] as? [String: Any]).simkl else {
                     throw SimklFailure.invalidResponse
@@ -578,22 +582,23 @@ final class SimklClient: @unchecked Sendable {
     }
 
     static func historyBody(_ entries: [SimklHistoryEntry]) -> [String: Any] {
-        var body: [String: [[String: Any]]] = [:]
-        for entry in entries { body[entry.isMovie ? "movies" : "shows", default: []].append(entry.payload) }
-        return body
+        grouped(entries, isMovie: \.isMovie) { $0.payload }
     }
 
     static func listBody(_ items: [SimklListItem]) -> [String: Any] {
-        var body: [String: [[String: Any]]] = [:]
-        for item in items { body[item.kind == .movie ? "movies" : "shows", default: []].append(item.payload) }
-        return body
+        grouped(items, isMovie: { $0.kind == .movie }) { $0.payload }
     }
 
     static func removeBody(_ items: [SimklLibraryItem]) -> [String: Any] {
+        grouped(items, isMovie: { $0.kind == .movie }) { ["ids": ["simkl": $0.simkl]] }
+    }
+
+    /// Every write body is a `movies` list and a `shows` list, in the order
+    /// the entries came. A list with nothing in it is left out.
+    private static func grouped<Entry>(_ entries: [Entry], isMovie: (Entry) -> Bool,
+                                       payload: (Entry) -> [String: Any]) -> [String: Any] {
         var body: [String: [[String: Any]]] = [:]
-        for item in items {
-            body[item.kind == .movie ? "movies" : "shows", default: []].append(["ids": ["simkl": item.simkl]])
-        }
+        for entry in entries { body[isMovie(entry) ? "movies" : "shows", default: []].append(payload(entry)) }
         return body
     }
 

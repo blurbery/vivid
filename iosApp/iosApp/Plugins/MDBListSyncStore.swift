@@ -1,16 +1,24 @@
 #if os(iOS) || os(tvOS)
 import Foundation
-import CryptoKit
 import Observation
 
+/// MDBList sync for the active server account and profile: completed
+/// watches go to MDBList, and the server watchlist and MDBList's are kept in
+/// step both ways. Connecting only checks the key; watched history is never
+/// imported or scanned.
+///
+/// The API key joins the iCloud vault through `VividCloudPreferences`. The
+/// checkpoint and the watchlist baseline stay in this device's defaults.
 @Observable @MainActor
 final class MDBListSyncStore {
     static let shared = MDBListSyncStore()
+
     private(set) var isConnected = false
     private(set) var isSyncing = false
     private(set) var syncProgress: MDBListSyncProgress?
-    private var pendingWatchlistWork = false
     private(set) var status = String(localized: "Not connected")
+    private(set) var watchlistRevision = 0
+
     private let keychain = SharedKeychain(audience: .currentUser)
     private let client = MDBListClient()
     private var loadedScope: String?
@@ -20,8 +28,11 @@ final class MDBListSyncStore {
     private var quotaRetryAfter = Date.distantPast
     private var state = Checkpoint()
     private var watchlistEntries: [String: WatchlistEntry] = [:]
-    private(set) var watchlistRevision = 0
+    /// The last watchlist pass hit its batch limit, so the next check
+    /// carries on.
+    private var pendingWatchlistWork = false
 
+    /// What the last sync confirmed for one server watchlist title.
     struct WatchlistEntry: Codable {
         var item: MDBListWatchlistItem
         var local: Bool
@@ -29,8 +40,11 @@ final class MDBListSyncStore {
     }
     struct Checkpoint: Codable {
         var userID: Int = 0
+        /// MDBList IDs (`type:provider:value`) MDBList has confirmed as watched.
         var acknowledged: Set<String> = []
         var exportedContentIDs: Set<String> = []
+        /// Completed watches still to send, with when they finished.
+        /// Optional, because checkpoints from before the queue have none.
         var pendingCompletions: [String: String]? = [:]
         var quotaRetryAfter: Date?
         var lastSync: Date?
@@ -42,25 +56,28 @@ final class MDBListSyncStore {
               let profile = account.profile?.id else { return nil }
         return VividCloudPreferences.pluginScope(server: account.serverID, user: account.userID, profile: profile)
     }
-    private func credentialKey(_ scope: String) -> String { "vivid.mdblist.key.v1." + scope }
-    private func importKey(_ scope: String) -> String { "vivid.mdblist.imports.v1." + scope }
-    private func checkpointKey(_ scope: String) -> String { "vivid.mdblist.history.v1." + scope }
+    private static func credentialKey(_ scope: String) -> String { "vivid.mdblist.key.v1." + scope }
+    private static func checkpointKey(_ scope: String) -> String { "vivid.mdblist.history.v1." + scope }
+    private static func watchlistKey(_ scope: String) -> String { "vivid.mdblist.watchlist.v1." + scope }
+    /// The history import's old record. Connecting no longer imports, so
+    /// it's only ever removed.
+    private static func importKey(_ scope: String) -> String { "vivid.mdblist.imports.v1." + scope }
 
     func reload() {
         let current = scope
-        let storedCredential = current.flatMap { keychain.get(credentialKey($0)) } ?? ""
+        let storedCredential = current.flatMap { keychain.get(Self.credentialKey($0)) } ?? ""
         guard loadedScope != current || credential != storedCredential else { return }
         revision = UUID()
         syncProgress = nil
         loadedScope = current
         credential = storedCredential
-        state = current.flatMap { UserDefaults.standard.data(forKey: checkpointKey($0)) }
+        state = current.flatMap { UserDefaults.standard.data(forKey: Self.checkpointKey($0)) }
             .flatMap { try? JSONDecoder().decode(Checkpoint.self, from: $0) } ?? Checkpoint()
         if let current {
-            UserDefaults.standard.removeObject(forKey: importKey(current))
-            UserDefaults.standard.removeObject(forKey: importKey(current) + ".ignored")
+            UserDefaults.standard.removeObject(forKey: Self.importKey(current))
+            UserDefaults.standard.removeObject(forKey: Self.importKey(current) + ".ignored")
         }
-        watchlistEntries = current.flatMap { UserDefaults.standard.data(forKey: "vivid.mdblist.watchlist.v1." + $0) }
+        watchlistEntries = current.flatMap { UserDefaults.standard.data(forKey: Self.watchlistKey($0)) }
             .flatMap { try? JSONDecoder().decode([String: WatchlistEntry].self, from: $0) } ?? [:]
         isConnected = !credential.isEmpty
         status = isConnected ? String(localized: "Connected") : String(localized: "Not connected")
@@ -79,11 +96,11 @@ final class MDBListSyncStore {
         let userID = try await client.validate(key: key)
         try Task.checkCancellation()
         guard scope == capturedScope, revision == capturedRevision else { throw CancellationError() }
-        try VividCloudPreferences.shared.setPluginCredential(key, for: credentialKey(capturedScope))
+        try VividCloudPreferences.shared.setPluginCredential(key, for: Self.credentialKey(capturedScope))
         if state.userID != userID {
             state = Checkpoint(userID: userID)
             watchlistEntries = [:]
-            UserDefaults.standard.removeObject(forKey: importKey(capturedScope) + ".ignored")
+            UserDefaults.standard.removeObject(forKey: Self.importKey(capturedScope) + ".ignored")
         }
         quotaRetryAfter = state.quotaRetryAfter ?? .distantPast
         credential = key
@@ -98,7 +115,7 @@ final class MDBListSyncStore {
     func disconnect() throws {
         reload()
         guard let scope else { throw MDBListFailure.noProfile }
-        try VividCloudPreferences.shared.setPluginCredential(nil, for: credentialKey(scope))
+        try VividCloudPreferences.shared.setPluginCredential(nil, for: Self.credentialKey(scope))
         credential = ""
         revision = UUID()
         isConnected = false
@@ -159,7 +176,7 @@ final class MDBListSyncStore {
                 let queued = state.userID == 0 ? state.pendingCompletions : [:]
                 state = Checkpoint(userID: userID, pendingCompletions: queued)
                 watchlistEntries = [:]
-                UserDefaults.standard.removeObject(forKey: importKey(scope) + ".ignored")
+                UserDefaults.standard.removeObject(forKey: Self.importKey(scope) + ".ignored")
                 try save()
             }
             var unresolvedExports = 0
@@ -216,11 +233,15 @@ final class MDBListSyncStore {
                 status = pendingWatchlistWork ? String(localized: "This batch is synced. More watchlist changes remain for the next check.") : String(localized: "Watched history and watchlists are synced.")
             }
         } catch is CancellationError {
-            if revision == generation { try? save(); status = String(localized: "Connected. Sync paused.") }
+            guard revision == generation else { return }
+            try? save()
+            status = String(localized: "Connected. Sync paused.")
         } catch {
-            if revision == generation { try? save() }
-            if revision == generation { status = (error as? MDBListFailure)?.localizedDescription ?? String(localized: "Sync interrupted. It will try again later.") }
-            if revision == generation, case MDBListFailure.quota = error {
+            guard revision == generation else { return }
+            try? save()
+            status = (error as? MDBListFailure)?.localizedDescription ?? String(localized: "Sync interrupted. It will try again later.")
+            // The quota pause outlives a relaunch, so it's saved with the checkpoint.
+            if case MDBListFailure.quota = error {
                 quotaRetryAfter = Date().addingTimeInterval(3600)
                 state.quotaRetryAfter = quotaRetryAfter
                 nextSync = quotaRetryAfter
@@ -383,8 +404,8 @@ final class MDBListSyncStore {
 
     private func save() throws {
         guard let scope = loadedScope, scope == self.scope else { throw CancellationError() }
-        UserDefaults.standard.set(try JSONEncoder().encode(state), forKey: checkpointKey(scope))
-        UserDefaults.standard.set(try JSONEncoder().encode(watchlistEntries), forKey: "vivid.mdblist.watchlist.v1." + scope)
+        UserDefaults.standard.set(try JSONEncoder().encode(state), forKey: Self.checkpointKey(scope))
+        UserDefaults.standard.set(try JSONEncoder().encode(watchlistEntries), forKey: Self.watchlistKey(scope))
     }
 
     static func identifiers(_ item: ItemDetail) -> [MDBListItemID] {
