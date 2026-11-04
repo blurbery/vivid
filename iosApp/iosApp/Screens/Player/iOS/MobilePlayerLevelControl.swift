@@ -4,8 +4,10 @@ import MediaPlayer
 import SwiftUI
 import UIKit
 
-/// A relative vertical drag avoids jumping to a new level on first contact.
-/// The whole capsule is a touch target; the centre of the player stays free.
+/// The brightness or volume capsule at the side of the player. A drag moves
+/// the level relative to where it started, so touching the capsule never
+/// jumps to a new level. The whole capsule takes touches, and the middle of
+/// the player stays free.
 struct MobilePlayerLevelControl: View {
     let title: LocalizedStringKey
     let systemImage: String

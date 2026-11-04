@@ -1,24 +1,14 @@
 import SwiftUI
 
+/// The playback stats as sections of label and value rows: Source and Media,
+/// then Buffer, Network and Engine. Apple TV's Info HUD shows it in three
+/// columns with TV type sizes. A section with no rows is left out.
 struct PlaybackStatsPanel: View {
-    /// How the same row set is dressed. The rows themselves always come from
-    /// `PlaybackStats`, so the platforms can't drift on *what* is reported —
-    /// only on how much chrome is drawn around it.
-    enum Layout {
-        /// tvOS Info HUD pane: uppercase section headers, trailing-aligned
-        /// label column, monospaced values. Reads as a panel.
-        case sectioned
-        /// iOS overlay: one flat `Label:  value` list, no section headers,
-        /// drawn straight onto the picture. Reads as annotation.
-        case plain
-    }
-
     let stats: PlaybackStats
-    var layout: Layout = .sectioned
     var usesTVTypography = false
-    var usesTwoColumnLayout = false
     var usesThreeColumnLayout = false
 
+    /// Scroll targets for the HUD's paging, one per section header.
     static let sourceSectionID = "stats-source"
     static let mediaSectionID = "stats-media"
     static let bufferSectionID = "stats-buffer"
@@ -27,10 +17,7 @@ struct PlaybackStatsPanel: View {
 
     var body: some View {
         Group {
-            switch layout {
-            case .plain:
-                plainList
-            case .sectioned where usesThreeColumnLayout:
+            if usesThreeColumnLayout {
                 HStack(alignment: .top, spacing: 24) {
                     column(leftSections)
                     divider
@@ -38,40 +25,11 @@ struct PlaybackStatsPanel: View {
                     divider
                     column(Array(rightSections.suffix(1)))
                 }
-            case .sectioned where usesTwoColumnLayout:
-                HStack(alignment: .top, spacing: 34) {
-                    column(leftSections)
-                    divider
-                    column(rightSections)
-                }
-            case .sectioned:
-                column(allSections)
+            } else {
+                column(leftSections + rightSections)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - Plain layout
-
-    /// Flat `Label:` / value grid over `compactRows`. Draws no background of
-    /// its own — the overlay owns that, so this stays reusable as bare
-    /// annotation. Single column by design: the compact set is short enough
-    /// to fit a phone in landscape, which is what lets the overlay stay
-    /// inert (no scrolling) without clipping anything.
-    private var plainList: some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
-            ForEach(stats.compactRows, id: \.0) { row in
-                GridRow {
-                    Text("\(PlaybackStats.displayLabel(row.0)):")
-                        .foregroundStyle(.white.opacity(0.58))
-                        .gridColumnAlignment(.leading)
-                    Text(row.1)
-                        .foregroundStyle(.white.opacity(0.95))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .font(.system(size: 11))
     }
 
     private var leftSections: [StatsSection] {
@@ -87,10 +45,6 @@ struct PlaybackStatsPanel: View {
             .init(id: Self.networkSectionID, title: String(localized: "stats.network", defaultValue: "Network", comment: "Playback stats section about the network connection"), rows: stats.networkRows),
             .init(id: Self.engineSectionID, title: String(localized: "Engine", comment: "Playback stats section"), rows: stats.engineRows)
         ]
-    }
-
-    private var allSections: [StatsSection] {
-        leftSections + rightSections
     }
 
     private var divider: some View {

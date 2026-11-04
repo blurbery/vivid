@@ -3,8 +3,8 @@ import Observation
 import UIKit
 import CoreMotion
 
-/// SwiftUI app delegate bridge used only so UIKit asks our shared coordinator
-/// which orientations are currently allowed.
+/// The SwiftUI app delegate, there only so UIKit asks the shared coordinator
+/// which orientations are allowed.
 final class VividAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
@@ -71,9 +71,10 @@ struct PlayerRotationState {
     }
 }
 
-/// Centralized orientation policy for the iOS app and player shell. Playback code
-/// should stay unaware of this; the coordinator only manages UIKit masks and
-/// scene geometry updates while the full-screen player is visible.
+/// The orientation policy for the iPhone and iPad app and its player.
+/// Playback code knows nothing of it: the coordinator only manages UIKit's
+/// orientation masks, and asks the scene to rotate while the full-screen
+/// player is up.
 @Observable
 final class PlayerOrientationCoordinator {
     static let shared = PlayerOrientationCoordinator()

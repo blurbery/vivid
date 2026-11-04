@@ -132,73 +132,41 @@ final class PictureInPictureCoordinator {
         self.onRestoreUserInterface = retainedRestoreHandler
         self.onStartFailure = retainedStartFailureHandler
 
-        engine.$currentAVPlayer
-            .sink { [weak self, weak engine] player in
-                // Vivid publishes this MainActor-isolated state synchronously.
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.receiveNativePlayer(player)
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$currentAVPlayer, of: engine) { coordinator, player in
+            coordinator.receiveNativePlayer(player)
+        }
 
         // The native host and its layer survive item handovers. Observe the
         // separately published item seam so external-route and native-subtitle
         // ownership are re-applied to the replacement without rebuilding PiP.
-        engine.$currentAVPlayerItem
-            .sink { [weak self, weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.adoptCurrentEngineSource()
-                    self.refreshExternalPlaybackState()
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$currentAVPlayerItem, of: engine) { coordinator, _ in
+            coordinator.adoptCurrentEngineSource()
+            coordinator.refreshExternalPlaybackState()
+        }
 
-        engine.$softwarePiPSource
-            .sink { [weak self, weak engine] source in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.receiveSoftwareSource(source)
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$softwarePiPSource, of: engine) { coordinator, source in
+            coordinator.receiveSoftwareSource(source)
+        }
 
         // A track can change while video is already in PiP or on an external
         // display. Re-assert native ownership after both the selection and the
         // native rendition table settle so the newly selected track, rather
-        // than the previous ordinal, is rendered by AVKit/the receiver.
-        engine.$activeSubtitleTrackIndex
-            .sink { [weak self, weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.syncNativeSubtitleRendering()
-                }
-            }
-            .store(in: &subscriptions)
+        // than the previous ordinal, is rendered by AVKit or the receiver.
+        observe(engine.$activeSubtitleTrackIndex, of: engine) { coordinator, _ in
+            coordinator.syncNativeSubtitleRendering()
+        }
+        observe(engine.$subtitleTracks, of: engine) { coordinator, _ in
+            coordinator.syncNativeSubtitleRendering()
+        }
 
-        engine.$subtitleTracks
-            .sink { [weak self, weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.syncNativeSubtitleRendering()
-                }
-            }
-            .store(in: &subscriptions)
-
-        // Vivid publishes the host/layer before it commits the effective
+        // Vivid publishes the host and layer before it commits the effective
         // route at the end of a load. The route edge is therefore the final
         // opportunity to apply loopback-native subtitle ownership after a
         // same-player item handover.
-        engine.$videoRoute
-            .sink { [weak self, weak engine] route in
-                MainActor.assumeIsolated {
-                    guard route == .remoteBypass,
-                          let self, let engine, self.engine === engine else { return }
-                    self.syncNativeSubtitleRendering()
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$videoRoute, of: engine) { coordinator, route in
+            guard route == .remoteBypass else { return }
+            coordinator.syncNativeSubtitleRendering()
+        }
 
         routeChangeObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
@@ -214,6 +182,24 @@ final class PictureInPictureCoordinator {
         refreshExternalPlaybackState()
     }
 
+    /// Subscribes to one of the bound engine's publishers. The engine is
+    /// main-actor isolated and publishes synchronously, so the handler runs in
+    /// the same turn as the change, and only while that engine is still bound.
+    private func observe<Value>(
+        _ publisher: Published<Value>.Publisher,
+        of engine: VividEngine,
+        _ handler: @escaping (PictureInPictureCoordinator, Value) -> Void
+    ) {
+        publisher
+            .sink { [weak self, weak engine] value in
+                MainActor.assumeIsolated {
+                    guard let self, let engine, self.engine === engine else { return }
+                    handler(self, value)
+                }
+            }
+            .store(in: &subscriptions)
+    }
+
     /// Owner-keyed teardown prevents an outgoing view from releasing a newer
     /// session's controller during overlapping SwiftUI presentation lifecycles.
     func endSession(owner: AnyObject) {
@@ -224,9 +210,9 @@ final class PictureInPictureCoordinator {
         tearDownBoundSession(continuingOwner: nil)
     }
 
-    /// End whatever session is bound, regardless of which owner holds it,
-    /// because the app crossed an identity boundary — sign-out, server or
-    /// profile switch, or a cleared session.
+    /// End whatever session is bound, whichever owner holds it, because the
+    /// app crossed an identity boundary: sign-out, a server or profile
+    /// switch, or a cleared session.
     ///
     /// Ordinary teardown is owner-keyed and driven by the player's
     /// disappearance, which deliberately defers `cleanup()` while PiP is
@@ -471,9 +457,9 @@ final class PictureInPictureCoordinator {
     /// turn it asks for a stop, so `handleDidStop` can never arrive for a
     /// controller torn down here. When PiP was engaged, that callback was the
     /// only thing that would have ended the engagement, and the engaged owner has
-    /// already deferred its own `cleanup()` — final progress and the server
-    /// session stop — waiting for exactly that. So run the engagement-ended work
-    /// synchronously instead of dropping it on the floor.
+    /// already deferred its own `cleanup()` (final progress and the server
+    /// session stop) waiting for exactly that. So the engagement-ended work
+    /// runs here, synchronously, instead of being lost.
     ///
     /// `continuingOwner` is the owner about to take the coordinator over. It only
     /// matters when the same owner rebinds a replacement engine: that session is
@@ -497,7 +483,7 @@ final class PictureInPictureCoordinator {
         lifecycleOwner = nil
 
         // Hand the engagement off before the references go, and keep the owner
-        // alive across its own cleanup — `engagedOwner` is the only strong
+        // alive across its own cleanup: `engagedOwner` is the only strong
         // reference holding it up.
         let isEndingEngagement = engagedOwner != nil && engagedOwner !== continuingOwner
         let endedOwner = engagedOwner
@@ -568,8 +554,8 @@ final class PictureInPictureCoordinator {
 
     /// AVKit is stopping PiP because the user asked for the full-screen player
     /// back. `completion(true)` must mean the player really is on screen again:
-    /// `handleDidStop` reads the outcome to decide whether the engagement — and
-    /// with it the deferred `cleanup()` — has to end.
+    /// `handleDidStop` reads the outcome to decide whether the engagement, and
+    /// with it the deferred `cleanup()`, has to end.
     fileprivate func handleRestoreRequested(completion: @escaping (Bool) -> Void) {
         isRestoringUserInterface = false
         guard let onRestoreUserInterface else {

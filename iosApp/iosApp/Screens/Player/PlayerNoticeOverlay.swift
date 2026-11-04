@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 
+/// Whether a player notice informs or warns, which sets its accent colour.
 enum PlayerNoticeTone {
     case info
     case warning
@@ -15,6 +16,8 @@ enum PlayerNoticeTone {
     }
 }
 
+/// A short message shown at the top of the player, such as a command from
+/// another device or a Picture in Picture start that failed.
 struct PlayerNotice: Identifiable, Equatable {
     let id = UUID()
     let title: String
@@ -22,6 +25,8 @@ struct PlayerNotice: Identifiable, Equatable {
     let tone: PlayerNoticeTone
 }
 
+/// A glass banner at the top of the player for a `PlayerNotice`. It ignores
+/// touches and reads as one element to VoiceOver.
 struct PlayerNoticeOverlay: View {
     let notice: PlayerNotice
 

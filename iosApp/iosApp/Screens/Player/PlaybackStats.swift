@@ -1,8 +1,9 @@
 import Foundation
 
-/// Host-facing playback diagnostics. Every value is projected from
-/// VividEngine's public state or from immutable Silo session metadata.
-/// A missing value means the active Vivid route cannot measure it.
+/// The playback stats the Apple TV Info HUD shows. Every value comes from the
+/// engine's public state or the session's fixed source details
+/// (`VividPlaybackStatsProjection`). A missing value means the active route
+/// can't measure it, and its row is left out.
 struct PlaybackStats: Equatable {
     struct MediaStream: Equatable {
         var codec: String?
@@ -12,20 +13,20 @@ struct PlaybackStats: Equatable {
 
     var sampledAt: Date = Date()
 
-    // Source/session identity supplied by Silo.
+    // The session's source details.
     var route: String?
     var source: String?
     var delivery: String?
     var container: String?
 
-    // Static and selected media state supplied by Vivid.
+    // The file and the selected tracks.
     var video: MediaStream = .init()
     var audio: MediaStream = .init()
     var dynamicRange: String?
     var subtitles: String?
     var playbackRate: Double?
 
-    // Vivid playback phase and route-appropriate live telemetry.
+    // The playback phase and the route's live telemetry.
     var playbackStatus: String?
     var bufferedAheadSeconds: Double?
     var readAheadAvailableSeconds: Double?
@@ -36,7 +37,7 @@ struct PlaybackStats: Equatable {
     var accumulatedFrameDelaySeconds: Double?
     var avSyncGapMilliseconds: Double?
 
-    // Vivid source and network measurements.
+    // Source reads and the network.
     var instantReadBitrateBps: Double?
     var averageReadBitrateBps: Double?
     var audioBridgeBitrateBps: Double?
@@ -45,7 +46,7 @@ struct PlaybackStats: Equatable {
     var cachedBytes: Int64?
     var demuxerBytesFetched: Int64?
 
-    // Small, cross-route engine health surface.
+    // Engine health.
     var producerRestartCount: Int?
     var residentMemoryBytes: Int64?
 
@@ -53,30 +54,16 @@ struct PlaybackStats: Equatable {
 }
 
 extension PlaybackStats {
+    /// Every row, as (English label, value), in panel order.
     var allRows: [(String, String)] {
         sourceRows + mediaRows + bufferRows + networkRows + engineRows
-    }
-
-    /// The short set shown over iPhone video. It intentionally leaves the
-    /// engine-health counters to the paged tvOS panel.
-    var compactRows: [(String, String)] {
-        let wanted = [
-            "Route", "Source", "Delivery", "Container",
-            "Video", "Audio", "Dynamic range", "Subtitles",
-            "Playback status", "Forward buffer", "Display cushion",
-            "Dropped frames", "Instant read bitrate", "Network throughput"
-        ]
-        let rows = allRows
-        return wanted.compactMap { label in
-            rows.first { $0.0 == label }
-        }
     }
 
     var hasRows: Bool { !allRows.isEmpty }
 
     /// A row label in the app's language. Rows keep their English label as
-    /// their identity (`compactRows` picks rows by it, and the panels use it
-    /// as the row ID), so only the panels translate it.
+    /// their identity (the panel uses it as the row ID), so only the panel
+    /// translates it.
     static func displayLabel(_ label: String) -> String {
         switch label {
         case "Route": return String(localized: "Route", comment: "Playback stats row")

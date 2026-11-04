@@ -1,8 +1,8 @@
-
 import SwiftUI
 
-/// Presentation-only overlay for Vivid's decoded public cue model.
-/// It never fetches, parses, demuxes, or selects subtitle media.
+/// Draws the adapter's subtitle cues, primary and secondary, in the fitted
+/// picture. It only presents: it never fetches, parses, demuxes or selects
+/// subtitles.
 struct VividSubtitleOverlay: View {
     let engine: VividEngine
     /// Movie-timeline position. Read only while cues are loaded, so playback
@@ -67,8 +67,6 @@ struct VividSubtitleOverlay: View {
                                           usesMovieTimeline: usesMovieTimeline, delaySeconds: Double(delayMs) / 1_000)
         return cues.filter { $0.startTime <= renderClock && renderClock < $0.endTime }
     }
-
-
 
     /// Text cues sharing a place on screen, shown together.
     struct CueStack: Identifiable {
@@ -243,63 +241,35 @@ struct VividSubtitleOverlay: View {
         let insets: EdgeInsets
     }
 
+    /// Where a cue without an authored position goes. An authored alignment
+    /// sits at that edge or corner; otherwise the Subtitles setting's position
+    /// applies. The secondary layer sits further in so the two don't overlap.
     private func defaultPlacement(
         authoredAlignment: Int?,
         videoRect: CGRect,
         secondary: Bool
     ) -> ResolvedPlacement {
+        let edgeInset = videoRect.height * (secondary ? 0.17 : 0.08)
         if let authoredAlignment {
-            let inset = videoRect.height * (secondary ? 0.17 : 0.08)
+            let corner = alignment(for: authoredAlignment)
             switch authoredAlignment {
             case 7...9:
-                return ResolvedPlacement(
-                    alignment: alignment(for: authoredAlignment),
-                    insets: EdgeInsets(top: inset, leading: 0, bottom: 0, trailing: 0)
-                )
+                return ResolvedPlacement(alignment: corner, insets: EdgeInsets(top: edgeInset, leading: 0, bottom: 0, trailing: 0))
             case 1...3:
-                return ResolvedPlacement(
-                    alignment: alignment(for: authoredAlignment),
-                    insets: EdgeInsets(top: 0, leading: 0, bottom: inset, trailing: 0)
-                )
+                return ResolvedPlacement(alignment: corner, insets: EdgeInsets(top: 0, leading: 0, bottom: edgeInset, trailing: 0))
             default:
-                return ResolvedPlacement(
-                    alignment: alignment(for: authoredAlignment),
-                    insets: EdgeInsets()
-                )
+                return ResolvedPlacement(alignment: corner, insets: EdgeInsets())
             }
         }
 
         switch renderStyle.position {
         case .top:
-            return ResolvedPlacement(
-                alignment: .top,
-                insets: EdgeInsets(
-                    top: videoRect.height * (secondary ? 0.17 : 0.08),
-                    leading: 0,
-                    bottom: 0,
-                    trailing: 0
-                )
-            )
+            return ResolvedPlacement(alignment: .top, insets: EdgeInsets(top: edgeInset, leading: 0, bottom: 0, trailing: 0))
         case .lowerThird:
-            return ResolvedPlacement(
-                alignment: .bottom,
-                insets: EdgeInsets(
-                    top: 0,
-                    leading: 0,
-                    bottom: videoRect.height * (secondary ? 0.36 : 0.27),
-                    trailing: 0
-                )
-            )
+            let lowerThirdInset = videoRect.height * (secondary ? 0.36 : 0.27)
+            return ResolvedPlacement(alignment: .bottom, insets: EdgeInsets(top: 0, leading: 0, bottom: lowerThirdInset, trailing: 0))
         case .bottom:
-            return ResolvedPlacement(
-                alignment: .bottom,
-                insets: EdgeInsets(
-                    top: 0,
-                    leading: 0,
-                    bottom: videoRect.height * (secondary ? 0.17 : 0.08),
-                    trailing: 0
-                )
-            )
+            return ResolvedPlacement(alignment: .bottom, insets: EdgeInsets(top: 0, leading: 0, bottom: edgeInset, trailing: 0))
         }
     }
 
@@ -380,9 +350,9 @@ struct VividSubtitleOverlay: View {
             ))
     }
 
-    /// Vivid's rich runs are authored content. Each authored color/font/size
+    /// Rich runs are authored content. Each authored colour, font and size
     /// wins unless MediaAccessibility marked that field as a required system
-    /// override. Missing authored values still inherit Vivid’s effective style.
+    /// override. Fields the run doesn't set take the effective style.
     private func styledText(_ run: SubtitleTextRun, videoRect: CGRect) -> Text {
         let style = renderStyle
         var text = Text(run.text)

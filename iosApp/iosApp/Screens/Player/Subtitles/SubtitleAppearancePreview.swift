@@ -1,15 +1,10 @@
-//
-//  SubtitleAppearancePreview.swift
-//  Vivid (iOS + tvOS + macOS)
-//
-//  Live approximation of the configured subtitle style over a dark
-//  film-frame stand-in. The real pipeline renders Vivid cues; this
-//  mirrors the font / color / outline / background / position choices
-//  closely enough to preview a change without starting playback.
-//
-
 import SwiftUI
 
+/// A sample subtitle line in the chosen style over a dark stand-in for a
+/// film frame, in Settings > Subtitles on iPhone, iPad and Apple TV. It
+/// follows `VividSubtitleOverlay`'s font, colour, edge, background, caption
+/// window and position closely enough to judge a change without playing
+/// anything.
 struct SubtitleAppearancePreview: View {
     let appearance: SubtitleAppearance
     var height: CGFloat = Self.defaultHeight
@@ -58,11 +53,11 @@ struct SubtitleAppearancePreview: View {
         let hasOutline = appearance.textOutline || appearance.backgroundStyle == .outline
             || systemEdge == .uniform
         let outlineColor = hasOutline ? Color(hex: appearance.textOutlineColor) : .clear
-        // Four hard directional shadows approximate the cue overlay's uniform glyph
-        // outline; a soft radius reads as a glow instead. The shared
-        // formula's 1-2 clamp is calibrated for the 1080-line playfield,
-        // so feed it the unscaled size and scale the result into preview
-        // space — clamping post-scale would flatten the whole ladder.
+        // Four hard shadows, one per diagonal, approximate the cue overlay's
+        // uniform outline; a soft radius would read as a glow. The 1 to 2
+        // point clamp is set for the 1080-line playfield, so it takes the
+        // unscaled size and the result is scaled into the preview. Clamping
+        // after scaling would flatten every size to the same outline.
         let outlineOffset = CGFloat(
             max(1, min(2, Double(playfieldFontSize) * 0.03))
         ) * Self.fontScale

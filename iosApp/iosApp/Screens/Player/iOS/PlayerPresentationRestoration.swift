@@ -41,8 +41,8 @@ enum PlayerPresentationRestoration {
     }
 
     /// Re-present the full-screen player for a view model AVKit is restoring.
-    /// Returns false when there is nothing to present into — the caller must
-    /// then tear the session down rather than let it play on with no surface.
+    /// Returns false when there is nothing to present into. The caller must
+    /// then end the session rather than let it play on with no surface.
     static func reopen(_ viewModel: PlayerViewModel) -> Bool {
         guard let presenter, let payload = lastPresentation else {
             logger.error("No player presentation owner available for a PiP restore")
