@@ -1,44 +1,54 @@
 #if os(iOS)
 import SwiftUI
 
-/// Mount this at the app root and on the detail sheet. A payload selects one
-/// owner, so exiting playback cannot take the underlying detail with it.
+/// Presents the full-screen player. It's applied at the app root and on the
+/// detail sheet, and each payload names exactly one of them as its owner, so
+/// closing the player never takes the detail underneath with it.
 struct PlayerPresentationModifier: ViewModifier {
     @Bindable var router: AppRouter
     var detailPresentationID: UUID? = nil
 
     func body(content: Content) -> some View {
-        let payload = router.playerPresentation(forDetailID: detailPresentationID)
-        content.fullScreenCover(item: Binding(
+        // Captured when the body runs, so a dismissal from SwiftUI clears
+        // exactly the payload this cover was built for, even if the router
+        // has moved on since.
+        let shown = router.playerPresentation(forDetailID: detailPresentationID)
+        let cover = Binding<AppRouter.PlayerPresentation?>(
             get: { router.playerPresentation(forDetailID: detailPresentationID) },
-            set: { replacement in
-                guard replacement == nil, let id = payload?.id else { return }
-                router.dismissPlayerPresentation(id: id)
+            set: { newValue in
+                if newValue == nil, let shownID = shown?.id {
+                    router.dismissPlayerPresentation(id: shownID)
+                }
             }
-        )) { presentation in
-            PlayerView(
-                contentId: presentation.contentId,
-                preferredFileId: presentation.fileId,
-                preferredAudioTrackIndex: presentation.audioTrackIndex,
-                preferredSubtitleTrackIndex: presentation.subtitleTrackIndex,
-                startFromBeginning: presentation.startFromBeginning,
-                resumePositionOverride: presentation.resumePosition,
-                prefersLastUsedVersion: presentation.prefersLastUsedVersion,
-                offlineDownloadId: presentation.offlineDownloadId,
-                posterURLHint: presentation.posterURL,
-                backdropURLHint: presentation.backdropURL,
-                onDismissRequested: { router.dismissPlayerPresentation(id: presentation.id) }
-            )
-            // Playback exits through its X button, never a downward gesture.
-            // This affects only the player cover, not the underlying detail.
-            .interactiveDismissDisabled()
-            .onAppear {
-                #if DEBUG
-                DiagTrace.breadcrumb(.essential, category: .focus, tag: "PlayButton", message: "player cover appeared")
-                #endif
-                PlayerPresentationRestoration.presenter = router
-                PlayerPresentationRestoration.recordPresentation(presentation)
-            }
+        )
+        content.fullScreenCover(item: cover) { presentation in
+            playerScreen(for: presentation)
+        }
+    }
+
+    private func playerScreen(for presentation: AppRouter.PlayerPresentation) -> some View {
+        PlayerView(
+            contentId: presentation.contentId,
+            preferredFileId: presentation.fileId,
+            preferredAudioTrackIndex: presentation.audioTrackIndex,
+            preferredSubtitleTrackIndex: presentation.subtitleTrackIndex,
+            startFromBeginning: presentation.startFromBeginning,
+            resumePositionOverride: presentation.resumePosition,
+            prefersLastUsedVersion: presentation.prefersLastUsedVersion,
+            offlineDownloadId: presentation.offlineDownloadId,
+            posterURLHint: presentation.posterURL,
+            backdropURLHint: presentation.backdropURL,
+            onDismissRequested: { router.dismissPlayerPresentation(id: presentation.id) }
+        )
+        // The player closes with its X button only, never a pull down. This
+        // applies to the player cover alone, not the detail beneath it.
+        .interactiveDismissDisabled()
+        .onAppear {
+            #if DEBUG
+            DiagTrace.breadcrumb(.essential, category: .focus, tag: "PlayButton", message: "player cover appeared")
+            #endif
+            PlayerPresentationRestoration.presenter = router
+            PlayerPresentationRestoration.recordPresentation(presentation)
         }
     }
 }
