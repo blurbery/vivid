@@ -132,73 +132,41 @@ final class PictureInPictureCoordinator {
         self.onRestoreUserInterface = retainedRestoreHandler
         self.onStartFailure = retainedStartFailureHandler
 
-        engine.$currentAVPlayer
-            .sink { [weak self, weak engine] player in
-                // Vivid publishes this MainActor-isolated state synchronously.
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.receiveNativePlayer(player)
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$currentAVPlayer, of: engine) { coordinator, player in
+            coordinator.receiveNativePlayer(player)
+        }
 
         // The native host and its layer survive item handovers. Observe the
         // separately published item seam so external-route and native-subtitle
         // ownership are re-applied to the replacement without rebuilding PiP.
-        engine.$currentAVPlayerItem
-            .sink { [weak self, weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.adoptCurrentEngineSource()
-                    self.refreshExternalPlaybackState()
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$currentAVPlayerItem, of: engine) { coordinator, _ in
+            coordinator.adoptCurrentEngineSource()
+            coordinator.refreshExternalPlaybackState()
+        }
 
-        engine.$softwarePiPSource
-            .sink { [weak self, weak engine] source in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.receiveSoftwareSource(source)
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$softwarePiPSource, of: engine) { coordinator, source in
+            coordinator.receiveSoftwareSource(source)
+        }
 
         // A track can change while video is already in PiP or on an external
         // display. Re-assert native ownership after both the selection and the
         // native rendition table settle so the newly selected track, rather
-        // than the previous ordinal, is rendered by AVKit/the receiver.
-        engine.$activeSubtitleTrackIndex
-            .sink { [weak self, weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.syncNativeSubtitleRendering()
-                }
-            }
-            .store(in: &subscriptions)
+        // than the previous ordinal, is rendered by AVKit or the receiver.
+        observe(engine.$activeSubtitleTrackIndex, of: engine) { coordinator, _ in
+            coordinator.syncNativeSubtitleRendering()
+        }
+        observe(engine.$subtitleTracks, of: engine) { coordinator, _ in
+            coordinator.syncNativeSubtitleRendering()
+        }
 
-        engine.$subtitleTracks
-            .sink { [weak self, weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let engine, self.engine === engine else { return }
-                    self.syncNativeSubtitleRendering()
-                }
-            }
-            .store(in: &subscriptions)
-
-        // Vivid publishes the host/layer before it commits the effective
+        // Vivid publishes the host and layer before it commits the effective
         // route at the end of a load. The route edge is therefore the final
         // opportunity to apply loopback-native subtitle ownership after a
         // same-player item handover.
-        engine.$videoRoute
-            .sink { [weak self, weak engine] route in
-                MainActor.assumeIsolated {
-                    guard route == .remoteBypass,
-                          let self, let engine, self.engine === engine else { return }
-                    self.syncNativeSubtitleRendering()
-                }
-            }
-            .store(in: &subscriptions)
+        observe(engine.$videoRoute, of: engine) { coordinator, route in
+            guard route == .remoteBypass else { return }
+            coordinator.syncNativeSubtitleRendering()
+        }
 
         routeChangeObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
@@ -212,6 +180,24 @@ final class PictureInPictureCoordinator {
 
         adoptCurrentEngineSource()
         refreshExternalPlaybackState()
+    }
+
+    /// Subscribes to one of the bound engine's publishers. The engine is
+    /// main-actor isolated and publishes synchronously, so the handler runs in
+    /// the same turn as the change, and only while that engine is still bound.
+    private func observe<Value>(
+        _ publisher: Published<Value>.Publisher,
+        of engine: VividEngine,
+        _ handler: @escaping (PictureInPictureCoordinator, Value) -> Void
+    ) {
+        publisher
+            .sink { [weak self, weak engine] value in
+                MainActor.assumeIsolated {
+                    guard let self, let engine, self.engine === engine else { return }
+                    handler(self, value)
+                }
+            }
+            .store(in: &subscriptions)
     }
 
     /// Owner-keyed teardown prevents an outgoing view from releasing a newer
