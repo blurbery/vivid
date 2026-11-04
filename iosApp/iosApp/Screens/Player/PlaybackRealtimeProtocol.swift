@@ -1,5 +1,9 @@
 import Foundation
 
+// Silo's playback control websocket. Messages are JSON envelopes with a
+// `type`; the server sends commands and events, and the app sends hello, ack
+// and result envelopes, encoded in their coding keys' declared order.
+
 enum PlaybackRealtimeMessageType: String, Codable {
     case command
     case event
@@ -24,6 +28,7 @@ enum PlaybackRealtimeCommandName: String, Codable, CaseIterable {
     case setSubtitleTrack = "set_subtitle_track"
 }
 
+/// The commands the hello says the app handles, in this order.
 let supportedApplePlaybackRealtimeCommands: [PlaybackRealtimeCommandName] = [
     .pause,
     .unpause,
@@ -36,30 +41,22 @@ let supportedApplePlaybackRealtimeCommands: [PlaybackRealtimeCommandName] = [
     .serverShuttingDown,
 ]
 
-/// Names of `type:"event"` envelopes the server pushes over the playback
-/// control websocket.
-///
-/// Tolerant by design: the raw enum used to be strict (`String`-backed), so
-/// an unrecognized event name failed to decode the whole envelope and the
-/// event was silently dropped — a future server event would simply vanish.
-/// This is now a custom-decoded enum with an ``unknown(_:)`` fallback, so
-/// every well-formed `event` envelope decodes; consumers switch on the known
-/// cases and ignore ``unknown(_:)``. New cases can be added here without
-/// changing the parser.
+/// The name of an event envelope. Any name the app doesn't know decodes as
+/// ``unknown(_:)`` rather than failing, so a new server event never breaks
+/// the envelope; consumers ignore what they don't handle.
 enum PlaybackRealtimeEventName: Codable, Equatable {
     case chapterThumbnailReady
     case markersUpdated
-    // Recognized for wire compatibility; Vivid ignores server subtitle events.
+    // Known for wire compatibility; the translation events are ignored.
     case subtitleTranslationStarted
     case subtitleTranslationCues
     case subtitleTranslationCompleted
     case subtitleTranslationFailed
     case subtitleReady
-    /// Any event name not recognized above. Carries the raw wire string so
-    /// nothing is lost; current consumers ignore it.
+    /// A name not listed above, as sent.
     case unknown(String)
 
-    /// The wire string for this event name.
+    /// The name as sent on the wire.
     var rawValue: String {
         switch self {
         case .chapterThumbnailReady: return "chapter_thumbnail_ready"
@@ -87,8 +84,7 @@ enum PlaybackRealtimeEventName: Codable, Equatable {
     }
 
     init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = PlaybackRealtimeEventName(rawValue: raw)
+        self = PlaybackRealtimeEventName(rawValue: try decoder.singleValueContainer().decode(String.self))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -106,6 +102,7 @@ enum PlaybackRealtimeResultStatus: String, Codable {
     case rejected
 }
 
+/// Why a command was rejected, as its result's `error`.
 enum PlaybackRealtimeCommandExecutionError: Error {
     case unsupportedCommand
     case playerNotReady
@@ -114,18 +111,16 @@ enum PlaybackRealtimeCommandExecutionError: Error {
 
     var rejectionReason: String {
         switch self {
-        case .unsupportedCommand:
-            return "unsupported_command"
-        case .playerNotReady:
-            return "player_not_ready"
-        case .missingSeekPosition:
-            return "missing_seek_position"
-        case .commandFailed:
-            return "command_failed"
+        case .unsupportedCommand: return "unsupported_command"
+        case .playerNotReady: return "player_not_ready"
+        case .missingSeekPosition: return "missing_seek_position"
+        case .commandFailed: return "command_failed"
         }
     }
 }
 
+/// Any JSON value in a payload. Decoding tries null, then Bool, Double,
+/// String, object and array, in that order.
 enum PlaybackRealtimeValue: Codable, Equatable {
     case string(String)
     case number(Double)
@@ -151,10 +146,8 @@ enum PlaybackRealtimeValue: Codable, Equatable {
         } else {
             throw DecodingError.typeMismatch(
                 PlaybackRealtimeValue.self,
-                DecodingError.Context(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "Unsupported realtime JSON payload value"
-                )
+                DecodingError.Context(codingPath: decoder.codingPath,
+                                      debugDescription: "Unsupported realtime JSON payload value")
             )
         }
     }
@@ -162,48 +155,47 @@ enum PlaybackRealtimeValue: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case .string(let value):
-            try container.encode(value)
-        case .number(let value):
-            try container.encode(value)
-        case .bool(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
-        case .array(let value):
-            try container.encode(value)
-        case .null:
-            try container.encodeNil()
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .null: try container.encodeNil()
         }
     }
 }
 
 typealias PlaybackRealtimePayload = [String: PlaybackRealtimeValue]
 
+/// Typed reads from a payload: the first of `keys` holding that type.
 extension Dictionary where Key == String, Value == PlaybackRealtimeValue {
     func string(forKeys keys: String...) -> String? {
-        for key in keys {
-            if case .string(let value)? = self[key] {
-                return value
-            }
+        firstValue(keys) { value -> String? in
+            guard case .string(let string) = value else { return nil }
+            return string
         }
-        return nil
     }
 
     func number(forKeys keys: String...) -> Double? {
-        for key in keys {
-            if case .number(let value)? = self[key] {
-                return value
-            }
+        firstValue(keys) { value -> Double? in
+            guard case .number(let number) = value else { return nil }
+            return number
         }
-        return nil
     }
 
+    /// A number in `Int`'s range, truncated. Anything else is skipped, so a
+    /// huge or non-finite value can't trap.
     func int(forKeys keys: String...) -> Int? {
+        firstValue(keys) { value -> Int? in
+            guard case .number(let number) = value, number.isFinite,
+                  number >= -9.223372036854775808e18, number < 9.223372036854775808e18 else { return nil }
+            return Int(number)
+        }
+    }
+
+    private func firstValue<T>(_ keys: [String], _ extract: (PlaybackRealtimeValue) -> T?) -> T? {
         for key in keys {
-            if case .number(let value)? = self[key], value.isFinite {
-                return Int(value)
-            }
+            if let value = self[key], let extracted = extract(value) { return extracted }
         }
         return nil
     }
@@ -217,6 +209,7 @@ struct PlaybackRealtimeCommandEnvelope: Decodable, Equatable {
     let reason: String?
     let issuedBy: PlaybackRealtimeIssuedBy?
     let deadlineMS: Int?
+    /// Empty when the envelope has none.
     let payload: PlaybackRealtimePayload
 
     enum CodingKeys: String, CodingKey {
@@ -251,6 +244,7 @@ struct PlaybackRealtimeEventEnvelope: Decodable, Equatable {
     let type: PlaybackRealtimeMessageType
     let sessionId: String
     let name: PlaybackRealtimeEventName
+    /// Empty when the envelope has none.
     let payload: PlaybackRealtimePayload
 
     enum CodingKeys: String, CodingKey {
@@ -316,6 +310,7 @@ struct PlaybackRealtimeResultEnvelope: Encodable {
     let commandId: String
     let sessionId: String
     let status: PlaybackRealtimeResultStatus
+    /// Left out when nil.
     let error: String?
 
     enum CodingKeys: String, CodingKey {
@@ -327,19 +322,16 @@ struct PlaybackRealtimeResultEnvelope: Encodable {
     }
 }
 
+/// A command or event envelope, or nil for anything else or malformed JSON.
 func parsePlaybackRealtimeInboundMessage(_ data: Data) -> PlaybackRealtimeInboundMessage? {
-    do {
-        let decoder = JSONDecoder()
-        let base = try decoder.decode(PlaybackRealtimeBaseEnvelope.self, from: data)
-        switch base.type {
-        case .command:
-            return .command(try decoder.decode(PlaybackRealtimeCommandEnvelope.self, from: data))
-        case .event:
-            return .event(try decoder.decode(PlaybackRealtimeEventEnvelope.self, from: data))
-        default:
-            return nil
-        }
-    } catch {
+    let decoder = JSONDecoder()
+    guard let base = try? decoder.decode(PlaybackRealtimeBaseEnvelope.self, from: data) else { return nil }
+    switch base.type {
+    case .command:
+        return (try? decoder.decode(PlaybackRealtimeCommandEnvelope.self, from: data)).map { .command($0) }
+    case .event:
+        return (try? decoder.decode(PlaybackRealtimeEventEnvelope.self, from: data)).map { .event($0) }
+    default:
         return nil
     }
 }
@@ -347,10 +339,7 @@ func parsePlaybackRealtimeInboundMessage(_ data: Data) -> PlaybackRealtimeInboun
 func makePlaybackRealtimeHello(sessionId: String) -> PlaybackRealtimeHelloEnvelope {
     PlaybackRealtimeHelloEnvelope(
         sessionId: sessionId,
-        client: PlaybackRealtimeClientInfo(
-            name: applePlaybackRealtimeClientName,
-            version: "1"
-        ),
+        client: PlaybackRealtimeClientInfo(name: applePlaybackRealtimeClientName, version: "1"),
         capabilities: PlaybackRealtimeCapabilities(commands: supportedApplePlaybackRealtimeCommands)
     )
 }
@@ -365,19 +354,14 @@ func makePlaybackRealtimeResult(
     status: PlaybackRealtimeResultStatus,
     error: String? = nil
 ) -> PlaybackRealtimeResultEnvelope {
-    PlaybackRealtimeResultEnvelope(
-        commandId: commandId,
-        sessionId: sessionId,
-        status: status,
-        error: error
-    )
+    PlaybackRealtimeResultEnvelope(commandId: commandId, sessionId: sessionId, status: status, error: error)
 }
 
 private struct PlaybackRealtimeBaseEnvelope: Decodable {
     let type: PlaybackRealtimeMessageType
 }
 
-// Stable Vivid client identifiers for provider realtime sessions.
+// The client names Silo shows for Vivid's realtime sessions.
 #if os(tvOS)
 private let applePlaybackRealtimeClientName = "vivid-tvos"
 #else

@@ -1,45 +1,46 @@
 import Foundation
 
+// Silo's Playback Protocol V3 wire model. Every request and plan type here
+// is a JSON contract: property order, names and optionality are part of it.
+
+/// Protocol V3's version, feature names and string enums.
 enum PlaybackProtocolV3 {
     static let version = 3
     static let planFeature = "playback_plan_v3"
-    /// Server-only compatibility marker for the neutral V3 contract. Unlike
-    /// `playback_plan_v3`, this guarantees opaque server-minted attempt keys
-    /// and distinct intent replan operations.
+    /// The server-only marker for the neutral V3 contract. Unlike
+    /// `playback_plan_v3`, it guarantees opaque server-minted attempt keys and
+    /// separate intent replan operations.
     static let neutralContractFeature = "neutral_playback_v3_contract_v1"
-    static let layoutPassthroughFeature = "layout_aware_passthrough"
     static let clientTransformFeature = "client_video_transformations_v1"
     static let routeDiagnosticsFeature = "playback_route_diagnostics"
     static let deviceQuirksFeature = "device_quirks_v1"
     static let seekReanchorFeature = "seek_reanchor_v1"
-    /// The `output_change` intent replan exists. Per §6 an intent operation
-    /// keeps the previous route eligible; `failure_recovery` would instead
-    /// exclude the current plan key and force a route the device never rejected.
+    /// The `output_change` intent replan exists. An intent operation keeps
+    /// the previous route eligible, where `failure_recovery` would exclude the
+    /// current plan key and force a route the device never rejected.
     static let outputChangeFeature = "output_change_v1"
     static let directStreamResumeFeature = "direct_stream_resume_v1"
-    /// API-local media URLs carry no signed credential. The client attaches
-    /// its current Authorization header to the source and every derived media
-    /// or subtitle request.
+    /// API-local media URLs carry no signed credential. The client adds its
+    /// current Authorization header to the source and every media or subtitle
+    /// request derived from it.
     static let headerAuthenticatedMediaFeature = "header_authenticated_media_v1"
-    /// Opt-in, only meaningful alongside `header_authenticated_media_v1`: the
-    /// plan may hand back absolute, still credential-free media URLs on a
-    /// server-designated proxy origin, and the client attaches the same bearer
-    /// there that it sends the API. Unlike header auth this is optional — a
-    /// server that does not advertise it simply keeps every byte API-local.
+    /// An opt-in that only means something with
+    /// `header_authenticated_media_v1`: the plan may return absolute,
+    /// credential-free media URLs on a server-designated proxy origin, and the
+    /// client sends the same bearer there as to the API. A server that doesn't
+    /// advertise it keeps every byte API-local.
     static let authorizedMediaOriginsFeature = "authorized_media_origins_v1"
     /// The server may validate bounded `hardware: false` decode entries for
-    /// original delivery. Older servers ignore the opt-in and keep their
-    /// hardware-only strict-tier behavior.
+    /// original delivery. Older servers ignore it and stay hardware-only.
     static let softwareVideoDecodeFeature = "software_video_decode_v1"
     static let planSourceDurationFeature = "plan_source_duration_v1"
-    /// Scoped to `original_http`: the Vivid executor accepts the declared
-    /// source dynamic range and resolves HDR/Dolby Vision presentation against
-    /// the live output after delivery. It is not a promise that packaged
-    /// server streams can present the same range natively.
+    /// For `original_http` only: Lucid accepts the source's declared dynamic
+    /// range and works out HDR and Dolby Vision presentation against the live
+    /// output. It doesn't promise packaged server streams can do the same.
     static let clientManagedDynamicRangeClaim = "client_managed_dynamic_range_v1"
-    /// Scoped to `original_http`: after probing the complete source, Vivid
-    /// maps the plan's selected audio ordinal to its concrete stream id.
     static let embeddedSubtitlesFeature = "embedded_subtitles_v1"
+    /// For `original_http` only: after probing the whole source, Lucid maps
+    /// the plan's selected audio ordinal to its stream id.
     static let clientSelectedAudioTrackClaim = "client_selected_audio_track_v1"
 
     /// Delivery classes are the unit a client negotiates in
@@ -96,13 +97,12 @@ enum PlaybackProtocolV3 {
     enum ReplanOperation {
         static let failureRecovery = "failure_recovery"
         static let seekReanchor = "seek_reanchor"
-        static let seekFailureRecovery = "seek_failure_recovery"
         static let trackChange = "track_change"
         static let qualityChange = "quality_change"
-        /// The active display/output capabilities changed. Nothing failed, so
-        /// §6 keeps the previous route eligible: neither attempted-key history
+        /// The display or output capabilities changed. Nothing failed, so the
+        /// previous route stays eligible: neither the attempted-key history
         /// nor the failed-plan exclusion applies. The server rejects this
-        /// operation outright if it carries a `failure`.
+        /// operation if it carries a `failure`.
         static let outputChange = "output_change"
     }
 }
@@ -480,9 +480,9 @@ struct PlaybackV3SubtitleDecision: Codable, Equatable {
     let trackId: String?
     let artifact: PlaybackV3SubtitleArtifact?
     var embedded: PlaybackV3EmbeddedSubtitle? = nil
-    /// Authoritative list of every subtitle track for this plan. Select a track
-    /// by echoing an entry's `trackId` or `combinedIndex` — never by counting
-    /// tracks, summing arrays, or taking max(index) + 1.
+    /// Every subtitle track for this plan. Select a track by echoing an
+    /// entry's `trackId` or `combinedIndex`, never by counting tracks, adding
+    /// up arrays or taking max(index) + 1.
     let inventory: [PlaybackV3SubtitleInventoryItem]
 }
 
@@ -540,18 +540,16 @@ struct PlaybackV3Plan: Codable, Equatable {
 extension PlaybackV3Plan {
     /// The one inventory row this plan's subtitle decision names.
     ///
-    /// Every consumer that needs "which row is selected" resolves it here so
-    /// the picker, the load spec, the renewal intent and the session
-    /// projection cannot disagree with each other. The order matches the
-    /// shared Android resolver (`resolvedSelectedSubtitleIndex`):
-    /// `selected_tracks.subtitle.index` is authoritative, then its stable
-    /// `id`. The trailing `subtitle.track_id` match is Apple-only and last:
-    /// it is the transitional shape this client already accepted and must
-    /// keep accepting, but it never outranks the neutral identity.
+    /// Everything that needs the selected row resolves it here, so the
+    /// picker, the load spec, the renewal intent and the session projection
+    /// can't disagree. The order matches the Android resolver
+    /// (`resolvedSelectedSubtitleIndex`): `selected_tracks.subtitle.index`
+    /// first, then its stable `id`. The last match, on `subtitle.track_id`, is
+    /// Apple-only: an older shape this client still accepts, which never
+    /// outranks the neutral identity.
     ///
-    /// `subtitle.mode` is deliberately not consulted. A caller that must
-    /// distinguish "off" from "selected but not locally rendered" — the
-    /// picker — applies that gate itself.
+    /// `subtitle.mode` isn't consulted. The picker, which has to tell Off
+    /// from selected but not drawn locally, checks that itself.
     var selectedSubtitleInventoryItem: PlaybackV3SubtitleInventoryItem? {
         if let index = selectedTracks.subtitle?.index,
            let byIndex = subtitle.inventory.first(where: { $0.combinedIndex == index }) {
@@ -608,6 +606,10 @@ enum PlaybackV3DecisionValidation: Equatable {
 }
 
 extension PlaybackV3DecisionResponse {
+    /// A playable plan needs protocol 3 with `playback_plan_v3`, a `playable`
+    /// outcome, a session, plan id and stream URL, a known header refresh and
+    /// a supported delivery. `adaptation_unavailable` is terminal; anything
+    /// else is incompatible.
     func validatedForApple() -> PlaybackV3DecisionValidation {
         guard protocolVersion == PlaybackProtocolV3.version,
               serverFeatures.contains(PlaybackProtocolV3.planFeature) else {
