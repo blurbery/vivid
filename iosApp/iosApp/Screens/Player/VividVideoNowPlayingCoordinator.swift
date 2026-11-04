@@ -50,7 +50,7 @@ final class VividVideoNowPlayingCoordinator {
 
     /// The skip interval offered to the system and used when a skip command
     /// doesn't carry its own.
-    private static let skipSeconds: TimeInterval = 10
+    nonisolated private static let skipSeconds: TimeInterval = 10
 
     private static let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
