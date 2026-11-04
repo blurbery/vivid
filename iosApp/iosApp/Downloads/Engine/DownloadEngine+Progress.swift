@@ -51,6 +51,9 @@ extension DownloadManager {
     }
 
     private func sendProgressQueue(generation: UInt64) async {
+        // Only under this scope's own sign-in and profile. Mid-switch it stays
+        // queued for the scope's next flush.
+        guard let identity = await scopeIdentity(), generation == self.generation else { return }
         let batch = file.progressQueue
         let completed = Set(batch.lazy.filter { self.file.localProgress[$0.mediaItemId]?.completed == true }.map(\.mediaItemId))
         // Emby and Jellyfin turn each into a stop report, so an acknowledged
@@ -61,7 +64,7 @@ extension DownloadManager {
         }
         let results: [SyncProgressResult]
         do {
-            results = try await VividAPI.shared.syncProgressBatch(items: items)
+            results = try await VividAPI.shared.syncProgressBatch(items: items, auth: identity)
         } catch {
             return
         }
@@ -73,7 +76,7 @@ extension DownloadManager {
         var watchedFailed: Set<String> = []
         for id in completed.sorted() where acknowledged.contains(id) {
             do {
-                try await VividAPI.shared.setWatched(contentId: id, played: true)
+                try await VividAPI.shared.setWatched(contentId: id, played: true, expectedAuth: identity)
             } catch {
                 watchedFailed.insert(id)
             }
@@ -106,28 +109,28 @@ extension DownloadManager {
     }
 
     private func performPull() async throws {
-        let identity = await TokenStore.shared.captureOrdinaryRequestAuth()
-        if let identity {
-            let provider = MediaServerProvider.forServerID(identity.account.serverId)
-            if provider == .silo {
-                let server = identity.account.serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                if let url = URL(string: server + "/api/v1/progress"),
-                   try await SiloAPIDiscovery.shared.usesV2(for: url, session: .shared) {
-                    try await pullSiloSnapshot(identity)
-                    return
-                }
-            } else if DownloadEngine.ProgressRules.readsCurrentState(provider) {
-                try await pullCurrentState()
+        // Only under this scope's own sign-in and profile, so another
+        // profile's progress never lands in this scope.
+        guard let identity = await scopeIdentity() else { return }
+        let provider = MediaServerProvider.forServerID(identity.account.serverId)
+        if provider == .silo {
+            let server = identity.account.serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if let url = URL(string: server + "/api/v1/progress"),
+               try await SiloAPIDiscovery.shared.usesV2(for: url, session: .shared) {
+                try await pullSiloSnapshot(identity)
                 return
             }
+        } else if DownloadEngine.ProgressRules.readsCurrentState(provider) {
+            try await pullCurrentState(identity)
+            return
         }
-        try await pullChangeFeed()
+        try await pullChangeFeed(identity)
     }
 
     /// Silo's v1 change feed since the stored cursor.
-    private func pullChangeFeed() async throws {
+    private func pullChangeFeed(_ identity: CapturedOrdinaryRequestAuth) async throws {
         let generation = self.generation
-        let response = try await VividAPI.shared.pullProgressDeltas(since: file.progressCursor)
+        let response = try await VividAPI.shared.pullProgressDeltas(since: file.progressCursor, auth: identity)
         guard generation == self.generation else { return }
         var state = file
         for item in response.progress {
@@ -149,11 +152,11 @@ extension DownloadManager {
     }
 
     /// Emby and Jellyfin: the current state of every downloaded item.
-    private func pullCurrentState() async throws {
+    private func pullCurrentState(_ identity: CapturedOrdinaryRequestAuth) async throws {
         let ids = Set(file.records.values.map(\.leafMediaItemId)).sorted()
         guard !ids.isEmpty else { return }
         let generation = self.generation
-        let items = try await VividAPI.shared.currentProgress(mediaItemIds: ids)
+        let items = try await VividAPI.shared.currentProgress(mediaItemIds: ids, auth: identity)
         guard generation == self.generation else { return }
         let updates = DownloadEngine.ProgressRules.currentStateUpdates(
             items, local: file.localProgress, pending: Set(file.progressQueue.map(\.mediaItemId)), now: Date()

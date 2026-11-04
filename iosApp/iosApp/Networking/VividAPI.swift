@@ -744,10 +744,16 @@ actor VividAPI {
     }
 
     /// Mark a content item (movie / series / season / episode) as watched
-    /// or unwatched. Server resolves the leaf targets.
-    func setWatched(contentId: String, played: Bool) async throws {
+    /// or unwatched. Server resolves the leaf targets. With `expectedAuth`,
+    /// it's sent only while that sign-in and profile are still current.
+    func setWatched(contentId: String, played: Bool, expectedAuth: CapturedOrdinaryRequestAuth? = nil) async throws {
         #if os(iOS) || os(tvOS)
-        let auth = await tokenStore.captureOrdinaryRequestAuth()
+        let auth: CapturedOrdinaryRequestAuth?
+        if let expectedAuth {
+            auth = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: expectedAuth)
+        } else {
+            auth = await tokenStore.captureOrdinaryRequestAuth()
+        }
         guard let auth, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
         let identity = HTTPRequestIdentity(serverId: auth.account.serverId, serverURL: auth.account.serverURL,
             profileId: profile, clientFamily: "apple", credentialGenerationID: auth.account.credentialGenerationID)

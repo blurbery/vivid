@@ -378,9 +378,10 @@ actor HTTPClient {
     func patch<T: Decodable>(
         _ path: String,
         body: (any Encodable)? = nil,
-        query: [String: String] = [:]
+        query: [String: String] = [:],
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil
     ) async throws -> T {
-        try await send(method: "PATCH", path: path, query: query, body: body)
+        try await send(method: "PATCH", path: path, query: query, body: body, expectedAuth: expectedAuth)
     }
 
     func patchVoid(
