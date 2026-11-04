@@ -175,7 +175,7 @@ extension DownloadManager {
         Task { await LocalNotificationAuthorization.requestIfNeeded() }
         #endif
         let response = try await VividAPI.shared.createSubscription(request, auth: identity)
-        keep(response.subscription, seriesTitle: seriesTitle, in: scope)
+        await keep(response.subscription, seriesTitle: seriesTitle, in: scope)
         if currentScope == scope { await reconcile(runningQueue: true) }
     }
 
@@ -193,7 +193,7 @@ extension DownloadManager {
         if active == true { Task { await LocalNotificationAuthorization.requestIfNeeded() } }
         #endif
         let response = try await VividAPI.shared.updateSubscription(id: id, request, auth: identity)
-        keep(response.subscription, seriesTitle: seriesTitle, in: scope)
+        await keep(response.subscription, seriesTitle: seriesTitle, in: scope)
         if currentScope == scope { await reconcile(runningQueue: true) }
     }
 
@@ -212,25 +212,16 @@ extension DownloadManager {
                 return false
             }
         }
-        if currentScope == scope {
-            file.subscriptions.removeAll { $0.id == id }
-            persist()
-        } else {
-            saveToScope(scope) { $0.subscriptions.removeAll { $0.id == id } }
-        }
+        await changeState(of: scope) { state in state.subscriptions.removeAll { $0.id == id } }
         return true
     }
 
     /// Saves the server's copy of a subscription to the scope that asked for
-    /// it: in memory while it's current, otherwise straight to its file.
-    private func keep(_ subscription: DownloadEngine.ServerSubscription, seriesTitle: String?, in scope: DownloadScope) {
-        if currentScope == scope {
-            DownloadEngine.MonitoringRules.mirror(subscription, seriesTitle: seriesTitle, into: &file.subscriptions)
-            persist()
-        } else {
-            saveToScope(scope) {
-                DownloadEngine.MonitoringRules.mirror(subscription, seriesTitle: seriesTitle, into: &$0.subscriptions)
-            }
+    /// it, even after a switch.
+    private func keep(_ subscription: DownloadEngine.ServerSubscription, seriesTitle: String?,
+                      in scope: DownloadScope) async {
+        await changeState(of: scope) { state in
+            DownloadEngine.MonitoringRules.mirror(subscription, seriesTitle: seriesTitle, into: &state.subscriptions)
         }
     }
 

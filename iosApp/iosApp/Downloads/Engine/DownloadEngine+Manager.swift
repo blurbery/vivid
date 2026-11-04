@@ -144,9 +144,17 @@ final class DownloadManager {
         }
     }
 
-    /// Changes another scope's saved state, such as a scope left while a
-    /// monitoring request was out. Runs after the saves already asked for.
-    func saveToScope(_ scope: DownloadScope, change: @escaping @Sendable (inout DownloadStoreFile) -> Void) {
+    /// Changes one scope's saved state, such as the scope a monitoring
+    /// request was sent for. Once that scope is current and loaded (waiting
+    /// for a load in progress), the change goes into memory; otherwise into
+    /// its file, after the saves already asked for, as every save is ordered.
+    func changeState(of scope: DownloadScope, _ change: @escaping @Sendable (inout DownloadStoreFile) -> Void) async {
+        if currentScope == scope, scopeLoad?.scope == scope { await activateScopeIfNeeded() }
+        if currentScope == scope, scopeLoad == nil {
+            change(&file)
+            persist()
+            return
+        }
         let previous = saveChain
         saveChain = Task { @MainActor in
             await previous?.value
