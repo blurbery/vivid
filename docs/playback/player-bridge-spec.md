@@ -417,7 +417,7 @@ For context only (Vivid-owned, not rewritten), the adapter's options hook then s
 | `http-header-fields` | set with `mpv_set_option` and `MPV_FORMAT_NODE` as a string array |
 | `vividstream` protocol | registered with `mpv_stream_cb_add_ro` when the managed reader applies |
 
-The first group is applied as an ordered list, in the table's order; its order must still not matter, because these options are independent. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
+The first group is applied as a fixed, ordered list, but its order must not matter, because these options are independent. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
 
 ### 6.4 Log level and log messages
 
