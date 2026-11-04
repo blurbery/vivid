@@ -144,6 +144,26 @@ final class DownloadManager {
         }
     }
 
+    /// Changes one scope's saved state, such as the scope a monitoring
+    /// request was sent for. Once that scope is current and loaded (waiting
+    /// for a load in progress), the change goes into memory; otherwise into
+    /// its file, after the saves already asked for, as every save is ordered.
+    func changeState(of scope: DownloadScope, _ change: @escaping @Sendable (inout DownloadStoreFile) -> Void) async {
+        if currentScope == scope, scopeLoad?.scope == scope { await activateScopeIfNeeded() }
+        if currentScope == scope, scopeLoad == nil {
+            change(&file)
+            persist()
+            return
+        }
+        let previous = saveChain
+        saveChain = Task { @MainActor in
+            await previous?.value
+            var state = await DownloadEngine.Store.shared.load(scope)
+            change(&state)
+            await DownloadEngine.Store.shared.save(state, to: scope)
+        }
+    }
+
     /// The same ordered write, throwing its failure. Used by the Silo
     /// progress snapshot, which may write a staged copy of the state.
     func checkedSave(_ state: DownloadStoreFile) async throws {

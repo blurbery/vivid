@@ -393,13 +393,18 @@ actor VividAPI {
 
     /// Marks a movie, series, season or episode watched or unwatched; the
     /// server works out the episodes. The request is pinned to the account
-    /// and profile captured first, and only a confirmed watch goes on to
-    /// MDBList and Simkl.
-    func setWatched(contentId: String, played: Bool) async throws {
+    /// and profile captured first, or with `expectedAuth`, sent only while
+    /// that sign-in and profile are still current. Only a confirmed watch
+    /// goes on to MDBList and Simkl.
+    func setWatched(contentId: String, played: Bool, expectedAuth: CapturedOrdinaryRequestAuth? = nil) async throws {
         #if os(iOS) || os(tvOS)
-        guard let auth = await tokenStore.captureOrdinaryRequestAuth(),
-              let profile = auth.profileId
-        else { throw HTTPError.requestIdentityChanged }
+        let captured: CapturedOrdinaryRequestAuth?
+        if let expectedAuth {
+            captured = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: expectedAuth)
+        } else {
+            captured = await tokenStore.captureOrdinaryRequestAuth()
+        }
+        guard let auth = captured, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
         let identity = HTTPRequestIdentity(
             serverId: auth.account.serverId,
             serverURL: auth.account.serverURL,

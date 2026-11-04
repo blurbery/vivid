@@ -95,33 +95,40 @@ extension VividAPI {
 
     // MARK: Subscriptions
 
-    func createSubscription(_ request: CreateSubscriptionRequest) async throws -> CreateSubscriptionResponse {
-        try await http.post("/api/v1/downloads/subscriptions", body: request)
+    // Each request is pinned to the identity its scope captured, so a
+    // profile or server change while it's out can't send it to another one.
+
+    func createSubscription(_ request: CreateSubscriptionRequest,
+                            auth: CapturedOrdinaryRequestAuth) async throws -> CreateSubscriptionResponse {
+        try await http.post("/api/v1/downloads/subscriptions", body: request, expectedAuth: auth)
     }
 
     /// Asks the server to register new episodes for every subscription now.
     @discardableResult
-    func syncSubscriptions() async throws -> Int {
-        let sync: DownloadEngine.SubscriptionSync = try await http.post("/api/v1/downloads/subscriptions/sync")
+    func syncSubscriptions(auth: CapturedOrdinaryRequestAuth) async throws -> Int {
+        let sync: DownloadEngine.SubscriptionSync = try await http.post(
+            "/api/v1/downloads/subscriptions/sync", expectedAuth: auth
+        )
         return sync.registered
     }
 
-    func updateSubscription(id: String, _ request: UpdateSubscriptionRequest) async throws -> CreateSubscriptionResponse {
-        try await http.patch("/api/v1/downloads/subscriptions/\(id)", body: request)
+    func updateSubscription(id: String, _ request: UpdateSubscriptionRequest,
+                            auth: CapturedOrdinaryRequestAuth) async throws -> CreateSubscriptionResponse {
+        try await http.patch("/api/v1/downloads/subscriptions/\(id)", body: request, expectedAuth: auth)
     }
 
-    func deleteSubscription(id: String) async throws {
-        try await http.delete("/api/v1/downloads/subscriptions/\(id)")
+    func deleteSubscription(id: String, auth: CapturedOrdinaryRequestAuth) async throws {
+        try await http.delete("/api/v1/downloads/subscriptions/\(id)", expectedAuth: auth)
     }
 
     // MARK: Offline progress
 
-    /// Sends offline progress 100 items at a time, pinned to the identity
-    /// current when it starts. Once a chunk has been acknowledged, a later
-    /// failure returns what came back so far; the rest go next time.
-    func syncProgressBatch(items: [SyncProgressItem]) async throws -> [SyncProgressResult] {
+    /// Sends offline progress 100 items at a time, pinned to the scope's
+    /// identity. Once a chunk has been acknowledged, a later failure returns
+    /// what came back so far; the rest go next time.
+    func syncProgressBatch(items: [SyncProgressItem],
+                           auth identity: CapturedOrdinaryRequestAuth) async throws -> [SyncProgressResult] {
         guard !items.isEmpty else { return [] }
-        let identity = await TokenStore.shared.captureOrdinaryRequestAuth()
         var results: [SyncProgressResult] = []
         var acknowledged = false
         for start in stride(from: 0, to: items.count, by: 100) {
@@ -140,16 +147,16 @@ extension VividAPI {
         return results
     }
 
-    func pullProgressDeltas(since cursor: String?) async throws -> ProgressPullResponse {
+    func pullProgressDeltas(since cursor: String?, auth: CapturedOrdinaryRequestAuth) async throws -> ProgressPullResponse {
         var query: [String: String] = [:]
         if let cursor, !cursor.isEmpty { query["since"] = cursor }
-        return try await http.get("/api/v1/progress", query: query)
+        return try await http.get("/api/v1/progress", query: query, expectedAuth: auth)
     }
 
     /// The server's current progress for these items, 100 ids per request.
-    func currentProgress(mediaItemIds: [String]) async throws -> [ProgressPullItem] {
+    func currentProgress(mediaItemIds: [String],
+                         auth identity: CapturedOrdinaryRequestAuth) async throws -> [ProgressPullItem] {
         guard !mediaItemIds.isEmpty else { return [] }
-        let identity = await TokenStore.shared.captureOrdinaryRequestAuth()
         var items: [ProgressPullItem] = []
         for start in stride(from: 0, to: mediaItemIds.count, by: 100) {
             let ids = mediaItemIds[start..<min(start + 100, mediaItemIds.count)].joined(separator: ",")
