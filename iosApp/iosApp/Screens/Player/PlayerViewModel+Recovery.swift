@@ -129,7 +129,7 @@ extension PlayerViewModel {
         epoch: VividPlaybackController.LoadEpoch,
         generation: UInt64
     ) async -> [String: String]? {
-        let controller = vividPlaybackController
+        let controller: VividPlaybackController = vividPlaybackController
         guard !Task.isCancelled, !isDisposed, generation == streamLoadGeneration,
               protocolV3ReplanTask == nil,
               controller.activeLoadEpoch == epoch, committedProtocolV3LoadEpoch == epoch,
@@ -351,7 +351,7 @@ extension PlayerViewModel {
     /// `CancellationError` once a newer load or the session's replacement
     /// has made it pointless.
     private func reopenCommittedPlan(_ attempt: SameRouteReload, generation: UInt64) async throws -> SameRouteReloadResult {
-        let controller = vividPlaybackController
+        let controller: VividPlaybackController = vividPlaybackController
         let reportedPosition = progressIsEligible ? attempt.startPosition : 0
         if attempt.prematureEnd {
             // Renew an expired bearer first. If that fails, reopen with
