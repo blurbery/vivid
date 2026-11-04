@@ -82,14 +82,6 @@ extension EmbyAdapter {
                 query: ["Hide": method == "DELETE" ? "false" : "true"]
             )
         }
-        if path == "/api/v1/recommendations/discover" {
-            let result = try await items(query: ["SortBy": "Random", "IncludeItemTypes": "Movie,Series", "Limit": "30"])
-            return ["rows": [["type": "discover", "label": String(localized: "Discover"), "items": result["items"] ?? []]]]
-        }
-        if let id = route.capture("recommendations/similar/*") {
-            let result = try await items("/Items/\(EmbyConnection.id(id))/Similar", query: ["Limit": "12"])
-            return ["items": (result["items"] as? [[String: Any]] ?? []).map { ["contentId": $0["contentId"]!, "score": 1] }]
-        }
         if let id = route.capture("watchlist/*") {
             return try watchlistRoute(id: id, method: method)
         }

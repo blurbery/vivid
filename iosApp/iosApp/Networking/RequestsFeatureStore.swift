@@ -1,7 +1,7 @@
 import Foundation
 
-/// The server's `requests_enabled` flag, checked once per session and reset
-/// on sign-out and profile or server switches (by `AuthService`,
+/// The server's `requests_enabled` flag, checked at sign-in and on each
+/// foreground, and reset on sign-out and profile or server switches (by `AuthService`,
 /// `ServerRegistry` and the app root).
 @MainActor
 @Observable

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Whether the server translates catalogue descriptions, checked once per
-/// session and dropped when the server or profile changes.
+/// Whether the server translates catalogue descriptions, checked at sign-in
+/// and on each foreground, and dropped on reset.
 @MainActor
 @Observable
 final class AICapabilities {
@@ -26,7 +26,7 @@ final class AICapabilities {
         return metadataStatus.onView
     }
 
-    /// A failed check leaves translation off for the session.
+    /// A failed check turns translation off until a later check succeeds.
     func refresh() async {
         let started = generation
         let status = try? await api.metadataAIStatus()

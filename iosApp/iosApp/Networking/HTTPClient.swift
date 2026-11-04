@@ -299,10 +299,6 @@ actor HTTPClient {
         }
     }
 
-    func put<T: Decodable>(_ path: String, body: (any Encodable)? = nil, query: [String: String] = [:]) async throws -> T {
-        try await send(method: "PUT", path: path, query: query, body: body)
-    }
-
     func putVoid(_ path: String, body: (any Encodable)? = nil, query: [String: String] = [:]) async throws {
         _ = try await sendRaw(method: "PUT", path: path, query: query, body: body)
     }
@@ -967,7 +963,8 @@ extension HTTPClient {
     /// Every ordinary request reaches the network through here and
     /// `performTransport`; the token refresh has its own
     /// `performRefreshTransport`. Nothing else in this file may call
-    /// `session.data(for:)`, so every request gets exactly one diagnostics line.
+    /// `session.data(for:)`, so every network round trip gets exactly one
+    /// diagnostics line. One Silo v2 request can make several round trips.
     private func perform(
         request: URLRequest,
         timeout: HTTPTimeout = .standard,

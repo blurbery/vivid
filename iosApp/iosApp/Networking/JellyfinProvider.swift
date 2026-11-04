@@ -4,7 +4,8 @@ import Foundation
 // older per-user routes as a fallback), sign-in (username and password or
 // Quick Connect), the people ID store and the library directory. The adapter
 // that turns Jellyfin's API into Vivid's is in `JellyfinProvider+Items.swift`
-// and `JellyfinProvider+Routes.swift`. Nothing here is shared with Emby.
+// and `JellyfinProvider+Routes.swift`. Apart from Emby's
+// `filterRequestFailureText`, nothing is shared with Emby.
 
 enum JellyfinError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable

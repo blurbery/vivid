@@ -61,14 +61,6 @@ extension JellyfinAdapter {
         if route.parts.count == 4, ["favorites", "watched"].contains(route.parts[2]) {
             return try await userDataRoute(route.parts[2], id: route.parts[3], method: method)
         }
-        if path == "/api/v1/recommendations/discover" {
-            let result = try await items(query: ["SortBy": "Random", "IncludeItemTypes": "Movie,Series", "Limit": "30", "Fields": Self.homeFields])
-            return ["rows": [["type": "discover", "label": String(localized: "Discover"), "items": result["items"] ?? []]]]
-        }
-        if let id = route.capture("recommendations/similar/*") {
-            let result = try await items("/Items/\(JellyfinConnection.id(id))/Similar", query: ["Limit": "12", "Fields": Self.browseFields])
-            return ["items": (result["items"] as? [[String: Any]] ?? []).map { ["contentId": $0["contentId"]!, "score": 1] }]
-        }
         if let id = route.capture("watchlist/*") {
             return try watchlistRoute(id: id, method: method)
         }

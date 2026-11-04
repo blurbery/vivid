@@ -3,8 +3,8 @@ import Foundation
 // The Emby connection: errors, the signed transport, sign-in (username and
 // password or Emby Connect) and the short-lived per-account directory. The
 // adapter that turns Emby's API into Vivid's is in `EmbyProvider+Items.swift`,
-// `EmbyProvider+Home.swift` and `EmbyProvider+Routes.swift`. Nothing here is
-// shared with Jellyfin.
+// `EmbyProvider+Home.swift` and `EmbyProvider+Routes.swift`. The only thing
+// shared with Jellyfin is `filterRequestFailureText`, which its errors use too.
 
 enum EmbyError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable
