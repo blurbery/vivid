@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Settings > Plugins: TMDb and OpenSubtitles, then the watchlist trackers.
+/// Simkl is listed only when this build has its app registration.
 struct PluginsSettingsView: View {
     var body: some View {
         #if os(tvOS)
@@ -43,6 +45,7 @@ struct PluginsSettingsView: View {
     }
 }
 
+/// Connects MDBList with a personal API key and shows the sync's progress.
 struct MDBListSettingsView: View {
     @State private var store = MDBListSyncStore.shared
     @State private var key = ""
@@ -73,9 +76,14 @@ struct MDBListSettingsView: View {
                 if store.isConnected { TVSettingsFooter(store.status) }
                 if let message { TVSettingsFooter(message) }
                 TVSettingsFooter(privacy)
-            }.frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48)).frame(maxWidth: .infinity)
-        }.background(SettingsBackdrop()).task { store.reload() }
+            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.vertical, TVSettingsLayout.scaled(48))
+            .frame(maxWidth: .infinity)
+        }
+        .background(SettingsBackdrop())
+        .task { store.reload() }
         #else
         List {
             historyHeader

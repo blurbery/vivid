@@ -3,6 +3,10 @@ import CollectionHStack
 import Combine
 import SwiftUI
 
+/// A Home row on Apple TV, laid out by `CollectionHStack` with UIKit cell
+/// reuse. The cards' own buttons own focus. Focus enters, returns from a
+/// detail page and moves on from a removed card through explicit requests,
+/// which only the row that owns restoration consumes.
 struct VividCollectionMediaRow: View, Equatable {
     let section: ResolvedSection
     let onSelect: (String) -> Void
@@ -20,6 +24,9 @@ struct VividCollectionMediaRow: View, Equatable {
     var rowIndex: Int? = nil
     var isSpotlightHandoffPending: (() -> Bool)? = nil
 
+    /// Remembered IDs are consumed only by explicit entry and detail request
+    /// tokens or section changes, all compared here. Comparing passive memory
+    /// would refresh every visited row when Spotlight re-renders the feed.
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.section == rhs.section
             && lhs.focusRequest == rhs.focusRequest
@@ -33,11 +40,6 @@ struct VividCollectionMediaRow: View, Equatable {
             && (lhs.ownsReturnFocus == nil) == (rhs.ownsReturnFocus == nil)
             && (lhs.isSpotlightHandoffPending == nil) == (rhs.isSpotlightHandoffPending == nil)
     }
-
-    // Remembered IDs are consumed only by explicit entry/detail request tokens
-    // or section changes, all compared above. Comparing passive memory here
-    // would refresh every visited row when Spotlight re-renders the feed.
-
 
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
     @Environment(\.homeCardPresentation) private var presentation

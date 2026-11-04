@@ -54,6 +54,8 @@ struct PhoneStudiosNetworksRow: View {
 
 // MARK: - Brand page
 
+/// One studio's or network's page: its logo, its rails, then every matching
+/// title in the library with a filter.
 struct PhoneStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
@@ -173,6 +175,7 @@ struct PhoneStudioNetworkPage: View {
 
 // MARK: - Settings editor
 
+/// Chooses and orders the brands on the Home row.
 struct PhoneStudiosNetworksSettingsView: View {
     @State private var store = StudiosNetworksStore.shared
     @State private var isArranging = false

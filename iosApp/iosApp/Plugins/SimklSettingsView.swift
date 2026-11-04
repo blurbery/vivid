@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Signs in to Simkl with a device code (a QR code on Apple TV) and shows
+/// the sync's progress.
 struct SimklSettingsView: View {
     @State private var store = SimklSyncStore.shared
     @State private var message: String?
@@ -30,9 +32,14 @@ struct SimklSettingsView: View {
                 if store.isConnected { TVSettingsFooter(store.status) }
                 if let notice = message ?? store.signInMessage { TVSettingsFooter(notice) }
                 TVSettingsFooter(privacy)
-            }.frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48)).frame(maxWidth: .infinity)
-        }.background(SettingsBackdrop()).task { store.reload() }
+            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.vertical, TVSettingsLayout.scaled(48))
+            .frame(maxWidth: .infinity)
+        }
+        .background(SettingsBackdrop())
+        .task { store.reload() }
         #else
         List {
             header

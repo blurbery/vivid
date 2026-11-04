@@ -1,6 +1,7 @@
 #if os(iOS) || os(tvOS)
 import SwiftUI
 
+/// Saves or removes the OpenSubtitles API key.
 struct OpenSubtitlesSettingsView: View {
     @State private var store = OpenSubtitlesStore.shared
     @State private var key = ""
@@ -24,9 +25,13 @@ struct OpenSubtitlesSettingsView: View {
                 }
                 if let message { TVSettingsFooter(message) }
                 TVSettingsFooter(footer)
-            }.frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(TVSettingsLayout.scaled(48)).frame(maxWidth: .infinity)
-        }.background(SettingsBackdrop()).task { store.reload() }
+            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(TVSettingsLayout.scaled(48))
+            .frame(maxWidth: .infinity)
+        }
+        .background(SettingsBackdrop())
+        .task { store.reload() }
         #else
         List {
             SettingsPageHeader(title: "OpenSubtitles", subtitle: "Find and download subtitles from the detail page or player.", systemImage: "captions.bubble")
@@ -47,6 +52,7 @@ struct OpenSubtitlesSettingsView: View {
         }.settingsListChrome().navigationTitle("").task { store.reload() }
         #endif
     }
+
     private var status: String {
         busy ? String(localized: "Connecting…") : store.isConnected ? String(localized: "Connected") : String(localized: "Not connected")
     }
@@ -69,6 +75,10 @@ struct OpenSubtitlesSettingsView: View {
     }
 }
 
+/// Searches OpenSubtitles by title and language, and downloads the chosen
+/// file for the playing item or the detail page's file. A result belongs to
+/// the item and connection it was found for, so a change in between asks for
+/// a new search.
 struct OpenSubtitlesSearchView: View {
     @State private var store = OpenSubtitlesStore.shared
     private let currentContext: () -> OpenSubtitlePlaybackContext?
@@ -135,6 +145,7 @@ struct OpenSubtitlesSearchView: View {
             #endif
         }
     }
+
     private func search() {
         focusedField = nil
         store.reload()
@@ -160,6 +171,7 @@ struct OpenSubtitlesSearchView: View {
             catch { message = error.localizedDescription }
         }
     }
+
     private func download(_ result: OpenSubtitleResult) {
         guard let context, let connectionRevision, context == currentContext() else {
             message = OpenSubtitlesError.context.localizedDescription; return
@@ -179,6 +191,8 @@ struct OpenSubtitlesSearchView: View {
         }
     }
 }
+
+/// The detail page's item, for its Subtitles menu.
 private struct OpenSubtitleDetailContextKey: EnvironmentKey {
     static let defaultValue: OpenSubtitlePlaybackContext? = nil
 }
@@ -190,6 +204,7 @@ extension EnvironmentValues {
     }
 }
 
+/// Presents the detail page's Subtitles menu for the selected file.
 private struct OpenSubtitleDetailSearch: ViewModifier {
     @Environment(\.openSubtitleDetailContext) private var detailContext
     let fileID: Int?
@@ -225,6 +240,9 @@ extension View {
     }
 }
 
+/// The detail page's Subtitles menu: Auto, Off, the remembered or staged
+/// OpenSubtitles file, the file's embedded subtitles and the server's
+/// subtitle files. The choice applies when the file next plays.
 private struct LucidDetailSubtitleMenu: View {
     let context: OpenSubtitlePlaybackContext?
     /// Subtitle files beside the media, and subtitles Silo stores.
@@ -307,6 +325,7 @@ private struct LucidDetailSubtitleMenu: View {
         .onExitCommand { dismiss() }
         #endif
     }
+
     @ViewBuilder private var automaticAndOffRows: some View {
         TrackSelectionRow(name: String(localized: "Auto"), detail: automaticSubtitle, attributes: nil,
                           isSelected: selectionIsAutomatic && !hasStagedSelection) {
@@ -324,6 +343,7 @@ private struct LucidDetailSubtitleMenu: View {
             TrackSelectionRow(name: "OpenSubtitles · " + name, attributes: nil, isSelected: true) { dismiss() }
         }
     }
+
     private func trackRow(_ track: PlayerTrack) -> some View {
         TrackSelectionRow(name: track.languageFirstPrimaryLabel,
             detail: track.languageFirstDetailLabel,
@@ -333,6 +353,7 @@ private struct LucidDetailSubtitleMenu: View {
                    storedSubtitleID: storedSubtitleID(track.trackId))
         }
     }
+
     private func select(_ id: Int64?, label: String? = nil, storedSubtitleID: Int? = nil) {
         guard let context else { return }
         LucidSubtitleInventory.shared.choose(id, label: label, storedSubtitleID: storedSubtitleID, context: context)
@@ -341,7 +362,6 @@ private struct LucidDetailSubtitleMenu: View {
         dismiss()
     }
 }
-
 
 #if os(tvOS)
 /// A native submenu for the current file. Account setup remains in its own form.
