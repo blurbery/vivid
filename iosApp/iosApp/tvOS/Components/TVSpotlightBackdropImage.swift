@@ -142,8 +142,9 @@ enum TVSpotlightCrop {
     }
 
     /// Where to draw the image in the viewport. It fills the viewport, or for
-    /// the spotlight scales no more than 1.2 times past fitting. Across, it
-    /// centres on the subject (or the middle) at 62% of the width; down, a
+    /// the spotlight scales no more than 1.2 times past fitting. Across, an
+    /// image no wider than the viewport sits on the trailing edge, and a
+    /// wider one centres on the subject (or the middle) at 62%; down, a
     /// short image sits on the bottom edge and a tall one keeps the subject
     /// below a little headroom, or shows mostly its top.
     static func layout(image: CGSize, viewport: CGSize, subject: CGRect?, fillsViewport: Bool = false) -> CGRect {

@@ -333,8 +333,8 @@ struct TVAccountCircleStyle: ButtonStyle {
 }
 
 /// One saved profile's settings, or adding a profile (and its server): the
-/// login, code sign-in, the Silo household, the account PIN, signing out and
-/// deleting.
+/// login, code sign-in and deleting, plus the PIN, the Silo household and
+/// signing out for the signed-in profile.
 struct TVSavedAccountEditor: View {
     let accountID: String?
     var addingServer = false
