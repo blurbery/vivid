@@ -281,7 +281,7 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 - **"Check your OpenSubtitles API key. An account may be required by OpenSubtitles for this download."** Copy the key again from your API consumers page.
 - **"OpenSubtitles' download or request limit has been reached. Try again after your quota resets."** You've used your downloads for now. Try again once OpenSubtitles resets your limit.
 - **"Connect OpenSubtitles in Settings → Plugins before searching for subtitles."** This profile isn't connected yet. Each profile needs its own connection.
-- **"The connection or playing item changed. Please search again." when saving the key.** Sign in to a server and choose your profile first, then save again.
+- **"The connection or playing item changed. Please search again." when saving or disconnecting the key.** Sign in to a server and choose your profile first, then try again.
 - **"No subtitles found. Try another title or language."** Try the original title, or another language.
 
 ## More detail
