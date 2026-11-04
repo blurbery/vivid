@@ -40,11 +40,12 @@ extension PlayerViewModel {
         introDBLookupTask = Task { @MainActor [weak self] in
             /// Still enabled, and still the session, item and file the
             /// lookup started for.
-            func isCurrent(_ model: PlayerViewModel) -> Bool {
-                !Task.isCancelled && VividSkipSource.isEnabled
-                    && model.activePlaybackSessionId == sessionID
-                    && model.currentWatchDetail?.contentId == detail.contentId
-                    && model.currentSelectedVersion?.fileId == fileID
+            @MainActor func isCurrent(_ model: PlayerViewModel) -> Bool {
+                guard !Task.isCancelled, VividSkipSource.isEnabled,
+                      model.activePlaybackSessionId == sessionID,
+                      model.currentWatchDetail?.contentId == detail.contentId,
+                      model.currentSelectedVersion?.fileId == fileID else { return false }
+                return true
             }
             do {
                 // The series' identity, never an episode-level TMDB ID.
