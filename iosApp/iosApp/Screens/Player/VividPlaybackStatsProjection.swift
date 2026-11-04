@@ -1,7 +1,8 @@
-
 import Foundation
 
-/// Immutable server-supplied context that the player cannot infer from a media source.
+/// The session's fixed source details that the engine can't infer from the
+/// media: where it streams from, how it's delivered, the container, the
+/// playback rate and the secondary subtitle's name.
 struct VividPlaybackStatsSourceMetadata: Equatable {
     let source: String?
     let delivery: String?
@@ -59,9 +60,9 @@ struct VividPlaybackStatsSourceMetadata: Equatable {
     }
 }
 
-/// Value-only snapshot of the public Vivid state used by the player statistics overlay.
-/// Keeping projection separate from observation makes generation fencing and
-/// update cadence the controller's responsibility, not this formatter's.
+/// A value copy of the engine state the playback stats need. Keeping it apart
+/// from observation leaves load fencing and update cadence to the view model,
+/// not this formatter.
 struct VividPlaybackStatsSnapshot: Equatable {
     let route: VideoRoute
     let phase: PlaybackPhase
@@ -406,8 +407,9 @@ enum VividPlaybackStatsProjection {
     }
 }
 
-/// Limits presentation formatting only. Recovery and timeline buffer values
-/// are updated before this gate, and state/track changes can refresh immediately.
+/// Limits how often the stats are formatted (at most every 0.9 seconds).
+/// Recovery and timeline buffer values are updated before this gate, and
+/// state and track changes can force a refresh.
 struct VividPlaybackStatsCadence {
     private var lastRefreshUptime: TimeInterval?
 

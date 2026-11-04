@@ -2,14 +2,14 @@
 import AVKit
 import SwiftUI
 
-/// AirPlay button for the mobile player's top strip.
+/// The AirPlay button in the player's top strip and the half-folded deck.
 ///
-/// The picker lives inside the `showControls` branch of `MobilePlayerControls`,
-/// which the 3s auto-hide tears down. UIKit taps on this view never reach the
-/// SwiftUI gesture layer, so without `onPresentingRoutes` the timer keeps
-/// running while the route sheet is up and dismantles the button — and the
-/// sheet with it — mid-selection. The callback lets the caller pin the
-/// controls for the duration, the same way sheet presentation does.
+/// Above the video it lives inside the controls, which the auto-hide takes
+/// down. Taps on this UIKit view never reach SwiftUI, so without
+/// `onPresentingRoutes` the timer would keep running while the route sheet is
+/// open and remove the button, and the sheet with it, mid-choice. The
+/// callback lets the caller hold the controls up while the sheet is open, as
+/// an open popover does.
 struct AirPlayRoutePicker: UIViewRepresentable {
     let onPresentingRoutes: (Bool) -> Void
 
@@ -25,15 +25,15 @@ struct AirPlayRoutePicker: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
-        // The closure captures the current view generation; refresh it so the
+        // The closure belongs to the current view value. Refresh it so the
         // coordinator never calls back into a stale one.
         context.coordinator.onPresentingRoutes = onPresentingRoutes
     }
 
     static func dismantleUIView(_ uiView: AVRoutePickerView, coordinator: Coordinator) {
         uiView.delegate = nil
-        // If the view goes away while the sheet is up, "did end" never
-        // arrives — release the pin here so the controls can auto-hide again.
+        // If the view goes while the sheet is open, "did end" never arrives,
+        // so release the hold here and let the controls hide again.
         coordinator.resignPresentation()
     }
 
@@ -41,8 +41,8 @@ struct AirPlayRoutePicker: UIViewRepresentable {
         Coordinator(onPresentingRoutes: onPresentingRoutes)
     }
 
-    /// `AVRoutePickerView.delegate` is weak and SwiftUI owns the coordinator's
-    /// lifetime, so this deliberately holds no reference back to the view.
+    /// `AVRoutePickerView.delegate` is weak and SwiftUI owns the coordinator,
+    /// so it holds no reference back to the view.
     final class Coordinator: NSObject, AVRoutePickerViewDelegate {
         var onPresentingRoutes: (Bool) -> Void
         private var isPresenting = false

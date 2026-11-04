@@ -1,8 +1,8 @@
-
 import SwiftUI
 
-/// Presentation-only overlay for Vivid's decoded public cue model.
-/// It never fetches, parses, demuxes, or selects subtitle media.
+/// Draws the engine's decoded subtitle cues (external text subtitles and
+/// bitmap subtitles) over the picture, primary and secondary. It only
+/// presents: it never fetches, parses, demuxes or selects subtitles.
 struct VividSubtitleOverlay: View {
     let engine: VividEngine
     /// Movie-timeline position. Read only while cues are loaded, so playback
@@ -67,8 +67,6 @@ struct VividSubtitleOverlay: View {
                                           usesMovieTimeline: usesMovieTimeline, delaySeconds: Double(delayMs) / 1_000)
         return cues.filter { $0.startTime <= renderClock && renderClock < $0.endTime }
     }
-
-
 
     /// Text cues sharing a place on screen, shown together.
     struct CueStack: Identifiable {
@@ -380,9 +378,9 @@ struct VividSubtitleOverlay: View {
             ))
     }
 
-    /// Vivid's rich runs are authored content. Each authored color/font/size
+    /// Rich runs are authored content. Each authored colour, font and size
     /// wins unless MediaAccessibility marked that field as a required system
-    /// override. Missing authored values still inherit Vivid’s effective style.
+    /// override. Fields the run doesn't set take the effective style.
     private func styledText(_ run: SubtitleTextRun, videoRect: CGRect) -> Text {
         let style = renderStyle
         var text = Text(run.text)

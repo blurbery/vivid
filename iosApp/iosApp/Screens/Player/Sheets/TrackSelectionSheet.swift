@@ -2,19 +2,22 @@ import SwiftUI
 
 #if os(iOS)
 
-/// Scrollable audio, subtitle, and secondary-subtitle picker for iPhone and
-/// iPad, presented in an anchored system popover with a scrollable inventory.
+/// The audio or subtitle list in the player's anchored popover on iPhone and
+/// iPad. The subtitle list also offers OpenSubtitles search when the plugin
+/// can search for this title, and secondary subtitles when the route
+/// supports them and a main subtitle is on. Choosing a row closes the popover.
 struct TrackSelectionSheet: View {
+    enum Scope { case audio, subtitles }
+
     let viewModel: PlayerViewModel
-    enum Scope { case all, audio, subtitles }
-    var scope: Scope = .all
+    let scope: Scope
     let onDismiss: () -> Void
     @State private var showOpenSubtitles = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(scope == .audio ? "Audio" : scope == .subtitles ? "Subtitles" : "Audio & Subtitles")
+                Text(scope == .audio ? "Audio" : "Subtitles")
                     .font(.headline)
                 if scope == .subtitles {
                     Text("Available subtitle tracks")
@@ -26,28 +29,13 @@ struct TrackSelectionSheet: View {
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if scope != .subtitles && !viewModel.audioTracks.isEmpty {
-                        audioRows
-                    }
-                    if scope != .audio {
-                        if viewModel.openSubtitleContext != nil {
-                            Button("Find on OpenSubtitles") { showOpenSubtitles = true }.padding(.vertical, 12)
+                    switch scope {
+                    case .audio:
+                        if !viewModel.audioTracks.isEmpty {
+                            audioRows
                         }
-                        subtitleRows(isSecondary: false)
-                        if viewModel.orderedSubtitleTracks.isEmpty {
-                            Text("This media file has no embedded subtitles.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 8)
-                        }
-                        if viewModel.supportsSecondarySubtitles,
-                           viewModel.selectedSubtitleId != nil,
-                           !viewModel.availableSecondarySubtitleTracks.isEmpty {
-                            DisclosureGroup("Secondary Subtitles") {
-                                subtitleRows(isSecondary: true)
-                            }
-                            .padding(.vertical, 12)
-                        }
+                    case .subtitles:
+                        subtitleList
                     }
                 }
                 .padding(.horizontal)
@@ -59,10 +47,8 @@ struct TrackSelectionSheet: View {
             OpenSubtitlesSearchView(viewModel: viewModel)
                 .vividGlassSheet(startsTall: true, overVideo: true)
         }
-
     }
 
-    @ViewBuilder
     private var audioRows: some View {
         ForEach(viewModel.audioTracks) { track in
             TrackSelectionRow(
@@ -77,6 +63,29 @@ struct TrackSelectionSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var subtitleList: some View {
+        if viewModel.openSubtitleContext != nil {
+            Button("Find on OpenSubtitles") { showOpenSubtitles = true }.padding(.vertical, 12)
+        }
+        subtitleRows(isSecondary: false)
+        if viewModel.orderedSubtitleTracks.isEmpty {
+            Text("This media file has no embedded subtitles.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 8)
+        }
+        if viewModel.supportsSecondarySubtitles,
+           viewModel.selectedSubtitleId != nil,
+           !viewModel.availableSecondarySubtitleTracks.isEmpty {
+            DisclosureGroup("Secondary Subtitles") {
+                subtitleRows(isSecondary: true)
+            }
+            .padding(.vertical, 12)
+        }
+    }
+
+    /// Off, then the tracks. A secondary list greys out the main subtitle.
     @ViewBuilder
     private func subtitleRows(isSecondary: Bool) -> some View {
         let isOffSelected = isSecondary
@@ -126,12 +135,13 @@ struct TrackSelectionSheet: View {
             }
         }
     }
-
-
 }
 
 #endif
 
+/// One row in a track list: the name, an optional detail line, then the
+/// attribute pills (or a plain attributes line), with a tick when selected.
+/// OpenSubtitles' result list uses it too.
 struct TrackSelectionRow: View {
     let name: String
     var detail: String? = nil

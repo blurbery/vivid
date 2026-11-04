@@ -29,9 +29,9 @@ extension Notification.Name {
 #endif
 
 /// Full-screen video player. Thin shell around `PlayerViewModel` that picks
-/// the platform-appropriate controls overlay. iOS gets touch-driven controls
-/// with bottom sheets; tvOS gets a focus-driven transport bar plus the
-/// floating HUD for route, track, chapter, and playback controls.
+/// the platform-appropriate controls overlay. iPhone and iPad get touch
+/// controls with anchored popovers; tvOS gets a focus-driven transport bar
+/// plus the floating HUD for route, track, chapter, and playback controls.
 struct PlayerView: View {
     let contentId: String
     let preferredFileId: Int?
@@ -260,20 +260,16 @@ struct PlayerView: View {
                             .allowsHitTesting(false)
                         }
                         #else
-                        // The full controls overlay (and its close button) only
-                        // appears once the decoder opens the file, so a standalone
-                        // close control must remain available through a tap
-                        // during the load/buffer phase. tvOS gets this via Menu in
-                        // `onExitCommand`; macOS keeps its controls (and Escape)
-                        // during loading.
+                        // The controls and their close button only mount once
+                        // the file opens, so a tap reveals this close button
+                        // while loading. Apple TV uses Menu in `onExitCommand`.
                         if viewModel.isLoading {
                             loadingCloseButton
                         }
 
                         if !viewModel.isLoading {
-                            // Invisible gestures (tap-to-toggle, double-tap skip,
-                            // hold-2×, pinch) live in a dedicated
-                            // layer under the button overlay.
+                            // The invisible gestures (tap to toggle, double-tap
+                            // skip, hold for 2x, pinch) sit under the buttons.
                             MobilePlayerGestureLayer(viewModel: viewModel)
                                 .duoTabletopTopHalf(duoTabletop)
                         }
@@ -405,7 +401,7 @@ struct PlayerView: View {
             #if os(iOS)
             // A Picture in Picture restore re-presents this cover for a session
             // that is still playing. Adopt that view model instead of minting a
-            // new one, and skip the load — the session never stopped.
+            // new one, and skip the load, because the session never stopped.
             if let restored = PlayerPresentationRestoration.consumeAdoption(matching: contentId) {
                 viewModel = restored
                 orientationCoordinator.activatePlayer()
@@ -650,10 +646,10 @@ struct PlayerView: View {
             }
     }
 
-    #if !os(tvOS)
-    /// Tap-to-reveal close control while loading and on Next Up, in
-    /// the same spot, size and glass style as the close button in
-    /// `MobilePlayerControls`' top strip so the two read as one control.
+    #if os(iOS)
+    /// The close button shown while loading and on Next Up, revealed by a
+    /// tap. It has the same place, size and glass as the close button in
+    /// `MobilePlayerControls`' top strip, so the two read as one control.
     private var loadingCloseButton: some View {
         HStack {
             Button(action: { dismissPlayer() }) {
@@ -662,9 +658,7 @@ struct PlayerView: View {
                     .foregroundStyle(.white)
                     .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
             }
-            #if os(iOS)
             .buttonStyle(MobilePlayerGlassButtonStyle())
-            #endif
             .accessibilityLabel("Close Player")
             .accessibilityIdentifier("player.close")
 
@@ -673,9 +667,7 @@ struct PlayerView: View {
         .padding(.horizontal)
         .padding(.top)
         .transition(.opacity)
-        #if os(iOS)
         .modifier(MobilePlayerChromeVisibility(isVisible: viewModel.shouldShowMobilePlayerChrome))
-        #endif
     }
     #endif
 
@@ -855,9 +847,7 @@ struct PlayerNextUpScreen: View {
                         .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(actions: $0) }
                 } extras: {
                 }
-                #if os(iOS)
                 .padding(.top, MobilePlayerRotationControls.topClearance)
-                #endif
                 #endif
             }
             // Artwork is decoration, not a sibling allowed to enlarge this
@@ -925,11 +915,11 @@ struct PlayerNextUpScreen: View {
         }
     }
 
-    #if !os(tvOS)
+    #if os(iOS)
     func mobileNextUpPanel(compact: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Keep every action reachable below the rotation bar's reserved area
-            // on short landscape screens. Only the redundant eyebrow is omitted.
+            // Every action stays below the rotation buttons' reserved space on
+            // short landscape screens, so the eyebrow is left out.
             if let episode = viewModel.nextUpEpisode {
                 VStack(alignment: .leading, spacing: 6) {
                     if let series = episode.seriesTitle { Text(series).font(.system(size: 22, weight: .bold)) }
@@ -949,9 +939,7 @@ struct PlayerNextUpScreen: View {
             }
             actionRow(hasNextEpisode: viewModel.nextUpEpisode != nil, compact: compact)
             if viewModel.nextUpEpisode != nil {
-                #if os(iOS)
                 autoPlayToggle
-                #endif
             } else if !viewModel.isLoadingNextUpEpisode {
                 Text(finishedMessage)
                     .font(.caption)

@@ -1,22 +1,19 @@
 #if os(iOS)
 import SwiftUI
 
-/// Full-screen touch layer that sits between the video surface and the
-/// controls overlay. Owns every "invisible" player gesture so the overlay
-/// stays a plain button surface:
+/// The full-screen touch layer between the video and the controls. It owns
+/// the player's invisible gestures, so the controls stay plain buttons:
 ///
-/// - single tap            → toggle the controls overlay
-/// - double tap left/right → skip ±10s (with a ripple flash at the tap side)
-/// - double tap center     → play/pause
-/// - touch & hold          → 2× playback while held (chip at top center)
-/// - pinch                 → cycle video gravity (fit / fill / stretch)
+/// - A tap shows or hides the controls.
+/// - A double tap on the left or right 35% skips 10 seconds back or forward,
+///   with a flash on that side. A double tap in the middle plays or pauses.
+/// - Touch and hold plays at 2x while held, with a chip at the top.
+/// - Pinching out steps the picture from Fit to Fill to Stretch, and pinching
+///   in steps back, with a short label at the top.
 ///
-/// Center drags never dismiss playback. Exit is an explicit close-button
-/// action.
-///
-/// The layer is mounted only while playback is loaded. When the controls
-/// overlay is visible its scrim sits above this layer and captures touches,
-/// so these gestures apply to the "clean" viewing state.
+/// No drag closes the player; only the close button does. The layer is
+/// mounted once playback has loaded, and it stops taking touches while the
+/// controls are up, so these gestures only work over the clean picture.
 struct MobilePlayerGestureLayer: View {
     let viewModel: PlayerViewModel
 
@@ -28,12 +25,12 @@ struct MobilePlayerGestureLayer: View {
     @State private var skipFlash: SkipFlash?
     @State private var skipFlashHideTask: Task<Void, Never>?
 
-    /// Video-gravity mode announced after a pinch; shown briefly as a toast.
+    /// The picture mode a pinch chose, shown briefly at the top.
     @State private var gravityToast: VideoGravity?
     @State private var gravityToastHideTask: Task<Void, Never>?
 
-    /// Fraction of the width on each side that double-taps treat as a skip
-    /// zone; the middle band toggles play/pause instead.
+    /// The share of the width on each side where a double tap skips. A
+    /// double tap in the middle plays or pauses instead.
     private static let skipZoneFraction: CGFloat = 0.35
 
     var body: some View {
@@ -56,16 +53,15 @@ struct MobilePlayerGestureLayer: View {
                 feedbackOverlays(in: size)
             }
         }
-        // The controls scrim should swallow touches while the overlay is up,
-        // but SwiftUI tap recognizers on an occluded sibling can still track
-        // touches — rapid presses on the overlay's ±10s buttons registered
-        // here as a double-tap skip. Drop out of hit testing entirely while
-        // the overlay owns the screen.
+        // The controls' scrim covers this layer, but tap recognisers on a
+        // covered sibling can still track touches: quick presses on the 10
+        // second buttons used to register here as a double-tap skip. So the
+        // layer leaves hit testing while the controls are up.
         .allowsHitTesting(!viewModel.showControls)
         .ignoresSafeArea()
         .onDisappear {
-            // The layer can be torn out mid-gesture (loading state flips,
-            // player transitions) without a final onPressingChanged(false).
+            // The layer can go mid-gesture (a reload, a Next Up change)
+            // without a final onPressingChanged(false).
             viewModel.endHoldFastForward()
             skipFlashHideTask?.cancel()
             gravityToastHideTask?.cancel()
@@ -80,14 +76,12 @@ struct MobilePlayerGestureLayer: View {
 
     private func doubleTapGesture(in size: CGSize) -> some Gesture {
         SpatialTapGesture(count: 2).onEnded { value in
-            // Belt-and-braces for a recognizer that started tracking just
-            // before the overlay appeared: never double-tap-skip while the
-            // controls own the screen.
+            // A recogniser can start tracking just before the controls
+            // appear. Never skip while they're up.
             guard !viewModel.showControls else { return }
             let x = value.location.x
-            // revealingControls: false — the flash below is the feedback;
-            // summoning the overlay would drop its scrim on top of this
-            // layer and swallow the next double-tap.
+            // The flash is the feedback. Showing the controls would put
+            // their scrim over this layer and swallow the next double tap.
             if x < size.width * Self.skipZoneFraction {
                 viewModel.skipBackward(10, revealingControls: false)
                 showSkipFlash(forward: false)
@@ -137,7 +131,7 @@ struct MobilePlayerGestureLayer: View {
         skipFlash = SkipFlash(forward: forward, id: UUID())
         skipFlashHideTask?.cancel()
         skipFlashHideTask = Task {
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { skipFlash = nil }
         }
@@ -147,7 +141,7 @@ struct MobilePlayerGestureLayer: View {
         withAnimation(.easeOut(duration: 0.15)) { gravityToast = gravity }
         gravityToastHideTask?.cancel()
         gravityToastHideTask = Task {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.25)) { gravityToast = nil }
         }
@@ -179,7 +173,6 @@ struct MobilePlayerGestureLayer: View {
                 .transition(.opacity)
                 .allowsHitTesting(false)
         }
-
     }
 
     private func skipFlashView(_ flash: SkipFlash) -> some View {
@@ -227,6 +220,5 @@ struct MobilePlayerGestureLayer: View {
         .padding(.vertical, 8)
         .vividPlayerGlass(in: Capsule())
     }
-
 }
 #endif

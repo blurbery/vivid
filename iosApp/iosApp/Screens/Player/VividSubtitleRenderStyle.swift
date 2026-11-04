@@ -1,7 +1,8 @@
 import Foundation
 
-/// Media-engine-free mapping from Vivid's persisted/system caption appearance
-/// to the values the Vivid cue overlay needs.
+/// The saved subtitle appearance, with any system caption settings applied,
+/// as the values `VividSubtitleOverlay` draws with. Sizes are in points on a
+/// 1080-line picture and scale with the video.
 struct VividSubtitleRenderStyle: Equatable {
     struct RGB: Equatable {
         let red: Double

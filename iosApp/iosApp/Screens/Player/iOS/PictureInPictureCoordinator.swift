@@ -224,9 +224,9 @@ final class PictureInPictureCoordinator {
         tearDownBoundSession(continuingOwner: nil)
     }
 
-    /// End whatever session is bound, regardless of which owner holds it,
-    /// because the app crossed an identity boundary — sign-out, server or
-    /// profile switch, or a cleared session.
+    /// End whatever session is bound, whichever owner holds it, because the
+    /// app crossed an identity boundary: sign-out, a server or profile
+    /// switch, or a cleared session.
     ///
     /// Ordinary teardown is owner-keyed and driven by the player's
     /// disappearance, which deliberately defers `cleanup()` while PiP is
@@ -471,9 +471,9 @@ final class PictureInPictureCoordinator {
     /// turn it asks for a stop, so `handleDidStop` can never arrive for a
     /// controller torn down here. When PiP was engaged, that callback was the
     /// only thing that would have ended the engagement, and the engaged owner has
-    /// already deferred its own `cleanup()` — final progress and the server
-    /// session stop — waiting for exactly that. So run the engagement-ended work
-    /// synchronously instead of dropping it on the floor.
+    /// already deferred its own `cleanup()` (final progress and the server
+    /// session stop) waiting for exactly that. So the engagement-ended work
+    /// runs here, synchronously, instead of being lost.
     ///
     /// `continuingOwner` is the owner about to take the coordinator over. It only
     /// matters when the same owner rebinds a replacement engine: that session is
@@ -497,7 +497,7 @@ final class PictureInPictureCoordinator {
         lifecycleOwner = nil
 
         // Hand the engagement off before the references go, and keep the owner
-        // alive across its own cleanup — `engagedOwner` is the only strong
+        // alive across its own cleanup: `engagedOwner` is the only strong
         // reference holding it up.
         let isEndingEngagement = engagedOwner != nil && engagedOwner !== continuingOwner
         let endedOwner = engagedOwner
@@ -568,8 +568,8 @@ final class PictureInPictureCoordinator {
 
     /// AVKit is stopping PiP because the user asked for the full-screen player
     /// back. `completion(true)` must mean the player really is on screen again:
-    /// `handleDidStop` reads the outcome to decide whether the engagement — and
-    /// with it the deferred `cleanup()` — has to end.
+    /// `handleDidStop` reads the outcome to decide whether the engagement, and
+    /// with it the deferred `cleanup()`, has to end.
     fileprivate func handleRestoreRequested(completion: @escaping (Bool) -> Void) {
         isRestoringUserInterface = false
         guard let onRestoreUserInterface else {

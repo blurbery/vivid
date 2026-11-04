@@ -1,20 +1,20 @@
 import SwiftUI
 
-/// A single, shell-level buffering indicator shared by every player surface.
+/// The player's loading dots, centred and ignoring touches, with a spoken label.
 struct PlayerBufferingCapsule: View {
     var label: LocalizedStringKey = "Loading…"
 
     var body: some View {
-        #if os(tvOS) || os(iOS)
         VividLoadingDots()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        #endif
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
     }
 }
 
+/// Four staggered bouncing dots, the app's loading indicator. They stay
+/// still with Reduce Motion on.
 struct VividLoadingDots: View {
     var compact = false
     var dotDiameter: CGFloat? = nil
@@ -38,6 +38,8 @@ struct VividLoadingDots: View {
     }
 }
 
+/// A progress view style: a bar when the fraction is known, otherwise the
+/// compact dots above the label.
 struct VividLoadingProgressStyle: ProgressViewStyle {
     @ViewBuilder func makeBody(configuration: Configuration) -> some View {
         if let fraction = configuration.fractionCompleted {
@@ -52,6 +54,9 @@ struct VividLoadingProgressStyle: ProgressViewStyle {
     }
 }
 
+/// The player's loading and buffering dots. They appear only once the
+/// position has stood still for 0.8 seconds while loading or while playback
+/// should be running, so a short rebuffer doesn't flash them.
 struct PlayerLoadingIndicator: View {
     let isLoading: Bool
     let isBuffering: Bool
