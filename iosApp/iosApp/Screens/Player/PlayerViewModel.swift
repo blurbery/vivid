@@ -1,4 +1,3 @@
-
 import AVFoundation
 import CoreGraphics
 import Foundation
@@ -8,166 +7,13 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Chapters read from the media by Lucid Engine.
-struct PlayerChapterInfo: Equatable, Identifiable, Sendable {
-    let index: Int
-    let title: String?
-    let time: Double
-    var id: Int { index }
-}
-
-/// Pure decision boundary for the credits setting's playback behavior.
+/// The player's state, shared by the iPhone, iPad and Apple TV player screens.
 ///
-/// Keeping the range/key checks outside the player backend makes every edge
-/// deterministic to test: the VM owns the seek side effect, while this policy
-/// decides whether the current time is the first eligible visit to this
-/// session/file/marker combination.
-enum CreditsAutoSkipPolicy {
-    static func target(
-        enabled: Bool,
-        playbackEligible: Bool,
-        time: Double,
-        range: TimeRange?,
-        markerKey: String?,
-        lastSkippedKey: String?
-    ) -> Double? {
-        guard enabled,
-              playbackEligible,
-              time.isFinite,
-              let range,
-              range.start.isFinite,
-              range.end.isFinite,
-              range.start >= 0,
-              range.end > range.start,
-              let markerKey,
-              markerKey != lastSkippedKey,
-              time >= range.start,
-              time < range.end else {
-            return nil
-        }
-        return range.end
-    }
-}
-
-struct PlayerNextUpEpisode: Identifiable, Hashable {
-    let contentId: String
-    let seriesId: String?
-    let seriesTitle: String?
-    let seasonNumber: Int
-    let episodeNumber: Int
-    let title: String
-    let overview: String?
-    let runtime: Int?
-    let stillUrl: String?
-    let stillThumbhash: String?
-    let airDate: String?
-
-    var id: String { contentId }
-    var episodeLabel: String {
-        String(localized: "S\(String(seasonNumber)):E\(String(episodeNumber))", comment: "Season and episode number, for example S1:E3")
-    }
-
-    init(episode: EpisodeListItem, seriesId: String?, seriesTitle: String?) {
-        contentId = episode.contentId
-        self.seriesId = seriesId
-        self.seriesTitle = seriesTitle
-        seasonNumber = episode.seasonNumber
-        episodeNumber = episode.episodeNumber
-        let trimmedTitle = episode.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let trimmedTitle, !trimmedTitle.isEmpty {
-            title = trimmedTitle
-        } else {
-            title = String(localized: "Episode \(String(episode.episodeNumber))", comment: "Fallback title for an untitled episode")
-        }
-        overview = episode.overview
-        runtime = episode.runtime
-        stillUrl = episode.stillUrl
-        stillThumbhash = episode.stillThumbhash
-        airDate = episode.airDate
-    }
-}
-
-struct PlayerOnDeckItem: Identifiable, Hashable {
-    let sectionItem: SectionItem
-    let contentId: String
-    let title: String
-    let seriesTitle: String?
-    let seasonNumber: Int?
-    let episodeNumber: Int?
-    let positionSeconds: Double?
-    let durationSeconds: Double?
-    let artworkUrl: String?
-    let artworkThumbhash: String?
-
-    var id: String { contentId }
-
-    var primaryTitle: String {
-        if let seriesTitle, !seriesTitle.isEmpty {
-            return seriesTitle
-        }
-        return title
-    }
-
-    init(
-        item: SectionItem,
-        artworkUrl preferredArtworkUrl: String? = nil,
-        artworkThumbhash preferredArtworkThumbhash: String? = nil
-    ) {
-        sectionItem = item
-        contentId = item.contentId
-        title = item.title
-        seriesTitle = item.seriesTitle
-        seasonNumber = item.seasonNumber
-        episodeNumber = item.episodeNumber
-        positionSeconds = item.positionSeconds
-        durationSeconds = item.durationSeconds
-        artworkUrl = preferredArtworkUrl ?? item.backdropUrl
-        artworkThumbhash = preferredArtworkThumbhash ?? item.backdropThumbhash
-    }
-}
-
-struct PlayerBackendCapabilities: Equatable {
-    let supportsBufferedAhead: Bool
-    let supportsSecondarySubtitles: Bool
-    let supportsChapters: Bool
-    let supportsVideoGravity: Bool
-    let supportsSubtitleDelay: Bool
-    let supportsSubtitleStyling: Bool
-
-    static func vivid(
-        subtitleOverlayControls: Bool,
-        hasTextSubtitleTrack: Bool
-    ) -> PlayerBackendCapabilities {
-        PlayerBackendCapabilities(
-            supportsBufferedAhead: true,
-            supportsSecondarySubtitles: hasTextSubtitleTrack,
-            supportsChapters: true,
-            supportsVideoGravity: true,
-            supportsSubtitleDelay: true,
-            supportsSubtitleStyling: subtitleOverlayControls
-        )
-    }
-}
-
-/// Video playback teardown at an app identity boundary — sign-out, server or
-/// profile switch, or a cleared session.
-///
-/// Those transitions replace the authenticated view hierarchy, which removes
-/// the player cover. That path deliberately defers the player's `cleanup()`
-/// while Picture in Picture is engaged, so nothing else ends an engaged video
-/// session: the previous identity's engine, its open server playback session,
-/// and a live PiP window would otherwise all survive into the next identity.
-///
-/// Callable from the shared auth paths on every platform; a no-op where video
-/// Picture in Picture is not hosted.
-enum PlayerIdentityBoundary {
-    static func endEngagedVideoPictureInPicture() {
-        #if os(iOS)
-        PictureInPictureCoordinator.endEngagedSessionForIdentityChange()
-        #endif
-    }
-}
-
+/// This file holds the stored state, `init` and teardown. Behaviour lives in
+/// the `PlayerViewModel+<Area>.swift` extensions beside it: loading
+/// (`+SessionLoad`, `+VividLoad`), engine events (`+EngineEvents`), recovery
+/// (`+Recovery`), the end of an item (`+PlaybackEnd`), progress
+/// (`+Progress`), and the controls, tracks, Next Up and other areas.
 @MainActor
 @Observable
 class PlayerViewModel {
@@ -176,44 +22,49 @@ class PlayerViewModel {
         category: "Player"
     )
 
+    // MARK: Engine and load epochs
+
     @ObservationIgnored
     var vividPlaybackController: VividPlaybackController!
+    /// The load whose events the player accepts. Cleared the moment a new
+    /// load starts, so nothing late from the outgoing item lands on it.
     @ObservationIgnored
     var activeVividLoadEpoch: VividPlaybackController.LoadEpoch?
-    /// The epoch whose `finishLoad` has returned, i.e. whose engine startup ran
-    /// to completion and whose decode route is therefore settled.
+    /// The epoch whose `finishLoad` has returned, so its engine startup ran to
+    /// completion and its decode route is settled.
     ///
-    /// Vivid publishes its track inventory during startup (`streamsProbed`),
-    /// several steps before it dispatches the source onto a backend. Applying a
-    /// deferred track pick at that point makes the engine rebuild its pipeline
-    /// against a route it has not chosen yet — on a software-decode source
-    /// (VC-1, AV1) the rebuild lands on the native path, which rejects the
-    /// codec, kills the in-flight load and leaves the app on a spinner. Nothing
-    /// that drives the engine off a *pending* selection may run before this is
-    /// set for the current epoch.
+    /// The engine publishes its track inventory during startup, several
+    /// steps before it puts the source on a backend. Applying a deferred
+    /// track pick then makes the engine rebuild its pipeline against a route
+    /// it hasn't chosen yet: on a software-decoded source (VC-1, AV1) the
+    /// rebuild lands on the native path, which refuses the codec, kills the
+    /// load and leaves a spinner. Nothing that drives the engine off a
+    /// pending selection may run before this is set for the current epoch.
     @ObservationIgnored
     var establishedVividLoadEpoch: VividPlaybackController.LoadEpoch?
+    /// The epoch whose Silo plan transition has committed.
     @ObservationIgnored
     var committedProtocolV3LoadEpoch: VividPlaybackController.LoadEpoch?
+    /// A first frame seen before its Silo plan committed, reported once it does.
     @ObservationIgnored
     var pendingProtocolV3FirstFrameEpoch: VividPlaybackController.LoadEpoch?
+    /// The latest seek reanchor asked for while a replan was running.
     @ObservationIgnored
     var pendingProtocolV3SeekReanchorPosition: Double?
-    /// The load epoch whose startup milestone (`handleFileLoaded`) has already
-    /// run. Video loads reach that milestone on Vivid's first frame; audio-only
-    /// loads have no picture and reach it when the audio route starts playing.
-    /// Both funnel through one epoch-scoped latch so a load can never take the
-    /// milestone twice.
+    /// The load epoch whose startup milestone has run. Video loads reach it
+    /// on the first frame; audio-only loads have no picture and reach it when
+    /// the audio route starts playing. Both go through one latch per epoch,
+    /// so a load can never take the milestone twice.
     @ObservationIgnored
     var startedVividLoadEpoch: VividPlaybackController.LoadEpoch?
     /// Next Up and On Deck for the current item are fetched at its startup
     /// milestone, not while the stream is still opening.
     @ObservationIgnored
     var nextUpPrefetchPending = false
-    /// A user track change that arrived while a replan was already in flight.
-    /// Re-issued when the in-flight replan settles so the local selection the
-    /// UI already shows is actually applied by the server. Position is
-    /// re-read at drain time — playback moved on while we waited.
+    /// A track change the viewer made while a replan was already running.
+    /// Sent once that replan settles, so the selection the UI already shows
+    /// is applied by the server. The position is read when it's sent, since
+    /// playback moved on meanwhile.
     @ObservationIgnored
     var pendingProtocolV3TrackChange: QueuedProtocolV3TrackChange?
     @ObservationIgnored
@@ -223,9 +74,10 @@ class PlayerViewModel {
         vividPlaybackController.activeSpec != nil
     }
 
-    /// Keeps the auxiliary Vivid still decoder in the same lifetime as the
-    /// transport. Replacement loads preserve Vivid's display/audio handoff;
-    /// callers that own final teardown can await the returned task.
+    /// Tears the engine load down. The scrub preview reader shares its
+    /// lifetime, and the returned task finishes once that reader has shut
+    /// down, for callers that own the final teardown. A replacement keeps the
+    /// engine's display and audio hand-off and this item's OpenSubtitles files.
     @discardableResult
     func disposeVividPlayback(forReplacement: Bool = false) -> Task<Void, Never>? {
         let previewShutdown = scrubPreviewProvider.endSession()
@@ -247,6 +99,8 @@ class PlayerViewModel {
         return previewShutdown
     }
 
+    // MARK: Playback state
+
     var isPlaying = false
     var currentTime: Double = 0 {
         didSet {
@@ -264,8 +118,8 @@ class PlayerViewModel {
     var isLoading = true
     var isBuffering = false
     var isLoadingSubtitles = false
-    /// Fill progress (0–100) toward the buffering-resume threshold; nil
-    /// when not buffering or when the active backend doesn't report it.
+    /// Fill progress (0 to 100) towards the point buffering resumes; nil when
+    /// not buffering or when the engine doesn't report it.
     var bufferingProgress: Double?
     var error: String?
     var showControls = false {
@@ -293,18 +147,22 @@ class PlayerViewModel {
     /// Presses while they're already up don't move it.
     @ObservationIgnored var controlsAppearedAt: TimeInterval?
     var shouldShowMobilePlayerChrome: Bool {
-        // Loading and Next Up must not independently reveal player chrome.
-        // Close and rotation follow the same tap/auto-hide state as transport.
+        // Loading and Next Up must not reveal the player chrome on their own.
+        // Close and rotation follow the same tap and auto-hide state as the
+        // transport.
         showControls
     }
     #endif
     var activeNotice: PlayerNotice?
     var remoteDismissToken: UUID?
+
+    // MARK: Tracks, chapters and markers
+
     var audioTracks: [PlayerTrack] = []
     var subtitleTracks: [PlayerTrack] = []
-    /// Server-resolved preferred subtitle language for the current item,
-    /// snapshotted at prepare time. Used only to float the matching
-    /// language group to the top of the displayed track lists.
+    /// The preferred subtitle language for the current item, read when it
+    /// loads. Used only to float that language's group to the top of the
+    /// track lists.
     var subtitleOrderingLanguage: String?
     var chapters: [PlayerChapterInfo] = [] { didSet { refreshCurrentChapter() } }
     /// Index of the chapter containing the playhead. Stored, and only written
@@ -316,7 +174,7 @@ class PlayerViewModel {
     var creditsRange: TimeRange? { didSet { refreshSkipWindow() } }
     /// Which marker range contains the playhead. Stored, and only written
     /// when playback crosses a range edge, so views showing the skip buttons
-    /// do not depend on `currentTime` and re-render on every time tick.
+    /// don't depend on `currentTime` and redraw on every time tick.
     private(set) var skipWindow = PlayerSkipWindow()
     var introAutoSkipCountdownSeconds: Int?
     var selectedAudioId: Int64? {
@@ -326,6 +184,9 @@ class PlayerViewModel {
         didSet { if selectedSubtitleId != oldValue { reportPlayingTracksToServer() } }
     }
     var selectedSecondarySubtitleId: Int64?
+
+    // MARK: Quality
+
     var qualityOptions: [ApplePlaybackQualityOption] = [ApplePlaybackQuality.auto]
     var selectableQualityOptions: [ApplePlaybackQualityOption] {
         guard lastLoadRequest?.offlineDownloadId == nil, !isAudioOnlyVividLoad else { return [] }
@@ -340,26 +201,29 @@ class PlayerViewModel {
     var playbackFallbackGate = PlaybackFallbackGate()
     var qualityFallbackTask: Task<Void, Never>?
     var activeQualityId: String = ApplePlaybackQuality.autoId
-    /// The cap the current playback was requested with. It moves in step with
-    /// `activeQualityId` so a load that carries that quality forward repeats
+    /// The cap the current playback was asked for with. It moves in step with
+    /// `activeQualityId`, so a load that carries that quality forward repeats
     /// the same cap.
     @ObservationIgnored
     var activeBandwidthCap: CarriedBandwidthCap = .savedSetting
     var isQualitySwitching = false
     var qualitySwitchError: String?
+
+    // MARK: Scrubbing and buffer
+
     var isScrubbing = false
     var scrubPreviewTime: Double = 0
-    /// Latest generation-fenced Vivid still for the active scrub target.
-    /// Nil is a first-class state: native cache misses and sources that cannot
-    /// vend an independent reader keep the existing time-only affordance.
+    /// The latest still for the scrub target, fenced to its load. Nil is a
+    /// normal state: a cache miss, or a source that can't open a second
+    /// reader, keeps the time-only preview.
     var scrubPreviewImage: CGImage?
     var scrubPreviewImageSourceTime: Double?
     /// True while the iOS touch-and-hold fast-forward gesture is engaged.
-    /// The temporary rate is applied straight to the backend and never
-    /// persisted, so releasing always restores `settings.playbackSpeed`.
+    /// The temporary rate goes straight to the engine and is never saved, so
+    /// letting go always restores `settings.playbackSpeed`.
     var isHoldFastForwarding = false
-    /// Consumer-ready buffer used by playback recovery. Keep this separate
-    /// from the deeper read-ahead cache shown by the Apple TV timeline.
+    /// The ready-to-play buffer playback recovery reads. Kept separate from
+    /// the deeper read-ahead cache the Apple TV timeline shows.
     var bufferedAheadSeconds: Double = 0
     var playbackStats: PlaybackStats = .empty
     var playbackReadAheadSeconds: Double?
@@ -373,8 +237,8 @@ class PlayerViewModel {
     @ObservationIgnored var testRecorder: PlayerTestRecorder?
     #endif
     #if os(tvOS)
-    /// Presentation only: prefer measured contiguous read-ahead, falling back
-    /// to the consumer buffer on routes without a cache-frontier measurement.
+    /// Presentation only: the measured read-ahead, falling back to the
+    /// ready-to-play buffer on routes that don't measure it.
     var timelineBufferedAheadSeconds: Double {
         if let available = playbackReadAheadSeconds, available.isFinite {
             return max(0, available)
@@ -382,20 +246,23 @@ class PlayerViewModel {
         return bufferedAheadSeconds.isFinite ? max(0, bufferedAheadSeconds) : 0
     }
     #endif
+
+    // MARK: Next Up
+
     var showNextUpScreen = false
-    /// A Next Up load keeps its preview until the successor's own startup
-    /// milestone. Repeated actions cannot reload it or expand an unready frame.
+    /// A Next Up load keeps its preview until the next item's own startup
+    /// milestone. Repeated actions can't reload it or expand a frame that
+    /// isn't ready.
     var isNextUpTransitioning = false
     var nextUpEpisode: PlayerNextUpEpisode?
     var nextUpOnDeckItems: [PlayerOnDeckItem] = []
     var isLoadingNextUpEpisode = false
     var isLoadingNextUpOnDeck = false
     var nextUpLookupError: String?
-    /// Set when an autoplay-initiated `beginFreshLoad` fails (timeout or any
-    /// other error during `startSession`). Surfaces a recoverable message in
-    /// the Next Up screen's `finishedMessage` instead of taking over the whole
-    /// player with `viewModel.error`. Cleared by `resetPublishedLoadState` on
-    /// the next successful load.
+    /// Set when an autoplay load fails (a timeout or any other error while
+    /// starting). Shown as a recoverable message on the Next Up screen
+    /// instead of taking over the player with `error`. Cleared by
+    /// `resetPublishedLoadState` on the next load.
     var nextUpStartError: String?
     var nextUpCountdownSeconds: Int?
     var nextUpCountdownTotalSeconds: Int = 10
@@ -406,9 +273,11 @@ class PlayerViewModel {
     }
     var nextUpPresentationSource: NextUpPresentationSource = .automatic
 
-    /// Secondary metadata surfaced to the player overlay. Populated from
-    /// `WatchDetail` + `FileVersion` once `PlaybackSessionBridge.startSession`
-    /// resolves. Empty until then; the overlay hides the corresponding rows.
+    // MARK: Metadata and HUD
+
+    /// Secondary metadata for the player overlay, from the `WatchDetail` and
+    /// `FileVersion` the session started with. Empty until then; the overlay
+    /// hides the matching rows.
     var metadata: PlayerMetadata = .empty
 
     /// The Info panel's Stream pills. The audio pill reads the selected
@@ -417,10 +286,9 @@ class PlayerViewModel {
         metadata.streamBadges(playingAudio: audioTracks.first { $0.trackId == selectedAudioId })
     }
 
-    /// True while the tvOS floating options HUD is presented. Single source
-    /// of truth so both `TVPlayerControls` (presentation) and `PlayerView`
-    /// (shell-level Menu / exit handling) can agree on state without relying
-    /// on an indirection flag. Driven by `openHUD()` / `closeHUD()`.
+    /// True while the Apple TV options HUD is open. The one source of truth,
+    /// so `TVPlayerControls` (presentation) and `PlayerView` (Menu and exit
+    /// handling) agree. Driven by `openHUD()` and `closeHUD()`.
     var isHUDPresented = false
 
     var isRecapSkipActive: Bool { skipWindow.inRecap }
@@ -457,18 +325,17 @@ class PlayerViewModel {
         if window != skipWindow { skipWindow = window }
     }
 
-    /// Signed rate of an in-flight seek session. Zero when the user isn't
-    /// in seek mode. Positive = forward, negative = backward. Magnitudes
-    /// are drawn from `Self.seekRates`. Entered by holding an arrow past
-    /// the tap threshold; exited via Select (commit) or Menu (cancel).
-    /// Within the session, D-pad Left/Right adjust the rate along the
-    /// signed ladder (-8, -4, -2, -1, +1, +2, +4, +8).
+    // MARK: Hold seeking
+
+    /// Signed rate of a hold-to-seek session; zero when not seeking. Positive
+    /// is forward. Magnitudes come from `Self.seekRates`. Entered by holding
+    /// an arrow past the tap threshold and left with Select (commit) or Menu
+    /// (cancel). Left and Right step the rate along the ladder meanwhile.
     ///
-    /// Observed by the tvOS shell to render the indicator chip and to
-    /// keep the focus sink alive so press events aren't orphaned by a
-    /// focus shift to the scrubber.
+    /// The Apple TV shell watches it to draw the rate chip and to keep the
+    /// focus sink alive, so presses aren't lost to the scrubber.
     var holdSeekRate: Int = 0
-    /// Convenience — any non-zero rate means we're actively seeking.
+    /// Any non-zero rate means a seek session is running.
     var isHoldSeeking: Bool { holdSeekRate != 0 }
 
     #if os(tvOS)
@@ -480,19 +347,20 @@ class PlayerViewModel {
     var requestedTVHUDEntryPoint: TVHUDEntryPoint?
     #endif
 
-    /// Signed speed ladder the user steps through with Left/Right taps
-    /// during a seek session. No zero: "pause" is spelled as Select
-    /// (commit) or Menu (cancel) rather than a neutral rate. The ladder
-    /// tops out at 32× so a long file can be traversed in a few seconds
-    /// of tapping; the auto-ramp on entry only reaches 8× so the faster
-    /// rates require deliberate user steering.
+    /// The signed speed ladder Left and Right step through during a seek
+    /// session. No zero: pausing is Select or Menu. It tops out at 32x so a
+    /// long file can be crossed in a few seconds of tapping; the ramp on
+    /// entry only reaches 8x, so the faster rates take deliberate steering.
     static let seekRates: [Int] = [-32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32]
 
-    /// Canonical user volume/mute, owned by the VM. A fresh Vivid load can
-    /// replace its internal route, so the VM reapplies these values and keeps
-    /// the cast UI in sync.
+    // MARK: Volume, routes and capabilities
+
+    /// The viewer's volume and mute, owned here. A fresh load can replace the
+    /// engine's audio route, so these are applied again after every load.
     var userVolume: Float = 1.0
     var userMuted = false
+    /// Moves on with every load, replan and same-route reload. Work started
+    /// for an older value is stale (see `requireCurrentStreamLoad`).
     var streamLoadGeneration: UInt64 = 0
     var backendCapabilities: PlayerBackendCapabilities {
         let engine = vividPlaybackController.engine
@@ -511,6 +379,7 @@ class PlayerViewModel {
             }
         )
     }
+    /// The route's English label, for logs and diagnostics.
     var activeRouteLabel: String {
         guard let delivery = vividPlaybackController.activeSpec?.delivery else {
             return VividPlaybackEngineIdentity.name
@@ -523,8 +392,7 @@ class PlayerViewModel {
         default: return delivery.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
-    /// `activeRouteLabel` in the app's language. Logs and diagnostics keep
-    /// the English label.
+    /// `activeRouteLabel` in the app's language.
     var activeRouteDisplayLabel: String {
         guard let delivery = vividPlaybackController.activeSpec?.delivery else {
             return VividPlaybackEngineIdentity.name
@@ -538,7 +406,7 @@ class PlayerViewModel {
         default: return activeRouteLabel
         }
     }
-    /// One-line, user-facing Vivid route description for the player HUD.
+    /// One line describing the route, for the player HUD.
     var playbackRouteDisplay: String {
         "\(VividPlaybackEngineIdentity.name) · \(activeRouteDisplayLabel)"
     }
@@ -561,10 +429,10 @@ class PlayerViewModel {
         activePreparedProtocolV3?.plan.degradationWarnings.map(\.message) ?? []
     }
     var supportsSecondarySubtitles: Bool { backendCapabilities.supportsSecondarySubtitles }
-    /// `subtitleTracks` grouped by language and sorted by preferred format
-    /// for display. The stored array stays in source/append order (the
-    /// selection and track-replacement logic depends on it); ordering is a
-    /// display-only projection. The two in-player pickers iterate this.
+    /// `subtitleTracks` grouped by language and sorted by preferred format,
+    /// for display. The stored array stays in source order, which the
+    /// selection and track replacement code relies on. The two pickers in
+    /// the player list this.
     var orderedSubtitleTracks: [PlayerTrack] {
         orderedSubtitles(subtitleTracks)
     }
@@ -577,17 +445,19 @@ class PlayerViewModel {
     private func orderedSubtitles(_ tracks: [PlayerTrack]) -> [PlayerTrack] {
         LucidSubtitleInventory.ordered(tracks)
     }
-    /// Set in `cleanup()` / `deinit`. All async callbacks into the VM gate
-    /// on this so a late-landing handoff signal can't spin up a fresh
-    /// pipeline on a view that's already gone.
+
+    // MARK: Lifecycle and presentation
+
+    /// Set by `cleanup()` and `deinit`. Every async callback checks it, so a
+    /// late hand-off can't start a new pipeline on a view that's gone.
     var isDisposed = false
     var needsReplacementForPresentation: Bool { isDisposed }
-    /// Whether Vivid currently has a receiver-fetchable native video route.
-    /// Header-authenticated remote HLS remains false because the receiver
-    /// cannot reproduce the sender's AVURLAsset request headers.
+    /// Whether the engine has a native video route a receiver can fetch.
+    /// Header-authenticated remote HLS stays false, because the receiver
+    /// can't repeat the sender's request headers.
     var supportsExternalPlayback = false
-    /// Mirrors the active AVPlayer route, with the AirPlay/HDMI audio route
-    /// used only to bridge Vivid's transient native-item replacement gap.
+    /// Follows the active AVPlayer route, with the AirPlay or HDMI audio
+    /// route used only to bridge the engine's brief native item replacement.
     var isExternalPlaybackActive = false
     #if os(iOS)
     var isPlayerPresentationVisible = false
@@ -597,47 +467,45 @@ class PlayerViewModel {
     var pendingRestoreCompletion: ((Bool) -> Void)?
     var pendingRestoreTimeoutTask: Task<Void, Never>?
     /// How long the re-presented cover gets to actually mount before the
-    /// restore is treated as failed. Generous next to a SwiftUI presentation,
+    /// restore counts as failed. Generous next to a SwiftUI presentation,
     /// short next to a session that would otherwise play on forever.
     static let pictureInPictureRestoreTimeoutNanoseconds: UInt64 = 3_000_000_000
     #endif
-    /// True after the active backend reports natural EOF. Used to keep the
-    /// UI in a terminal paused state without letting tail-drain callbacks
-    /// overwrite it or surface a false decode error.
+    /// True after a confirmed end of stream. Keeps the UI paused at the end
+    /// without late callbacks overwriting it or showing a false decode error.
     var hasReachedEndOfFile = false
+    /// An early end held while a load or replan owned failures.
     var pendingUnexpectedEndEpoch: VividPlaybackController.LoadEpoch?
     let settings = PlayerSettings.shared
     let sleepTimer = SleepTimer()
     let nowPlaying = VividVideoNowPlayingCoordinator()
-    /// Optional poster / backdrop URLs supplied by the presenter so the
-    /// now-playing widget can publish artwork without re-fetching the
-    /// catalog item just for poster URLs. Populated via
-    /// `applyArtworkURLHints`. Nil falls back to a `/catalog/items/{id}`
-    /// fetch in `pushNowPlayingArtwork`.
+    /// Poster and backdrop URLs the presenter supplies, so Now Playing can
+    /// show artwork without fetching the catalogue item just for them. Set
+    /// through `applyArtworkURLHints`. Nil falls back to a fetch in
+    /// `pushNowPlayingArtwork`.
     var artworkPosterURLHint: String?
     var artworkBackdropURLHint: String?
 
-    /// Rate-limits Now Playing updates. The OS animates scrubber progress
-    /// between updates based on `playbackRate`, so we only need to push an
-    /// elapsed-time field once every couple of seconds.
+    /// Limits Now Playing updates. The system animates the scrubber between
+    /// updates from `playbackRate`, so the elapsed time only needs pushing
+    /// every couple of seconds.
     var lastNowPlayingPush: Date = .distantPast
 
     let sessionBridge = PlaybackSessionBridge()
     @ObservationIgnored
     var realtimeClient: PlaybackRealtimeClient!
-    /// A marker update can finish after the playback session starts but before
-    /// the realtime websocket has connected. Reconcile once after the socket
-    /// is live so that event-delivery race cannot hide intro/credits prompts
-    /// for the current Vivid load.
+    /// The IntroDB and TheIntroDB lookup for the current item, and its raw
+    /// result kept until a finite duration arrives.
     var introDBLookupTask: Task<Void, Never>?
     var loadedIntroDBSegments: VividIntroDBClient.Segments?
 
-
     private var cleanupCompletionTask: Task<Void, Never>?
-    /// Natural EOF should not wait for the ten-second periodic reporter. Keep
-    /// the immediate write so teardown/autoplay can await it before claiming
-    /// and stopping the same server session.
+    /// The immediate progress write at a natural end, so teardown and
+    /// autoplay can wait for it before stopping or replacing the session,
+    /// rather than waiting for the ten-second report.
     var naturalEndProgressTask: Task<Void, Never>?
+
+    // MARK: Tasks
 
     var hideControlsTask: Task<Void, Never>?
     #if os(iOS)
@@ -648,107 +516,95 @@ class PlayerViewModel {
     var remoteDismissTask: Task<Void, Never>?
     var progressTask: Task<Void, Never>?
     var staleSessionRecoveryTask: Task<Void, Never>?
-    /// Held so the init-time `refreshSettingsFromServer` call can be cancelled
-    /// from `cleanup()`. Without a handle the task lingered on a dismissed VM
-    /// and could observe `self` after dispose.
+    /// The device settings fetch `init` starts, held so `cleanup()` can
+    /// cancel it and loads can wait for it.
     var settingsRefreshTask: Task<Void, Never>?
     var freshLoadTask: Task<Void, Never>?
     var freshLoadGeneration: UInt64 = 0
-    /// True while `freshLoadTask` is the sole owner of a load failure's
-    /// outcome. Vivid publishes its typed failure before the load throws, so
-    /// without this the direct-play and offline paths surface the same
-    /// failure twice — once through `handleVividFailure` and again through
-    /// the load's own catch.
+    /// True while `freshLoadTask` is the only owner of a load failure. The
+    /// engine publishes its typed failure before the load throws, so without
+    /// this a direct-play or offline failure would be handled twice: by
+    /// `handleVividFailure` and by the load's own catch.
     var freshLoadOwnsFailureHandling = false
-    /// The most recent `audioTrackSwitchFailed` Vivid published while a load
-    /// owned failure handling. The engine kills the in-flight load as part of
-    /// the same rebuild, so the load's own catch sees only a cancellation and
-    /// would otherwise have no idea why it was abandoned.
+    /// The latest `audioTrackSwitchFailed` the engine published while a load
+    /// owned failures. The engine kills the load in the same rebuild, so the
+    /// load's catch sees only a cancellation and wouldn't know why.
     @ObservationIgnored
     var lastVividAudioTrackSwitchFailure: PlaybackErrorInfo?
-    /// Serializes every Protocol V3 source replacement, including a same-plan
-    /// reload whose only change is a refreshed bearer. Reusing this gate keeps
-    /// credential recovery from racing route replans, seeks, or track changes.
+    /// Runs every Silo source replacement one at a time, including a reload of
+    /// the same plan whose only change is a refreshed bearer, so credential
+    /// recovery can't race route replans, seeks or track changes.
     var protocolV3ReplanTask: Task<Void, Never>?
     var authenticationRecoveryBudget = VividAuthenticationRecoveryBudget()
     var transientRecoveryBudget = VividTransientRecoveryBudget()
     @ObservationIgnored var prematureEndRecoveryGate = VividPrematureEndRecoveryGate()
+    /// The stream generation of a credential or connection reload in flight.
     var authenticationReloadGeneration: UInt64?
     var nextUpLookupTask: Task<Void, Never>?
     var nextUpOnDeckTask: Task<Void, Never>?
     var nextUpCountdownTask: Task<Void, Never>?
-    /// Trailing-edge skip debounce: each tap updates the preview and resets
-    /// this timer. The seek fires exactly once, after `skipDebounceNanos` of
-    /// quiet. A leading-edge seek was tempting for responsiveness but led
-    /// to visible stutter on bursts — the video would seek to tap #1, play
-    /// briefly, and then jump again on the trailing commit. A single
-    /// deferred seek is smooth at any burst length.
+    /// Debounces skip taps on the trailing edge: each tap moves the preview
+    /// and restarts this timer, and the seek runs once after
+    /// `skipDebounceNanos` of quiet. Seeking on the first tap stuttered on
+    /// bursts, jumping to tap one, playing briefly, then jumping again.
     var skipDebounceTask: Task<Void, Never>?
-    /// Button skips share the seek preview, but must not fade touch controls.
+    /// Button skips share the seek preview, but mustn't fade touch controls.
     var isTimelineScrubbing: Bool { isScrubbing && skipDebounceTask == nil }
     let skipDebounceNanos: UInt64 = 200_000_000 // 200ms
 
-    /// Drives the repeating preview advance while a seek session is
-    /// active. Ticks at `holdSeekTickNanos`, advancing `scrubPreviewTime`
-    /// by `holdSeekBaseStep * holdSeekRate` seconds each tick. Runs
-    /// until `commitHoldSeek` / `cancelHoldSeek`.
+    /// Moves the preview during a hold-to-seek session, every
+    /// `holdSeekTickNanos`, by `holdSeekBaseStep * holdSeekRate` seconds,
+    /// until `commitHoldSeek` or `cancelHoldSeek`.
     var holdSeekTask: Task<Void, Never>?
-    /// Auto-ramps the rate magnitude 1 → 2 → 4 → 8 during the first ~4 s
-    /// of a hold so the user gets acceleration without having to manually
-    /// tap up. Cancelled the moment the user manually adjusts the rate
-    /// — they've taken control, stop second-guessing them.
+    /// Ramps the rate 1, 2, 4, 8 over the first four seconds or so of a hold,
+    /// and stops as soon as the viewer changes the rate themselves.
     var holdSeekAutoRampTask: Task<Void, Never>?
     static let holdSeekBaseStep: Double = 2.0 // seconds per tick at 1x
     static let holdSeekTickNanos: UInt64 = 100_000_000 // 100ms (10Hz)
 
-    /// Seek-in-flight filter: both the pre-seek playhead and the target we
-    /// asked Vivid to jump to. Clock reports that are closer to
-    /// `seekOriginTime` than to `seekTargetTime` are treated as stale and
-    /// dropped. This is direction-agnostic and handles back-to-back seeks.
-    /// The filter releases as soon as a report crosses the midpoint
-    /// between origin and target, which is the earliest point we can
-    /// confidently say the new position has landed. Safety timeout below
-    /// drops the filter if no matching report arrives (e.g. transport
-    /// error on HLS transcode), since a stuck filter would pin the
-    /// scrubber to the optimistic target forever.
+    /// Seek filter: the playhead before the seek and the target asked for.
+    /// Time reports nearer the origin than the target are stale and dropped,
+    /// in either direction and across back-to-back seeks. The filter lifts as
+    /// soon as a report crosses the midpoint. A timeout lifts it if no
+    /// report arrives (for example a transport error on a transcode), since
+    /// a stuck filter would pin the scrubber to the target for good.
     var seekOriginTime: Double?
     var seekTargetTime: Double?
     var seekFilterTimeoutTask: Task<Void, Never>?
-    /// The in-flight `commitSeek` await. Held so a new load can cancel a seek
-    /// whose `.requiresReplan` answer would otherwise arrive after the item
-    /// it was issued against is gone.
+    /// The running `commitSeek` wait, held so a new load can cancel a seek
+    /// whose replan answer would otherwise arrive after its item has gone.
     var seekReplanTask: Task<Void, Never>?
     static let seekFilterNanos: UInt64 = 5_000_000_000 // 5s
-    /// Identity of the active offline download when playback was prepared
-    /// locally (no server session). While set, watch progress is routed to
-    /// `DownloadManager.recordOfflineProgress` — which queues it for the
-    /// next `/sync/progress` flush — instead of the session bridge, so
-    /// nothing on this path ever hits a server session/progress endpoint.
+
+    // MARK: Load request and track intent
+
+    /// The download being played locally, with no server session. While set,
+    /// progress goes to `DownloadManager.recordOfflineProgress`, which queues
+    /// it for the next sync, so nothing on this path reaches a server session
+    /// or progress endpoint.
     struct OfflinePlaybackContext {
         let downloadId: String
         let mediaItemId: String
     }
     var offlinePlaybackContext: OfflinePlaybackContext?
-    /// Server-supplied preferred track indices (ffmpeg stream indices). Kept
-    /// until we've observed a matching track in the core's track-list and
-    /// applied it, or until the user makes a manual selection.
+    /// Track picks held for this load (FFmpeg stream indexes; -1 for subtitles
+    /// is Off), until the engine lists a matching track and the pick is
+    /// applied, or the viewer picks something else.
     var pendingAudioFfIndex: Int?
     var pendingSubtitleFfIndex: Int?
-    /// True when the most recent `loadAndPlay` came in with an explicit
-    /// subtitle index from the caller (route arg / detail screen). The
-    /// auto-resolver yields to the user in that case.
+    /// True when the load came with an explicit subtitle pick (a route
+    /// argument or the detail page). Auto stands aside then.
     var hasExplicitSubtitleChoice: Bool = false
-    /// External subtitle picks don't have an FFmpeg stream index, so a
-    /// reload/resume has to remember the synthesised sidecar `trackId`
-    /// and re-apply it once `subtitle_urls` have been registered again.
+    /// External subtitle picks have no FFmpeg index, so a reload remembers
+    /// the sidecar `trackId` and re-applies it once the files are mounted again.
     var pendingSidecarSubtitleTrackId: Int64?
-    /// A protocol-v3 subtitle can remain represented by a sidecar picker row
-    /// even when the replacement plan renders it on the server (for example,
-    /// bitmap PGS subtitles burned into HLS). Preserve that picker selection
-    /// across an Vivid reload without also opening the sidecar locally.
+    /// A Silo subtitle can keep its sidecar picker row even when the new plan
+    /// renders it on the server (for example a PGS subtitle burned into HLS).
+    /// This keeps that row selected across a reload without also opening the
+    /// sidecar locally.
     var pendingServerRenderedSubtitleTrackId: Int64?
-    /// Local subtitle preferences captured for the current item. Applied
-    /// after Lucid Engine publishes its embedded tracks and cleared on cleanup.
+    /// Auto's inputs for the current item, applied once the engine lists its
+    /// embedded tracks and cleared on cleanup.
     var prefsForCurrentItem: PrefsSnapshot?
     struct PrefsSnapshot {
         let preferredLanguage: String?
@@ -786,9 +642,8 @@ class PlayerViewModel {
     var loadAudioOrdinal: Int?
     /// Orders the playing-track updates handed to an Emby or Jellyfin session.
     var playingTracksGeneration: UInt64 = 0
-    /// Set after the resolver has fired once for the current item so we
-    /// don't keep re-evaluating (and overriding the user) on every
-    /// subsequent track-list update.
+    /// Set once Auto has run for the current item, so later track list
+    /// updates don't run it again and override the viewer.
     var prefsResolvedForCurrentItem: Bool = false
     var resolvedServerUrl: String = ""
     var currentWatchDetail: WatchDetail?
@@ -800,162 +655,16 @@ class PlayerViewModel {
     var autoSkipIntroCancelledKey: String?
     var pendingAutoSkipIntroKey: String?
     var autoSkipIntroCountdownTask: Task<Void, Never>?
+    /// The lost session a renewal has already started for.
     var staleSessionRecoverySessionId: String?
-    struct LoadRequest {
-        let contentId: String
-        let preferredFileId: Int?
-        var preferredAudioTrackIndex: Int?
-        let preferredSubtitleTrackIndex: Int?
-        let preferredSidecarSubtitleTrackId: Int64?
-        var startFromBeginning: Bool
-        /// Authoritative protocol-v3 combined ordinal. Unlike
-        /// `preferredSubtitleTrackIndex`, this also represents external,
-        /// downloaded, and server-extracted subtitle rows.
-        var preferredProtocolV3SubtitleIndex: Int? = nil
-        /// Set for local playback of a completed download. Routes the
-        /// prepare through `OfflinePlaybackBuilder` instead of a server
-        /// session, so retry after an error stays on the offline path.
-        var offlineDownloadId: String? = nil
-        /// Explicit quality for this load (mid-stream quality-change replan);
-        /// wins over `PlayerSettings.preferredQuality` in the bridge.
-        var preferredQualityOverride: String? = nil
-        /// Set when `preferredQualityOverride` carries the current playback's
-        /// quality forward rather than a new in-player choice: the load repeats
-        /// this cap instead of deriving one from the override id. Nil means the
-        /// override is a fresh choice (or there is none).
-        var carriedBandwidthCap: CarriedBandwidthCap? = nil
-        /// Continue Watching only: select the server's last-used source file
-        /// before applying the profile-wide automatic quality preference.
-        var prefersLastUsedVersion = false
-        /// A reload of the same item whose subtitle indexes carry what Auto
-        /// chose, so it stays on screen. The choice stays Auto's: switching
-        /// audio afterwards still runs Auto again.
-        var keepsAutomaticSubtitles = false
-
-        /// The same request, resuming at the reload's own position. A Play from
-        /// Beginning ignores any resume override, so a retry or seek reload of
-        /// an item that has already played must not repeat it.
-        func resumingInPlace() -> LoadRequest {
-            var request = self
-            request.startFromBeginning = false
-            return request
-        }
-
-        /// Rebuild a request for the same playback session while retaining the
-        /// user's temporary quality choice. Recovery must not fall back to the
-        /// persisted preference merely because tracks or the file id changed.
-        func copyForRecovery(
-            preferredFileId: Int?,
-            preferredAudioTrackIndex: Int?,
-            preferredSubtitleTrackIndex: Int?,
-            preferredSidecarSubtitleTrackId: Int64?,
-            offlineDownloadId: String?,
-            serverSubtitlesDisabled: Bool = false
-        ) -> LoadRequest {
-            var request = LoadRequest(
-                contentId: contentId,
-                preferredFileId: preferredFileId,
-                preferredAudioTrackIndex: preferredAudioTrackIndex,
-                preferredSubtitleTrackIndex: preferredSubtitleTrackIndex,
-                preferredSidecarSubtitleTrackId: preferredSidecarSubtitleTrackId,
-                startFromBeginning: false,
-                offlineDownloadId: offlineDownloadId,
-                preferredQualityOverride: preferredQualityOverride,
-                carriedBandwidthCap: carriedBandwidthCap
-            )
-            // A completed download can be selected after the last server plan.
-            // Ask the replacement session for that combined ordinal; retaining
-            // the old plan's ordinal would reselect its embedded subtitle.
-            // Local decoder Off also accompanies burn-in. Only an explicit
-            // server disable may erase the server's selected ordinal.
-            if serverSubtitlesDisabled {
-                request.preferredProtocolV3SubtitleIndex = nil
-            } else if let preferredSidecarSubtitleTrackId,
-                      SubtitleTrackIdSpace.isSidecar(preferredSidecarSubtitleTrackId) {
-                request.preferredProtocolV3SubtitleIndex = SubtitleTrackIdSpace.sidecarIndex(
-                    from: preferredSidecarSubtitleTrackId
-                )
-            } else {
-                request.preferredProtocolV3SubtitleIndex = preferredProtocolV3SubtitleIndex
-            }
-            request.prefersLastUsedVersion = prefersLastUsedVersion
-            return request
-        }
-
-        /// Refresh the inputs used by session renewal from an adopted V3 plan.
-        /// Player track lists are transient and may already be empty when a
-        /// failed transport reports that its server session disappeared.
-        func adoptingProtocolV3Intent(
-            plan: PlaybackV3Plan,
-            selectedVersion: FileVersion,
-            activeQualityId: String,
-            bandwidthCap: CarriedBandwidthCap = .savedSetting
-        ) -> LoadRequest {
-            // Shared resolution order; see
-            // `PlaybackV3Plan.selectedSubtitleInventoryItem`. An `off` plan
-            // selects nothing even if it still carries a stale identity.
-            let isSubtitleOff = plan.subtitle.mode == PlaybackProtocolV3.SubtitleMode.off
-            let selectedSubtitleIndex = isSubtitleOff
-                ? nil
-                : plan.selectedSubtitleCombinedIndex
-            let selectedSubtitle = isSubtitleOff ? nil : plan.selectedSubtitleInventoryItem
-            let embeddedFFmpegIndex: Int? = selectedSubtitle.flatMap { item in
-                // A sidecar is the server-selected artifact even when it was
-                // extracted from an embedded stream. Arming both identities
-                // would publish and select the same subtitle twice.
-                if let embedded = plan.subtitle.embedded { return embedded.streamIndex }
-                guard item.source == "embedded", item.delivery != "sidecar" else { return nil }
-                return ApplePlaybackV3PlanAdapter.ffmpegSubtitleStreamIndex(
-                    serverCombinedIndex: item.combinedIndex,
-                    in: selectedVersion,
-                    inventory: plan.subtitle.inventory
-                )
-            }
-            let sidecarTrackId: Int64? = selectedSubtitle.flatMap { item in
-                guard plan.subtitle.embedded == nil, item.delivery == "sidecar" else { return nil }
-                return SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: item.combinedIndex)
-            }
-            var request = copyForRecovery(
-                preferredFileId: plan.effectiveMediaFileId,
-                preferredAudioTrackIndex: plan.selectedTracks.audio?.index,
-                preferredSubtitleTrackIndex: embeddedFFmpegIndex,
-                preferredSidecarSubtitleTrackId: sidecarTrackId,
-                offlineDownloadId: offlineDownloadId
-            )
-            request.preferredProtocolV3SubtitleIndex = selectedSubtitleIndex
-            request.preferredQualityOverride = activeQualityId
-            // Renewal repeats this plan's quality, so it keeps the plan's cap.
-            request.carriedBandwidthCap = bandwidthCap
-            return request
-        }
-    }
-
-    /// Where a `beginFreshLoad` invocation came from. Determines (a) whether
-    /// `startSession` is bounded by a timeout and (b) how a load failure is
-    /// surfaced to the user. The trigger is orthogonal to the `LoadRequest`
-    /// itself, so it's threaded as a separate parameter.
-    enum LoadOrigin {
-        /// User picked an item — no timeout, full-screen error on failure.
-        case userInitiated
-        /// Auto-play hand-off from the Next Up postroll — timeout-bounded,
-        /// failures restore the postroll with `nextUpStartError` set.
-        case autoplay
-        /// Automatic playback recovery. Failures stay on the player surface
-        /// instead of using the Next Up postroll.
-        case recovery
-    }
-
-    enum BeginFreshLoadError: Error {
-        case startSessionTimeout
-    }
 
     static let autoplayStartSessionTimeout: TimeInterval = 15
     /// Latched at the current item's first startup milestone and kept across
-    /// recovery reloads of that item; a new item or Play from Beginning
-    /// clears it. Until then `currentTime` is only the
-    /// requested start, not a position anyone watched. A failed or abandoned
-    /// load reports nothing, so Emby and Jellyfin can't reset a saved resume
-    /// point to a Play from Beginning start of zero.
+    /// recovery reloads of it; a new item or Play from Beginning clears it.
+    /// Until then `currentTime` is only the requested start, not a position
+    /// anyone watched. A failed or abandoned load reports nothing, so Emby
+    /// and Jellyfin can't reset a saved resume point to a Play from
+    /// Beginning start of zero.
     @ObservationIgnored var hasStartedPlayback = false
     var completedPlaybackContentId: String?
     var progressIsEligible: Bool { hasStartedPlayback || completedPlaybackContentId != nil }
@@ -964,21 +673,21 @@ class PlayerViewModel {
     static let nextUpHUDCountdownThresholdSeconds: Double = 100
     static let introAutoSkipCountdownDefaultSeconds = 5
     var nextUpAutoplayCancelled = false
-    /// Set when the user taps Keep Watching; suppresses re-presenting the
-    /// pre-end Next Up prompt while the playhead stays inside the prompt
-    /// window. Cleared when the playhead leaves the window (seek back) or a
-    /// new item loads, so the prompt can appear again naturally. Does not
-    /// apply to the end-of-playback screen.
+    /// Set when the viewer taps Keep Watching. Stops the pre-end Next Up
+    /// prompt coming back while the playhead stays inside its window.
+    /// Cleared when the playhead leaves the window (a seek back) or a new
+    /// item loads, so the prompt can appear again. Doesn't apply to the
+    /// end-of-playback screen.
     @ObservationIgnored var nextUpPromptDismissed = false
     var contentIdsNeedingDetailRefresh: Set<String> = []
     #if os(iOS) || os(tvOS)
     @ObservationIgnored
     var refreshHomeAfterPlaybackWrite: (@MainActor () -> Void)?
     #endif
-    /// Items that crossed the same completion boundary used by the final
-    /// server progress report. The tvOS detail page consumes this only after
-    /// that report has finished so it can move its editorial selection to the
-    /// next unwatched episode without racing stale catalog data.
+    /// Items that crossed the completion point used by the final progress
+    /// report. The Apple TV detail page reads this only after that report
+    /// has finished, so it can move to the next unwatched episode without
+    /// racing old catalogue data.
     var completedContentIdsNeedingDetailAdvance: Set<String> = []
     var nextUpCarouselItems: [PlayerOnDeckItem] {
         let hiddenIds = Set([lastLoadRequest?.contentId, nextUpEpisode?.contentId].compactMap { $0 })
@@ -992,19 +701,23 @@ class PlayerViewModel {
             || isLoadingNextUpOnDeck
     }
 
-    /// Re-applies subtitle styling when the user edits the system's
-    /// Subtitles & Captioning preferences mid-playback.
+    // MARK: System observers
+
+    /// Re-applies subtitle styling when the viewer changes the system's
+    /// Subtitles & Captioning settings during playback.
     private var systemCaptionObserverToken: NSObjectProtocol?
     private var systemCaptionForegroundObserverToken: NSObjectProtocol?
-    /// Triggers a V3 replan when the audio route the session was planned
-    /// against changes. iOS/tvOS only — macOS has no `AVAudioSession`.
+    /// Asks Silo for a new plan when the audio route the session was planned
+    /// for changes.
     private var outputRouteObserverToken: NSObjectProtocol?
-    /// Flushes the resume point when the app is about to stop getting
-    /// foreground time. The periodic reporter ticks every 10s, so without
-    /// this a backgrounded (or terminated) player loses up to that much
-    /// progress. Deliberately does not stop the session — PiP and background
-    /// audio keep playing after this fires.
+    /// Saves the resume point when the app is about to lose foreground time.
+    /// The periodic report runs every ten seconds, so without this a
+    /// backgrounded (or terminated) player loses up to that much progress.
+    /// It doesn't stop the session: Picture in Picture and background audio
+    /// carry on.
     private var foregroundExitObserverToken: NSObjectProtocol?
+
+    // MARK: Subtitle files
 
     #if os(iOS) || os(tvOS)
     var openSubtitleFiles = OpenSubtitleSessionFiles()
@@ -1036,15 +749,15 @@ class PlayerViewModel {
     /// dropped for the rest of the item, so no pick asks for them again.
     @ObservationIgnored var failedServerBurnIns: Set<ServerBurnInFailure> = []
 
+    // MARK: Init and teardown
+
     init() {
         do {
             vividPlaybackController = try VividPlaybackController()
         } catch {
             fatalError("VividEngine initialization failed: \(error)")
         }
-        scrubPreviewProvider = VividScrubPreviewProvider(
-            engine: vividPlaybackController.engine
-        )
+        scrubPreviewProvider = VividScrubPreviewProvider(engine: vividPlaybackController.engine)
         scrubPreviewProvider.onPreview = { [weak self] preview in
             guard let self else { return }
             self.scrubPreviewImage = preview?.image
@@ -1076,8 +789,15 @@ class PlayerViewModel {
                 self?.vividPlaybackController.pause()
             }
         }
+        observeSystemNotifications()
+        settingsRefreshTask = Task { @MainActor [weak self] in
+            await self?.refreshSettingsFromServer()
+        }
+    }
 
-        systemCaptionObserverToken = NotificationCenter.default.addObserver(
+    private func observeSystemNotifications() {
+        let center = NotificationCenter.default
+        systemCaptionObserverToken = center.addObserver(
             forName: SystemCaptionAppearance.settingsChangedNotification,
             object: nil,
             queue: .main
@@ -1087,7 +807,7 @@ class PlayerViewModel {
         #if os(iOS) || os(tvOS)
         // Caption settings only change outside Vivid. Catch up on the way
         // back in too, in case the change notification didn't arrive.
-        systemCaptionForegroundObserverToken = NotificationCenter.default.addObserver(
+        systemCaptionForegroundObserverToken = center.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
@@ -1095,39 +815,16 @@ class PlayerViewModel {
             Task { @MainActor [weak self] in self?.systemCaptionSettingsDidChange() }
         }
         #endif
-        outputRouteObserverToken = NotificationCenter.default.addObserver(
+        outputRouteObserverToken = center.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      let activeProtocolV3 = self.activePreparedProtocolV3,
-                      !self.isDisposed,
-                      !self.isLoading else { return }
-                let observedSnapshot = ApplePlaybackV3Capabilities.snapshot()
-                guard PlaybackSessionBridge.isMaterialOutputRouteChange(
-                    activeOutputContextId: activeProtocolV3.outputContextId,
-                    observedOutputContextId: observedSnapshot.outputContextId
-                ) else {
-                    Self.logger.debug(
-                        "Ignoring AVAudioSession route notification with unchanged Playback V3 output context"
-                    )
-                    return
-                }
-                self.attemptProtocolV3Replan(
-                    position: self.currentTime,
-                    classification: "output_route_changed",
-                    message: "The Apple audio output route changed.",
-                    outputRouteSnapshot: observedSnapshot
-                )
-            }
+            Task { @MainActor [weak self] in self?.audioOutputRouteDidChange() }
         }
         #if os(iOS) || os(tvOS)
-        let foregroundExitNotification = UIApplication.didEnterBackgroundNotification
-        #endif
-        foregroundExitObserverToken = NotificationCenter.default.addObserver(
-            forName: foregroundExitNotification,
+        foregroundExitObserverToken = center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -1135,12 +832,54 @@ class PlayerViewModel {
                 self?.flushPlaybackProgressNow(reason: "foreground_exit")
             }
         }
-        settingsRefreshTask = Task { @MainActor [weak self] in
-            await self?.refreshSettingsFromServer()
-        }
+        #endif
     }
 
-    @MainActor
+    /// Asks Silo for a new plan when the audio output the session was planned
+    /// for has really changed (not just a notification for the same output).
+    private func audioOutputRouteDidChange() {
+        guard let activeProtocolV3 = activePreparedProtocolV3, !isDisposed, !isLoading else { return }
+        let observedSnapshot = ApplePlaybackV3Capabilities.snapshot()
+        guard PlaybackSessionBridge.isMaterialOutputRouteChange(
+            activeOutputContextId: activeProtocolV3.outputContextId,
+            observedOutputContextId: observedSnapshot.outputContextId
+        ) else {
+            Self.logger.debug("Ignoring AVAudioSession route notification with unchanged Playback V3 output context")
+            return
+        }
+        attemptProtocolV3Replan(
+            position: currentTime,
+            classification: "output_route_changed",
+            message: "The Apple audio output route changed.",
+            outputRouteSnapshot: observedSnapshot
+        )
+    }
+
+    private func removeSystemObservers() {
+        let center = NotificationCenter.default
+        for token in [
+            outputRouteObserverToken,
+            systemCaptionObserverToken,
+            systemCaptionForegroundObserverToken,
+            foregroundExitObserverToken,
+        ] {
+            if let token { center.removeObserver(token) }
+        }
+        outputRouteObserverToken = nil
+        systemCaptionObserverToken = nil
+        systemCaptionForegroundObserverToken = nil
+        foregroundExitObserverToken = nil
+    }
+
+    /// Final teardown, from `PlayerView.onDisappear` (deferred while Picture
+    /// in Picture is engaged) or an identity change. Runs once.
+    ///
+    /// Everything synchronous stops here. The final writes then run in
+    /// `cleanupCompletionTask`, in order: the natural-end progress write if
+    /// one is running, the final progress report, Home's refresh signal, the
+    /// session stop, the scrub preview shutdown and the realtime unbind. A
+    /// download records its final position in its offline queue instead and
+    /// stops no server session.
     func cleanup() {
         guard !isDisposed else { return }
         #if os(iOS) || os(tvOS)
@@ -1149,8 +888,7 @@ class PlayerViewModel {
         qualityFallbackTask?.cancel()
         qualityFallbackTask = nil
         Self.logger.info("PlayerViewModel.cleanup()")
-        let currentItemCompleted = completedPlaybackContentId != nil
-        recordCurrentPlaybackMutation(markedCompleted: currentItemCompleted)
+        recordCurrentPlaybackMutation(markedCompleted: completedPlaybackContentId != nil)
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
         isDisposed = true
@@ -1159,15 +897,14 @@ class PlayerViewModel {
         // A restore waiting on a cover that will now never mount has to be
         // answered, or AVKit is left holding a handler for a dead session.
         resolvePendingPictureInPictureRestore(false)
-        // The PiP coordinator is a singleton and its controller strongly
-        // retains the AVPlayerLayer, the AVPlayer, and everything hanging off
-        // it. SwiftUI's `dismantleUIView` normally releases it, but ordering
-        // there is not guaranteed relative to this teardown, so drop it here
-        // too rather than risk stranding the whole playback graph. Owner-keyed
-        // so a late teardown cannot unbind a newer session's PiP.
+        // The PiP coordinator is a singleton whose controller holds the
+        // player layer, the player and everything hanging off them. SwiftUI's
+        // `dismantleUIView` normally releases it, but not in a guaranteed
+        // order with this teardown, so it's dropped here too. Keyed by owner,
+        // so a late teardown can't unbind a newer session's PiP.
         PictureInPictureCoordinator.shared.endSession(owner: self)
-        // A restore that staged this view model but never reached SwiftUI would
-        // otherwise hold the whole playback graph on a static.
+        // A restore that staged this view model but never reached SwiftUI
+        // would otherwise hold the whole playback graph on a static.
         PlayerPresentationRestoration.discardAdoption(for: self)
         #endif
         activePlaybackSessionId = nil
@@ -1210,22 +947,7 @@ class PlayerViewModel {
         protocolV3ReplanTask = nil
         seekReplanTask?.cancel()
         seekReplanTask = nil
-        if let outputRouteObserverToken {
-            NotificationCenter.default.removeObserver(outputRouteObserverToken)
-            self.outputRouteObserverToken = nil
-        }
-        if let systemCaptionObserverToken {
-            NotificationCenter.default.removeObserver(systemCaptionObserverToken)
-            self.systemCaptionObserverToken = nil
-        }
-        if let systemCaptionForegroundObserverToken {
-            NotificationCenter.default.removeObserver(systemCaptionForegroundObserverToken)
-            self.systemCaptionForegroundObserverToken = nil
-        }
-        if let foregroundExitObserverToken {
-            NotificationCenter.default.removeObserver(foregroundExitObserverToken)
-            self.foregroundExitObserverToken = nil
-        }
+        removeSystemObservers()
         nextUpLookupTask?.cancel()
         nextUpOnDeckTask?.cancel()
         nextUpCountdownTask?.cancel()
@@ -1238,19 +960,18 @@ class PlayerViewModel {
         sleepTimer.cancel()
         nowPlaying.detach()
 
-        // Final offline progress flush before teardown — the counterpart of
-        // the online path's `stopSession` report below. Captured into locals
-        // so the detached task doesn't read torn-down player state.
-        // Offline playback has no server session of its own (the fresh-load
-        // path finalized any prior one), so skip the server stop below —
-        // it would report the offline position against a stale session.
-        let stopServerSessionOnTeardown = offlinePlaybackContext == nil
+        // A download has no server session of its own (its load stopped any
+        // earlier one), so it saves its final position to the offline queue
+        // and skips the server stop below, which would report against an old
+        // session. The values are read now so the task doesn't read state
+        // that's being torn down.
+        let stopsServerSession = offlinePlaybackContext == nil
         if let offline = offlinePlaybackContext {
             let finalOfflinePosition = completionProgressPositionForCurrentItem()
             let endedNaturally = completedPlaybackContentId != nil
-            // Strong capture on purpose: this is the last write of the
-            // resume point and must not be dropped because the VM was
-            // released between dismiss and the hop to the MainActor.
+            // Holds `self` on purpose: this is the last write of the resume
+            // point and mustn't be lost because the view model was released
+            // between the dismissal and the hop to the main actor.
             Task { @MainActor in
                 self.recordOfflineProgress(
                     context: offline,
@@ -1260,8 +981,8 @@ class PlayerViewModel {
             }
         }
 
-        // Preserve the real position. Watched completion is sent separately
-        // after progress and Stop, using the same policy as offline playback.
+        // The real position is reported. Watched state is sent separately
+        // after progress and Stop, with the same rule as offline playback.
         let finalPosition = completionProgressPositionForCurrentItem()
         let finalProgressEligible = progressIsEligible
         let finalCompletedContentId = completedPlaybackContentId
@@ -1274,14 +995,16 @@ class PlayerViewModel {
 
         cleanupCompletionTask = Task {
             await pendingNaturalEndProgressTask?.value
-            if stopServerSessionOnTeardown {
-                // Commit the resume point first. Session event bookkeeping and
-                // DELETE can finish afterward; neither changes Continue
-                // Watching, so making Home wait for them only leaves stale
-                // progress visible after the player has closed.
+            if stopsServerSession {
+                // The resume point goes first. Session bookkeeping and the
+                // DELETE can finish afterwards; neither changes Continue
+                // Watching, so making Home wait for them would only leave old
+                // progress showing after the player has closed.
                 let progressResult = await sessionBridge.reportProgress(
                     position: finalPosition,
-                    isPaused: true, eligible: finalProgressEligible, completedContentId: finalCompletedContentId
+                    isPaused: true,
+                    eligible: finalProgressEligible,
+                    completedContentId: finalCompletedContentId
                 )
                 #if os(iOS) || os(tvOS)
                 if progressResult == .success {
@@ -1309,12 +1032,11 @@ class PlayerViewModel {
                         name: .playbackProgressDidCommit,
                         object: PlaybackProgressCommittedEvent(
                             contentIds: playbackMutationContentIds,
-                            completedContentIds: PlaybackProgressCommitPolicy
-                                .confirmedCompletedContentIds(
-                                    completedPlaybackContentIds,
-                                    initialResult: progressResult,
-                                    stopResult: stopProgressResult
-                                )
+                            completedContentIds: PlaybackProgressCommitPolicy.confirmedCompletedContentIds(
+                                completedPlaybackContentIds,
+                                initialResult: progressResult,
+                                stopResult: stopProgressResult
+                            )
                         )
                     )
                 }
@@ -1325,21 +1047,20 @@ class PlayerViewModel {
         }
     }
 
-    @MainActor
     func waitForCleanupCompletion() async {
-        // onDisappear calls cleanup immediately before unregistering the TV
-        // receiver. Yield briefly if presentation teardown has not installed
-        // the final progress task yet.
+        // `onDisappear` calls `cleanup()` just before the Apple TV receiver
+        // is unregistered. Yield briefly if teardown hasn't installed the
+        // final progress task yet.
         for _ in 0..<100 where cleanupCompletionTask == nil {
             try? await Task.sleep(for: .milliseconds(10))
         }
         await cleanupCompletionTask?.value
     }
 
-    /// Safety net: SwiftUI normally drives `cleanup()` from `PlayerView.onDisappear`,
-    /// but if that path is missed (edge cases in sheet/NavigationStack teardown)
-    /// we still need to guarantee the backend is torn down so audio can't
-    /// outlive the view. `dispose()` is idempotent.
+    /// A safety net. SwiftUI normally calls `cleanup()` from
+    /// `PlayerView.onDisappear`, but if that's missed in an edge case of sheet
+    /// or navigation teardown the engine still has to go, so audio can't
+    /// outlive the view. Disposing twice is harmless.
     deinit {
         print("[CMP-LIFE] deinit PlayerViewModel")
         MainActor.assumeIsolated {
@@ -1347,18 +1068,7 @@ class PlayerViewModel {
             isDisposed = true
             playbackStatsRefreshTask?.cancel()
             transientRecoveryBudget.cancel()
-            if let systemCaptionObserverToken {
-                NotificationCenter.default.removeObserver(systemCaptionObserverToken)
-            }
-            if let systemCaptionForegroundObserverToken {
-                NotificationCenter.default.removeObserver(systemCaptionForegroundObserverToken)
-            }
-            if let outputRouteObserverToken {
-                NotificationCenter.default.removeObserver(outputRouteObserverToken)
-            }
-            if let foregroundExitObserverToken {
-                NotificationCenter.default.removeObserver(foregroundExitObserverToken)
-            }
+            removeSystemObservers()
             freshLoadTask?.cancel()
             introDBLookupTask?.cancel()
             streamLoadGeneration &+= 1
@@ -1372,53 +1082,5 @@ class PlayerViewModel {
                 await realtimeClient?.unbind()
             }
         }
-    }
-
-}
-
-#if DEBUG
-/// What the player asked the server, the engine and the offline store to do,
-/// recorded for XCTest. Only a test installs one. While it is installed,
-/// offline progress is recorded here instead of being written to the
-/// download store, so tests never touch persisted downloads.
-@MainActor
-final class PlayerTestRecorder {
-    enum Entry: Equatable {
-        /// An early end asked to reopen the same route. Whether the reopen
-        /// started shows in what follows it.
-        case sameRouteReopenRequest
-        case serverReplan(classification: String)
-        case terminalError(String)
-        case postroll(videoEnded: Bool)
-        case watchedMutation(contentId: String)
-        case progressReport(position: Double, completedContentId: String?)
-        case offlineProgress(position: Double, completed: Bool)
-    }
-
-    private(set) var entries: [Entry] = []
-
-    func record(_ entry: Entry) {
-        entries.append(entry)
-    }
-}
-#endif
-
-/// Marker ranges containing the playhead. Ranges are start-inclusive and
-/// end-exclusive, matching the skip buttons and auto-skip checks.
-struct PlayerSkipWindow: Equatable {
-    var inRecap = false
-    var inIntro = false
-    var inCredits = false
-
-    init() {}
-
-    init(time: Double, recap: TimeRange?, intro: TimeRange?, credits: TimeRange?) {
-        func contains(_ range: TimeRange?) -> Bool {
-            guard let range else { return false }
-            return time >= range.start && time < range.end
-        }
-        inRecap = contains(recap)
-        inIntro = contains(intro)
-        inCredits = contains(credits)
     }
 }
