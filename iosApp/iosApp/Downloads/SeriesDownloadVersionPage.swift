@@ -21,28 +21,37 @@ struct SeriesDownloadVersion: Hashable {
         return String(localized: "\(count) · about \(size)")
     }
 
-    /// One entry per version among the episodes' files, highest first. The
-    /// codec shows when every matching file says it and they all share it.
-    /// Episode lists don't say which HDR format a file uses, so it reads "HDR".
+    /// One entry per version among the episodes' files, highest first.
+    /// Episodes without files don't count. The codec shows when every
+    /// matching file names the same one. Episode lists don't say which HDR
+    /// format a file uses, so it reads "HDR".
     static func versions(in episodes: [EpisodeListItem]) -> [SeriesDownloadVersion] {
         let fileLists = episodes.compactMap(\.files).filter { !$0.isEmpty }
         return DownloadVersionPreference.options(for: fileLists.flatMap { $0 }).map { version in
             let matched = fileLists.compactMap { version.file(in: $0) }
-            let codecs = matched.map { DetailPlaybackFormatting.normalizedVideoCodec($0.codecVideo) }
-            let codec = codecs.first.flatMap { first in codecs.allSatisfy { $0 == first } ? first : nil }
-            let title = [
-                version.height == 480 ? "SD" : "\(version.height)p",
-                codec,
-                version.hdr == true ? "HDR" : nil,
-            ].compactMap { $0 }.joined(separator: " · ")
             return SeriesDownloadVersion(
                 version: version,
-                title: title,
+                title: title(of: version, codec: sharedCodec(of: matched)),
                 episodes: matched.count,
                 totalEpisodes: fileLists.count,
                 bytes: matched.compactMap(\.fileSize).reduce(0, +)
             )
         }
+    }
+
+    /// "2160p · HEVC · HDR", "1080p" or "SD".
+    private static func title(of version: DownloadVersionPreference, codec: String?) -> String {
+        let resolution = version.height == 480 ? "SD" : "\(version.height)p"
+        return [resolution, codec, version.hdr == true ? "HDR" : nil]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    /// The codec every file names, or nil when one doesn't say or they differ.
+    private static func sharedCodec(of files: [EpisodeFile]) -> String? {
+        let codecs = files.map { DetailPlaybackFormatting.normalizedVideoCodec($0.codecVideo) }
+        guard let first = codecs.first, codecs.allSatisfy({ $0 == first }) else { return nil }
+        return first
     }
 
     /// The Choose Version row: the pick, or Auto with what's on offer.
@@ -75,8 +84,7 @@ struct SeriesDownloadVersionPage: View {
                     detail: String(localized: "Each episode uses the server's usual file"),
                     isSelected: version == nil
                 ) {
-                    version = nil
-                    dismiss()
+                    choose(nil)
                 }
                 ForEach(versions, id: \.version) { option in
                     DownloadChoiceRow(
@@ -84,18 +92,11 @@ struct SeriesDownloadVersionPage: View {
                         detail: option.detail,
                         isSelected: version == option.version
                     ) {
-                        version = option.version
-                        dismiss()
+                        choose(option.version)
                     }
                 }
                 if isChecking {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Checking each episode's files…")
-                            .font(.vividCaption)
-                            .foregroundColor(.vividSecondaryText)
-                    }
+                    checkingRow
                 }
             } header: {
                 Text("Version")
@@ -111,6 +112,21 @@ struct SeriesDownloadVersionPage: View {
         .vividScrollContentBackgroundHidden()
         .background(Color.clear)
         .task { await onAppear() }
+    }
+
+    private var checkingRow: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Checking each episode's files…")
+                .font(.vividCaption)
+                .foregroundColor(.vividSecondaryText)
+        }
+    }
+
+    private func choose(_ choice: DownloadVersionPreference?) {
+        version = choice
+        dismiss()
     }
 }
 #endif

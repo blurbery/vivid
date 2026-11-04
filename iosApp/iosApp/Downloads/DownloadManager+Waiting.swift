@@ -1,12 +1,14 @@
 import Foundation
 
 /// Episodes Silo refused because the account was at its download limit.
-/// Silo counts preparing and transferring downloads from every device, and
-/// doesn't tell apps the limit, so Vivid learns it from the refusal: the
-/// rest wait here, in the order asked for, and are asked for again while
-/// any are left, when the app comes back or refreshes in the background,
-/// and after a download is removed.
+/// Silo counts the downloads being prepared and transferred on every device
+/// and doesn't tell apps the limit, so Vivid learns it from the refusal. The
+/// rest wait here, in the order they were asked for, and are asked for again
+/// while any are left: on a timer, when the app comes back or refreshes in
+/// the background, and after a download is removed.
 extension DownloadManager {
+    // MARK: The list
+
     var waitingDownloads: [WaitingDownload] { file.waitingDownloads ?? [] }
 
     /// Waiting episodes as rows for the in-progress list.
@@ -16,35 +18,42 @@ extension DownloadManager {
         waitingDownloads.contains { $0.id == contentId }
     }
 
+    /// Adds the episodes not already waiting, after the others, and starts
+    /// asking for them.
     func addWaiting(_ items: [WaitingDownload]) {
         let known = Set(waitingDownloads.map(\.id))
-        let new = items.filter { !known.contains($0.id) }
-        guard !new.isEmpty else { return }
-        file.waitingDownloads = waitingDownloads + new
+        let added = items.filter { !known.contains($0.id) }
+        guard !added.isEmpty else { return }
+        file.waitingDownloads = waitingDownloads + added
         persist()
         scheduleWaitingDownloads()
     }
 
     func cancelWaiting(id: String) {
-        guard isWaiting(contentId: id) else { return }
-        file.waitingDownloads = waitingDownloads.filter { $0.id != id }
-        persist()
+        removeWaiting { $0.id == id }
     }
 
     func cancelWaiting(seriesId: String) {
-        guard waitingDownloads.contains(where: { $0.seriesId == seriesId }) else { return }
-        file.waitingDownloads = waitingDownloads.filter { $0.seriesId != seriesId }
-        persist()
+        removeWaiting { $0.seriesId == seriesId }
     }
 
     func cancelAllWaiting() {
-        guard !waitingDownloads.isEmpty else { return }
-        file.waitingDownloads = []
+        removeWaiting { _ in true }
+    }
+
+    /// Saves the list without the matching episodes, when any match.
+    private func removeWaiting(where matches: (WaitingDownload) -> Bool) {
+        let kept = waitingDownloads.filter { !matches($0) }
+        guard kept.count != waitingDownloads.count else { return }
+        file.waitingDownloads = kept
         persist()
     }
 
+    // MARK: Asking again
+
     /// A removed download frees a slot once the server has deleted it, so
-    /// try the waiting episodes shortly after rather than at the next retry.
+    /// the waiting episodes are tried shortly after rather than at the next
+    /// timer.
     func nudgeWaitingDownloads() {
         guard !waitingDownloads.isEmpty else { return }
         waitingTask?.cancel()
@@ -56,27 +65,29 @@ extension DownloadManager {
         }
     }
 
-    /// Asks for waiting episodes again while the server has room, every 20
-    /// seconds and less often (up to two minutes) while it keeps refusing.
+    /// Asks for the waiting episodes every 20 seconds while the server takes
+    /// some, backing off to every two minutes while it keeps refusing.
     func scheduleWaitingDownloads() {
         guard waitingTask == nil, !waitingDownloads.isEmpty else { return }
         waitingTask = Task { @MainActor in
-            defer { self.waitingTask = nil }
-            var delay: UInt64 = 20
+            // A cancelled loop has already been replaced (or the scope left),
+            // so only a loop that ran out clears the slot.
+            defer { if !Task.isCancelled { self.waitingTask = nil } }
+            var delaySeconds: UInt64 = 20
             while !Task.isCancelled, !self.waitingDownloads.isEmpty {
-                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
                 guard !Task.isCancelled else { break }
                 let before = self.waitingDownloads.count
                 await self.startWaitingDownloads()
-                delay = self.waitingDownloads.count < before ? 20 : min(delay * 2, 120)
+                delaySeconds = self.waitingDownloads.count < before ? 20 : min(delaySeconds * 2, 120)
             }
         }
     }
 
-    /// Registers waiting episodes in order until the server refuses again or
-    /// can't be reached. An episode is only asked for at the quality it was
-    /// chosen at: if the server no longer offers that, it's dropped rather
-    /// than downloaded at another size.
+    /// Registers the waiting episodes in order until the server refuses again
+    /// or can't be reached. An episode is only asked for at the quality it
+    /// was chosen at: if the server no longer offers that, it's dropped
+    /// rather than downloaded at another size.
     func startWaitingDownloads() async {
         guard !isStartingWaiting, !waitingDownloads.isEmpty else { return }
         isStartingWaiting = true
@@ -87,9 +98,7 @@ extension DownloadManager {
             guard !Task.isCancelled, await DownloadScope.current() == scope else { return }
             // Cancelled while an earlier episode was being asked for.
             guard isWaiting(contentId: item.id) else { continue }
-            let existing = record(forContentId: item.id)
-            guard existing == nil || existing?.localStatus == .failed,
-                  capability?.qualityPresets.contains(item.quality) == true else {
+            guard canStillAsk(for: item) else {
                 cancelWaiting(id: item.id)
                 continue
             }
@@ -127,5 +136,13 @@ extension DownloadManager {
                 cancelWaiting(id: item.id)
             }
         }
+    }
+
+    /// The episode has no download, or only a failed one, and the server
+    /// still offers the quality it was chosen at.
+    private func canStillAsk(for item: WaitingDownload) -> Bool {
+        let existing = record(forContentId: item.id)
+        return (existing == nil || existing?.localStatus == .failed)
+            && capability?.qualityPresets.contains(item.quality) == true
     }
 }

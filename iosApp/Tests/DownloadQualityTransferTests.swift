@@ -373,4 +373,37 @@ final class DownloadQualityTransferTests: XCTestCase {
         switched.stoppedBySwitch = true
         XCTAssertEqual(switched.problem, "The server or profile changed, so the rest weren't added. 1 episode was added.")
     }
+
+    /// A conversion job cancelled on the Emby server won't make a file, so
+    /// it fails that download instead of breaking the whole download list.
+    func testCancelledEmbyConversionCountsAsFailed() throws {
+        XCTAssertEqual(try EmbyDownloadConversion.status(of: ["Status": "Cancelled"]), "failed")
+        XCTAssertThrowsError(try EmbyDownloadConversion.readySource(from: ["Status": "Cancelled"], sourceID: "source-1"))
+    }
+
+    /// A converted Emby batch saves embedded text subtitles as files, as a
+    /// single converted download does, since the converted file leaves them
+    /// out. An original batch keeps them in the file.
+    func testConvertedEmbyBatchSavesEmbeddedSubtitlesAsFiles() throws {
+        let adapter = EmbyAdapter(connection: EmbyConnection(serverURL: "https://media.example.test", token: nil,
+                                                             userID: "user-1", identity: nil))
+        let streams: [[String: Any]] = [
+            ["Type": "Subtitle", "Index": 2, "Codec": "srt", "IsExternal": false, "Language": "eng"],
+            ["Type": "Subtitle", "Index": 3, "Codec": "PGSSUB", "IsExternal": false],
+        ]
+        let sources: [[String: Any]] = [["Id": "source-1", "Size": 1234, "RunTimeTicks": 18_000_000_000, "MediaStreams": streams]]
+        let items: [[String: Any]] = [["Id": "episode-1", "Name": "One", "Type": "Episode", "MediaSources": sources]]
+        let body: [String: Any] = ["content_id": "series-1", "season_number": 1]
+        func subtitleIndexes(_ episode: EmbyDownloads.BatchEpisode) -> [Int]? {
+            ((episode.entry["manifest"] as? [String: Any])?["subtitles"] as? [[String: Any]])?.compactMap { $0["index"] as? Int }
+        }
+
+        let converted = try XCTUnwrap(EmbyDownloads.convertedBatchEpisodes(items, body: body, format: .twoMbps, adapter: adapter).first)
+        XCTAssertEqual(subtitleIndexes(converted), [2], "Only the text subtitle can be saved as a file")
+        XCTAssertNil(StreamedTranscodeDownload.format(of: converted.entry), "A converted episode isn't streamed")
+        XCTAssertEqual(converted.row["contentId"] as? String, "series-1")
+
+        let original = try XCTUnwrap(EmbyDownloads.batchEpisodes(items, body: body, adapter: adapter).first)
+        XCTAssertEqual(subtitleIndexes(original), [])
+    }
 }
