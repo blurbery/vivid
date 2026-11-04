@@ -534,13 +534,17 @@ final class CalendarStore {
     }
 
     private func tvmazeID(for detail: ItemDetail) async -> TVmazeMatch {
-        var tvdb = detail.tvdbId.flatMap(Int.init).flatMap { $0 > 0 ? String($0) : nil }
-        var imdb = detail.imdbId.flatMap { $0.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil ? $0 : nil }
+        func tvdbValue(_ id: Int?) -> String? { id.flatMap { $0 > 0 ? String($0) : nil } }
+        func imdbValue(_ id: String?) -> String? {
+            id.flatMap { $0.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil ? $0 : nil }
+        }
+        var tvdb = tvdbValue(detail.tvdbId.flatMap(Int.init))
+        var imdb = imdbValue(detail.imdbId)
         if tvdb == nil, imdb == nil, let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0 {
             do {
                 let ids: TMDbExternalIDs = try await get(TVTMDbStore.relayBase + "tv/\(tmdbID)/external_ids")
-                tvdb = ids.tvdb_id.flatMap { $0 > 0 ? String($0) : nil }
-                imdb = ids.imdb_id.flatMap { $0.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil ? $0 : nil }
+                tvdb = tvdbValue(ids.tvdb_id)
+                imdb = imdbValue(ids.imdb_id)
             } catch RelayError.notFound {
             } catch {
                 return .unavailable

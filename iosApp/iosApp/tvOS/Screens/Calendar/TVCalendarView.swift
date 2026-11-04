@@ -130,11 +130,7 @@ struct TVCalendarView: View {
 
     // MARK: Upcoming
 
-    private var days: [(day: Date, episodes: [UpcomingEpisode])] {
-        Dictionary(grouping: store.upcoming, by: \.day)
-            .map { ($0.key, $0.value) }
-            .sorted { $0.day < $1.day }
-    }
+    private var days: [(day: Date, episodes: [UpcomingEpisode])] { store.upcomingByDay }
 
     @ViewBuilder
     private var upcoming: some View {
@@ -278,13 +274,7 @@ struct TVCalendarView: View {
 private struct TVUpcomingEpisodeCard: View {
     let episode: UpcomingEpisode
 
-    private var episodeLine: String {
-        var parts: [String] = []
-        if let season = episode.season { parts.append(String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1")) }
-        if let number = episode.number { parts.append(String(localized: "E\(String(number))", comment: "Episode number in an episode code, e.g. E2")) }
-        if let name = episode.name, !name.isEmpty { parts.append(name) }
-        return parts.joined(separator: " · ")
-    }
+    private var episodeLine: String { episode.episodeLine }
 
     var body: some View {
         HStack(spacing: 22) {
@@ -443,22 +433,10 @@ private struct TVCalendarMonthSheet: View {
     private var calendar: Calendar { .current }
     private var today: Date { calendar.startOfDay(for: Date()) }
     private var firstMonth: Date { calendar.dateInterval(of: .month, for: today)?.start ?? today }
-    private var lastMonth: Date {
-        let end = calendar.date(byAdding: .day, value: windowDays, to: today) ?? today
-        return calendar.dateInterval(of: .month, for: end)?.start ?? firstMonth
-    }
-
-    private var cells: [Date?] {
-        guard let days = calendar.range(of: .day, in: .month, for: month) else { return [] }
-        let leading = (calendar.component(.weekday, from: month) - calendar.firstWeekday + 7) % 7
-        return Array(repeating: nil, count: leading)
-            + days.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: month) }
-    }
-
+    private var lastMonth: Date { CalendarMonthGrid.lastMonth(windowDays: windowDays, today: today, calendar: calendar) }
+    private var cells: [Date?] { CalendarMonthGrid.cells(for: month, calendar: calendar) }
     private var weekdaySymbols: [String] {
-        let symbols = calendar.shortStandaloneWeekdaySymbols
-        let first = calendar.firstWeekday - 1
-        return Array(symbols[first...] + symbols[..<first])
+        CalendarMonthGrid.weekdaySymbols(calendar.shortStandaloneWeekdaySymbols, calendar: calendar)
     }
 
     var body: some View {

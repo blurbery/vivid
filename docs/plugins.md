@@ -168,6 +168,7 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV. The Emby a
 - **"MDBList's request limit was reached. Sync will try again later."** Vivid waits an hour before trying again, and **Sync now** waits too.
 - **"Sync finished. … watched items could not be matched or confirmed and will be retried."** Vivid matches watched items by their TMDb or IMDb ID (or TVDB for episodes), so titles your server hasn't identified stay unmatched and are tried again later.
 - **A watchlist title from MDBList doesn't appear in Vivid.** Vivid only adds it when it finds the same title on your server by name and ID. If your server names it differently, it stays unmatched and is tried again later.
+- **"This batch is synced. More watchlist changes remain for the next check."** Each sync changes up to 32 watchlist titles, so a large first sync carries on at the next check, about ten minutes later.
 
 ## Simkl
 

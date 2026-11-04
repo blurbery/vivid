@@ -94,6 +94,8 @@ struct TVStudiosNetworksRow: View {
 
 // MARK: - Brand page
 
+/// One studio's or network's page: its logo, its rails, then every matching
+/// title in the library with a filter.
 struct TVStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
@@ -292,6 +294,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
 
 // MARK: - Settings editor
 
+/// Chooses and orders the brands on the Home row.
 struct TVStudiosNetworksSettingsView: View {
     @State private var store = StudiosNetworksStore.shared
     @State private var movingID: String?
@@ -525,6 +528,8 @@ struct TVStudiosNetworksSettingsView: View {
         }
     }
 
+    /// How many library titles a brand has, worded as too few when it has
+    /// fewer than it needs to be picked.
     static func countLabel(_ count: Int, eligible: Bool) -> String {
         if eligible { return String(localized: "\(count) titles") }
         return count == 0 ? String(localized: "None in your library") : String(localized: "Only \(count) titles")

@@ -416,17 +416,20 @@ final class SimklSyncStore {
 
     private func refreshLibrary(scope: String, generation: UUID,
                                 auth: CapturedOrdinaryRequestAuth) async throws -> ([Int: SimklLibraryItem], Bool) {
+        func validateContext() async throws {
+            try await validate(scope: scope, revision: generation, auth: auth)
+        }
         if cache == nil { cache = Self.readCache(scope) }
         if let cached = cache, cached.accountID != state.accountID { cache = nil }
         let current = try await authorised(scope) { try await self.client.activities(token: $0) }
-        try await validate(scope: scope, revision: generation, auth: auth)
+        try await validateContext()
         guard let saved = cache else {
             // The first read takes the whole library, one type at a time.
             var items: [Int: SimklLibraryItem] = [:]
             if current.all != nil {
                 for type in ["movies", "shows", "anime"] {
                     let page = try await authorised(scope) { try await self.client.library(type, dateFrom: nil, token: $0) }
-                    try await validate(scope: scope, revision: generation, auth: auth)
+                    try await validateContext()
                     for item in page { items[item.simkl] = item }
                 }
             }
@@ -440,19 +443,19 @@ final class SimklSyncStore {
                 let delta = try await authorised(scope) {
                     try await self.client.library(type, dateFrom: saved.activities.all, token: $0)
                 }
-                try await validate(scope: scope, revision: generation, auth: auth)
+                try await validateContext()
                 for item in delta { items[item.simkl] = item }
             }
             // Removals never show up in a delta. Compare the full ID list.
             if current.removalsMoved(domain, since: saved.activities) {
                 let present = try await authorised(scope) { try await self.client.libraryIDs(type, token: $0) }
-                try await validate(scope: scope, revision: generation, auth: auth)
+                try await validateContext()
                 let cached = items.values.filter { $0.type == type }.map(\.simkl)
                 if let gone = SimklRemovalCheck.removals(cached: cached, present: present) {
                     for simkl in gone { items.removeValue(forKey: simkl) }
                 } else {
                     let full = try await authorised(scope) { try await self.client.library(type, dateFrom: nil, token: $0) }
-                    try await validate(scope: scope, revision: generation, auth: auth)
+                    try await validateContext()
                     for simkl in cached { items.removeValue(forKey: simkl) }
                     for item in full { items[item.simkl] = item }
                 }

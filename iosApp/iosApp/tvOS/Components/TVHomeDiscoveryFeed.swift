@@ -3,6 +3,10 @@ import SwiftUI
 import Observation
 import UIKit
 
+/// The Apple TV Home feed: the Spotlight carousel, Studios & Networks, the
+/// server's rows and (on Home) the Collections row. It remembers which card
+/// each row last had focused, returns focus to whatever opened a detail page,
+/// and gates row artwork to the rows near focus.
 struct TVHomeDiscoveryFeed: View {
     let sections: [ResolvedSection]
     let slides: [TVHomeSpotlightSlide]
@@ -120,8 +124,6 @@ struct TVHomeDiscoveryFeed: View {
                             .modifier(TVHomeDiagnosticRow(diagnostics: scrollDiagnostics, index: index))
                         }
                     }
-                    // Controlled eager-row comparison: keep the reserved geometry
-                    // and artwork gates while mounting the real row containers.
 
                     // Always last, below the server's rows and outside their limit.
                     if showsCollections, HomeCollectionsStore.shared.showsRow {
