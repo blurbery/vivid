@@ -162,12 +162,12 @@ extension PlayerViewModel {
                     self.freshLoadOwnsFailureHandling = false
                 }
             }
-            func isCurrentLoad() -> Bool {
+            @MainActor func isCurrentLoad() -> Bool {
                 !Task.isCancelled && !self.isDisposed
                     && freshGeneration == self.freshLoadGeneration
                     && streamGeneration == self.streamLoadGeneration
             }
-            func requireCurrentLoad() throws {
+            @MainActor func requireCurrentLoad() throws {
                 try self.requireCurrentStreamLoad(streamGeneration)
                 guard freshGeneration == self.freshLoadGeneration else { throw CancellationError() }
             }
