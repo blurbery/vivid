@@ -60,9 +60,6 @@ final class VividCloudAccountSync {
         save(deletions, key: Self.serverTombstoneDefaultsKey)
     }
 
-    /// Only an explicit credential entry may revive an account identity that
-    /// was previously deleted. Routine capture and stale-device uploads never
-    /// create this marker.
     /// A sync reads deletions before it applies them. If this device signed in
     /// to the account after the deletion, even while the sync was running,
     /// the account is kept; the next sync retires the deletion.
@@ -78,6 +75,9 @@ final class VividCloudAccountSync {
         current.filter { identity, date in synced[identity] != date }
     }
 
+    /// Only an explicit credential entry may revive an account identity that
+    /// was previously deleted. Routine capture and stale-device uploads never
+    /// create this marker.
     func noteExplicitAuthentication(_ account: TVSavedAccount) {
         noteExplicitAuthentication(serverID: account.serverID, userID: account.userID, siloProfileID: account.siloProfileID)
     }
