@@ -306,18 +306,6 @@
         }
       }
     },
-    "%@ +%lld" : {
-      "comment" : "Filter row summary: the first selected value and how many more are selected",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ +%2$lld"
-          }
-        }
-      }
-    },
     "%@ +%lld more" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -399,7 +387,7 @@
       }
     },
     "%@ Download anyway?" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -607,7 +595,7 @@
     },
     "%@ done" : {
       "comment" : "Request target status, e.g. 1080p done",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -643,7 +631,7 @@
     },
     "%@ downloading" : {
       "comment" : "Request target status, e.g. 4K downloading",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -679,7 +667,7 @@
     },
     "%@ failed" : {
       "comment" : "Request target status, e.g. 4K failed",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -900,7 +888,7 @@
     },
     "%@ on the way" : {
       "comment" : "Request target status, e.g. 4K on the way",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -936,7 +924,7 @@
     },
     "%@ pending" : {
       "comment" : "Request target status, e.g. 4K pending",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -972,7 +960,7 @@
     },
     "%@ queued" : {
       "comment" : "Request target status, e.g. 4K queued",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1185,7 +1173,7 @@
       }
     },
     "%@ · %lld items" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -1274,7 +1262,7 @@
       }
     },
     "%@ · %lld of %lld" : {
-      "comment" : "MDBList sync progress with a count, e.g. Step 2 of 2 · Matching · 5 of 20",
+      "comment" : "MDBList sync progress with a count, e.g. Step 2 of 2 · Matching · 5 of 20\nSimkl sync progress with a count, e.g. Step 2 of 3 · Matching · 5 of 20",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -1948,7 +1936,7 @@
       }
     },
     "%@, coming soon" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -2264,9 +2252,6 @@
     },
     "%@/s" : {
       "comment" : "Download speed, e.g. 12 MB/s",
-      "extractionState" : "manual"
-    },
-    "%@:" : {
       "extractionState" : "manual"
     },
     "%@: HTTP %lld" : {
@@ -6563,7 +6548,7 @@
       }
     },
     "%lldh %lldm" : {
-      "comment" : "Runtime in hours and minutes, abbreviated\nRuntime poster badge, e.g. 1h 30m",
+      "comment" : "Runtime in hours and minutes, abbreviated",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -6605,7 +6590,7 @@
       }
     },
     "%lldm" : {
-      "comment" : "Minutes, abbreviated, e.g. 23m\nRuntime in minutes, abbreviated\nRuntime poster badge under an hour, e.g. 45m",
+      "comment" : "Minutes, abbreviated, e.g. 23m\nRuntime in minutes, abbreviated",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -6694,7 +6679,7 @@
       }
     },
     "1 hour" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7050,7 +7035,7 @@
       }
     },
     "15 min" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7084,12 +7069,8 @@
         }
       }
     },
-    "1×" : {
-      "comment" : "Normal playback speed",
-      "extractionState" : "manual"
-    },
     "2 hours" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7162,7 +7143,7 @@
       "extractionState" : "manual"
     },
     "30 min" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7232,7 +7213,7 @@
       }
     },
     "45 min" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7302,7 +7283,7 @@
       }
     },
     "5 min" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7513,7 +7494,7 @@
       }
     },
     "A library-specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the library override still applies." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7584,7 +7565,7 @@
       }
     },
     "A more specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the override still applies." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7654,7 +7635,7 @@
       }
     },
     "A series-specific subtitle setting overrides this profile default. Changes here are saved for the profile, but the series override still applies." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -8637,7 +8618,7 @@
       }
     },
     "Add favorites from any detail page and they will appear here." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -8672,7 +8653,7 @@
       }
     },
     "Add items from their detail pages" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -9057,7 +9038,7 @@
       }
     },
     "Advanced" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -9092,7 +9073,7 @@
       }
     },
     "After 1 Hour" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -9127,7 +9108,7 @@
       }
     },
     "After 12 Hours" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -9270,7 +9251,7 @@
       }
     },
     "Aired %@" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -10356,7 +10337,7 @@
       }
     },
     "App privacy information · Updated 19 October 2026" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -10711,6 +10692,12 @@
         }
       }
     },
+    "Approve Vivid on Simkl. If Simkl asks for a code, enter:" : {
+      "extractionState" : "manual"
+    },
+    "Approve Vivid on your phone with a short code." : {
+      "extractionState" : "manual"
+    },
     "Approve this Apple TV from Jellyfin on a signed-in device, without a password." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10782,7 +10769,7 @@
       }
     },
     "Are you sure you want to sign out?" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -11063,7 +11050,7 @@
       }
     },
     "Audio & Subtitles" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -11496,7 +11483,7 @@
       }
     },
     "Auto, %@" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -11758,7 +11745,7 @@
       }
     },
     "Auto-play next episode" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -11957,7 +11944,7 @@
       }
     },
     "Available in player" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -12401,7 +12388,7 @@
       }
     },
     "Background color" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -12436,7 +12423,7 @@
       }
     },
     "Background opacity" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -12471,7 +12458,7 @@
       }
     },
     "Background style" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -13105,7 +13092,7 @@
       }
     },
     "Browse" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -13279,10 +13266,6 @@
           }
         }
       }
-    },
-    "CC" : {
-      "comment" : "Poster badge for a file with subtitles",
-      "extractionState" : "manual"
     },
     "CONNECTION" : {
       "extractionState" : "manual",
@@ -13953,7 +13936,7 @@
       }
     },
     "Cancel Request" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -14094,7 +14077,7 @@
     },
     "Cancelled" : {
       "comment" : "Series status poster badge",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -15113,7 +15096,7 @@
       }
     },
     "Choose Options…" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -15253,7 +15236,7 @@
       }
     },
     "Choose a profile first." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -15708,7 +15691,7 @@
       }
     },
     "Choose the viewing profile used by this server account." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -15988,7 +15971,7 @@
       }
     },
     "Choose which Home rows are visible and the order they appear in." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -16402,7 +16385,7 @@
       }
     },
     "Clips" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -16606,7 +16589,7 @@
       }
     },
     "Close sidebar" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -17098,7 +17081,7 @@
       }
     },
     "Collection name" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -17203,7 +17186,7 @@
       }
     },
     "Collections in this group will move to Ungrouped. This cannot be undone." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -17448,7 +17431,7 @@
       }
     },
     "Coming Soon" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -17483,7 +17466,7 @@
       }
     },
     "Coming soon" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -18113,6 +18096,9 @@
         }
       }
     },
+    "Connect your Simkl account." : {
+      "extractionState" : "manual"
+    },
     "Connected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18674,6 +18660,9 @@
         }
       }
     },
+    "Could not reach a %@ server at that address. Plain HTTP only works with local addresses, so use this server's HTTPS address." : {
+      "extractionState" : "manual"
+    },
     "Could not reach the server. Check that it is running and try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19202,7 +19191,7 @@
       }
     },
     "Couldn't reach the server — try again" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -19237,7 +19226,7 @@
       }
     },
     "Couldn't reach the server." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -20995,7 +20984,7 @@
       }
     },
     "Create" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21030,7 +21019,7 @@
       }
     },
     "Create Collection" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21065,7 +21054,7 @@
       }
     },
     "Create a collection to organize your media" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21100,7 +21089,7 @@
       }
     },
     "Create library collections in the web app to feature curated shelves here." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21170,7 +21159,7 @@
       }
     },
     "Crowd favorites" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21380,7 +21369,7 @@
       }
     },
     "Custom" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21916,7 +21905,7 @@
       }
     },
     "Delete" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -22361,7 +22350,7 @@
       }
     },
     "Delete group" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -22431,7 +22420,7 @@
       }
     },
     "Delete “%@”?" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -22501,7 +22490,7 @@
       }
     },
     "Deleted Scenes" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -23716,7 +23705,7 @@
       }
     },
     "Download Anyway" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -24927,7 +24916,7 @@
       }
     },
     "Drop collections here to add them to this group." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -25249,6 +25238,9 @@
           }
         }
       }
+    },
+    "Each device signs in to Simkl separately. The sign-in stays in this device’s Keychain for the matching server account and profile and isn’t synced through iCloud. Sync shares media identifiers, watched dates and watchlist changes, never server login details. Disconnecting keeps your Simkl history and lists." : {
+      "extractionState" : "manual"
     },
     "Each episode downloads its own file in this version. Episodes without one use the server's usual file." : {
       "extractionState" : "manual",
@@ -25741,7 +25733,7 @@
       }
     },
     "Ended" : {
-      "comment" : "Playback status\nSeries status poster badge",
+      "comment" : "Playback status",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -26474,7 +26466,7 @@
       }
     },
     "Every Time" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -26614,7 +26606,7 @@
       }
     },
     "External" : {
-      "comment" : "Subtitle track in a separate file\nTrack attribute pill: a subtitle file outside the video",
+      "comment" : "Track attribute pill: a subtitle file outside the video",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -26819,7 +26811,7 @@
       }
     },
     "Failed to add group" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -26895,7 +26887,7 @@
       }
     },
     "Failed to delete group" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -26965,7 +26957,7 @@
       }
     },
     "Failed to move collection" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -27000,7 +26992,7 @@
       }
     },
     "Failed to rename group" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -27105,7 +27097,7 @@
       }
     },
     "Favorites" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -27210,7 +27202,7 @@
       }
     },
     "Featurettes" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -27561,7 +27553,7 @@
       }
     },
     "Find Trailers" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -27841,7 +27833,7 @@
       }
     },
     "Finding trailers…" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -28123,7 +28115,7 @@
       }
     },
     "Following this device's caption language, behavior, CC/SDH preference, and complete style from Accessibility settings." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -28298,7 +28290,7 @@
       }
     },
     "Font color" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -28333,7 +28325,7 @@
       }
     },
     "Font family" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -28368,7 +28360,7 @@
       }
     },
     "Font size" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -28438,7 +28430,7 @@
       }
     },
     "Forced" : {
-      "comment" : "Forced subtitle track\nTrack attribute pill: forced subtitles",
+      "comment" : "Track attribute pill: forced subtitles",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -29347,7 +29339,7 @@
       }
     },
     "Go to Details" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -29382,7 +29374,7 @@
       }
     },
     "Go to Movie Page" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -29487,7 +29479,7 @@
       }
     },
     "Go to Series Page" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -29665,7 +29657,7 @@
       }
     },
     "Group name" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30805,7 +30797,7 @@
       }
     },
     "In Your Library · Open" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30875,7 +30867,7 @@
       }
     },
     "In motion" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -31262,7 +31254,7 @@
       }
     },
     "Interface" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -31403,7 +31395,7 @@
     },
     "Invalid %@: %@" : {
       "comment" : "Error for a malformed request parameter; both values are technical",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -31619,7 +31611,7 @@
       }
     },
     "Items you watch will appear here" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -32109,7 +32101,7 @@
       }
     },
     "Landed in your library" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -32460,7 +32452,7 @@
       }
     },
     "Large Download" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -33129,7 +33121,7 @@
       }
     },
     "Live overlay on the player" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -33410,7 +33402,7 @@
       }
     },
     "Loading filters…" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34007,7 +33999,7 @@
     },
     "Lucid closed before the request finished." : {
       "comment" : "Lucid is the name of Vivid's playback engine",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34043,7 +34035,7 @@
     },
     "Lucid could not change playback speed." : {
       "comment" : "Lucid is the name of Vivid's playback engine",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34079,7 +34071,7 @@
     },
     "Lucid could not initialise." : {
       "comment" : "Lucid is the name of Vivid's playback engine",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34115,7 +34107,7 @@
     },
     "Lucid did not open the source within 60 seconds." : {
       "comment" : "Lucid is the name of Vivid's playback engine",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34151,7 +34143,7 @@
     },
     "Lucid is not available for this request." : {
       "comment" : "Lucid is the name of Vivid's playback engine",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34186,7 +34178,7 @@
       }
     },
     "Lucid manages buffering automatically." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34257,7 +34249,7 @@
     },
     "Lucid playback failed (%@)." : {
       "comment" : "Lucid is the name of Vivid's playback engine; the value is an error code",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -35588,7 +35580,7 @@
       }
     },
     "Media Server" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36327,7 +36319,7 @@
       }
     },
     "More like this" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36397,7 +36389,7 @@
       }
     },
     "More specific device, library, or series subtitle settings override this profile default. Changes here are saved for the profile, but those overrides still apply where configured." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36432,7 +36424,7 @@
       }
     },
     "Move" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36677,7 +36669,7 @@
       }
     },
     "Move collection" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36852,7 +36844,7 @@
       }
     },
     "Move “%@” to" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36992,7 +36984,7 @@
       }
     },
     "Movies & Series" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37027,7 +37019,7 @@
       }
     },
     "Movies & Series library" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37062,7 +37054,7 @@
       }
     },
     "Movies and series you request will show up here" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37132,7 +37124,7 @@
       }
     },
     "Movies library" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37168,7 +37160,7 @@
     },
     "Multi-Audio" : {
       "comment" : "Poster badge for a file with audio in more than one language",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37238,7 +37230,7 @@
       }
     },
     "My Requests" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37414,7 +37406,7 @@
       }
     },
     "Name is required" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37909,7 +37901,7 @@
       }
     },
     "New Collection" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -38189,7 +38181,7 @@
       }
     },
     "New group" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -38784,7 +38776,7 @@
       }
     },
     "No favorite movies" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -38819,7 +38811,7 @@
       }
     },
     "No favorite tv shows" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39064,7 +39056,7 @@
       }
     },
     "No matches" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39169,7 +39161,7 @@
       }
     },
     "No playable trailers here" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39344,7 +39336,7 @@
       }
     },
     "No recommendations yet" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39379,7 +39371,7 @@
       }
     },
     "No recommendations yet — showing your saved titles." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39484,7 +39476,7 @@
       }
     },
     "No requests yet" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39869,7 +39861,7 @@
       }
     },
     "No trailers found" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39939,7 +39931,7 @@
       }
     },
     "No watch history" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -40081,7 +40073,7 @@
     },
     "Normal (1.0×)" : {
       "comment" : "Normal playback speed",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -40676,7 +40668,7 @@
       }
     },
     "Nothing here yet" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -40746,7 +40738,7 @@
       }
     },
     "Nothing on TMDB matched that search" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -41064,7 +41056,7 @@
       }
     },
     "On Deck" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -41397,6 +41389,9 @@
         }
       }
     },
+    "Open Simkl" : {
+      "extractionState" : "manual"
+    },
     "Open Source Licences" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41608,7 +41603,7 @@
       }
     },
     "Open sidebar" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -42378,7 +42373,7 @@
       }
     },
     "Outline color" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -42484,7 +42479,7 @@
       }
     },
     "Overlay prefs did not serialize to JSON." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -43885,7 +43880,7 @@
       }
     },
     "Playback Settings" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -44657,7 +44652,7 @@
       }
     },
     "Playback recovery exhausted the protocol V3 route ladder." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -45484,7 +45479,7 @@
       }
     },
     "Please wait a moment and try again" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -45828,7 +45823,7 @@
       }
     },
     "Poster Size" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -46248,7 +46243,7 @@
       }
     },
     "Preset" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -47477,6 +47472,9 @@
         }
       }
     },
+    "Reading your Simkl library" : {
+      "extractionState" : "manual"
+    },
     "Reading your library… %@ titles" : {
       "comment" : "Studios & Networks first-load progress. The count is already formatted, e.g. 1,234",
       "extractionState" : "manual",
@@ -47514,7 +47512,7 @@
       }
     },
     "Reanchor the active stream at the requested source position." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -47760,7 +47758,7 @@
       }
     },
     "Recommendations" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -48077,7 +48075,7 @@
       }
     },
     "Reload filter options" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -48112,7 +48110,7 @@
       }
     },
     "Remaining" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -48777,7 +48775,7 @@
       }
     },
     "Rename" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -48882,7 +48880,7 @@
       }
     },
     "Rename “%@”" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -48952,7 +48950,7 @@
       }
     },
     "Reopen this library exactly as you left it" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -49442,7 +49440,7 @@
       }
     },
     "Requests" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -50038,7 +50036,7 @@
       }
     },
     "Results match any selected filter." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -50073,7 +50071,7 @@
       }
     },
     "Results match every selected filter." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -50722,7 +50720,7 @@
     },
     "Returning" : {
       "comment" : "Series status poster badge",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -51003,7 +51001,7 @@
       }
     },
     "Route & playback diagnostics" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -51736,7 +51734,7 @@
       }
     },
     "Save updated credentials for this server account." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52046,6 +52044,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已存储的服务器"
+          }
+        }
+      }
+    },
+    "Scan the code with your phone, or go to %@%@ and enter:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan the code with your phone, or go to %1$@%2$@ and enter:"
           }
         }
       }
@@ -52506,7 +52515,7 @@
       }
     },
     "Search for a movie or series to request it" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52541,7 +52550,7 @@
       }
     },
     "Search movies & series to request" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52611,7 +52620,7 @@
       }
     },
     "Search on the left · Profile on the right" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52716,7 +52725,7 @@
       }
     },
     "Search..." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -53039,7 +53048,7 @@
       }
     },
     "See all" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -54234,6 +54243,9 @@
           }
         }
       }
+    },
+    "Send completed watches to Simkl and keep its Plan to Watch list in step with your watchlist. Watchlist matches include titles on your active server." : {
+      "extractionState" : "manual"
     },
     "Send to Vivid" : {
       "extractionState" : "manual",
@@ -55520,7 +55532,7 @@
       }
     },
     "Session" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -56220,7 +56232,7 @@
       }
     },
     "Show Who's Watching when you've been away from Vivid for 1 hour." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -56255,7 +56267,7 @@
       }
     },
     "Show Who's Watching when you've been away from Vivid for 12 hours." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -56290,7 +56302,7 @@
       }
     },
     "Show Who's Watching whenever you return to Vivid." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -57119,6 +57131,9 @@
         }
       }
     },
+    "Sign in to Simkl to sync." : {
+      "extractionState" : "manual"
+    },
     "Sign in to a server and choose a profile to use Collections." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57258,6 +57273,9 @@
           }
         }
       }
+    },
+    "Sign in with Simkl" : {
+      "extractionState" : "manual"
     },
     "Sign in with a PIN entered at emby.media/pin, without a password." : {
       "extractionState" : "manual",
@@ -57538,6 +57556,30 @@
           }
         }
       }
+    },
+    "Simkl" : {
+      "extractionState" : "manual"
+    },
+    "Simkl didn’t allow Vivid to update your lists. Sign in again and allow access." : {
+      "extractionState" : "manual"
+    },
+    "Simkl is busy. Sync will try again shortly." : {
+      "extractionState" : "manual"
+    },
+    "Simkl is limiting requests from Vivid. Sync will try again later." : {
+      "extractionState" : "manual"
+    },
+    "Simkl is unavailable. Sync will try again later." : {
+      "extractionState" : "manual"
+    },
+    "Simkl isn’t available in this version of Vivid." : {
+      "extractionState" : "manual"
+    },
+    "Simkl returned an unreadable response. Sync will try again later." : {
+      "extractionState" : "manual"
+    },
+    "Simkl’s daily request limit was reached. Sync will continue after it resets." : {
+      "extractionState" : "manual"
     },
     "Size" : {
       "extractionState" : "manual",
@@ -57960,7 +58002,7 @@
       }
     },
     "Sleep Timer" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -57995,7 +58037,7 @@
       }
     },
     "Sleep timer" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -59131,7 +59173,7 @@
       }
     },
     "Start with Balanced, Compact, Cinema, or Artwork Only, then fine-tune size and captions. These choices sync with other %@ devices on this profile." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -59272,7 +59314,7 @@
       }
     },
     "Stats appear once playback starts." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -59379,6 +59421,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "第 %1$lld 步，共 2 步 · %2$@"
+          }
+        }
+      }
+    },
+    "Step %lld of 3 · %@" : {
+      "comment" : "Simkl sync progress, e.g. Step 1 of 3 · Reading your Simkl library",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Step %1$lld of 3 · %2$@"
           }
         }
       }
@@ -59525,7 +59579,7 @@
       }
     },
     "Stop after" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -60262,7 +60316,7 @@
       }
     },
     "Subtitle Appearance" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -60507,7 +60561,7 @@
       }
     },
     "Subtitle appearance" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -60718,7 +60772,7 @@
       }
     },
     "Subtitles with their own built-in styling keep their original appearance; image-based subtitles keep their authored fonts and colors but follow the size, position, and background settings." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -61033,7 +61087,7 @@
       }
     },
     "Switching quality..." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -61068,7 +61122,7 @@
       }
     },
     "Switching quality…" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -61261,6 +61315,9 @@
           }
         }
       }
+    },
+    "Sync finished. Simkl filed %lld watched items under a different kind of title. Check them on Simkl." : {
+      "extractionState" : "manual"
     },
     "Sync interrupted. It will try again later." : {
       "extractionState" : "manual",
@@ -61794,7 +61851,7 @@
       }
     },
     "TV library" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62109,7 +62166,7 @@
       }
     },
     "Teasers" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62249,7 +62306,7 @@
       }
     },
     "Text subtitles follow these controls. Styled ASS and image-based subtitles retain their authored appearance and placement." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62529,7 +62586,7 @@
       }
     },
     "That value isn't allowed." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62564,7 +62621,7 @@
       }
     },
     "The Apple audio output route changed." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62670,7 +62727,7 @@
     },
     "The Lucid seek did not complete." : {
       "comment" : "Lucid is the name of Vivid's playback engine",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62739,9 +62796,12 @@
         }
       }
     },
+    "The Simkl code expired. Sign in again to get a new one." : {
+      "extractionState" : "manual"
+    },
     "The V3 client transformation cannot be executed as planned: %@." : {
       "comment" : "The value is a technical detail in English",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62777,7 +62837,7 @@
     },
     "The V3 plan requires an unsupported client transformation: %@." : {
       "comment" : "The value is a technical identifier",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62813,7 +62873,7 @@
     },
     "The V3 plan requires an unsupported runtime correction: %@." : {
       "comment" : "The value is a technical identifier",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62849,7 +62909,7 @@
     },
     "The V3 playback transport is invalid: %@." : {
       "comment" : "The value is a technical detail in English",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63305,7 +63365,7 @@
     },
     "The embedded subtitle selection is invalid: %@." : {
       "comment" : "The value is a technical detail in English",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63626,7 +63686,7 @@
       }
     },
     "The playback surface is unavailable." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63696,7 +63756,7 @@
       }
     },
     "The replacement plan selected an unavailable media version." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63801,7 +63861,7 @@
       }
     },
     "The selected embedded subtitle is unavailable in the opened media." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63836,7 +63896,7 @@
       }
     },
     "The server changed the route or playback intent during a V3 seek re-anchor." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63871,7 +63931,7 @@
       }
     },
     "The server could not be reached while renewing playback." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63906,7 +63966,7 @@
       }
     },
     "The server could not produce a playable Apple route." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64012,7 +64072,7 @@
       }
     },
     "The server did not preserve authenticated media transport during replanning." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64363,7 +64423,7 @@
     },
     "The server returned HTTP %@ while renewing playback." : {
       "comment" : "The value is an HTTP status code",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64398,7 +64458,7 @@
       }
     },
     "The server returned a protocol V3 plan that already failed on this output route." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64433,7 +64493,7 @@
       }
     },
     "The server returned an incompatible protocol V3 playback plan." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64468,7 +64528,7 @@
       }
     },
     "The server returned an incompatible protocol V3 replacement plan." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64538,7 +64598,7 @@
       }
     },
     "The server selected a media version that is not present in the item response." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64574,7 +64634,7 @@
     },
     "The server selected an unsupported V3 delivery: %@." : {
       "comment" : "The value is a technical identifier",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65171,7 +65231,7 @@
       }
     },
     "This device family has a more specific subtitle setting. Changes here update the profile default, but the family override still applies." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65241,7 +65301,7 @@
       }
     },
     "This device, for this profile, has a more specific subtitle setting. Changes here update the profile default, but the device override still applies." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65387,7 +65447,7 @@
       }
     },
     "This download is large." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65918,7 +65978,7 @@
       }
     },
     "This screen is under construction." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65988,7 +66048,7 @@
       }
     },
     "This server can't store that preference." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -66023,7 +66083,7 @@
       }
     },
     "This server did not honor authenticated media transport for the playback plan." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -66128,7 +66188,7 @@
       }
     },
     "This server is too old to store playback preferences. Playback still works using this device's defaults. Ask your server administrator to update Silo." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -66618,7 +66678,7 @@
       }
     },
     "Titles starting with %@" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -66653,7 +66713,7 @@
       }
     },
     "Titles starting with a number or symbol" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -67249,6 +67309,9 @@
         }
       }
     },
+    "Track what you watch and sync Plan to Watch." : {
+      "extractionState" : "manual"
+    },
     "Tracks" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -67425,7 +67488,7 @@
       }
     },
     "Trailers are disabled for this library" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -67495,7 +67558,7 @@
       }
     },
     "Trailers were checked recently" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -67846,7 +67909,7 @@
       }
     },
     "Trending now" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -68476,7 +68539,7 @@
       }
     },
     "Ungrouped" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -69460,7 +69523,7 @@
       }
     },
     "Update this Silo server to use synced interface settings." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70090,7 +70153,7 @@
       }
     },
     "Use the last profile selected on this device. A protected profile can reopen without asking for its PIN." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70125,7 +70188,7 @@
       }
     },
     "Use the profile selected for the current Apple TV user. A protected profile can reopen without asking for its PIN." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70371,7 +70434,7 @@
     },
     "User selected audio track %@." : {
       "comment" : "The value is the audio track's name or number",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70407,7 +70470,7 @@
     },
     "User selected playback quality %@." : {
       "comment" : "The value is a quality identifier such as 1080p",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70513,7 +70576,7 @@
     },
     "Using Device" : {
       "comment" : "Subtitle appearance summary when it follows the device's caption settings",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70969,7 +71032,7 @@
       }
     },
     "View acknowledgements and dependency licences." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -71146,6 +71209,9 @@
           }
         }
       }
+    },
+    "Vivid connects once you approve it on Simkl." : {
+      "extractionState" : "manual"
     },
     "Vivid couldn't play this. Try again, or go back and choose another version or quality." : {
       "comment" : "Playback failure message",
@@ -71464,6 +71530,9 @@
         }
       }
     },
+    "Vivid couldn’t save the Simkl sign-in securely." : {
+      "extractionState" : "manual"
+    },
     "Vivid follows this Apple TV’s language unless you choose one." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -71568,6 +71637,9 @@
           }
         }
       }
+    },
+    "Vivid is still working on this profile. You can go back once it’s finished." : {
+      "extractionState" : "manual"
     },
     "Vivid tries secure HTTPS automatically." : {
       "extractionState" : "manual",
@@ -71849,6 +71921,9 @@
         }
       }
     },
+    "WATCHLISTS" : {
+      "extractionState" : "manual"
+    },
     "WHAT IS SENT" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -71953,6 +72028,9 @@
           }
         }
       }
+    },
+    "Waiting for approval" : {
+      "extractionState" : "manual"
     },
     "Waiting for approval…" : {
       "extractionState" : "manual",
@@ -72201,7 +72279,7 @@
       }
     },
     "Watch or rate a few titles to build your personalised recommendations." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -72270,6 +72348,9 @@
           }
         }
       }
+    },
+    "Watched history and watchlist are synced." : {
+      "extractionState" : "manual"
     },
     "Watched history and watchlists are synced." : {
       "extractionState" : "manual",
@@ -72410,6 +72491,9 @@
           }
         }
       }
+    },
+    "Watchlists" : {
+      "extractionState" : "manual"
     },
     "We couldn't find what you were looking for. It may have been removed or moved." : {
       "extractionState" : "manual",
@@ -73508,7 +73592,7 @@
       }
     },
     "You can show up to 64 top-menu destinations." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -73788,7 +73872,7 @@
       }
     },
     "Your Silo server hasn't been updated to support the latest version of this app. Please update your server, or use an earlier compatible version of Vivid until the server has been updated." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -73821,6 +73905,9 @@
           }
         }
       }
+    },
+    "Your Simkl sign-in has ended. Sign in again to keep syncing." : {
+      "extractionState" : "manual"
     },
     "Your Stuff" : {
       "extractionState" : "manual",
@@ -73858,7 +73945,7 @@
       }
     },
     "Your collections are empty" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -74033,7 +74120,7 @@
       }
     },
     "Your requests" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -74101,6 +74188,9 @@
           }
         }
       }
+    },
+    "Your server progress is saved. Simkl will try again later." : {
+      "extractionState" : "manual"
     },
     "Your server ran into a problem" : {
       "extractionState" : "manual",
@@ -74495,7 +74585,7 @@
     },
     "default" : {
       "comment" : "Lowercase track attribute in a dot-separated label",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -74531,7 +74621,7 @@
     },
     "desktop-like" : {
       "comment" : "Inserted into “sync with other %@ devices”",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -74645,7 +74735,7 @@
     },
     "external" : {
       "comment" : "Lowercase track attribute in a dot-separated label",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -74716,7 +74806,7 @@
     },
     "forced" : {
       "comment" : "Lowercase track attribute in a dot-separated label",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -74876,7 +74966,7 @@
     },
     "iPhone-like" : {
       "comment" : "Inserted into “sync with other %@ devices”",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -75297,7 +75387,7 @@
     },
     "requested %@" : {
       "comment" : "Request date in a My Requests row, e.g. requested 12 Oct",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -75453,7 +75543,7 @@
     },
     "seriesStatus.upcoming" : {
       "comment" : "Series status poster badge",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -75495,7 +75585,7 @@
     },
     "similar" : {
       "comment" : "Inserted into “sync with other %@ devices”",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -75674,7 +75764,7 @@
     },
     "tablet-like" : {
       "comment" : "Inserted into “sync with other %@ devices”",
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {

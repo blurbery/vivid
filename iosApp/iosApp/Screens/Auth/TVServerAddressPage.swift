@@ -12,7 +12,7 @@ struct TVServerSetupView: View {
     @FocusState private var focusedTarget: Target?
 
     private enum Target: Hashable {
-        case address, advanced, protocolChoice(ServerProtocolChoice), port, connect
+        case address, advanced, protocolChoice(ServerProtocolChoice), port, connect, cancel
     }
 
     init(router: AppRouter, prefillCurrentServer: Bool = false, provider: MediaServerProvider = .silo) {
@@ -46,6 +46,12 @@ struct TVServerSetupView: View {
         }
         .ignoresSafeArea()
         .onAppear(perform: prepareForm)
+        // Back pops the page, which stops the search here.
+        .onDisappear { form.cancel() }
+        .onChange(of: form.isBusy) { _, busy in
+            // Cancel goes away with the search, so focus returns to Connect.
+            if !busy, focusedTarget == .cancel { focusedTarget = .connect }
+        }
     }
 
     private var chooser: some View {
@@ -108,13 +114,22 @@ struct TVServerSetupView: View {
                     .transition(.opacity)
             }
             Spacer(minLength: 0)
-            Button {
-                form.connect(router: router)
-            } label: {
-                form.isBusy ? Text("Connecting…") : Text("Connect to server")
+            // Cancel sits beside Connect so the fixed-height card doesn't
+            // grow while a search runs.
+            HStack(spacing: 18) {
+                Button {
+                    form.connect(router: router)
+                } label: {
+                    form.isBusy ? Text("Connecting…") : Text("Connect to server")
+                }
+                .buttonStyle(AuroraPrimaryButtonStyle(isLoading: form.isBusy))
+                .focused($focusedTarget, equals: .connect)
+                if form.isBusy {
+                    Button("Cancel") { form.cancel() }
+                        .buttonStyle(AuroraGhostButtonStyle())
+                        .focused($focusedTarget, equals: .cancel)
+                }
             }
-            .buttonStyle(AuroraPrimaryButtonStyle(isLoading: form.isBusy))
-            .focused($focusedTarget, equals: .connect)
         }
         .padding(46)
         .frame(maxHeight: .infinity, alignment: .top)
