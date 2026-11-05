@@ -27,6 +27,8 @@ struct MediaCard: View {
     let posterUrl: String
     let thumbhash: String?
     let year: Int?
+    /// Replaces the year, such as a series' "2021 - Present".
+    let yearCaption: String?
     let subtitle: String?
     let userState: MediaItemUserState?
     let titleFont: Font
@@ -62,6 +64,7 @@ struct MediaCard: View {
         posterUrl: String,
         thumbhash: String? = nil,
         year: Int? = nil,
+        yearCaption: String? = nil,
         subtitle: String? = nil,
         userState: MediaItemUserState? = nil,
         overlayData: OverlayData? = nil,
@@ -80,6 +83,7 @@ struct MediaCard: View {
         self.posterUrl = posterUrl
         self.thumbhash = thumbhash
         self.year = year
+        self.yearCaption = yearCaption ?? year.map { String($0) }
         self.subtitle = subtitle
         self.userState = userState
         self.titleFont = titleFont
@@ -114,14 +118,14 @@ struct MediaCard: View {
     }
 
     private var secondLine: String? {
-        subtitle ?? year.map { String($0) }
+        subtitle ?? yearCaption
     }
 
     private var accessibilityText: String {
         mediaCardAccessibilityLabel(
             title: title,
             episodeLabel: episodeAccessibilityLabel,
-            year: year,
+            year: yearCaption,
             isWatched: isWatched
         )
     }

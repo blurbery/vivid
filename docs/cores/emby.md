@@ -50,7 +50,7 @@ TV Shows libraries sort by Date Last Episode Released with `SortBy=LastContentPr
 
 The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable. Emby's own client gates it at 4.10.0.4. Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.
 
-Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You. Poster cards display the returned year when **Title & Year** is selected; **Title Only** and **Artwork Only** retain their existing behaviour. The year arrives in the existing list response, without additional per-poster metadata requests. Items without a server-provided year have no year caption.
+Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You. Poster cards display the returned year when **Title & Year** is selected, and series cards in poster grids show a span built from `Status` and `EndDate` instead ("2021 - Present", "2005 - 2017"); **Title Only** and **Artwork Only** retain their existing behaviour. The year arrives in the existing list response, without additional per-poster metadata requests. Items without a server-provided year have no year caption.
 
 ## Playback and settings
 
