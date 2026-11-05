@@ -177,14 +177,18 @@ final class ServerAddressForm {
     }
 
     /// A refused Local Network permission comes first, since turning it on
-    /// may be all that's needed. Anything else gives nil and the general
+    /// may be all that's needed. The HTTPS advice only applies when every
+    /// address was plain HTTP that ATS blocked: Auto always adds plain HTTP
+    /// addresses after HTTPS, so a public host that fails for any reason
+    /// also collects ATS blocks. Anything else gives nil and the general
     /// message.
     nonisolated static func reachProblem(in errors: [Error]) -> ReachProblem? {
-        let causes = errors.flatMap(transportCauses(of:))
-        if causes.contains(where: isLocalNetworkDenied) { return .localNetworkDenied }
-        if causes.contains(where: {
-            HTTPDiagnosticsErrorCode.classify(transport: $0) == "app_transport_security_blocked"
-        }) { return .insecureHTTPBlocked }
+        let causes = errors.map(transportCauses(of:))
+        if causes.contains(where: { $0.contains(where: isLocalNetworkDenied) }) { return .localNetworkDenied }
+        let blockedByATS = { (chain: [Error]) in
+            chain.contains { HTTPDiagnosticsErrorCode.classify(transport: $0) == "app_transport_security_blocked" }
+        }
+        if !causes.isEmpty, causes.allSatisfy(blockedByATS) { return .insecureHTTPBlocked }
         return nil
     }
 
