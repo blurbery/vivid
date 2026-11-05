@@ -10,7 +10,25 @@ const security = Object.freeze({
 });
 
 // Pages served at their path without the .html extension.
-const pages = Object.freeze(['/privacy', '/brand', '/support', '/licences']);
+const pages = Object.freeze(['/privacy', '/brand', '/support', '/licences', '/source']);
+
+// /source?commit=<40 hex digits> offers the source downloads for the build
+// made from that commit, which Settings > About links to. Only a full commit
+// hash is put into a link; anything else gets the page that points to the
+// releases instead.
+const commitPattern = /^[0-9a-f]{40}$/i;
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+function sourcePage(asset, params) {
+  const value = params.get('commit');
+  const commit = value && commitPattern.test(value) ? value.toLowerCase() : null;
+  const unused = commit ? /[ \t]*<!--source:none-->[\s\S]*?<!--\/source:none-->\n?/ : /[ \t]*<!--source:commit-->[\s\S]*?<!--\/source:commit-->\n?/;
+  const html = decoder.decode(asset.body)
+    .replace(unused, '')
+    .replace(/[ \t]*<!--\/?source:(?:commit|none)-->\n?/g, '')
+    .replaceAll('{{commit}}', commit ?? '');
+  return {type: asset.type, etag: `"${asset.etag.slice(1, 17)}-${commit ?? 'none'}"`, body: encoder.encode(html)};
+}
 
 export default {
   async fetch(request, env) {
@@ -61,11 +79,12 @@ export default {
     }
     const page = url.pathname.replace(/(\.html|\/)$/, '');
     if (page !== url.pathname && pages.includes(page)) {
-      headers.set('Location', page);
+      headers.set('Location', page + url.search);
       return new Response(null, {status:308, headers});
     }
     const path = url.pathname === '/' ? '/index.html' : pages.includes(url.pathname) ? `${url.pathname}.html` : url.pathname;
-    const asset = Object.hasOwn(assets, path) ? assets[path] : undefined;
+    const stored = Object.hasOwn(assets, path) ? assets[path] : undefined;
+    const asset = stored && path === '/source.html' ? sourcePage(stored, url.searchParams) : stored;
     if (!asset) {
       headers.set('Content-Type', 'text/html; charset=utf-8');
       headers.set('Cache-Control', 'no-store');

@@ -22,3 +22,20 @@ Silo" use, which Silo's trademark policy allows without permission:
 https://github.com/Silo-Server/siloserver.org/blob/main/TRADEMARK.md
 Vivid is not Silo-branded, and its app icons and branding are separate from
 this provider asset.
+
+
+EMBY LOGO ASSETS: NOTICE
+========================
+
+EmbyLogo.imageset and MDBListEmby.imageset contain the Emby logo. Emby and
+the Emby logo are trademarks of Emby LLC and belong to their owner. They are
+not licensed under Vivid's GPL-3.0-only licence or any other open-source
+licence.
+
+Vivid uses them only referentially (nominative use), to identify the Emby
+media server it connects to: EmbyLogo on the server-selection screens, and
+MDBListEmby on the MDBList plugin page to show that MDBList works with Emby.
+Vivid is an independent app and isn't made, endorsed or supported by Emby.
+It is not Emby-branded, and its app icons and branding are separate from
+these provider assets. If you redistribute or fork Vivid, follow Emby's own
+terms for its name and logo.

@@ -340,6 +340,10 @@ struct ServiceAcknowledgementsView: View {
         let website: String
     }
 
+    /// Legal notice for the server names and logos Vivid shows. Like the TMDB
+    /// notice it stays in English, matching THIRD_PARTY_NOTICES.md.
+    private static let independenceNotice = "Vivid is an independent app and isn't made, endorsed or supported by Silo Media L.L.C., Emby or the Jellyfin project. The Silo, Emby and Jellyfin names and logos belong to their owners."
+
     private var credits: [Credit] {
         [
             Credit(id: "TheIntroDB", image: "AcknowledgementTheIntroDB", isSymbol: false,
@@ -367,6 +371,10 @@ struct ServiceAcknowledgementsView: View {
                 Text("With thanks to the projects and communities that help make Vivid possible.")
                     .font(.tvSettings(20))
                     .foregroundStyle(.secondary)
+                Text(verbatim: Self.independenceNotice)
+                    .font(.tvSettings(17))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: TVSettingsLayout.scaled(24)), count: 2),
                           spacing: TVSettingsLayout.scaled(16)) {
                     ForEach(credits) { card($0) }
@@ -387,6 +395,10 @@ struct ServiceAcknowledgementsView: View {
                 Text("With thanks to the projects and communities that help make Vivid possible.")
                     .font(.body)
                     .foregroundStyle(.secondary)
+                Text(verbatim: Self.independenceNotice)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 20)], spacing: 28) {
                     ForEach(credits) { card($0) }
                 }

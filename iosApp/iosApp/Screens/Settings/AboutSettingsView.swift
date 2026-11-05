@@ -31,9 +31,15 @@ enum VividAbout {
     }()
     /// True when the build had uncommitted changes, so its exact source isn't on GitHub.
     static let sourceModified = (Bundle.main.infoDictionary?["VividSourceRevision"] as? String)?.hasSuffix("-modified") == true
-    static let sourceRepository = URL(string: "https://github.com/blurbery/vivid")!
+    /// vividapp.co/source gives a commit's source downloads, the licence and
+    /// Lucid Engine's source, or points to the releases when there's no commit.
+    static let sourcePage = website.appendingPathComponent("source")
     static var sourceURL: URL? {
-        sourceCommit.map { sourceRepository.appendingPathComponent("tree").appendingPathComponent($0) }
+        sourceCommit.flatMap { commit in
+            var url = URLComponents(url: sourcePage, resolvingAgainstBaseURL: false)
+            url?.queryItems = [URLQueryItem(name: "commit", value: commit)]
+            return url?.url
+        }
     }
     /// Short commit for display, such as "Source 1a2b3c4" or "Source 1a2b3c4 (modified)".
     static var sourceLabel: String? {
@@ -46,12 +52,12 @@ enum VividAbout {
     /// Kept in English, like the licence texts it introduces.
     static var sourceNotice: String {
         guard let commit = sourceCommit, let url = sourceURL else {
-            return "This build doesn't record its source commit. Vivid's source code, build instructions and third-party notices are at \(sourceRepository.absoluteString)."
+            return "This build doesn't record its source commit. The source code, build instructions and third-party notices of every Vivid release are linked from \(sourcePage.absoluteString)."
         }
         if sourceModified {
-            return "This build (\(version)) was made from source commit \(commit) with local changes that haven't been published, so its exact source isn't on GitHub. The commit it started from is at \(url.absoluteString)."
+            return "This build (\(version)) was made from source commit \(commit) with local changes that haven't been published, so its exact source isn't on GitHub. The commit it started from can be downloaded at \(url.absoluteString)."
         }
-        return "This build (\(version)) was made from source commit \(commit). Its complete corresponding source, including the project specs, patches, build instructions and THIRD_PARTY_NOTICES.md, is at \(url.absoluteString)."
+        return "This build (\(version)) was made from source commit \(commit). Its complete corresponding source, including the project specs, patches, build instructions and THIRD_PARTY_NOTICES.md, can be downloaded free of charge at \(url.absoluteString)."
     }
     static func mailURL(subject: String, message: String, to recipient: String = email) -> URL? {
         var url = URLComponents()
