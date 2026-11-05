@@ -80,7 +80,7 @@ final class DiagnosticsRedactionTests: XCTestCase {
         XCTAssertEqual(report("x|[host:0123456789ab]|y").id, report("x|[host:ba9876543210]|y").id)
     }
 
-    func testPublicLogTextRemovesURLsOfAnySchemeAndRegisteredHosts() {
+    func testPublicLogTextRemovesKnownSchemeURLsAndRegisteredHosts() {
         DiagLog.registerSensitiveHost("private-host.example.net")
         let error = NSError(domain: NSURLErrorDomain, code: -1202, userInfo: [
             NSLocalizedDescriptionKey: "pretending to be “private-host.example.net”",

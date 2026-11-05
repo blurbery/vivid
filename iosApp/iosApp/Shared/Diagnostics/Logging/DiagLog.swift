@@ -54,9 +54,9 @@ enum DiagLog {
     // MARK: - Sanitising
 
     /// An error for a public unified log line. `MediaLogRedactor` removes
-    /// URLs of any scheme, host:port paths and credential values first, then
-    /// this redactor replaces saved server hosts that appear on their own,
-    /// such as the name in a certificate trust error.
+    /// file, http, https, smb, ws and wss URLs, host:port paths and credential
+    /// values first, then this redactor replaces saved server hosts that
+    /// appear on their own, such as the name in a certificate trust error.
     static func publicLogText(_ error: any Error) -> String {
         sanitizedText(MediaLogRedactor.sanitize(error), maxLength: 1_024)
     }
