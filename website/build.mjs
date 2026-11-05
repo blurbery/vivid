@@ -45,15 +45,16 @@ const versioned = html => html.replace(/\/(styles\.css|app\.js|noscript\.css|log
   return `/${name}?v=${version}`;
 });
 const encodeHTML = html => { const body = Buffer.from(versioned(html)); return {type:types['.html'],etag:`"${hash(body)}"`,base64:body.toString('base64')}; };
-// /licences is generated from the app's bundled licence files, so the site
-// shows exactly what Settings → About → Open Source Licences shows.
+// /licences is generated from the app's bundled licence files, so its
+// software notices match Settings > About > Open Source Licences. It then
+// credits the website's images from media-credits.json.
 const licencesDir = join(root, '..', 'iosApp', 'Resources', 'OpenSourceLicenses');
 const manifest = JSON.parse(await readFile(join(licencesDir, 'licences.json'), 'utf8'));
 const escape = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const licenceFile = async name => (await readFile(join(licencesDir, name), 'utf8')).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '');
 const texts = new Map(manifest.texts.map(text => [text.id, text]));
 const markerLink = text => `<a href="#text-${text.id}">${escape(manifest.marker.replace('{title}', text.title))}</a>`;
-let body = '<h1>Open Source Licences</h1>\n    <p>Vivid is built with the open source software below. These are the same notices and licence texts the app shows in Settings → About → Open Source Licences. Each build records the source commit it was made from in Settings → About, and Vivid’s complete source, build instructions and third-party notices are on <a href="https://github.com/blurbery/vivid" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>\n';
+let body = '<h1>Open Source Licences</h1>\n    <p>Vivid is built with the open source software below. Its notices and licence texts are the same ones the app shows in Settings > About > Open Source Licences, and it ends with credits for the images on this website. Each build records the source commit it was made from in Settings > About, and Vivid’s complete source, build instructions and third-party notices are on <a href="https://github.com/blurbery/vivid" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>\n';
 const label = entry => escape([[entry.name, entry.version].filter(Boolean).join(' '), entry.licence].filter(Boolean).join(' · '));
 body += `    <p>${manifest.entries.map(entry => `<a href="#${entry.id}">${label(entry)}</a>`).join('<br>')}<br>${manifest.texts.map(text => `<a href="#text-${text.id}">${escape(text.title)}</a>`).join('<br>')}<br><a href="#website-images">Images on this website</a></p>\n`;
 for (const entry of manifest.entries) {

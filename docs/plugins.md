@@ -96,6 +96,8 @@ On Apple TV, the TMDb rating sits after the quality badges, trailers sit just ab
 
 <p align="center"><img src="images/plugins/tv-studios-networks-home.jpg" width="760" alt="The Studios and Networks row on Home on Apple TV, showing sample text wordmarks"></p>
 
+<p align="center"><sub>These screenshots use sample text wordmarks in place of the real studio and network logos that the app shows.</sub></p>
+
 Studios & Networks is on from the start. Its first load happens while Vivid prepares Home after you sign in or set up a profile: Vivid reads your library, with the networks and studios your server lists for each title, and matches it with TMDb, downloading TMDb's lists at the same time, and Home opens once it's done, so the row is already there. On a large library that can take a minute or two. Home stops waiting after two minutes, or if the load fails, and the row then appears once it's ready. After that it loads straight away and refreshes daily. It chooses from Netflix, HBO, Apple TV, Disney+, Prime Video, Hulu, Peacock, Paramount+, Stan, BritBox, AMC, FX, Pixar, Marvel Studios, A24, Lucasfilm, DreamWorks, Studio Ghibli, Sony Pictures, Warner Bros., Universal, Walt Disney Pictures, DC and 20th Century Studios, and uses the 20 with the most matching titles in your library unless you pick your own. A studio or network only shows once at least six titles in your library match it.
 
 To choose your own, open **Settings → General** and choose **Studios & Networks** under the Home Screen heading. From there you can:
