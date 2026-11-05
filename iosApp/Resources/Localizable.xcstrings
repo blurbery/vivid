@@ -71210,9 +71210,6 @@
         }
       }
     },
-    "Vivid can't use your local network. Turn on Local Network for Vivid in Settings, then try again." : {
-      "extractionState" : "manual"
-    },
     "Vivid connects once you approve it on Simkl." : {
       "extractionState" : "manual"
     },
