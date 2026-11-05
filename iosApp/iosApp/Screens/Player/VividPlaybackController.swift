@@ -5,11 +5,12 @@ import Foundation
 import MediaPlayer
 #endif
 
-/// Vivid's one owner of the video engine.
+/// The single owner of Vivid's video engine.
 ///
-/// Product and session state live elsewhere. Loads, transport and engine
-/// observation all go through this type, and every engine event is tagged
-/// with the load it belongs to, so a replaced load's late events are dropped.
+/// Sessions, queues and screen state belong to the player view model. This
+/// type owns loading, transport and watching the engine, and stamps every
+/// engine event with the load that produced it, so whatever a replaced load
+/// reports late is thrown away.
 @MainActor
 final class VividPlaybackController {
     // MARK: - Types
@@ -19,6 +20,8 @@ final class VividPlaybackController {
         var errorDescription: String? { "The selected embedded subtitle is unavailable in the opened media." }
     }
 
+    /// A typed engine failure that ended a load, with the error that
+    /// carried it.
     struct LoadFailure: LocalizedError {
         let failure: PlaybackErrorInfo
         let underlying: Error
@@ -50,12 +53,13 @@ final class VividPlaybackController {
         let event: Event
     }
 
-    /// Changes that don't belong to one load. They still reach the player
-    /// after a load is invalidated, so Now Playing and route UI can detach.
+    /// News that isn't tied to one load, so it still arrives after a load
+    /// has gone and Now Playing or the route controls can let go.
     enum ControllerEvent {
-        /// The player, session or route that owns system media changed.
+        /// Whatever owns system media (the player, its session or the
+        /// route) changed.
         case systemMediaChanged
-        /// Whether external video is possible, and whether it's in use.
+        /// Whether video can go to an external screen, and whether it is.
         case externalPlaybackChanged(supported: Bool, active: Bool)
     }
 
@@ -64,172 +68,180 @@ final class VividPlaybackController {
         case requiresReplan(sourceSeconds: Double)
     }
 
-    // MARK: - State
+    // MARK: - Public state
 
     let engine: VividEngine
     var onEvent: ((ScopedEvent) -> Void)?
     var onControllerEvent: ((ControllerEvent) -> Void)?
-    /// iOS 26's Automatic Subtitles turn captions on with no API to read
-    /// them, so the engine forwarding the request is the only signal. The
-    /// engine has already turned its own rendition off by then; answering
-    /// means selecting a matching app track. Only sent while a load is
-    /// active, tagged with its epoch.
+    /// Automatic Subtitles on iOS 26 switches captions on without any API
+    /// that reports it; the engine passing the request along is the only
+    /// sign. By then the engine has dropped its own rendition, so the answer
+    /// is to pick a matching app track. Only sent during a load, with that
+    /// load's epoch.
     var onSystemCaptionRequest: ((LoadEpoch, SystemCaptionRequest) -> Void)?
 
     private(set) var activeSpec: VividLoadSpec?
     private(set) var activeLoadEpoch: LoadEpoch?
 
-    /// Whether a transport call can reach anything. `play()`, `pause()` and
-    /// `seek` do nothing without a load, so a system media control that
-    /// reports success anyway tells the system something untrue.
+    /// False when there's no load, so `play()`, `pause()` and seeks would
+    /// reach nothing. A system media control mustn't report success then.
     var hasActiveLoad: Bool { activeLoadEpoch != nil && activeSpec != nil }
 
-    /// The user's latest Play or Pause, independent of passing engine states
-    /// such as loading, buffering and errors. A replacement load reads it
-    /// once it commits, so a Play or Pause pressed while loading wins.
+    /// The last Play or Pause the viewer asked for, kept apart from what the
+    /// engine is doing at the moment (loading, buffering, failing). A
+    /// replacement load reads it when it commits, so pressing Play or Pause
+    /// mid-load still counts.
     private(set) var shouldPlayWhenReady = false
 
     private(set) var supportsExternalPlayback = false
     private(set) var isExternalPlaybackActive = false
 
-    /// The active spec is installed before `VividEngine.load`, so events
-    /// published synchronously during the load carry the new epoch. It isn't
-    /// safe for AirPlay policy until the load commits, because the engine may
-    /// still be showing the outgoing AVPlayer in between.
-    private var hasCommittedActiveLoad = false
-    private var hasStartedEngineLoad = false
-    private var generation: UInt64 = 0
-    private var subscriptions: Set<AnyCancellable> = []
-    private var didPublishFirstFrame = false
-    private var didPublishEnd = false
-    private var lastHealthBreadcrumbAt: TimeInterval = 0
-    private var transportIntentGeneration: UInt64 = 0
-    private var transportRestoreTask: Task<Void, Never>?
-    private var desiredPlaybackRate: Float = 1
-    private var desiredVolume: Float = 1
-    private var muted = false
-    /// App subtitle ids (Silo sidecars, for example) and the engine ids their
-    /// tracks were registered under.
-    private var vividSubtitleIDByAppID: [Int64: Int] = [:]
-    private var appSubtitleIDByVividID: [Int: Int64] = [:]
-    private var externalPlaybackObservation: NSKeyValueObservation?
-    private var observedExternalPlaybackPlayer: AVPlayer?
-    private var externalPlaybackPolicyTask: Task<Void, Never>?
-    /// The outgoing native player's AirPlay policy while Vivid replaces its
-    /// item. Clearing the active spec mustn't briefly revoke an active AirPlay
-    /// route before the next load completes its own handoff.
-    private var replacementExternalPlaybackPolicy: Bool?
-    private var lastExternalPlaybackSupport = false
-    private var lastExternalPlaybackActive = false
+    // MARK: - Private state
+
+    /// Bookkeeping for the load in progress. The spec goes in before
+    /// `VividEngine.load` starts, so events the engine sends while loading
+    /// already carry the new epoch, but `committed` stays false until the
+    /// load returns: until then the engine can still be showing the outgoing
+    /// AVPlayer, which matters for the AirPlay rules.
+    private struct LoadProgress {
+        var number: UInt64 = 0
+        var committed = false
+        var engineStarted = false
+        var firstFrameSent = false
+        var endSent = false
+    }
+
+    private struct Transport {
+        var intent: UInt64 = 0
+        var restore: Task<Void, Never>?
+        var rate: Float = 1
+        var volume: Float = 1
+        var muted = false
+    }
+
+    private struct AirPlayTracking {
+        var player: AVPlayer?
+        var observation: NSKeyValueObservation?
+        var deferredPolicy: Task<Void, Never>?
+        /// The outgoing AVPlayer's AirPlay setting while its item is being
+        /// replaced, so clearing the spec doesn't cut an active AirPlay route
+        /// before the next load has done its own hand-over.
+        var carriedPolicy: Bool?
+        var reportedSupport = false
+        var reportedActive = false
+    }
+
+    private var load = LoadProgress()
+    private var transport = Transport()
+    private var airPlay = AirPlayTracking()
+    private var engineObservers: Set<AnyCancellable> = []
+    /// External subtitles (Silo sidecars, for example) by app id, with the
+    /// engine id each was registered under, in both directions.
+    private var engineSubtitleIDs: [Int64: Int] = [:]
+    private var appSubtitleIDs: [Int: Int64] = [:]
 
     init() throws {
         engine = try VividEngine()
         #if os(tvOS)
-        // AVPlayerViewController owns the system's native video session.
+        // On Apple TV, AVPlayerViewController owns the system video session.
         engine.ownsVideoNowPlayingSession = false
         #elseif os(iOS)
         engine.ownsVideoNowPlayingSession = true
         #endif
-        applyBackgroundPlaybackPreference()
-        observeEngine()
+        syncBackgroundPlaybackSetting()
+        watchEngine()
     }
 
-    /// Hands the device's background playback choice to the engine. The engine
-    /// reads it when the app goes to the background, not at load time, so
-    /// reading it again at every load makes a Settings change apply to the
-    /// next playback even when this controller outlives the edit.
-    private func applyBackgroundPlaybackPreference() {
+    /// Gives the engine the Settings choice for playing in the background.
+    /// The engine only reads it when the app is backgrounded, so this runs
+    /// again at every load: an edit then reaches the next playback even when
+    /// this controller has outlived it.
+    private func syncBackgroundPlaybackSetting() {
         engine.backgroundPlaybackEnabled = PlayerSettings.shared.backgroundPlaybackEnabled
     }
 
     // MARK: - Loading
 
-    /// Sets up the load's identity synchronously, before `VividEngine.load`
-    /// can publish anything for the new media.
+    /// Installs the new load's identity at once, before `VividEngine.load`
+    /// gets a chance to publish anything about the new media.
     @discardableResult
     func beginLoad(
         _ spec: VividLoadSpec,
         shouldPlayWhenReady: Bool = true
     ) -> LoadEpoch {
-        generation &+= 1
-        transportIntentGeneration &+= 1
-        transportRestoreTask?.cancel()
-        transportRestoreTask = nil
+        advanceLoadNumber()
         self.shouldPlayWhenReady = shouldPlayWhenReady
-        let epoch = LoadEpoch(rawValue: generation)
-        applyBackgroundPlaybackPreference()
+        let epoch = LoadEpoch(rawValue: load.number)
+        syncBackgroundPlaybackSetting()
         activeLoadEpoch = epoch
-        hasCommittedActiveLoad = false
+        load.committed = false
         activeSpec = spec
-        configureExternalPlaybackPolicy()
-        refreshExternalPlaybackState()
-        clearSubtitleAliases()
-        didPublishFirstFrame = false
-        didPublishEnd = false
-        lastHealthBreadcrumbAt = 0
+        applyAirPlayRules()
+        updateExternalPlaybackStatus()
+        forgetSubtitleAliases()
+        load.firstFrameSent = false
+        load.endSent = false
         return epoch
     }
 
-    /// Opens the media `beginLoad` set up. Throws `CancellationError` when a
-    /// newer load or a stop replaced it, and `LoadFailure` when the engine
-    /// reported a typed failure.
+    /// Opens what `beginLoad` installed. Throws `CancellationError` once a
+    /// newer load or a stop has taken over, and `LoadFailure` when the
+    /// engine reported a typed failure.
     func finishLoad(_ epoch: LoadEpoch) async throws {
-        guard epoch == activeLoadEpoch, let spec = activeSpec else {
-            throw CancellationError()
-        }
+        guard epoch == activeLoadEpoch, let spec = activeSpec else { throw CancellationError() }
         do {
-            hasStartedEngineLoad = true
+            load.engineStarted = true
             try await engine.load(
                 url: spec.sourceURL,
                 startPosition: spec.vividStartPosition,
                 options: spec.options,
                 audioSourceStreamIndex: spec.audioSourceStreamIndex
             )
-        } catch is CancellationError {
-            guard epoch == activeLoadEpoch else { throw CancellationError() }
-            abandonActiveLoad()
-            throw CancellationError()
         } catch {
             guard epoch == activeLoadEpoch else { throw CancellationError() }
-            // The engine's typed failure, read before the load is cleared.
-            let typedFailure = engine.errorInfo
-            abandonActiveLoad()
-            if let typedFailure {
-                throw LoadFailure(failure: typedFailure, underlying: error)
+            if error is CancellationError {
+                dropFailedLoad()
+                throw error
+            }
+            // Read the engine's own failure before the load is cleared.
+            let engineFailure = engine.errorInfo
+            dropFailedLoad()
+            if let engineFailure {
+                throw LoadFailure(failure: engineFailure, underlying: error)
             }
             throw error
         }
-        guard epoch == activeLoadEpoch else {
-            throw CancellationError()
-        }
-        hasCommittedActiveLoad = true
-        replacementExternalPlaybackPolicy = nil
-        configureExternalPlaybackPolicy()
-        refreshExternalPlaybackState()
-        publishSystemMediaChanged()
+        guard epoch == activeLoadEpoch else { throw CancellationError() }
+        load.committed = true
+        airPlay.carriedPolicy = nil
+        applyAirPlayRules()
+        updateExternalPlaybackStatus()
+        announceSystemMediaChange()
     }
 
-    /// Forgets a load that failed or was cancelled.
-    private func abandonActiveLoad() {
+    /// Clears a load that failed or was cancelled.
+    private func dropFailedLoad() {
         activeLoadEpoch = nil
         activeSpec = nil
-        replacementExternalPlaybackPolicy = nil
-        clearSubtitleAliases()
-        configureExternalPlaybackPolicy()
-        refreshExternalPlaybackState()
-        publishSystemMediaChanged()
+        airPlay.carriedPolicy = nil
+        forgetSubtitleAliases()
+        applyAirPlayRules()
+        updateExternalPlaybackStatus()
+        announceSystemMediaChange()
     }
 
-    /// Gives the active source new request headers without reloading. False
-    /// when the load, URL or headers have moved on, for native remote HLS, or
-    /// when the engine can't update the source in place.
+    /// Hands the playing source new request headers in place. False when the
+    /// load, URL or expected headers no longer match, for native remote HLS,
+    /// or when the engine can't swap them on the open source.
     @discardableResult
     func updateSourceHeaders(_ headers: [String: String], for epoch: LoadEpoch,
                              expectedHeaders: [String: String], sourceURL: URL) -> Bool {
-        guard activeLoadEpoch == epoch, var spec = activeSpec,
-              spec.sourceURL == sourceURL, spec.options.httpHeaders == expectedHeaders,
+        guard epoch == activeLoadEpoch, var spec = activeSpec,
+              sourceURL == spec.sourceURL, expectedHeaders == spec.options.httpHeaders,
               !spec.options.nativeRemoteHLS,
-              engine.updateSourceHeaders(headers, for: sourceURL) else { return false }
+              engine.updateSourceHeaders(headers, for: sourceURL) else {
+            return false
+        }
         spec.updateHTTPHeaders(headers)
         activeSpec = spec
         return true
@@ -239,97 +251,105 @@ final class VividPlaybackController {
 
     func play() {
         shouldPlayWhenReady = true
-        // `beginLoad` installs the spec and epoch before `engine.load`
-        // returns, and that window looks just like a background teardown
-        // (route `.none`, session not ready). Reloading here would start a
-        // second `engine.load` and cancel the startup in flight, which is
-        // what the Siri Remote's Play/Pause did during the loading spinner.
-        switch VividPlayIntent.action(
-            hasCommittedActiveLoad: hasCommittedActiveLoad,
-            sessionRequiresRestore: sessionRequiresRestore
-        ) {
-        case .ignore:
-            return
-        case .play, .restoreThenPlay:
-            break
-        }
+        // Between `beginLoad` and the end of `engine.load` the controller
+        // looks exactly like a load torn down in the background (no route,
+        // no ready session). Restoring then would start a second
+        // `engine.load` and cancel the startup in flight, which is what
+        // Play/Pause on the Siri Remote used to do over the loading spinner.
+        let action = VividPlayIntent.action(
+            hasCommittedActiveLoad: load.committed,
+            sessionRequiresRestore: sessionNeedsRestore
+        )
+        guard action != .ignore else { return }
 
-        transportIntentGeneration &+= 1
-        let intentGeneration = transportIntentGeneration
-        transportRestoreTask?.cancel()
-        transportRestoreTask = Task { @MainActor [weak self] in
-            guard let self,
-                  let loadEpoch = self.activeLoadEpoch,
-                  self.activeSpec != nil else { return }
-            if self.hasCommittedActiveLoad, self.sessionRequiresRestore {
+        let intent = startTransportIntent()
+        transport.restore = Task { @MainActor [weak self] in
+            guard let self, let epoch = self.activeLoadEpoch, self.activeSpec != nil else { return }
+            if self.load.committed, self.sessionNeedsRestore {
                 do {
                     try await self.engine.reloadAtCurrentPosition()
                 } catch is CancellationError {
                     return
                 } catch {
-                    guard intentGeneration == self.transportIntentGeneration,
-                          loadEpoch == self.activeLoadEpoch else { return }
-                    self.publish(.transportRestoreFailed(error.localizedDescription), for: loadEpoch)
+                    if intent == self.transport.intent, epoch == self.activeLoadEpoch {
+                        self.emit(.transportRestoreFailed(error.localizedDescription), for: epoch)
+                    }
                     return
                 }
             }
-            guard !Task.isCancelled,
-                  intentGeneration == self.transportIntentGeneration,
-                  loadEpoch == self.activeLoadEpoch,
-                  self.activeSpec != nil,
-                  self.engine.videoRoute != .none else { return }
+            let stillWanted = !Task.isCancelled
+                && intent == self.transport.intent
+                && epoch == self.activeLoadEpoch
+                && self.activeSpec != nil
+                && self.engine.videoRoute != .none
+            guard stillWanted else { return }
             self.engine.play()
-            self.engine.setRate(self.desiredPlaybackRate)
-            self.transportRestoreTask = nil
+            self.engine.setRate(self.transport.rate)
+            self.transport.restore = nil
         }
     }
 
-    /// The session behind an active load is gone and only a reload brings it
-    /// back: the state a backgrounded app returns to after Vivid's
-    /// wedge-safe teardown.
+    /// True when the active load's session is gone and only a reload brings
+    /// it back, which is how Vivid's wedge-safe background teardown leaves
+    /// it.
     ///
     /// `videoRoute` is the supported way to ask which pipeline is serving,
-    /// and `.none` means teardown (`playbackBackend` answers the same
-    /// question, but hosts mustn't branch on it). Pairing it with
-    /// `isSessionReady`, the flag hosts gate corrective actions on, keeps a
-    /// brief reroute, where the route changes but a session still exists,
-    /// from passing for a teardown.
-    private var sessionRequiresRestore: Bool {
+    /// and `.none` means torn down (`playbackBackend` says the same, but
+    /// hosts mustn't branch on it). Also requiring `isSessionReady` to be
+    /// false, the flag hosts gate corrective actions on, keeps a short
+    /// reroute (the route changes while a session still exists) from looking
+    /// like a teardown.
+    private var sessionNeedsRestore: Bool {
         engine.videoRoute == .none && !engine.isSessionReady
     }
 
     func pause() {
         shouldPlayWhenReady = false
-        transportIntentGeneration &+= 1
-        transportRestoreTask?.cancel()
-        transportRestoreTask = nil
+        _ = startTransportIntent()
         engine.pause()
+    }
+
+    /// Supersedes any earlier Play or Pause and its restore.
+    private func startTransportIntent() -> UInt64 {
+        transport.intent &+= 1
+        transport.restore?.cancel()
+        transport.restore = nil
+        return transport.intent
     }
 
     func setRate(_ rate: Float) {
         guard rate.isFinite, rate >= 0 else { return }
-        guard rate > 0 else { pause(); return }
-        desiredPlaybackRate = rate
-        // A non-zero AVPlayer rate is also a play command. A speed change
-        // mustn't undo an explicit pause; Play applies the pending speed.
-        if shouldPlayWhenReady { engine.setRate(rate) }
+        guard rate > 0 else {
+            pause()
+            return
+        }
+        transport.rate = rate
+        // Any non-zero AVPlayer rate also means play, so a speed change made
+        // while paused waits for the next Play.
+        if shouldPlayWhenReady {
+            engine.setRate(rate)
+        }
     }
 
     func setSpeed(_ rate: Double) { setRate(Float(rate)) }
 
     func setVolume(_ volume: Float) {
-        desiredVolume = min(max(volume, 0), 1)
-        engine.volume = muted ? 0 : desiredVolume
+        transport.volume = min(max(volume, 0), 1)
+        applyVolume()
     }
 
     func setMuted(_ value: Bool) {
-        muted = value
-        engine.volume = value ? 0 : desiredVolume
+        transport.muted = value
+        applyVolume()
     }
 
-    var volume: Float { desiredVolume }
+    private func applyVolume() {
+        engine.volume = transport.muted ? 0 : transport.volume
+    }
 
-    var isMuted: Bool { muted }
+    var volume: Float { transport.volume }
+
+    var isMuted: Bool { transport.muted }
 
     var isPaused: Bool { engine.state != .playing }
 
@@ -338,40 +358,40 @@ final class VividPlaybackController {
             return .requiresReplan(sourceSeconds: max(0, sourceSeconds))
         }
         switch timeline.seekDisposition(forSourceTime: sourceSeconds) {
+        case .replan(let target):
+            return .requiresReplan(sourceSeconds: target)
         case .local(let playerSeconds):
-            // Coming back from the end-of-playback Next Up keeps this load,
-            // so its next real end has to be publishable after the rewind.
-            didPublishEnd = false
-            let seekGeneration = generation
+            // Rewinding from the end-of-playback Next Up keeps this load, so
+            // its next genuine end must be able to publish again.
+            load.endSent = false
+            let loadAtSeek = load.number
             await engine.seek(to: playerSeconds)
-            guard seekGeneration == generation else {
+            guard load.number == loadAtSeek else {
                 return .requiresReplan(sourceSeconds: max(0, sourceSeconds))
             }
             return .completed(sourceSeconds: timeline.sourcePosition(forPlayerTime: engine.clock.currentTime))
-        case .replan(let sourceSeconds):
-            return .requiresReplan(sourceSeconds: sourceSeconds)
         }
     }
 
     // MARK: - Replacement and teardown
 
-    /// Pauses the outgoing item but keeps Vivid's native host mounted for the
-    /// next load. That load then owns the teardown and can hand over from
-    /// one native item to the next without resetting the Apple TV display
-    /// criteria, replacing the player layer or releasing the shared audio
+    /// Pauses the outgoing item while leaving Vivid's native host in place
+    /// for the next load, which then does the teardown itself. That lets one
+    /// native item hand over to the next without resetting Apple TV's display
+    /// criteria, swapping the player layer or giving up the shared audio
     /// session between episodes.
     func prepareForReplacement() {
-        invalidateActiveLoad(preservingExternalPlaybackPolicy: true)
+        invalidateActiveLoad(keepingAirPlayPolicy: true)
         engine.deactivatesAudioSessionOnStop = false
-        // Otherwise the engine unloads the outgoing AVPlayerItem at the start
-        // of `load`, leaving the shared player layer empty during the Next Up
-        // mini player to full screen transition. On Apple TV that gap can
-        // leave the layer black while the next item's audio and clock run.
-        // Arm the engine's one-shot item swap before pausing the old item.
+        // Without this the engine unloads the outgoing AVPlayerItem as `load`
+        // begins, and the shared player layer sits empty while Next Up grows
+        // back to full screen. On Apple TV the layer can stay black while the
+        // next item's audio and clock run. The one-shot item swap has to be
+        // armed before the old item is paused.
         engine.prepareForItemReplacement()
         engine.pause()
-        refreshExternalPlaybackState()
-        publishSystemMediaChanged()
+        updateExternalPlaybackStatus()
+        announceSystemMediaChange()
     }
 
     func dispose() { stop() }
@@ -379,53 +399,50 @@ final class VividPlaybackController {
     func stop() {
         invalidateActiveLoad()
         shouldPlayWhenReady = false
-        // SwiftUI can throw away an eagerly created model that never played.
-        // Its clean-up mustn't deactivate another engine's shared audio
-        // session or reset the active player's display criteria.
-        guard hasStartedEngineLoad else {
-            return
-        }
-        hasStartedEngineLoad = false
-        // Video is the app's only playback owner, so the final teardown
-        // releases the shared audio session and other apps' audio can resume.
+        // SwiftUI may build a model eagerly and throw it away unused. Its
+        // clean-up must leave another engine's audio session and the active
+        // player's display criteria alone.
+        guard load.engineStarted else { return }
+        load.engineStarted = false
+        // Video is the app's only playback owner, so the final teardown hands
+        // the shared audio session back and other apps can carry on.
         engine.deactivatesAudioSessionOnStop = true
         engine.stop(finalTeardown: true)
-        refreshExternalPlaybackState()
-        publishSystemMediaChanged()
+        updateExternalPlaybackStatus()
+        announceSystemMediaChange()
     }
 
-    private func invalidateActiveLoad(preservingExternalPlaybackPolicy: Bool = false) {
-        replacementExternalPlaybackPolicy = preservingExternalPlaybackPolicy
-            ? observedExternalPlaybackPlayer?.allowsExternalPlayback
-            : nil
-        generation &+= 1
-        transportIntentGeneration &+= 1
-        transportRestoreTask?.cancel()
-        transportRestoreTask = nil
+    private func invalidateActiveLoad(keepingAirPlayPolicy: Bool = false) {
+        airPlay.carriedPolicy = keepingAirPlayPolicy ? airPlay.player?.allowsExternalPlayback : nil
+        advanceLoadNumber()
         activeLoadEpoch = nil
-        hasCommittedActiveLoad = false
+        load.committed = false
         activeSpec = nil
-        configureExternalPlaybackPolicy()
-        clearSubtitleAliases()
-        didPublishFirstFrame = false
-        didPublishEnd = false
+        applyAirPlayRules()
+        forgetSubtitleAliases()
+        load.firstFrameSent = false
+        load.endSent = false
+    }
+
+    /// Moves to a new load number, which also retires any pending Play or
+    /// Pause.
+    private func advanceLoadNumber() {
+        load.number &+= 1
+        _ = startTransportIntent()
     }
 
     // MARK: - System media
 
     #if os(iOS) || os(tvOS)
-    /// The player's native video session. It exists only once a native host
-    /// has been built, and is nil on the software route.
+    /// The engine's native video session, once a native host exists. The
+    /// software route has none.
     var videoNowPlayingSession: MPNowPlayingSession? {
-        guard engine.videoRoute.usesNativeVideoSession else {
-            return nil
-        }
-        return engine.videoNowPlayingSession
+        engine.videoRoute.usesNativeVideoSession ? engine.videoNowPlayingSession : nil
     }
     #endif
 
-    /// The app-wide Now Playing centres are only a fallback, for video routes
-    /// without an `MPNowPlayingSession`.
+    /// Only routes without an `MPNowPlayingSession` fall back on the
+    /// app-wide Now Playing centres.
     var shouldUseSharedVideoNowPlayingFallback: Bool {
         engine.videoRoute == .sampleBuffer
     }
@@ -433,7 +450,8 @@ final class VividPlaybackController {
     // MARK: - Tracks
 
     func validateEmbeddedSubtitleSelection(_ streamIndex: Int) throws {
-        guard engine.subtitleTracks.contains(where: { !$0.isExternal && $0.id == streamIndex }) else {
+        let present = engine.subtitleTracks.contains { $0.id == streamIndex && !$0.isExternal }
+        if !present {
             throw EmbeddedSubtitleSelectionError(streamIndex: streamIndex)
         }
     }
@@ -441,291 +459,285 @@ final class VividPlaybackController {
     func selectAudioTrack(id: Int) { engine.selectAudioTrack(index: id) }
 
     func selectSubtitleTrack(id: Int64?) {
-        if let id, let vividID = vividSubtitleID(forAppID: id) {
-            engine.selectSubtitleTrack(index: vividID)
-        } else {
+        guard let engineID = id.flatMap(vividSubtitleID(forAppID:)) else {
             engine.clearSubtitle()
+            return
         }
+        engine.selectSubtitleTrack(index: engineID)
     }
 
     func selectSecondarySubtitleTrack(id: Int64?) {
-        if let id, let vividID = vividSubtitleID(forAppID: id) {
-            engine.selectSecondarySubtitleTrack(index: vividID)
-        } else {
+        guard let engineID = id.flatMap(vividSubtitleID(forAppID:)) else {
             engine.clearSecondarySubtitle()
+            return
         }
+        engine.selectSecondarySubtitleTrack(index: engineID)
     }
 
     func appSubtitleID(forVividID id: Int) -> Int64 {
-        appSubtitleIDByVividID[id] ?? Int64(id)
+        appSubtitleIDs[id] ?? Int64(id)
     }
 
-    /// The inverse of `appSubtitleID(forVividID:)`. Internal so the boundary
-    /// tests can check the two round-trip.
+    /// Reverses `appSubtitleID(forVividID:)`. Internal so the boundary tests
+    /// can check the round trip.
     func vividSubtitleID(forAppID id: Int64) -> Int? {
-        if let translated = vividSubtitleIDByAppID[id] {
-            return translated
-        }
-        // A Silo sidecar id isn't an engine id. Passed through unaliased, it
-        // reaches the engine as an unknown external id and is quietly
-        // ignored, leaving the previous subtitle on screen.
-        guard !SubtitleTrackIdSpace.isSidecar(id) else { return nil }
+        if let registered = engineSubtitleIDs[id] { return registered }
+        // A Silo sidecar id means nothing to the engine. Sent through as it
+        // is, the engine would quietly ignore it as an unknown external id
+        // and leave the old subtitle showing.
+        if SubtitleTrackIdSpace.isSidecar(id) { return nil }
         return Int(exactly: id)
     }
 
-    /// Whether the subtitle runs on the movie's timeline (an external file)
-    /// rather than the stream's. Without a track id, only the primary slot
-    /// can answer, from the engine's active track.
+    /// True when the subtitle follows the movie's clock (an external file)
+    /// rather than the stream's. With no track id only the primary slot has
+    /// an answer, read from the engine's active track.
     func subtitleUsesMovieTimeline(appTrackID: Int64?, slot: SubtitleSlot) -> Bool {
-        let engineID: Int?
-        if let appTrackID {
-            engineID = vividSubtitleID(forAppID: appTrackID)
+        let engineID: Int? = if let appTrackID {
+            vividSubtitleID(forAppID: appTrackID)
+        } else if slot == .primary {
+            engine.activeSubtitleTrackIndex
         } else {
-            engineID = slot == .primary ? engine.activeSubtitleTrackIndex : nil
+            nil
         }
-        return engine.subtitleTracks.contains { $0.id == engineID && $0.isExternal }
+        return engine.subtitleTracks.contains { $0.isExternal && $0.id == engineID }
     }
 
     func containsSubtitle(appTrackID: Int64) -> Bool {
-        vividSubtitleIDByAppID[appTrackID] != nil
-            || engine.subtitleTracks.contains { !$0.isExternal && Int64($0.id) == appTrackID }
+        if engineSubtitleIDs[appTrackID] != nil { return true }
+        return engine.subtitleTracks.contains { !$0.isExternal && Int64($0.id) == appTrackID }
     }
 
     /// Registers an external subtitle with the engine under `appTrackID`,
-    /// once per load.
+    /// at most once per load.
     @discardableResult
     func addExternalSubtitleTrack(_ track: ExternalSubtitleTrack, appTrackID: Int64) -> Int64 {
-        if vividSubtitleIDByAppID[appTrackID] != nil { return appTrackID }
-        var track = track
-        // Sidecars use movie timestamps; native ASS renders on the stream clock.
-        track.nativeTimelineOffsetSeconds = activeSpec?.timeline.timelineOffsetSeconds ?? 0
-        let registered = engine.addExternalSubtitleTrack(track)
-        vividSubtitleIDByAppID[appTrackID] = registered.id
-        appSubtitleIDByVividID[registered.id] = appTrackID
+        guard engineSubtitleIDs[appTrackID] == nil else { return appTrackID }
+        var timed = track
+        // Sidecar cues are in movie time; native ASS draws on the stream clock.
+        timed.nativeTimelineOffsetSeconds = activeSpec?.timeline.timelineOffsetSeconds ?? 0
+        let engineID = engine.addExternalSubtitleTrack(timed).id
+        engineSubtitleIDs[appTrackID] = engineID
+        appSubtitleIDs[engineID] = appTrackID
         return appTrackID
     }
 
-    private func clearSubtitleAliases() {
-        vividSubtitleIDByAppID = [:]
-        appSubtitleIDByVividID = [:]
+    private func forgetSubtitleAliases() {
+        engineSubtitleIDs.removeAll()
+        appSubtitleIDs.removeAll()
     }
 
     // MARK: - Engine events
 
-    private func observeEngine() {
+    /// The subscriptions fire with their current values as they're made, so
+    /// their order is kept stable.
+    private func watchEngine() {
+        observePlaybackSignals()
+        observeInventoryAndTelemetry()
+        observeRouteChanges()
+    }
+
+    private func observePlaybackSignals() {
         engine.$state
-            .sink { [weak self] state in
-                guard let self else { return }
-                publish(.state(state))
-                if state == .ended, !didPublishEnd {
-                    didPublishEnd = true
-                    publish(.ended)
-                }
-            }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] state in self?.engineStateChanged(state) }
+            .store(in: &engineObservers)
         engine.$playbackPhase
-            .sink { [weak self] phase in self?.publish(.phase(phase)) }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.emit(.phase($0)) }
+            .store(in: &engineObservers)
         engine.clock.$currentTime
-            .sink { [weak self] time in self?.publish(.playerTime(time)) }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.emit(.playerTime($0)) }
+            .store(in: &engineObservers)
         engine.$duration
-            .sink { [weak self] duration in self?.publish(.duration(duration)) }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.emit(.duration($0)) }
+            .store(in: &engineObservers)
         engine.$isBuffering
-            .sink { [weak self] buffering in self?.publish(.buffering(buffering)) }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.emit(.buffering($0)) }
+            .store(in: &engineObservers)
         engine.$isLoadingSubtitles
             .removeDuplicates()
-            .sink { [weak self] loading in self?.publish(.subtitleLoading(loading)) }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.emit(.subtitleLoading($0)) }
+            .store(in: &engineObservers)
         #if DEBUG && (os(iOS) || os(tvOS))
         engine.$startupProgress
             .compactMap { $0?.checkpoint }
             .removeDuplicates()
             .sink { checkpoint in
-                DiagTrace.breadcrumb(.essential,
-                    category: .playback,
-                    tag: "StartupTiming",
-                    message: "engine \(checkpoint)"
-                )
+                DiagTrace.breadcrumb(.essential, category: .playback, tag: "StartupTiming", message: "engine \(checkpoint)")
             }
-            .store(in: &subscriptions)
+            .store(in: &engineObservers)
         #endif
-
         engine.$hasFirstFrameReadyForDisplay
-            .sink { [weak self] ready in
-                guard let self, ready, !didPublishFirstFrame else { return }
-                didPublishFirstFrame = true
-                publish(.firstFrame)
-            }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.firstFrameReadinessChanged($0) }
+            .store(in: &engineObservers)
         engine.$errorInfo
             .compactMap { $0 }
-            .sink { [weak self] error in self?.publish(.failure(error)) }
-            .store(in: &subscriptions)
+            .sink { [weak self] in self?.emit(.failure($0)) }
+            .store(in: &engineObservers)
+    }
 
-        Publishers.Merge3(
+    private func observeInventoryAndTelemetry() {
+        let inventory = Publishers.Merge3(
             engine.$audioTracks.map { _ in () },
             engine.$subtitleTracks.map { _ in () },
             engine.$mediaChapters.map { _ in () }
         )
-        // @Published sends before the new value is stored, and the inventory
-        // event reads the engine, so it's delivered once the current
-        // assignments have finished.
-        .compactMap { [weak self] _ in self?.activeLoadEpoch }
-        .receive(on: DispatchQueue.main)
-        .sink { [weak self] epoch in self?.publish(.inventoryChanged, for: epoch) }
-        .store(in: &subscriptions)
-
+        // @Published sends before it stores the new value, and listeners
+        // read the engine's lists, so the event is delivered once the
+        // current assignments are done, tagged with the load it began under.
+        inventory
+            .compactMap { [weak self] _ in self?.activeLoadEpoch }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.emit(.inventoryChanged, for: $0) }
+            .store(in: &engineObservers)
+        // Forward the sample that was sent: reading the property here would
+        // still give the previous one, for the same @Published reason.
         engine.diagnostics.$liveTelemetry
-            // @Published sends before the value is stored. Forward the value
-            // sent, so recovery and statistics never read the previous sample.
-            .sink { [weak self] telemetry in self?.publish(.telemetryChanged(telemetry)) }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] in self?.emit(.telemetryChanged($0)) }
+            .store(in: &engineObservers)
         engine.systemCaptionRequest
             .sink { [weak self] request in
-                guard let self, let epoch = activeLoadEpoch else { return }
-                onSystemCaptionRequest?(epoch, request)
+                guard let self, let epoch = self.activeLoadEpoch else { return }
+                self.onSystemCaptionRequest?(epoch, request)
             }
-            .store(in: &subscriptions)
+            .store(in: &engineObservers)
+    }
 
+    private func observeRouteChanges() {
         engine.$currentAVPlayer
             .sink { [weak self] player in
                 guard let self else { return }
-                bindExternalPlayback(to: player)
-                publishSystemMediaChanged()
+                self.watchExternalPlayback(of: player)
+                self.announceSystemMediaChange()
             }
-            .store(in: &subscriptions)
-
-        // A native host can keep its AVPlayer while replacing the item, so the
-        // AirPlay policy and session binding are applied again at that point.
+            .store(in: &engineObservers)
+        // A native host can keep its AVPlayer and swap only the item, so the
+        // AirPlay rules and session binding are applied again then too.
         engine.$currentAVPlayerItem
-            .sink { [weak self] _ in self?.externalRouteMayHaveChanged() }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] _ in self?.routeMayHaveChanged() }
+            .store(in: &engineObservers)
         engine.$videoRoute
-            .sink { [weak self] _ in self?.externalRouteMayHaveChanged() }
-            .store(in: &subscriptions)
-
+            .sink { [weak self] _ in self?.routeMayHaveChanged() }
+            .store(in: &engineObservers)
         #if os(iOS) || os(tvOS)
         NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
-            .sink { [weak self] _ in self?.refreshExternalPlaybackState() }
-            .store(in: &subscriptions)
+            .sink { [weak self] _ in self?.updateExternalPlaybackStatus() }
+            .store(in: &engineObservers)
         #endif
     }
 
-    private func publishSystemMediaChanged() {
+    private func engineStateChanged(_ state: PlaybackState) {
+        emit(.state(state))
+        guard state == .ended, !load.endSent else { return }
+        load.endSent = true
+        emit(.ended)
+    }
+
+    private func firstFrameReadinessChanged(_ ready: Bool) {
+        guard ready, !load.firstFrameSent else { return }
+        load.firstFrameSent = true
+        emit(.firstFrame)
+    }
+
+    private func announceSystemMediaChange() {
         onControllerEvent?(.systemMediaChanged)
     }
 
-    /// Sends an engine event tagged with the active load. An event meant for
-    /// a specific `epoch` is dropped once another load is active.
-    private func publish(_ event: Event, for epoch: LoadEpoch? = nil) {
-        guard let activeLoadEpoch,
-              epoch == nil || epoch == activeLoadEpoch else { return }
-        onEvent?(ScopedEvent(epoch: activeLoadEpoch, event: event))
+    /// Sends an engine event stamped with the active load. An event meant
+    /// for a particular `epoch` is dropped once a different load is active.
+    private func emit(_ event: Event, for epoch: LoadEpoch? = nil) {
+        guard let current = activeLoadEpoch else { return }
+        if let epoch, epoch != current { return }
+        onEvent?(ScopedEvent(epoch: current, event: event))
     }
 
     // MARK: - AirPlay and external playback
 
-    private func externalRouteMayHaveChanged() {
-        configureExternalPlaybackPolicy()
-        refreshExternalPlaybackState()
-        publishSystemMediaChanged()
+    private func routeMayHaveChanged() {
+        applyAirPlayRules()
+        updateExternalPlaybackStatus()
+        announceSystemMediaChange()
     }
 
-    private func bindExternalPlayback(to player: AVPlayer?) {
-        externalPlaybackPolicyTask?.cancel()
-        externalPlaybackPolicyTask = nil
-        externalPlaybackObservation?.invalidate()
-        externalPlaybackObservation = nil
-        observedExternalPlaybackPlayer = player
-        configureExternalPlaybackPolicy()
+    private func watchExternalPlayback(of player: AVPlayer?) {
+        airPlay.deferredPolicy?.cancel()
+        airPlay.deferredPolicy = nil
+        airPlay.observation?.invalidate()
+        airPlay.observation = nil
+        airPlay.player = player
+        applyAirPlayRules()
 
         guard let player else {
-            refreshExternalPlaybackState()
+            updateExternalPlaybackStatus()
             return
         }
-        externalPlaybackObservation = player.observe(
-            \.isExternalPlaybackActive,
-            options: [.initial, .new]
-        ) { [weak self, weak player] _, _ in
+        airPlay.observation = player.observe(\.isExternalPlaybackActive, options: [.initial, .new]) { [weak self, weak player] _, _ in
             Task { @MainActor [weak self, weak player] in
-                guard let self, let player,
-                      self.observedExternalPlaybackPlayer === player,
-                      self.engine.currentAVPlayer === player else { return }
-                self.refreshExternalPlaybackState()
+                guard let self, let player, self.isWatching(player) else { return }
+                self.updateExternalPlaybackStatus()
             }
         }
     }
 
-    private func configureExternalPlaybackPolicy() {
-        guard let player = observedExternalPlaybackPlayer,
-              engine.currentAVPlayer === player else { return }
-        applyExternalPlaybackPolicy(to: player)
+    /// True while `player` is both the one being watched and the engine's
+    /// current AVPlayer.
+    private func isWatching(_ player: AVPlayer) -> Bool {
+        airPlay.player === player && engine.currentAVPlayer === player
+    }
 
-        // Other custom player UIs bind to the same published AVPlayer. Apply
-        // the policy again once that synchronous fan-out has finished, so a
-        // generic PiP host can't reopen a credentialed remote HLS URL to an
-        // AirPlay receiver that can't send its headers.
-        externalPlaybackPolicyTask?.cancel()
-        externalPlaybackPolicyTask = Task { @MainActor [weak self, weak player] in
+    private func applyAirPlayRules() {
+        guard let player = airPlay.player, engine.currentAVPlayer === player else { return }
+        applyAirPlayPolicy(to: player)
+
+        // Other custom player screens bind to the same published AVPlayer
+        // during this same update. Apply the rule once more after they've
+        // all run, so a generic PiP host can't hand a credentialed remote HLS
+        // URL to an AirPlay receiver that can't send its headers.
+        airPlay.deferredPolicy?.cancel()
+        airPlay.deferredPolicy = Task { @MainActor [weak self, weak player] in
             await Task.yield()
-            guard !Task.isCancelled,
-                  let self, let player,
-                  self.observedExternalPlaybackPlayer === player,
-                  self.engine.currentAVPlayer === player else { return }
-            self.applyExternalPlaybackPolicy(to: player)
-            self.refreshExternalPlaybackState()
-            self.externalPlaybackPolicyTask = nil
+            guard !Task.isCancelled, let self, let player, self.isWatching(player) else { return }
+            self.applyAirPlayPolicy(to: player)
+            self.updateExternalPlaybackStatus()
+            self.airPlay.deferredPolicy = nil
         }
     }
 
-    private func applyExternalPlaybackPolicy(to player: AVPlayer) {
-        let allowed = allowsExternalPlayback
+    private func applyAirPlayPolicy(to player: AVPlayer) {
+        let allowed = mayUseExternalPlayback
         player.allowsExternalPlayback = allowed
         #if os(iOS)
         player.usesExternalPlaybackWhileExternalScreenIsActive = allowed
         #endif
     }
 
-    /// Whether the player may send video to an AirPlay receiver right now.
-    private var allowsExternalPlayback: Bool {
+    /// Whether video may go to an AirPlay receiver at the moment.
+    private var mayUseExternalPlayback: Bool {
         Self.externalPlaybackAllowed(
-            activePolicy: externalPlaybackIsReceiverFetchable,
-            preservedReplacementPolicy: replacementExternalPlaybackPolicy,
-            preservedPolicyIsReceiverSafe: preservedReplacementPolicyIsReceiverSafe
+            activePolicy: receiverCanFetchActiveSource,
+            preservedReplacementPolicy: airPlay.carriedPolicy,
+            preservedPolicyIsReceiverSafe: carriedPolicyIsSafeForNextLoad
         )
     }
 
-    /// A loopback route reaches a receiver through Vivid's AirPlay host
-    /// rewrite. A remote HLS bypass only does without custom request headers:
-    /// AVURLAsset headers stay on the sending device and aren't credentials an
-    /// AirPlay receiver can repeat.
-    private var externalPlaybackIsReceiverFetchable: Bool {
+    /// A loopback route reaches the receiver through Vivid's AirPlay host
+    /// rewrite. A remote HLS bypass only does when it has no custom request
+    /// headers: AVURLAsset keeps those on the sending device, and a receiver
+    /// can't repeat them.
+    private var receiverCanFetchActiveSource: Bool {
         engine.videoRoute.isReceiverFetchable(
-            hasCommittedLoad: hasCommittedActiveLoad && activeSpec != nil,
+            hasCommittedLoad: load.committed && activeSpec != nil,
             hasCustomHeaders: activeSpec?.options.httpHeaders.isEmpty != true
         )
     }
 
-    /// The outgoing player's policy can only carry over when the next load
-    /// can use the same receiver route. Header-authenticated remote HLS
-    /// can't, because its AVURLAsset headers stay on the sender. This is
-    /// checked as soon as `beginLoad` installs the next spec, before the
-    /// engine swaps the item on its AVPlayer.
-    private var preservedReplacementPolicyIsReceiverSafe: Bool {
-        guard activeSpec?.options.nativeRemoteHLS == true else { return true }
-        return activeSpec?.options.httpHeaders.isEmpty == true
+    /// The outgoing player's setting only carries over when the next load
+    /// can use the same receiver route, which header-authenticated remote
+    /// HLS can't (its headers stay on the sender). This is checked as soon
+    /// as `beginLoad` installs the next spec, before the engine swaps the
+    /// item.
+    private var carriedPolicyIsSafeForNextLoad: Bool {
+        guard let options = activeSpec?.options, options.nativeRemoteHLS else { return true }
+        return options.httpHeaders.isEmpty
     }
 
     nonisolated static func externalPlaybackAllowed(
@@ -733,54 +745,52 @@ final class VividPlaybackController {
         preservedReplacementPolicy: Bool?,
         preservedPolicyIsReceiverSafe: Bool
     ) -> Bool {
-        guard preservedPolicyIsReceiverSafe else { return activePolicy }
-        return preservedReplacementPolicy ?? activePolicy
+        preservedPolicyIsReceiverSafe ? (preservedReplacementPolicy ?? activePolicy) : activePolicy
     }
 
-    private func refreshExternalPlaybackState() {
-        let player = engine.currentAVPlayer
-        let playerIsActive = player?.isExternalPlaybackActive == true
+    private func updateExternalPlaybackStatus() {
+        let current = engine.currentAVPlayer
+        let playerSendsVideo = current?.isExternalPlaybackActive == true
         #if os(tvOS)
-        // HDMI is Apple TV's normal output. Only AVPlayer's own external video
-        // state hands captions from Vivid's overlay to the system.
-        engine.setNativeSubtitleRendering(playerIsActive)
+        // HDMI is how Apple TV normally plays. Captions move from Vivid's
+        // overlay to the system only when AVPlayer itself sends video out.
+        engine.setNativeSubtitleRendering(playerSendsVideo)
         #endif
-        let routeIsActive = playerIsActive
-            || (engine.videoRoute.usesNativeVideoSession && Self.isExternalOutputRoute)
-        let supported = player != nil && (allowsExternalPlayback || routeIsActive)
+        let active = playerSendsVideo
+            || (engine.videoRoute.usesNativeVideoSession && Self.outputIsExternal)
+        let supported = current != nil && (mayUseExternalPlayback || active)
 
         supportsExternalPlayback = supported
-        isExternalPlaybackActive = routeIsActive
-        guard supported != lastExternalPlaybackSupport
-                || routeIsActive != lastExternalPlaybackActive else { return }
-        lastExternalPlaybackSupport = supported
-        lastExternalPlaybackActive = routeIsActive
-        onControllerEvent?(.externalPlaybackChanged(supported: supported, active: routeIsActive))
+        isExternalPlaybackActive = active
+        if supported == airPlay.reportedSupport, active == airPlay.reportedActive { return }
+        airPlay.reportedSupport = supported
+        airPlay.reportedActive = active
+        onControllerEvent?(.externalPlaybackChanged(supported: supported, active: active))
     }
 
-    private static var isExternalOutputRoute: Bool {
-        AVAudioSession.sharedInstance().currentRoute.outputs.contains {
-            $0.portType == .airPlay || $0.portType == .HDMI
-        }
+    private static var outputIsExternal: Bool {
+        let externalPorts: Set<AVAudioSession.Port> = [.airPlay, .HDMI]
+        return AVAudioSession.sharedInstance().currentRoute.outputs.contains { externalPorts.contains($0.portType) }
     }
 }
 
-/// Whether `play()` may restore a torn-down session or has to wait for the
-/// load in flight to commit.
+/// Whether `play()` may rebuild a torn-down session, or must leave the load
+/// in flight to finish.
 ///
-/// A separate pure decision, because the hazard never shows on the happy
-/// path: `beginLoad` installs the spec and epoch before `VividEngine.load`
-/// returns, and that window matches the background teardown test. A Play
-/// then would call `reloadAtCurrentPosition()`, another `load` that replaces
-/// the startup in flight.
+/// It's a separate, pure rule because the danger never shows on the normal
+/// path: between `beginLoad` and the end of `VividEngine.load` the
+/// controller passes the background-teardown test, and restoring then calls
+/// `reloadAtCurrentPosition()`, a second `load` that replaces the startup
+/// still running.
 enum VividPlayIntent {
     enum Action: Equatable {
-        /// No committed load yet. The `engine.load` in flight still owns
-        /// startup and plays when it commits.
+        /// Nothing has committed yet; the `engine.load` in flight owns the
+        /// startup and plays when it finishes.
         case ignore
-        /// The session is live; start playing.
+        /// The session is up, so just play.
         case play
-        /// A committed load was torn down in the background; rebuild, then play.
+        /// A committed load was torn down in the background: rebuild it,
+        /// then play.
         case restoreThenPlay
     }
 
@@ -788,7 +798,10 @@ enum VividPlayIntent {
         hasCommittedActiveLoad: Bool,
         sessionRequiresRestore: Bool
     ) -> Action {
-        guard hasCommittedActiveLoad else { return .ignore }
-        return sessionRequiresRestore ? .restoreThenPlay : .play
+        switch (hasCommittedActiveLoad, sessionRequiresRestore) {
+        case (false, _): .ignore
+        case (true, true): .restoreThenPlay
+        case (true, false): .play
+        }
     }
 }
