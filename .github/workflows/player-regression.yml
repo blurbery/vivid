@@ -327,7 +327,7 @@ jobs:
               exit 0
             fi
             echo "Swift package resolution failed (attempt $attempt of 3)"
-            sleep $((attempt * 15))
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 15)); fi
           done
           echo "::error::Swift packages could not be resolved after 3 attempts"
           exit 1
@@ -472,7 +472,7 @@ jobs:
               exit 0
             fi
             echo "Swift package resolution failed (attempt $attempt of 3)"
-            sleep $((attempt * 15))
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 15)); fi
           done
           echo "::error::Swift packages could not be resolved after 3 attempts"
           exit 1
@@ -563,7 +563,7 @@ jobs:
               exit 0
             fi
             echo "Swift package resolution failed (attempt $attempt of 3)"
-            sleep $((attempt * 15))
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 15)); fi
           done
           echo "::error::Swift packages could not be resolved after 3 attempts"
           exit 1
