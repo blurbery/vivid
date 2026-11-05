@@ -18,6 +18,9 @@ engine libraries' Vivid-written header lines changed again (how each is built,
 its patches and the pipeline commit). Later, the Rust standard library notice
 gained the MIT texts of the crates.io crates built into it, and notices for
 the bundled Jellyfin logo (CC BY-SA 4.0) and Seerr icon (MIT) were added.
+The uchardet notice was renamed after the licence Vivid uses it under, LGPL 2.1
+or later, and its Vivid-written header lines now say so; upstream's COPYING
+in it, with all three of uchardet's licence texts, is unchanged.
 The Silo Apple entry is a Vivid-written notice crediting the portions derived
 from Silo Apple, followed by its App Store exception and AGPL-3.0 text exactly
 as published at the revision Vivid started from.
@@ -74,7 +77,7 @@ ORIGINALS = {
     "mpv-LGPL-2.1-or-later.txt": ("b3588cc6fcf3858937f5ba0e4fb40b848cdace4f2c364e70003e362e9b66b28b", 31854),
     "shaderc-Apache-2.0.txt": ("3a13ca2c36384ab1eb7517b36bf085eb75a95ff7625edb93f4dc9809cdee659c", 12281),
     "uavs3d-BSD-3-Clause.txt": ("ff9fa66aa7201706327a0e6a830281448f1e8b9f5cbce45941c3c8d4d6d675b8", 2442),
-    "uchardet-MPL-1.1.txt": ("f4609df78ec01fd8599c41f8ad9e9e852510663d0cc8ee75002cbce0c761af5a", 71280),
+    "uchardet-LGPL-2.1.txt": ("f77e92a15956634ba4ccdbeb691d0d1ee8ca008be2f5d7a0837386f7503e59fc", 71469),
 }
 OVERVIEW = 'README.txt'
 

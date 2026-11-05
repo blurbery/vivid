@@ -99,9 +99,11 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
     ) {
         // The seed identifies the underlying event, so a payload MetricKit
         // delivers twice (live and again through the past payloads) is stored
-        // once.
+        // once. Host tokens change with each launch's salt, so they're made
+        // plain first.
+        let seed = DiagLog.withoutHostTokens(fingerprintSeed)
         let id = DiagnosticsSHA256.shortHex(
-            data: Data("\(kind.rawValue)|\(source.rawValue)|\(fingerprintSeed)".utf8),
+            data: Data("\(kind.rawValue)|\(source.rawValue)|\(seed)".utf8),
             count: 24
         )
         self.init(

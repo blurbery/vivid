@@ -33,6 +33,8 @@ struct ServerSetupView: View {
         .navigationDestination(item: $form.foundServer) { server in
             LoginView(router: router, adding: server)
         }
+        // Back, or anything else that takes the page away, stops the search.
+        .onDisappear { form.cancel() }
     }
 
     private var heading: some View {
@@ -92,6 +94,13 @@ struct ServerSetupView: View {
             .buttonStyle(AuroraPrimaryButtonStyle(isLoading: form.isBusy))
             .disabled(form.isBusy)
             .padding(.top, 4)
+            if form.isBusy {
+                // Trying every address can take a minute when the host
+                // doesn't answer.
+                Button("Cancel") { form.cancel() }
+                    .buttonStyle(AuroraGhostButtonStyle())
+                    .frame(maxWidth: .infinity)
+            }
         }
         .padding(22)
         .auroraGlass(cornerRadius: 24, emphasized: true)
