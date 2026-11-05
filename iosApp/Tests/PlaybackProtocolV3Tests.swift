@@ -396,6 +396,57 @@ final class PlaybackProtocolV3Tests: XCTestCase {
         )
     }
 
+    func testNativeV2NeverAsksForAuthorizedMediaOrigins() {
+        func capability(nativeApiMajor: Int?, advertised: Bool) -> PlaybackV3CapabilityResponse {
+            var features = [
+                PlaybackProtocolV3.planFeature,
+                PlaybackProtocolV3.neutralContractFeature,
+                PlaybackProtocolV3.headerAuthenticatedMediaFeature,
+            ]
+            if advertised { features.append(PlaybackProtocolV3.authorizedMediaOriginsFeature) }
+            return PlaybackV3CapabilityResponse(
+                nativeApiMajor: nativeApiMajor,
+                enabled: true,
+                protocolVersions: [3],
+                features: features,
+                deliveries: ["original_http"],
+                transformations: [],
+                reason: nil
+            )
+        }
+        // A native v2 stream must stay on the API origin, so a v2 server that
+        // advertises proxy origins (as every current Silo does) isn't asked
+        // for them; a proxy URL would be refused on every route.
+        XCTAssertFalse(PlaybackV3CapabilityGate.asksForAuthorizedMediaOrigins(
+            capability(nativeApiMajor: 2, advertised: true)
+        ))
+        XCTAssertTrue(PlaybackV3CapabilityGate.asksForAuthorizedMediaOrigins(
+            capability(nativeApiMajor: nil, advertised: true)
+        ))
+        XCTAssertFalse(PlaybackV3CapabilityGate.asksForAuthorizedMediaOrigins(
+            capability(nativeApiMajor: nil, advertised: false)
+        ))
+
+        // The refusal this avoids: a proxy URL on native v2.
+        XCTAssertNil(StreamRequest.resolve(
+            rawURL: "https://proxy.example.com/stream/v3/session-1",
+            serverURL: "https://silo.example.com",
+            additionalHeaders: [:],
+            accessToken: "token",
+            requiresHeaderAuthenticatedMedia: true,
+            authorizedMediaOriginSessionId: "session-1",
+            nativeApiMajor: 2
+        ))
+        XCTAssertNotNil(StreamRequest.resolve(
+            rawURL: "/api/v2/stream/session-1",
+            serverURL: "https://silo.example.com",
+            additionalHeaders: [:],
+            accessToken: "token",
+            requiresHeaderAuthenticatedMedia: true,
+            nativeApiMajor: 2
+        ))
+    }
+
     func testRecoveredServerRequestAndCapabilityFixturesDecode() throws {
         let capability = try PlaybackV3FixtureTestSupport.decode(
             PlaybackV3CapabilityResponse.self,
