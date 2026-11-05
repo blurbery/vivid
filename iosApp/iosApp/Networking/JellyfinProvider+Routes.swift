@@ -219,6 +219,7 @@ extension JellyfinAdapter {
     private static let catalogSorts = [
         "title": "SortName", "year": "ProductionYear", "release_date": "PremiereDate", "added": "DateCreated",
         "added_at": "DateCreated", "rating": "CommunityRating", "random": "Random", "runtime": "Runtime",
+        "latest_episode_added": "DateLastContentAdded,SortName",
     ]
 
     nonisolated static func catalogFilterOptions(_ raw: [String: Any]) -> [String: Any] {

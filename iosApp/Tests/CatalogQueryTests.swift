@@ -159,6 +159,48 @@ final class CatalogQueryTests: XCTestCase {
         XCTAssertEqual(Set(keys).count, keys.count)
     }
 
+    func testLastEpisodeSortsAreOfferedForSeriesOnly() {
+        let episodeSorts: [CatalogSortKey] = [.lastEpisodeReleased, .lastEpisodeAdded]
+        for provider in [MediaServerProvider.silo, .emby, .jellyfin] {
+            for mediaType in [BrowseMediaType.movie, .mixed] {
+                let keys = CatalogSortKey.available(for: mediaType, provider: provider)
+                XCTAssertTrue(Set(keys).isDisjoint(with: episodeSorts), "\(provider) \(mediaType)")
+            }
+        }
+        for provider in [MediaServerProvider.silo, .emby] {
+            let keys = CatalogSortKey.available(for: .series, provider: provider)
+            XCTAssertTrue(Set(episodeSorts).isSubset(of: keys), "\(provider)")
+        }
+        let jellyfin = CatalogSortKey.available(for: .series, provider: .jellyfin)
+        XCTAssertTrue(jellyfin.contains(.lastEpisodeAdded))
+        XCTAssertFalse(jellyfin.contains(.lastEpisodeReleased), "Jellyfin can't sort by the newest episode's air date")
+    }
+
+    func testSavedLastEpisodeReleasedFallsBackOnJellyfin() {
+        var state = CatalogFilterState()
+        state.sort = .lastEpisodeReleased
+        state.order = .asc
+        XCTAssertEqual(state.normalized(for: .silo), state)
+        XCTAssertEqual(state.normalized(for: .emby).sort, .lastEpisodeReleased)
+        let jellyfin = state.normalized(for: .jellyfin)
+        XCTAssertEqual(jellyfin.sort, .title)
+        XCTAssertNil(jellyfin.order)
+
+        state.sort = .lastEpisodeAdded
+        XCTAssertEqual(state.normalized(for: .jellyfin).sort, .lastEpisodeAdded)
+    }
+
+    func testLastEpisodeSortsSendSiloFieldsForSeries() {
+        for (key, field) in [(CatalogSortKey.lastEpisodeReleased, "last_air_date"), (.lastEpisodeAdded, "latest_episode_added")] {
+            var state = CatalogFilterState()
+            state.sort = key
+            let query = build(state, mediaType: .series, includeType: true)
+            XCTAssertEqual(query["sort"], field)
+            XCTAssertEqual(query["order"], "desc", "Newest first to begin with")
+            XCTAssertEqual(query["type"], "series", "Shows, not their episodes")
+        }
+    }
+
     func testSnapshotIsPassedThrough() {
         let query = CatalogQueryBuilder.build(
             CatalogFilterState(),

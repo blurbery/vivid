@@ -1099,6 +1099,28 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertTrue(EmbyAdapter.sortsCollectionsByDisplayOrder(version:"4.10.0.40"))
     }
 
+    func testLastEpisodeSortsMapToEmbySeriesSorts() async throws {
+        func sortBy(_ sort: String, version: String) async throws -> [String?] {
+            var sent: [String?] = []
+            let adapter = stubbedAdapter { request in
+                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+                if components.path == "/emby/System/Info/Public" { return (200, ["Id": "server", "Version": version]) }
+                let query = components.queryItems ?? []
+                sent.append(query.first { $0.name == "SortBy" }?.value)
+                XCTAssertEqual(query.first { $0.name == "IncludeItemTypes" }?.value, "Series")
+                return (200, ["Items": [], "TotalRecordCount": 0])
+            }
+            _ = try await adapter.catalog(["source": "query", "type": "series", "sort": sort, "order": "desc"])
+            return sent
+        }
+        let released = try await sortBy("last_air_date", version: "4.10.2.0")
+        XCTAssertEqual(released, ["LastContentPremiereDate,SortName"])
+        let older = try await sortBy("last_air_date", version: "4.9.0.16")
+        XCTAssertEqual(older, ["DateLastContentAdded,SortName"], "Before 4.9.0.17 it falls back to the newest episode's arrival")
+        let added = try await sortBy("latest_episode_added", version: "4.7.14.0")
+        XCTAssertEqual(added, ["DateLastContentAdded,SortName"])
+    }
+
     func testCollectionsFollowEachCollectionsDisplayOrder() async throws {
         var version: String? = "4.10.0.40"
         var requests: [[String: String]] = []

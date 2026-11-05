@@ -585,6 +585,18 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(response.hasMore, true)
     }
 
+    func testLastEpisodeAddedMapsToJellyfinSort() async throws {
+        var sortBy: [String?] = []
+        let adapter = adapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            sortBy.append(query.first { $0.name == "SortBy" }?.value)
+            XCTAssertEqual(query.first { $0.name == "IncludeItemTypes" }?.value, "Series")
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        _ = try await adapter.catalog(["source": "query", "type": "series", "sort": "latest_episode_added", "order": "desc"])
+        XCTAssertEqual(sortBy, ["DateLastContentAdded,SortName"])
+    }
+
     func testSearchAllScopeIncludesMoviesAndSeries() async throws {
         var types: [String] = []
         let adapter = adapter { request in

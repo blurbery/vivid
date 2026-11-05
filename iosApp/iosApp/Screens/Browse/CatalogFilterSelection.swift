@@ -209,9 +209,14 @@ struct CatalogFilterState: Equatable, Codable, Hashable {
 
     /// Emby and Jellyfin can't filter on the Silo-only facets or match any
     /// filter, so those parts are dropped for them.
+    /// A sort the server can't run goes back to the default.
     func normalized(for provider: MediaServerProvider) -> CatalogFilterState {
-        guard provider.usesNativeUser else { return self }
         var state = self
+        if !sort.isSupported(by: provider) {
+            state.sort = CatalogFilterState.none.sort
+            state.order = nil
+        }
+        guard provider.usesNativeUser else { return state }
         state.matchAll = true
         state.studios = []
         state.networks = []

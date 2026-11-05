@@ -231,7 +231,14 @@ extension EmbyAdapter {
     private static let catalogSorts = [
         "title": "SortName", "year": "ProductionYear", "release_date": "PremiereDate", "added": "DateCreated",
         "added_at": "DateCreated", "rating": "CommunityRating", "random": "Random", "runtime": "Runtime",
+        "latest_episode_added": "DateLastContentAdded,SortName", "last_air_date": "LastContentPremiereDate,SortName",
     ]
+
+    /// Emby sorts series by their newest episode's air date from 4.9.0.17,
+    /// the version its own web app offers it from.
+    nonisolated static func sortsByLastEpisodeAired(version: String) -> Bool {
+        isVersion(version, atLeast: [4, 9, 0, 17])
+    }
 
     func catalog(_ input: [String: String]) async throws -> [String: Any] {
         if let collection = input["collection_id"] {
@@ -254,6 +261,10 @@ extension EmbyAdapter {
             if let value = input[source], !value.isEmpty { query[target] = value }
         }
         if let sort = input["sort"], let mapped = Self.catalogSorts[sort] { query["SortBy"] = mapped }
+        // Older servers fall back to the newest episode's arrival.
+        if input["sort"] == "last_air_date", !Self.sortsByLastEpisodeAired(version: try await serverVersion()) {
+            query["SortBy"] = Self.catalogSorts["latest_episode_added"]
+        }
         if let library = input["library_id"] { query["ParentId"] = try await libraryID(library) }
         if let prefix = input["name_prefix"], !prefix.isEmpty {
             if prefix == "#" { query["NameLessThan"] = "A" } else { query["NameStartsWith"] = prefix }

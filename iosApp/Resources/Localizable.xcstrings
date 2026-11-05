@@ -21694,6 +21694,12 @@
         }
       }
     },
+    "Date Last Episode Added" : {
+      "extractionState" : "manual"
+    },
+    "Date Last Episode Released" : {
+      "extractionState" : "manual"
+    },
     "Decade" : {
       "extractionState" : "manual",
       "localizations" : {
