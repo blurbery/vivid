@@ -32,7 +32,7 @@
       }
     },
     "After 1 Hour" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -67,7 +67,7 @@
       }
     },
     "After 12 Hours" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -102,7 +102,7 @@
       }
     },
     "Automatic" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -173,7 +173,7 @@
       }
     },
     "Every Time" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -244,7 +244,7 @@
       }
     },
     "Show Who's Watching when you've been away from Vivid for 1 hour." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -279,7 +279,7 @@
       }
     },
     "Show Who's Watching when you've been away from Vivid for 12 hours." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -314,7 +314,7 @@
       }
     },
     "Show Who's Watching whenever you return to Vivid." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -349,7 +349,7 @@
       }
     },
     "Use the last profile selected on this device. A protected profile can reopen without asking for its PIN." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -384,7 +384,7 @@
       }
     },
     "Use the profile selected for the current Apple TV user. A protected profile can reopen without asking for its PIN." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
