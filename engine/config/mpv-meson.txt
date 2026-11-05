@@ -29,7 +29,8 @@
 -Dvo-avfoundation=enabled
 -Dlua=disabled
 -Dios-gl=enabled
-# added -Dcplugins=disabled: no C plugin loader, so the engine cannot dlopen
-# and run plugin code (App Review guideline 2.5.2); meson then also drops
-# mpv's -rdynamic link flag
+# added -Dcplugins=disabled: with Lua and JavaScript off too, mpv has no
+# plugin or script loader (App Review guideline 2.5.2); meson then also drops
+# mpv's -rdynamic link flag. libbluray and libplacebo can still dlopen their
+# own optional system libraries, none of which ship in the app.
 -Dcplugins=disabled
