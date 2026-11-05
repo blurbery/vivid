@@ -2,69 +2,71 @@
 import AVKit
 import SwiftUI
 
-/// The AirPlay button in the player's top strip and the half-folded deck.
+/// The system AirPlay button, used in the player's top strip and on the
+/// half-folded deck.
 ///
-/// Above the video it lives inside the controls, which the auto-hide takes
-/// down. Taps on this UIKit view never reach SwiftUI, so without
-/// `onPresentingRoutes` the timer would keep running while the route sheet is
-/// open and remove the button, and the sheet with it, mid-choice. The
-/// callback lets the caller hold the controls up while the sheet is open, as
-/// an open popover does.
+/// Over the video the button sits inside the controls, which hide on a
+/// timer. A tap on this UIKit view never reaches SwiftUI, so nothing would
+/// stop that timer while the route sheet is open, and the controls would
+/// take the button and its sheet away mid-choice. `onPresentingRoutes`
+/// reports the sheet opening and closing, so the caller can keep the
+/// controls up the way an open popover does.
 struct AirPlayRoutePicker: UIViewRepresentable {
     let onPresentingRoutes: (Bool) -> Void
 
+    func makeCoordinator() -> RouteSheetTracker {
+        RouteSheetTracker(report: onPresentingRoutes)
+    }
+
     func makeUIView(context: Context) -> AVRoutePickerView {
-        let picker = AVRoutePickerView()
-        picker.activeTintColor = .white
-        picker.tintColor = .white
-        picker.prioritizesVideoDevices = true
-        picker.accessibilityLabel = "AirPlay"
-        picker.accessibilityHint = String(localized: "Choose a device for video playback")
-        picker.delegate = context.coordinator
-        return picker
+        let button = AVRoutePickerView()
+        button.tintColor = .white
+        button.activeTintColor = .white
+        button.prioritizesVideoDevices = true
+        button.accessibilityLabel = "AirPlay"
+        button.accessibilityHint = String(localized: "Choose a device for video playback")
+        button.delegate = context.coordinator
+        return button
     }
 
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
-        // The closure belongs to the current view value. Refresh it so the
-        // coordinator never calls back into a stale one.
-        context.coordinator.onPresentingRoutes = onPresentingRoutes
+        // Each new view value brings its own closure; keep the tracker on the
+        // latest one.
+        context.coordinator.report = onPresentingRoutes
     }
 
-    static func dismantleUIView(_ uiView: AVRoutePickerView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: AVRoutePickerView, coordinator: RouteSheetTracker) {
         uiView.delegate = nil
-        // If the view goes while the sheet is open, "did end" never arrives,
-        // so release the hold here and let the controls hide again.
-        coordinator.resignPresentation()
+        // The sheet's "did end" never comes if the button is removed while
+        // it's open, so let go of the controls here.
+        coordinator.sheetClosed()
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPresentingRoutes: onPresentingRoutes)
-    }
+    /// Reports the route sheet opening and closing once each. SwiftUI owns
+    /// it and the picker's delegate reference is weak, so it holds nothing
+    /// back.
+    final class RouteSheetTracker: NSObject, AVRoutePickerViewDelegate {
+        var report: (Bool) -> Void
+        private var sheetIsOpen = false
 
-    /// `AVRoutePickerView.delegate` is weak and SwiftUI owns the coordinator,
-    /// so it holds no reference back to the view.
-    final class Coordinator: NSObject, AVRoutePickerViewDelegate {
-        var onPresentingRoutes: (Bool) -> Void
-        private var isPresenting = false
-
-        init(onPresentingRoutes: @escaping (Bool) -> Void) {
-            self.onPresentingRoutes = onPresentingRoutes
+        init(report: @escaping (Bool) -> Void) {
+            self.report = report
         }
 
         func routePickerViewWillBeginPresentingRoutes(_ routePickerView: AVRoutePickerView) {
-            guard !isPresenting else { return }
-            isPresenting = true
-            onPresentingRoutes(true)
+            if sheetIsOpen { return }
+            sheetIsOpen = true
+            report(true)
         }
 
         func routePickerViewDidEndPresentingRoutes(_ routePickerView: AVRoutePickerView) {
-            resignPresentation()
+            sheetClosed()
         }
 
-        func resignPresentation() {
-            guard isPresenting else { return }
-            isPresenting = false
-            onPresentingRoutes(false)
+        func sheetClosed() {
+            if !sheetIsOpen { return }
+            sheetIsOpen = false
+            report(false)
         }
     }
 }
