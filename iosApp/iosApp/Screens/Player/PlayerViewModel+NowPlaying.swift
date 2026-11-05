@@ -117,7 +117,7 @@ extension PlayerViewModel {
                 detail = try await VividAPI.shared.itemDetail(contentId: contentId)
             } catch {
                 Self.logger.warning(
-                    "NowPlaying artwork itemDetail fetch failed for \(contentId, privacy: .public): \(String(describing: error), privacy: .public)"
+                    "NowPlaying artwork itemDetail fetch failed for \(contentId, privacy: .public): \(MediaLogRedactor.sanitize(error), privacy: .public)"
                 )
                 return
             }

@@ -314,7 +314,7 @@ final class DownloadManager {
         } catch {
             guard currentScope == scope, self.generation == generation else { return }
             if file.capability == nil { hasFailedCheck = true }
-            DownloadEngine.log.debug("Downloads capability check failed: \(error.localizedDescription, privacy: .public)")
+            DownloadEngine.log.debug("Downloads capability check failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
             return
         }
         guard currentScope == scope, self.generation == generation else { return }

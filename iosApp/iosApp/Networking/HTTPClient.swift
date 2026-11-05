@@ -1550,9 +1550,9 @@ extension HTTPClient {
         } catch {
             switch kind {
             case .ordinary:
-                logger.error("Refresh encode failed: \(String(describing: error), privacy: .public)")
+                logger.error("Refresh encode failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
             case .scoped:
-                logger.error("Scoped refresh threw: \(String(describing: error), privacy: .public)")
+                logger.error("Scoped refresh threw: \(MediaLogRedactor.sanitize(error), privacy: .public)")
             }
             return false
         }
@@ -1595,7 +1595,7 @@ extension HTTPClient {
             }
         } catch {
             await noteServerUnreachable(for: error)
-            logger.error("\(prefix, privacy: .public) threw: \(String(describing: error), privacy: .public)")
+            logger.error("\(prefix, privacy: .public) threw: \(MediaLogRedactor.sanitize(error), privacy: .public)")
             return false
         }
     }

@@ -59,6 +59,16 @@ final class DiagnosticsRedactionTests: XCTestCase {
         XCTAssertTrue(rendered.contains("[host:"))
     }
 
+    func testHostTokenIsSaltedAndStableWithinALaunch() throws {
+        let unsalted = DiagnosticsSHA256.shortHex(data: Data("media.example.com".utf8), count: 12)
+        let first = try line("HTTP 404 GET https://media.example.com/api/v1/library")
+        let second = try line("HTTP 500 GET https://MEDIA.example.com/api/v1/settings")
+        XCTAssertFalse(first.contains(unsalted))
+        let token = try XCTUnwrap(first.range(of: #"\[host:[0-9a-f]{12}\]"#, options: .regularExpression)
+            .map { String(first[$0]) })
+        XCTAssertTrue(second.contains(token))
+    }
+
     func testRegisteredHostThatIsSubstringOfItsTokenTerminates() throws {
         DiagLog.registerSensitiveHost("host")
         let rendered = try line("connect to host failed")
