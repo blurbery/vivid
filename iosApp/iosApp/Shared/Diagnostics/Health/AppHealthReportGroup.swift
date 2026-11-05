@@ -40,7 +40,8 @@ extension AppHealthReport {
     /// and the failing request for app errors, so different faults of the
     /// same kind stay apart.
     var groupKey: String {
-        [kind.rawValue, source.rawValue, groupSummary, topFrame ?? "", failingRequest ?? ""].joined(separator: "|")
+        DiagLog.withoutHostTokens(
+            [kind.rawValue, source.rawValue, groupSummary, topFrame ?? "", failingRequest ?? ""].joined(separator: "|"))
     }
 
     /// A plain-English title, such as "Crashed: invalid memory access" or
@@ -61,8 +62,8 @@ extension AppHealthReport {
     var issueID: String {
         // A hang's code is its duration, which differs every time.
         let stableCode = kind == .hang ? nil : technicalCode
-        let seed = [kind.rawValue, groupSummary, stableCode ?? "", topFrame ?? "", failingRequest ?? ""]
-            .joined(separator: "|")
+        let seed = DiagLog.withoutHostTokens(
+            [kind.rawValue, groupSummary, stableCode ?? "", topFrame ?? "", failingRequest ?? ""].joined(separator: "|"))
         return "VD-" + DiagnosticsSHA256.shortHex(data: Data(seed.utf8), count: 6).uppercased()
     }
 

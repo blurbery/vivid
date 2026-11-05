@@ -13,7 +13,8 @@ enum DiagLog {
     private static let hostLock = NSLock()
     nonisolated(unsafe) private static var sensitiveHosts: [String] = []
 
-    /// Hashes this host wherever it appears in later lines, even outside a URL.
+    /// Replaces this host with its salted token wherever it appears in later
+    /// lines, even outside a URL.
     static func registerSensitiveHost(_ host: String) {
         let normalised = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalised.isEmpty, !loopbackHosts.contains(normalised) else { return }
@@ -28,11 +29,37 @@ enum DiagLog {
         hostLock.withLock { sensitiveHosts.removeAll() }
     }
 
+    /// Random bytes made once per launch and kept only in memory. Mixing them
+    /// into the host hash keeps one host's token the same across a launch's
+    /// lines, so a report's events still line up, while tokens from other
+    /// launches can't be matched and a guessed domain can't be checked.
+    private static let hostSalt: Data = {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) })
+    }()
+
     private static func hostToken(_ host: String) -> String {
-        "[host:" + DiagnosticsSHA256.shortHex(data: Data(host.lowercased().utf8), count: 12) + "]"
+        "[host:" + DiagnosticsSHA256.shortHex(data: hostSalt + Data(host.lowercased().utf8), count: 12) + "]"
+    }
+
+    private static let hostTokenPattern = try! NSRegularExpression(pattern: "\\[host:[0-9a-f]{12}\\]")
+
+    /// Swaps every salted host token for a plain `[host]`, for text that is
+    /// hashed into an ID that must stay the same from one launch to the next.
+    static func withoutHostTokens(_ text: String) -> String {
+        hostTokenPattern.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[host]")
     }
 
     // MARK: - Sanitising
+
+    /// An error for a public unified log line. `MediaLogRedactor` removes
+    /// file, http, https, smb, ws and wss URLs, host:port paths and credential
+    /// values first, then this redactor replaces saved server hosts that
+    /// appear on their own, such as the name in a certificate trust error.
+    static func publicLogText(_ error: any Error) -> String {
+        sanitizedText(MediaLogRedactor.sanitize(error), maxLength: 1_024)
+    }
 
     static func sanitizedText(_ value: String, maxLength: Int) -> String {
         var text = redactURLs(in: value)
@@ -47,7 +74,7 @@ enum DiagLog {
         return String(text.prefix(maxLength - 3)) + "..."
     }
 
-    /// The scheme, a hashed host and the path with identifiers and media names
+    /// The scheme, a salted host token and the path with identifiers and media names
     /// replaced. User, password, port, query and fragment are left out.
     static func normalisedURL(_ url: URL) -> String {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),

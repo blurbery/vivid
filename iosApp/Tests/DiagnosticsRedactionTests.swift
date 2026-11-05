@@ -59,6 +59,42 @@ final class DiagnosticsRedactionTests: XCTestCase {
         XCTAssertTrue(rendered.contains("[host:"))
     }
 
+    func testHostTokenIsSaltedAndStableWithinALaunch() throws {
+        let unsalted = DiagnosticsSHA256.shortHex(data: Data("media.example.com".utf8), count: 12)
+        let first = try line("HTTP 404 GET https://media.example.com/api/v1/library")
+        let second = try line("HTTP 500 GET https://MEDIA.example.com/api/v1/settings")
+        XCTAssertFalse(first.contains(unsalted))
+        let token = try XCTUnwrap(first.range(of: #"\[host:[0-9a-f]{12}\]"#, options: .regularExpression)
+            .map { String(first[$0]) })
+        XCTAssertTrue(second.contains(token))
+        XCTAssertEqual(DiagLog.withoutHostTokens("seed|" + token + "|end"), "seed|[host]|end")
+    }
+
+    func testReportIDIgnoresHostTokens() {
+        let app = AppHealthAppInfo(version: "1.0", build: "1", os: "18.0", device: "iPhone")
+        func report(_ seed: String) -> AppHealthReport {
+            AppHealthReport(
+                kind: .crash, source: .metricKit, recordedAt: Date(timeIntervalSince1970: 0), app: app,
+                details: [:], fingerprintSeed: seed)
+        }
+        XCTAssertEqual(report("x|[host:0123456789ab]|y").id, report("x|[host:ba9876543210]|y").id)
+    }
+
+    func testPublicLogTextRemovesKnownSchemeURLsAndRegisteredHosts() {
+        DiagLog.registerSensitiveHost("private-host.example.net")
+        let error = NSError(domain: NSURLErrorDomain, code: -1202, userInfo: [
+            NSLocalizedDescriptionKey: "pretending to be “private-host.example.net”",
+            "share": "smb://nas.example.net/Media/file",
+            "local": "file:///var/mobile/thing",
+            "detail": "sessionToken=abcdef123456",
+        ])
+        let text = DiagLog.publicLogText(error)
+        for leak in ["private-host.example.net", "nas.example.net", "/var/mobile", "abcdef123456"] {
+            XCTAssertFalse(text.contains(leak), leak)
+        }
+        XCTAssertTrue(text.contains("-1202"))
+    }
+
     func testRegisteredHostThatIsSubstringOfItsTokenTerminates() throws {
         DiagLog.registerSensitiveHost("host")
         let rendered = try line("connect to host failed")

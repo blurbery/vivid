@@ -94,7 +94,7 @@ actor PlaybackRealtimeClient {
             } catch {
                 consecutiveFailures += 1
                 Self.logger.warning(
-                    "Realtime websocket loop failed for session \(sessionId, privacy: .public) (consecutive=\(consecutiveFailures)): \(String(describing: error), privacy: .public)"
+                    "Realtime websocket loop failed for session \(sessionId, privacy: .public) (consecutive=\(consecutiveFailures)): \(DiagLog.publicLogText(error), privacy: .public)"
                 )
             }
 
