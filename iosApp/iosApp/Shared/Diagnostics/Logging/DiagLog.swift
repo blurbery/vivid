@@ -42,7 +42,24 @@ enum DiagLog {
         "[host:" + DiagnosticsSHA256.shortHex(data: hostSalt + Data(host.lowercased().utf8), count: 12) + "]"
     }
 
+    private static let hostTokenPattern = try! NSRegularExpression(pattern: "\\[host:[0-9a-f]{12}\\]")
+
+    /// Swaps every salted host token for a plain `[host]`, for text that is
+    /// hashed into an ID that must stay the same from one launch to the next.
+    static func withoutHostTokens(_ text: String) -> String {
+        hostTokenPattern.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[host]")
+    }
+
     // MARK: - Sanitising
+
+    /// An error for a public unified log line. `MediaLogRedactor` removes
+    /// URLs of any scheme, host:port paths and credential values first, then
+    /// this redactor replaces saved server hosts that appear on their own,
+    /// such as the name in a certificate trust error.
+    static func publicLogText(_ error: any Error) -> String {
+        sanitizedText(MediaLogRedactor.sanitize(error), maxLength: 1_024)
+    }
 
     static func sanitizedText(_ value: String, maxLength: Int) -> String {
         var text = redactURLs(in: value)

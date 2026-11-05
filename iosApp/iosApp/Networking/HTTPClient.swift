@@ -1550,9 +1550,9 @@ extension HTTPClient {
         } catch {
             switch kind {
             case .ordinary:
-                logger.error("Refresh encode failed: \(DiagLog.sanitizedText(String(describing: error), maxLength: 1_024), privacy: .public)")
+                logger.error("Refresh encode failed: \(DiagLog.publicLogText(error), privacy: .public)")
             case .scoped:
-                logger.error("Scoped refresh threw: \(DiagLog.sanitizedText(String(describing: error), maxLength: 1_024), privacy: .public)")
+                logger.error("Scoped refresh threw: \(DiagLog.publicLogText(error), privacy: .public)")
             }
             return false
         }
@@ -1595,7 +1595,7 @@ extension HTTPClient {
             }
         } catch {
             await noteServerUnreachable(for: error)
-            logger.error("\(prefix, privacy: .public) threw: \(DiagLog.sanitizedText(String(describing: error), maxLength: 1_024), privacy: .public)")
+            logger.error("\(prefix, privacy: .public) threw: \(DiagLog.publicLogText(error), privacy: .public)")
             return false
         }
     }
