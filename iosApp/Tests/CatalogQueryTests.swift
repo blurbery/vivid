@@ -201,6 +201,16 @@ final class CatalogQueryTests: XCTestCase {
         }
     }
 
+    func testSeriesPostersShowTheirYearSpan() {
+        XCTAssertEqual(posterYearCaption(type: "series", year: 2021, showStatus: "Continuing", endDate: nil), "2021 - Present")
+        XCTAssertEqual(posterYearCaption(type: "series", year: 2015, showStatus: "returning", endDate: "2026-11-05"), "2015 - Present")
+        XCTAssertEqual(posterYearCaption(type: "series", year: 2005, showStatus: "Ended", endDate: "2017-05-30T00:00:00.0000000Z"), "2005 - 2017")
+        XCTAssertEqual(posterYearCaption(type: "series", year: 2022, showStatus: "ended", endDate: "2022-12-25"), "2022")
+        XCTAssertEqual(posterYearCaption(type: "series", year: 2023, showStatus: nil, endDate: nil), "2023")
+        XCTAssertEqual(posterYearCaption(type: "movie", year: 2007, showStatus: "Continuing", endDate: "2010-01-01"), "2007")
+        XCTAssertNil(posterYearCaption(type: "series", year: nil, showStatus: "Continuing", endDate: nil))
+    }
+
     func testSnapshotIsPassedThrough() {
         let query = CatalogQueryBuilder.build(
             CatalogFilterState(),

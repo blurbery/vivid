@@ -114,7 +114,7 @@ struct JellyfinAdapter {
         "Genres": "genres", "CommunityRating": "ratingTmdb", "CriticRating": "ratingRtCritic",
         "PremiereDate": "releaseDate", "DateCreated": "addedAt", "SeriesId": "seriesId",
         "SeriesName": "seriesTitle", "ParentIndexNumber": "seasonNumber", "IndexNumber": "episodeNumber",
-        "ChildCount": "episodeCount", "Status": "showStatus", "SortName": "sortTitle",
+        "ChildCount": "episodeCount", "Status": "showStatus", "SortName": "sortTitle", "EndDate": "endDate",
     ]
 
     func item(_ raw: [String: Any], watchlist: Set<String>) throws -> [String: Any] {

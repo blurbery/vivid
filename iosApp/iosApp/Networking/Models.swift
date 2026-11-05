@@ -27,6 +27,8 @@ struct BrowseItem: Codable, Identifiable, Hashable {
     let addedAt: String?
     let releaseDate: String?
     let lastAirDate: String?
+    /// When a series ended, from Emby and Jellyfin (`EndDate`).
+    let endDate: String?
     let userState: MediaItemUserState?
     let overlaySummary: OverlaySummary?
     var id: String { contentId }
@@ -57,6 +59,7 @@ struct BrowseItem: Codable, Identifiable, Hashable {
         addedAt = try c.decodeIfPresent(String.self, forKey: .addedAt)
         releaseDate = try c.decodeIfPresent(String.self, forKey: .releaseDate)
         lastAirDate = try c.decodeIfPresent(String.self, forKey: .lastAirDate)
+        endDate = try c.decodeIfPresent(String.self, forKey: .endDate)
         userState = try c.decodeIfPresent(MediaItemUserState.self, forKey: .userState)
         overlaySummary = try c.decodeIfPresent(OverlaySummary.self, forKey: .overlaySummary)
     }

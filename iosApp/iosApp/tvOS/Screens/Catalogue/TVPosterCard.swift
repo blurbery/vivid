@@ -9,6 +9,7 @@ struct TVMediaCard: View {
     let posterUrl: String
     let posterThumbhash: String?
     let year: Int?
+    let yearCaption: String?
     let userState: MediaItemUserState?
     let action: () -> Void
     let playAction: (() -> Void)?
@@ -30,6 +31,7 @@ struct TVMediaCard: View {
         posterUrl: String,
         posterThumbhash: String? = nil,
         year: Int? = nil,
+        yearCaption: String? = nil,
         userState: MediaItemUserState? = nil,
         overlayData: OverlayData? = nil,
         action: @escaping () -> Void,
@@ -48,6 +50,7 @@ struct TVMediaCard: View {
         self.posterUrl = posterUrl
         self.posterThumbhash = posterThumbhash
         self.year = year
+        self.yearCaption = yearCaption ?? year.map { String($0) }
         self.userState = userState
         self.action = action
         self.playAction = playAction
@@ -73,7 +76,7 @@ struct TVMediaCard: View {
 
     private var accessibilityText: String {
         var parts = [title]
-        if let year { parts.append(String(year)) }
+        if let yearCaption { parts.append(yearCaption) }
         if isPlayed { parts.append(String(localized: "Watched")) }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
@@ -150,8 +153,8 @@ struct TVMediaCard: View {
                 .truncationMode(.tail)
                 .frame(width: width, alignment: .leading)
                 .clipped()
-            if showsYear, let year {
-                Text(verbatim: String(year))
+            if showsYear, let yearCaption {
+                Text(verbatim: yearCaption)
                     .font(.vividPosterMetadata)
                     .foregroundStyle(Color.vividSecondaryText)
                     .lineLimit(1)

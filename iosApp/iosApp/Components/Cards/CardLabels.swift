@@ -1,5 +1,29 @@
 import Foundation
 
+/// The year line under a series poster: "2021 - Present" while it's still
+/// airing, "2005 - 2017" once it has ended in a later year, otherwise the
+/// year alone, as Emby's own apps show it. Other titles show their year.
+func posterYearCaption(type: String, year: Int?, showStatus: String?, endDate: String?) -> String? {
+    guard let year else { return nil }
+    guard type == "series" else { return String(year) }
+    let status = showStatus?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+    if ["continuing", "returning", "returning series"].contains(status) {
+        return String(localized: "\(String(year)) - Present", comment: "Year line under a series poster that is still airing, e.g. 2021 - Present")
+    }
+    if let endYear = endDate.flatMap({ Int($0.prefix(4)) }), endYear > year {
+        return "\(year) - \(endYear)"
+    }
+    return String(year)
+}
+
+extension BrowseItem {
+    /// Silo sends the newest aired episode's date; Emby and Jellyfin send the
+    /// series' end date.
+    var posterYearCaption: String? {
+        Vivid.posterYearCaption(type: type, year: year, showStatus: showStatus, endDate: endDate ?? lastAirDate)
+    }
+}
+
 /// What VoiceOver reads for a poster card.
 func mediaCardAccessibilityLabel(title: String, episodeLabel: String?, year: Int?, isWatched: Bool) -> String {
     var parts = [title]

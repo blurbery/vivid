@@ -12,7 +12,7 @@ struct EmbyAdapter {
     static let fields = "ProductionYear,Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,UserData,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
     /// Grid and search pages never show cast, chapters or file details, so
     /// they skip the heaviest fields, matching Jellyfin's browse requests.
-    static let browseFields = "ProductionYear,Overview,Genres,Studios,ProviderIds,DateCreated,UserData,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
+    static let browseFields = "ProductionYear,Overview,Genres,Studios,ProviderIds,DateCreated,UserData,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio,Status,EndDate"
     /// Home rows keep media sources for their format badges. Each source
     /// already carries its streams, so the item-level copy isn't requested.
     static let homeFields = browseFields + ",MediaSources"
@@ -98,7 +98,7 @@ struct EmbyAdapter {
         "Genres": "genres", "CommunityRating": "ratingTmdb", "CriticRating": "ratingRtCritic",
         "PremiereDate": "releaseDate", "DateCreated": "addedAt", "SeriesId": "seriesId",
         "SeriesName": "seriesTitle", "ParentIndexNumber": "seasonNumber", "IndexNumber": "episodeNumber",
-        "ChildCount": "episodeCount", "Status": "showStatus", "SortName": "sortTitle",
+        "ChildCount": "episodeCount", "Status": "showStatus", "SortName": "sortTitle", "EndDate": "endDate",
     ]
 
     func item(_ raw: [String: Any], watchlist: Set<String>) throws -> [String: Any] {
