@@ -67,9 +67,7 @@ actor PlaybackV3CapabilityGate {
                 let capability = try await VividAPI.shared.playbackV3Capability()
                 return NeutralProtocolV3Capability(
                     supported: PlaybackSessionBridge.supportsNeutralProtocolV3(capability),
-                    authorizedMediaOrigins: capability.features.contains(
-                        PlaybackProtocolV3.authorizedMediaOriginsFeature
-                    )
+                    authorizedMediaOrigins: Self.asksForAuthorizedMediaOrigins(capability)
                 )
             } catch where PlaybackSessionBridge.isMissingProtocolV3Capability(error) {
                 // A server without the capability route answers 404 or 405.
@@ -78,5 +76,16 @@ actor PlaybackV3CapabilityGate {
         }
         probeByServerId[serverId] = probe
         return probe
+    }
+
+    /// Whether a start may ask for proxy media origins. Native API 2 keeps
+    /// media and the account bearer on the API origin, so `StreamRequest`
+    /// refuses any absolute URL there. Asking anyway made a Silo server with a
+    /// proxy node answer every route with a proxy URL that was then refused,
+    /// so nothing played. Without the feature the server keeps every delivery
+    /// on its own origin.
+    static func asksForAuthorizedMediaOrigins(_ capability: PlaybackV3CapabilityResponse) -> Bool {
+        capability.nativeApiMajor != 2
+            && capability.features.contains(PlaybackProtocolV3.authorizedMediaOriginsFeature)
     }
 }
