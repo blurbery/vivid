@@ -175,6 +175,7 @@ private struct SavedTitlesGrid: View {
                     posterUrl: item.posterUrl ?? "",
                     thumbhash: item.posterThumbhash,
                     year: item.year,
+                    yearCaption: item.posterYearCaption,
                     userState: item.userState,
                     overlayData: OverlayData.from(item),
                     usesHomeCaption: true,
