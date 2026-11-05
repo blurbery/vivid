@@ -1,5 +1,4 @@
 import Foundation
-import Network
 import os
 
 /// How the address form reaches the server. Auto tries HTTPS, then HTTP.
@@ -157,39 +156,24 @@ final class ServerAddressForm {
         let tried = candidates.joined(separator: ", ")
         let reason = errors.last?.localizedDescription ?? ""
         Self.log.error("No server answered at \(tried, privacy: .private): \(reason, privacy: .private)")
-        switch Self.reachProblem(in: errors) {
-        case .localNetworkDenied:
-            message = String(localized: "Vivid can't use your local network. Turn on Local Network for Vivid in Settings, then try again.")
-        case .insecureHTTPBlocked:
+        if Self.wasBlockedAsPlainHTTP(errors) {
             message = String(localized: "Could not reach a \(provider.name) server at that address. Plain HTTP only works with local addresses, so use this server's HTTPS address.")
-        case nil:
+        } else {
             message = String(localized: "Could not reach a \(provider.name) server at that address.")
         }
         return nil
     }
 
-    /// Why no address answered, when the errors say more than that.
-    enum ReachProblem: Equatable {
-        /// Local Network access is turned off for Vivid.
-        case localNetworkDenied
-        /// App Transport Security refused plain HTTP to a public host name.
-        case insecureHTTPBlocked
-    }
-
-    /// A refused Local Network permission comes first, since turning it on
-    /// may be all that's needed. The HTTPS advice only applies when every
-    /// address was plain HTTP that ATS blocked: Auto always adds plain HTTP
-    /// addresses after HTTPS, so a public host that fails for any reason
-    /// also collects ATS blocks. Anything else gives nil and the general
-    /// message.
-    nonisolated static func reachProblem(in errors: [Error]) -> ReachProblem? {
+    /// True when App Transport Security refused every address, which only
+    /// happens when all of them were plain HTTP to a public host name. Auto
+    /// always adds plain HTTP addresses after HTTPS, so a public host that
+    /// fails for any other reason also collects ATS refusals; those keep the
+    /// general message.
+    nonisolated static func wasBlockedAsPlainHTTP(_ errors: [Error]) -> Bool {
         let causes = errors.map(transportCauses(of:))
-        if causes.contains(where: { $0.contains(where: isLocalNetworkDenied) }) { return .localNetworkDenied }
-        let blockedByATS = { (chain: [Error]) in
+        return !causes.isEmpty && causes.allSatisfy { chain in
             chain.contains { HTTPDiagnosticsErrorCode.classify(transport: $0) == "app_transport_security_blocked" }
         }
-        if !causes.isEmpty, causes.allSatisfy(blockedByATS) { return .insecureHTTPBlocked }
-        return nil
     }
 
     /// The error, what `HTTPError.network` wraps (Silo requests) and their
@@ -206,16 +190,6 @@ final class ServerAddressForm {
             next = (current as NSError).userInfo[NSUnderlyingErrorKey] as? Error
         }
         return causes
-    }
-
-    /// URLSession puts the network path it gave up on in the error, and its
-    /// unsatisfied reason says when Local Network access was refused. The
-    /// key isn't documented, so a missing or different value reads as no.
-    private nonisolated static func isLocalNetworkDenied(_ error: Error) -> Bool {
-        let error = error as NSError
-        guard error.domain == NSURLErrorDomain,
-              let path = error.userInfo["_NSURLErrorNWPathKey"] as? nw_path_t else { return false }
-        return nw_path_get_unsatisfied_reason(path) == nw_path_unsatisfied_reason_local_network_denied
     }
 
     /// The addresses to try for what was typed, in order, without
