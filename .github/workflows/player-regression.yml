@@ -303,11 +303,34 @@ jobs:
       - name: Generate Xcode project
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          # GitHub release downloads sometimes time out (504), so retry them.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+            -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
           # Pin the official 2.43.0 release asset before unpacking/executing it.
           echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
           /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project-ios.yml
+      - name: Resolve Swift packages
+        env:
+          RESOLVE_SCHEME: Vivid
+          RESOLVE_DERIVED: /tmp/vivid-derived
+        run: |
+          set -uo pipefail
+          # Lucid Engine's binary targets download from GitHub releases. A
+          # runner can hold a stale SwiftPM artifact cache ("already exists in
+          # file system") and the download can time out, so start from a clean
+          # cache and retry before the build relies on the packages.
+          for attempt in 1 2 3; do
+            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages/artifacts"
+            if xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj \
+              -scheme "$RESOLVE_SCHEME" -derivedDataPath "$RESOLVE_DERIVED"; then
+              exit 0
+            fi
+            echo "Swift package resolution failed (attempt $attempt of 3)"
+            sleep $((attempt * 15))
+          done
+          echo "::error::Swift packages could not be resolved after 3 attempts"
+          exit 1
       - name: Build player
         id: build
         env:
@@ -425,11 +448,34 @@ jobs:
           SPEC: ${{ matrix.spec }}
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          # GitHub release downloads sometimes time out (504), so retry them.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+            -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
           # Pin the official 2.43.0 release asset before unpacking/executing it.
           echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
           /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec "iosApp/$SPEC"
+      - name: Resolve Swift packages
+        env:
+          RESOLVE_SCHEME: ${{ matrix.scheme }}
+          RESOLVE_DERIVED: /tmp/vivid-device
+        run: |
+          set -uo pipefail
+          # Lucid Engine's binary targets download from GitHub releases. A
+          # runner can hold a stale SwiftPM artifact cache ("already exists in
+          # file system") and the download can time out, so start from a clean
+          # cache and retry before the build relies on the packages.
+          for attempt in 1 2 3; do
+            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages/artifacts"
+            if xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj \
+              -scheme "$RESOLVE_SCHEME" -derivedDataPath "$RESOLVE_DERIVED"; then
+              exit 0
+            fi
+            echo "Swift package resolution failed (attempt $attempt of 3)"
+            sleep $((attempt * 15))
+          done
+          echo "::error::Swift packages could not be resolved after 3 attempts"
+          exit 1
       - name: Build unsigned for generic ${{ matrix.platform }} devices
         env:
           SCHEME: ${{ matrix.scheme }}
@@ -493,11 +539,34 @@ jobs:
       - name: Generate Xcode project
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          # GitHub release downloads sometimes time out (504), so retry them.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+            -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
           # Pin the official 2.43.0 release asset before unpacking/executing it.
           echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
           /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project.yml
+      - name: Resolve Swift packages
+        env:
+          RESOLVE_SCHEME: VividTV
+          RESOLVE_DERIVED: /tmp/vivid-derived
+        run: |
+          set -uo pipefail
+          # Lucid Engine's binary targets download from GitHub releases. A
+          # runner can hold a stale SwiftPM artifact cache ("already exists in
+          # file system") and the download can time out, so start from a clean
+          # cache and retry before the build relies on the packages.
+          for attempt in 1 2 3; do
+            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages/artifacts"
+            if xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj \
+              -scheme "$RESOLVE_SCHEME" -derivedDataPath "$RESOLVE_DERIVED"; then
+              exit 0
+            fi
+            echo "Swift package resolution failed (attempt $attempt of 3)"
+            sleep $((attempt * 15))
+          done
+          echo "::error::Swift packages could not be resolved after 3 attempts"
+          exit 1
       - name: Build Apple TV player and tests
         run: |
           set -o pipefail
