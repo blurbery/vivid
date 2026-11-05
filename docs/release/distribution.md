@@ -18,7 +18,7 @@ Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record 
 | Supported OS versions | iOS/iPadOS 18 or later; tvOS 26 or later. The committed project disables Designed for iPad distribution on Mac and Vision Pro; earlier local Mac layout tests used a development override. |
 | Build tools | Recent signed archives use local Xcode 27.0; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
-| About | Version/build, source commit, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution appears in Acknowledgements. |
+| About | Version/build, source commit, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution appears in Acknowledgements, with a line saying Vivid is independent and isn't made, endorsed or supported by Silo, Emby or Jellyfin, whose names and logos belong to their owners. |
 | iCloud | The encrypted private account vault includes profile order, shared preferences and Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Simkl sign-ins stay on each device. Playback and subtitle settings remain device-specific. The Production schema was deployed on 12 September 2026 and Apple TV restoration was confirmed. Check schema changes and live restoration separately from archive entitlements; see the dated build record. On a new iPhone or iPad, the first launch stops waiting for the vault after about five seconds and shows server setup, unless a session restore has already started, which is allowed to finish first; a restore that lands later never moves the person off setup. |
 | Push notifications | Neither app sends or receives push notifications; download notices are local notifications. The iOS app has no `aps-environment` entitlement. The tvOS app keeps it (development in Debug, production in Release) because App Store Connect rejects a tvOS upload that uses CloudKit without it. Keep the Push Notifications capability on the App IDs. |
 | Local device coverage | Historical development checks include iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These records do not state the devices’ current OS or validate every later TestFlight build. |
@@ -68,6 +68,24 @@ Before conveying any new GPL-covered binary, including through TestFlight:
   Provide a no-charge source download matching each delivered binary under
   an applicable GPLv3 section 6 method; retain it for that method's required
   duration. A moving `main` URL alone is insufficient.
+- In the app, the commit under the version in Settings > About and the
+  "Source for this build" page in Open Source Licences point to
+  `https://vividapp.co/source?commit=<commit>`, not to the GitHub repository
+  page: as links on iPhone and iPad, and as the address in the page's text
+  on Apple TV. The website Worker (`website/worker.mjs`) fills in
+  `website/public/source.html` only when `commit` is exactly 40 hexadecimal
+  characters: it then offers that commit's GitHub `.tar.gz` and `.zip`
+  archives as direct downloads, the GPL-3.0-only licence with the Apple
+  permission (linked to [vividapp.co/licences](https://vividapp.co/licences)),
+  and Lucid Engine's corresponding source. A missing or invalid `commit`
+  shows the same page with a link to the GitHub releases page instead. The
+  page names Lucid Engine 0.1.0's source as the `lucid-engine-0.1.0-source`
+  tag (commit `fcb6782121e72c6ed755336be913c036f4679ddb`); update it in the
+  same pull request as any change to the engine pin. Deploy the website
+  before uploading a build that links to the page, and check that a build's
+  link opens with working downloads. Builds made before this change link to
+  the GitHub repository instead. The `(modified)` label and its notice are
+  unchanged: such a build links to the commit it started from.
 - Before enabling a build, update the TestFlight beta description with its
   platform, marketing version and build number, mapped to the exact public
   immutable source archive and media dependency sources/build instructions.
@@ -132,10 +150,10 @@ Vivid has not been submitted to the App Store yet. TestFlight approval does not 
 | Privacy policy | Use [vividapp.co/privacy](https://vividapp.co/privacy) and paste the same text into the Apple TV Privacy Policy field. Update the website and in-app text together before submitting a build that changes how data is handled. For guideline 5.1.1(i), the policy names Cloudflare and Resend as the service providers that handle data for Vivid and says they must protect it at least as well as the policy describes. It also explains how to delete the private iCloud vault, because Vivid has no in-app control for that. |
 | Support URL | Use [vividapp.co/support](https://vividapp.co/support), which has real contact details. |
 | Age rating | Answer Apple's current age rating questions for what Vivid itself provides: TMDb artwork, ratings and trailer links. The person's own library comes from their server, not from Vivid. Comparable self-hosted media players are generally rated 4+; check a few current listings before answering. Answer No to unrestricted web access: trailers open in the YouTube app or the browser, and Vivid has no in-app browser. Vivid has no parental controls of its own, because content restrictions are set for each user on the person's server. It has no chat, advertising or user-generated content. |
-| Content rights | Vivid shows TMDb metadata and artwork, YouTube trailer thumbnails, OpenSubtitles subtitles and IntroDB and TheIntroDB timestamps. Keep the terms that allow each one, and check that bundled server and service logos stay within each owner's brand policy (for Silo, see the [trademark notes](../../THIRD_PARTY_NOTICES.md#server-and-service-names)). |
+| Content rights | Vivid shows TMDb metadata and artwork, YouTube trailer thumbnails, OpenSubtitles subtitles and IntroDB and TheIntroDB timestamps. Keep the terms that allow each one, and check that bundled server and service logos stay within each owner's brand policy (for Silo and Emby, see the [trademark notes](../../THIRD_PARTY_NOTICES.md#server-and-service-names)). |
 | Export compliance | Both app Info.plists set `ITSAppUsesNonExemptEncryption` to `NO`. All communications encryption comes from Apple's operating system: URLSession, the Secure Transport that Lucid Engine's FFmpeg uses for HTTPS streams, CloudKit and Keychain. There is no OpenSSL, and Vivid's own code uses CryptoKit only for SHA-256 hashes. FFmpeg's bundled AES code only decrypts media content, in an app whose main purpose is media playback, which EAR Category 5 Part 2, Note 4 excludes. This is blurbery's assessment, not legal advice. Recheck it whenever a dependency adds its own TLS or encryption. |
 | Screenshots | Show the app in use with titles that are in the public domain or openly licensed, such as the Blender open films, and credit them where their licence asks. Never show studio posters, key art, logos or trailer thumbnails for commercial titles, so leave out or crop Calendar's Trending row, Studios & Networks and anything else that shows TMDb artwork for them. A login screen on its own isn't enough. Provide iPhone, 13-inch iPad and Apple TV sets in the sizes App Store Connect asks for. |
-| Licences and source | Check that Open Source Licences lists every library in the archive. The App Store has no beta description, so publish the matching source and build instructions for each App Store version and link them from the support or marketing page. See [Licence and source delivery](#licence-and-source-delivery). |
+| Licences and source | Check that Open Source Licences lists every library in the archive. The App Store has no beta description, so publish the matching source and build instructions for each App Store version and link them from the support or marketing page. The app's own source link goes to [vividapp.co/source](https://vividapp.co/source) for the build's commit; check it opens with working downloads for the submitted builds. See [Licence and source delivery](#licence-and-source-delivery). |
 | EU trader status | Declare trader status before EU distribution. A trader's address, phone number and email appear on the EU product page. |
 
 ### App Privacy answers
@@ -153,7 +171,16 @@ In App Store Connect's App Privacy section, say that Vivid collects data and dec
 Nothing is used for tracking or advertising, and nothing is sent until the person chooses to send it. Don't declare contact info, identifiers, location, contacts, browsing or search history, purchases, financial or health data, photos, videos or audio. Sign-in details, searches, library browsing and viewing history go only to the person's own media server; saved accounts and preferences go to their private iCloud database, which Vivid can't read; plugin data goes to services the person connects with their own key or sign-in; and Apple turns Apple TV voice searches into text under its own privacy policy.
 
 > [!IMPORTANT]
-> "Not linked" rests on the relay: a report sent with Send carries no account, user or device identifier, and the relay keeps no address. On iPhone and iPad, Other Options can instead send a report with the person's mail app or the share sheet, and on Apple TV, Show QR Code opens an email on their phone. Those copies, like messages from the Contact form, reach Vivid's inbox with the sender's email address. blurbery decides whether those emails fall under Apple's optional disclosure for feedback the person writes and sends themselves, or whether to also declare Email Address (Contact Info) for App Functionality and mark the diagnostics types as linked. Change the privacy manifest, App Store Connect and the privacy policy together.
+> "Not linked" rests on the relay: a report sent with Send carries no account, user or device identifier, and the relay keeps no address. The reports the app sends have no email field, and the relay emails each one from its own address to the fixed `diagnostics@vividapp.co` without a reply-to, so neither the app nor the relay asks for, receives or stores the person's email address.
+>
+> Email Address (Contact Info) isn't declared. Every other way to reach Vivid goes through the person's own mail app, where they see their address and the whole message before they send it:
+>
+> - Contact (iPhone and iPad) opens Mail's compose sheet, or a `mailto:` link to `admin@vividapp.co` in their mail app, with no logs or account details attached.
+> - Diagnostics > Other Options (iPhone and iPad) opens Mail with the report attached, or the share sheet, where the person picks the app and the recipient.
+> - Contact and Show QR Code (Apple TV) show a QR code of a `mailto:` link, which opens a prefilled email on the person's phone. Show QR Code's email holds a short summary of each problem report.
+> - vividapp.co has no forms; its pages only link to `admin@vividapp.co`.
+>
+> These are infrequent, optional messages the person writes and sends themselves, so they fall under the optional disclosure in Apple's [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/) for user-initiated feedback, and the app collects nothing to send them. The privacy policy still says that email reaches an iCloud Mail inbox and is used only to reply or fix problems. If Vivid ever collects an address itself, for example a form that posts to the relay with a reply-to, declare `NSPrivacyCollectedDataTypeEmailAddress` (linked, not tracking, App Functionality), mark Customer Support as linked if those messages are tied to the address, and change the privacy manifest, App Store Connect, the privacy policy and the in-app privacy text together.
 
 ### Review server
 

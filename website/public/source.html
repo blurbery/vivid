@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#000000">
+  <title>Source code · Vivid</title><meta name="description" content="Download the complete source code of a Vivid build.">
+  <link rel="canonical" href="https://vividapp.co/source"><link rel="icon" href="/favicon-951aa75958.png" type="image/png" sizes="512x512">
+  <link rel="icon" href="/favicon-e0959b1e2a.svg" type="image/svg+xml" sizes="any"><link rel="stylesheet" href="/styles.css?v=7b2c0eb546">
+  <link rel="apple-touch-icon" sizes="1024x1024" href="/apple-touch-icon-f6838b3e82.png">
+</head>
+<body>
+  <header class="nav"><a class="brand" href="/" aria-label="Vivid home"><img src="/logo.png?v=8ecabc3db8" width="28" height="28" alt="">Vivid</a><a class="nav-link" href="/">Back to home</a></header>
+  <main class="prose"><h1>Source code</h1><p class="updated">Vivid is free software under GPL-3.0-only</p>
+    <!--source:commit-->
+    <p>This is the complete corresponding source for the Vivid build made from this commit, the one shown in Settings > About:</p>
+    <pre>{{commit}}</pre>
+    <h2>Download</h2><p><a href="https://github.com/blurbery/vivid/archive/{{commit}}.tar.gz">Download .tar.gz</a> or <a href="https://github.com/blurbery/vivid/archive/{{commit}}.zip">download .zip</a>. Both are free and need no account. Each has everything in Vivid’s repository at that commit: the app source, the project specs, Vivid’s engine patches, the build instructions and THIRD_PARTY_NOTICES.md, which lists every third-party component with its version, licence and source.</p>
+    <p>If Settings > About shows “(modified)” beside the commit, that build was made with local changes that weren’t published, and this is the commit it started from.</p>
+    <!--/source:commit-->
+    <!--source:none-->
+    <p>This link doesn’t name a build’s source commit. In Vivid, Settings > About > Open Source Licences > Source for this build opens this page for the exact commit your build was made from.</p>
+    <h2>Download</h2><p>The source of every Vivid release can be downloaded free of charge from the <a href="https://github.com/blurbery/vivid/releases">GitHub releases page</a>.</p>
+    <!--/source:none-->
+    <h2>Licence</h2><p>Vivid’s own code is licensed under the <a href="/licences#vivid">GNU General Public License version 3 only</a>, with an <a href="/licences#vivid-apple-distribution">additional permission</a> under section 7 that allows it to be distributed through Apple’s App Store. The permission keeps your right to the source: you can copy, change and share Vivid’s code under the GPL. Third-party components keep their own licences, listed in <a href="/licences">Open Source Licences</a>.</p>
+    <h2>Lucid Engine</h2><p>Vivid plays media with Lucid Engine, a package of mpv, FFmpeg and other libraries built by Vivid’s own pipeline. Its corresponding source is the engine/ folder of the Vivid commit the engine release was built from: the pipeline, the upstream sources pinned by URL, commit and checksum, the build configuration and every patch. For Lucid Engine 0.1.0 that is the lucid-engine-0.1.0-source tag: <a href="https://github.com/blurbery/vivid/archive/refs/tags/lucid-engine-0.1.0-source.tar.gz">download .tar.gz</a> or <a href="https://github.com/blurbery/vivid/archive/refs/tags/lucid-engine-0.1.0-source.zip">download .zip</a>. THIRD_PARTY_NOTICES.md in each build’s source names the engine release it uses and the commit that release was built from, and docs/cores/lucid-engine-build.md explains how to build it.</p>
+    <h2>Questions</h2><p>Email <a href="mailto:admin@vividapp.co">admin@vividapp.co</a> if a download doesn’t work or you need the source another way.</p>
+  </main>
+  <footer><span>© 2026 Vivid™</span><nav aria-label="Footer"><a href="/licences">Licences</a><a href="/privacy">Privacy</a><a href="/">Home</a><a href="mailto:admin@vividapp.co">Contact</a></nav></footer>
+</body>
+</html>

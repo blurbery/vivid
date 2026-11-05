@@ -51,9 +51,11 @@ provided with this build.
 
 Corresponding source and build instructions:
 The first row of Open Source Licences, "Source for this build", gives
-the exact source commit this build was made from and its GitHub link. That
-revision contains the complete source, project specs, build instructions
-and THIRD_PARTY_NOTICES.md. Lucid Engine's build pipeline and Vivid's
+the exact source commit this build was made from and links to
+https://vividapp.co/source for that commit, which offers the commit's
+source as a free .tar.gz or .zip download from GitHub. That revision
+contains the complete source, project specs, build instructions and
+THIRD_PARTY_NOTICES.md. Lucid Engine's build pipeline and Vivid's
 engine patches are in its engine/ folder, and the source link under
 Lucid media engine below gives the exact commit the engine release was
 built from.
