@@ -10425,6 +10425,41 @@
         }
       }
     },
+    "App privacy information · Updated 5 November 2026" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzinformationen der App · Aktualisiert am 5. November 2026"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Información de privacidad de la app · Actualizada el 5 de noviembre de 2026"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidentialité de l’app · Mise à jour le 5 novembre 2026"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appのプライバシー情報 · 2026年11月5日更新"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 隐私信息 · 更新于 2026 年 11 月 5 日"
+          }
+        }
+      }
+    },
     "App-level options for this Apple TV." : {
       "extractionState" : "manual",
       "localizations" : {
