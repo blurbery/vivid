@@ -1,0 +1,103 @@
+{
+  "intro": "The app captures on this website and in Vivid's App Store listing show sample titles from the Blender Foundation's open movies, on a demo library. Each image below is used under its Creative Commons Attribution licence. They were cropped and resized, and the Sintel and Sprite Fright images were retouched to remove a title and small labels. The title logos in those captures were made for Vivid and are not the films' own logos. Vivid isn't affiliated with or endorsed by the Blender Foundation.",
+  "images": [
+    {
+      "title": "Elephants Dream",
+      "source": "https://commons.wikimedia.org/wiki/File:Elephants_Dream_-_Emo_and_Proog.png",
+      "licence": "CC BY 2.5",
+      "licence_url": "https://creativecommons.org/licenses/by/2.5",
+      "attribution": "(c) copyright 2006, Blender Foundation / Netherlands Media Art Institute / www.elephantsdream.org"
+    },
+    {
+      "title": "Big Buck Bunny",
+      "source": "https://commons.wikimedia.org/wiki/File:Bunny-bow.png",
+      "licence": "CC BY 3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0",
+      "attribution": "(c) copyright Blender Foundation | www.bigbuckbunny.org"
+    },
+    {
+      "title": "Sintel",
+      "source": "https://commons.wikimedia.org/wiki/File:Sintel_1920x1080.png",
+      "licence": "CC BY 3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0",
+      "attribution": "© copyright Blender Foundation www.sintel.org"
+    },
+    {
+      "title": "Tears of Steel",
+      "source": "https://commons.wikimedia.org/wiki/File:Tears_of_Steel_frame_03_1a.jpg",
+      "licence": "CC BY 3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0",
+      "attribution": "(CC) Blender Foundation | mango.blender.org"
+    },
+    {
+      "title": "Cosmos Laundromat",
+      "source": "https://commons.wikimedia.org/wiki/File:Franck_the_caterpillar.jpg",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "(CC) Blender Foundation | gooseberry.blender.org"
+    },
+    {
+      "title": "Hero",
+      "source": "https://commons.wikimedia.org/wiki/File:Hero_-_screenshot-environment_blue.png",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "(CC) Blender Foundation | studio.blender.org"
+    },
+    {
+      "title": "Spring",
+      "source": "https://commons.wikimedia.org/wiki/File:Spring-concept_art-Autumn_01.jpg",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "(c) Blender Foundation | cloud.blender.org/spring"
+    },
+    {
+      "title": "Coffee Run",
+      "source": "https://commons.wikimedia.org/wiki/File:Coffee_Run_-_screenshot-Location_06_Wedding-Run_1.png",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "(CC) Blender Foundation | studio.blender.org"
+    },
+    {
+      "title": "Sprite Fright",
+      "source": "https://commons.wikimedia.org/wiki/File:Sprite_Fright-concept_art-nature_01.png",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "(CC) Blender Foundation | studio.blender.org"
+    },
+    {
+      "title": "Charge",
+      "source": "https://commons.wikimedia.org/wiki/File:Charge-concept_art-robot_01.png",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "(CC) Blender Foundation | studio.blender.org"
+    },
+    {
+      "title": "Caminandes",
+      "source": "https://commons.wikimedia.org/wiki/File:Blender_Foundation_-_Caminandes_-_Episode_3_-_Llamigos_-_Riding_mine_cart_with_Koro_and_Oti_while_carrying_a_red_grape.png",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "Blender Foundation, caminandes.com"
+    },
+    {
+      "title": "Caminandes 1: Llama Drama",
+      "source": "https://commons.wikimedia.org/wiki/File:Pablo_Vazquez_-_Caminandes_-_Episode_1_-_Llama_Drama_-_Cover_thumbnail.png",
+      "licence": "CC BY 3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0",
+      "attribution": "Pablo Vazquez, Beorn Leonard, Francesco Siddi"
+    },
+    {
+      "title": "Caminandes 2: Gran Dillama",
+      "source": "https://commons.wikimedia.org/wiki/File:Blender_Foundation_-_Caminandes_-_Episode_2_-_Gran_Dillama_-_The_Earth_and_the_Sun_turn_dark_while_Koro_accidentally_electrocuted_by_an_electric_fence.png",
+      "licence": "CC BY 3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0",
+      "attribution": "Blender Foundation, caminandes.com"
+    },
+    {
+      "title": "Caminandes 3: Llamigos",
+      "source": "https://commons.wikimedia.org/wiki/File:Blender_Foundation_-_Caminandes_-_Episode_3_-_Llamigos_-_Koro_and_Oti_share_more_food_to_eat_at_night.png",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0",
+      "attribution": "Blender Foundation, caminandes.com"
+    }
+  ]
+}
