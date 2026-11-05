@@ -1532,7 +1532,11 @@ private final class VividMPVCore: VividPlayerCore {
 
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         for option in loadOptions {
-            checkError(mpv_set_option_string(mpv, option.name, option.value), option: option.name)
+            let status = mpv_set_option_string(mpv, option.name, option.value)
+            // An engine built with -Dcplugins=disabled, as well as without Lua
+            // and JavaScript, has no script options at all, so nothing to refuse.
+            if option.name == "load-scripts", status == MPV_ERROR_OPTION_NOT_FOUND.rawValue { continue }
+            checkError(status, option: option.name)
         }
         for (name, value) in VividMPVAudio.enhancementOptions(audioEnhancement) {
             checkError(mpv_set_option_string(mpv, name, value), option: name)

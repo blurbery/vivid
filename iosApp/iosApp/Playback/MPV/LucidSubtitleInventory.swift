@@ -209,7 +209,10 @@ private enum LucidSubtitleProbe {
         guard let mpv = mpv_create() else { throw OpenSubtitlesError.file }
         defer { mpv_terminate_destroy(mpv) }
         for option in options {
-            guard mpv_set_option_string(mpv, option.name, option.value) >= 0 else { throw OpenSubtitlesError.file }
+            let status = mpv_set_option_string(mpv, option.name, option.value)
+            // An engine without C plugins, Lua or JavaScript has no load-scripts option.
+            if option.name == "load-scripts", status == MPV_ERROR_OPTION_NOT_FOUND.rawValue { continue }
+            guard status >= 0 else { throw OpenSubtitlesError.file }
         }
         guard LucidTLS.apply(to: mpv) >= 0 else { throw OpenSubtitlesError.file }
         VividMPVHeaders.apply(request.headers, to: mpv)
