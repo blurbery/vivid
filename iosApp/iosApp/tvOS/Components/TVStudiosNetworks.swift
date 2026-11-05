@@ -298,6 +298,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
 struct TVStudiosNetworksSettingsView: View {
     @State private var store = StudiosNetworksStore.shared
     @State private var movingID: String?
+    @State private var explainsMissingPicks = false
     @FocusState private var focus: Target?
     @Environment(\.dismiss) private var dismiss
 
@@ -362,8 +363,20 @@ struct TVStudiosNetworksSettingsView: View {
         .defaultFocus($focus, .done)
         .task { await store.loadIfNeeded() }
         .onExitCommand {
-            if movingID != nil { movingID = nil } else if !store.needsMorePicks { dismiss() }
+            // Six are required while the row shows on Home, as on iPhone,
+            // where Back is hidden until then. Menu says so instead of
+            // doing nothing.
+            if movingID != nil {
+                movingID = nil
+            } else if store.needsMorePicks {
+                explainsMissingPicks = true
+            } else {
+                dismiss()
+            }
         }
+        .tvSystemAlert("Studios & Networks", isPresented: $explainsMissingPicks,
+                       message: "Choose \(store.missingPicks) more to finish, or turn off Show on Home.",
+                       buttons: [.cancel("OK")])
         .onAppear { store.beginEditing() }
         .onDisappear { store.endEditing() }
     }

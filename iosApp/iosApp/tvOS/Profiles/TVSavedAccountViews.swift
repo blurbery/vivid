@@ -361,6 +361,7 @@ struct TVSavedAccountEditor: View {
             ?? (MediaServerProvider(rawValue: provider.lowercased()) ?? .silo)
     }
     private var isActive: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
+    private static var busyHint: String { String(localized: "Vivid is still working on this profile. You can go back once it’s finished.") }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -569,7 +570,19 @@ struct TVSavedAccountEditor: View {
             if account == nil { serverURL = registry.address(serverURL, keptFor: selectedProvider) }
         }
         .onChange(of: serverURL) { if codeSignIn.canCancel { codeSignIn.cancel() } }
-        .onExitCommand { if !store.busy { dismiss() } }
+        .onExitCommand {
+            // A sign-in, sign-out or deletion holds the account switch until
+            // it finishes and can't be stopped partway, so Menu says to wait
+            // instead of doing nothing.
+            if store.busy {
+                message = Self.busyHint
+            } else {
+                dismiss()
+            }
+        }
+        .onChange(of: store.busy) { _, busy in
+            if !busy, message == Self.busyHint { message = nil }
+        }
         .fullScreenCover(item: $household.pinProfile) { profile in
             PINEntryView(profile: profile, onCancel: {
                 if let account { household.cancelPIN(for: account) }

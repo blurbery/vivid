@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import os
 
 /// How the address form reaches the server. Auto tries HTTPS, then HTTP.
@@ -45,6 +46,9 @@ final class ServerAddressForm {
     var showsAdvanced = false
     private(set) var isBusy = false
     var message: String?
+    /// The running Connect or Find, so Cancel, Back and leaving the page
+    /// can stop it.
+    @ObservationIgnored private var attempt: Task<Void, Never>?
     #if os(iOS)
     /// The server Find located, shown as the next page.
     var foundServer: ServerProbe?
@@ -59,10 +63,12 @@ final class ServerAddressForm {
         let provider = provider
         isBusy = true
         message = nil
-        Task {
+        attempt = Task {
             let status = await firstAnswer(from: candidates, provider: provider) { candidate in
                 try await AuthService.shared.checkServer(url: candidate, provider: provider)
             }
+            // A cancelled attempt leaves the page as Cancel left it.
+            guard !Task.isCancelled else { return }
             if let status {
                 #if os(iOS) || os(tvOS)
                 TVSavedAccountStore.shared.noteChosenServer()
@@ -71,6 +77,7 @@ final class ServerAddressForm {
                 if status.needsSetup { router.navigate(to: .serverNeedsSetup) }
             }
             isBusy = false
+            attempt = nil
         }
     }
 
@@ -81,10 +88,11 @@ final class ServerAddressForm {
         let provider = provider
         isBusy = true
         message = nil
-        Task {
+        attempt = Task {
             let server = await firstAnswer(from: candidates, provider: provider) { candidate in
                 try await AuthService.shared.locateServer(at: candidate, provider: provider)
             }
+            guard !Task.isCancelled else { return }
             if let server {
                 if server.needsSetup {
                     message = String(localized: "This server still needs administrator setup.")
@@ -93,9 +101,20 @@ final class ServerAddressForm {
                 }
             }
             isBusy = false
+            attempt = nil
         }
     }
     #endif
+
+    /// Stops a Connect or Find in progress. Nothing it was doing navigates
+    /// or shows an error afterwards, and the form keeps what was typed. A
+    /// server that answered just before this may already be saved.
+    func cancel() {
+        guard let attempt else { return }
+        attempt.cancel()
+        self.attempt = nil
+        isBusy = false
+    }
 
     private func checkedCandidates() -> [String]? {
         let result = Self.candidates(
@@ -113,27 +132,86 @@ final class ServerAddressForm {
 
     /// Tries each address in turn. A server that answered but couldn't be
     /// saved stops the search with that error rather than counting as
-    /// unreachable.
+    /// unreachable. Once cancelled it tries no more addresses and sets no
+    /// message.
     private func firstAnswer<Answer>(
         from candidates: [String], provider: MediaServerProvider,
         check: (String) async throws -> Answer
     ) async -> Answer? {
-        var lastError: Error?
+        var errors: [Error] = []
         for candidate in candidates {
+            guard !Task.isCancelled else { return nil }
             do {
-                return try await check(candidate)
+                let answer = try await check(candidate)
+                guard !Task.isCancelled else { return nil }
+                return answer
             } catch let error as ServerRegistryError {
+                guard !Task.isCancelled else { return nil }
                 message = error.localizedDescription
                 return nil
             } catch {
-                lastError = error
+                guard !Task.isCancelled else { return nil }
+                errors.append(error)
             }
         }
         let tried = candidates.joined(separator: ", ")
-        let reason = lastError?.localizedDescription ?? ""
+        let reason = errors.last?.localizedDescription ?? ""
         Self.log.error("No server answered at \(tried, privacy: .private): \(reason, privacy: .private)")
-        message = String(localized: "Could not reach a \(provider.name) server at that address.")
+        switch Self.reachProblem(in: errors) {
+        case .localNetworkDenied:
+            message = String(localized: "Vivid can't use your local network. Turn on Local Network for Vivid in Settings, then try again.")
+        case .insecureHTTPBlocked:
+            message = String(localized: "Could not reach a \(provider.name) server at that address. Plain HTTP only works with local addresses, so use this server's HTTPS address.")
+        case nil:
+            message = String(localized: "Could not reach a \(provider.name) server at that address.")
+        }
         return nil
+    }
+
+    /// Why no address answered, when the errors say more than that.
+    enum ReachProblem: Equatable {
+        /// Local Network access is turned off for Vivid.
+        case localNetworkDenied
+        /// App Transport Security refused plain HTTP to a public host name.
+        case insecureHTTPBlocked
+    }
+
+    /// A refused Local Network permission comes first, since turning it on
+    /// may be all that's needed. Anything else gives nil and the general
+    /// message.
+    nonisolated static func reachProblem(in errors: [Error]) -> ReachProblem? {
+        let causes = errors.flatMap(transportCauses(of:))
+        if causes.contains(where: isLocalNetworkDenied) { return .localNetworkDenied }
+        if causes.contains(where: {
+            HTTPDiagnosticsErrorCode.classify(transport: $0) == "app_transport_security_blocked"
+        }) { return .insecureHTTPBlocked }
+        return nil
+    }
+
+    /// The error, what `HTTPError.network` wraps (Silo requests) and their
+    /// underlying errors. Emby and Jellyfin throw the `URLError` itself.
+    private nonisolated static func transportCauses(of error: Error) -> [Error] {
+        var causes: [Error] = []
+        var next: Error? = error
+        while let current = next, causes.count < 6 {
+            if let wrapped = current as? HTTPError, case .network(let underlying) = wrapped {
+                next = underlying
+                continue
+            }
+            causes.append(current)
+            next = (current as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+        }
+        return causes
+    }
+
+    /// URLSession puts the network path it gave up on in the error, and its
+    /// unsatisfied reason says when Local Network access was refused. The
+    /// key isn't documented, so a missing or different value reads as no.
+    private nonisolated static func isLocalNetworkDenied(_ error: Error) -> Bool {
+        let error = error as NSError
+        guard error.domain == NSURLErrorDomain,
+              let path = error.userInfo["_NSURLErrorNWPathKey"] as? nw_path_t else { return false }
+        return nw_path_get_unsatisfied_reason(path) == nw_path_unsatisfied_reason_local_network_denied
     }
 
     /// The addresses to try for what was typed, in order, without
