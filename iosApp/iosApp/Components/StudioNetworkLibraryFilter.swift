@@ -75,7 +75,8 @@ struct StudioNetworkLibraryFilter: Equatable {
         switch sort {
         case .title:
             return order == .asc ? kept.sorted(by: Self.titleOrder) : kept.sorted { Self.titleOrder($1, $0) }
-        case .addedAt:
+        case .addedAt, .lastEpisodeReleased, .lastEpisodeAdded:
+            // Brand pages don't offer the episode sorts.
             return sorted(kept, by: \.addedAt)
         case .releaseDate:
             // Emby and Jellyfin send a time after the date, Silo the date alone.

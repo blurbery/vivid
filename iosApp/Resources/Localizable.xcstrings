@@ -359,6 +359,10 @@
         }
       }
     },
+    "%@ - Present" : {
+      "comment" : "Year line under a series poster that is still airing, e.g. 2021 - Present",
+      "extractionState" : "manual"
+    },
     "%@ Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21693,6 +21697,12 @@
           }
         }
       }
+    },
+    "Date Last Episode Added" : {
+      "extractionState" : "manual"
+    },
+    "Date Last Episode Released" : {
+      "extractionState" : "manual"
     },
     "Decade" : {
       "extractionState" : "manual",

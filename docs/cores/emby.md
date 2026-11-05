@@ -46,9 +46,11 @@ Library browsing and search request card metadata without cast, chapters, taglin
 
 Continue Watching and Next Up identify the episode beneath the series title. Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`. Partly watched cards use the same inset white progress bar as episode cards on series details. Removing items from Continue Watching is a Silo feature, so Emby cards don't offer it. On Home, episode cards in these two rows show the episode's backdrop, which Emby fills with the series background (`ParentBackdropItemId`) when the episode has no backdrop of its own, as is usual, so no extra request is made. The Home spotlight shows the same background.
 
+TV Shows libraries sort by Date Last Episode Released with `SortBy=LastContentPremiereDate,SortName` and by Date Last Episode Added with `DateLastContentAdded,SortName`, the values Emby's own web app sends for series. Emby's web app only offers the first from Emby 4.9.0.17, so on older servers Vivid sends `DateLastContentAdded,SortName` for it instead, using the cached server version; if the version check fails, that page fails and can be retried. Both mappings and the version fallback are covered by provider tests.
+
 The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable. Emby's own client gates it at 4.10.0.4. Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.
 
-Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You. Poster cards display the returned year when **Title & Year** is selected; **Title Only** and **Artwork Only** retain their existing behaviour. The year arrives in the existing list response, without additional per-poster metadata requests. Items without a server-provided year have no year caption.
+Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You. Poster cards display the returned year when **Title & Year** is selected, and series cards in poster grids show a span built from `Status` and `EndDate` instead ("2021 - Present", "2005 - 2017"); **Title Only** and **Artwork Only** retain their existing behaviour. The year arrives in the existing list response, without additional per-poster metadata requests. Items without a server-provided year have no year caption.
 
 ## Playback and settings
 

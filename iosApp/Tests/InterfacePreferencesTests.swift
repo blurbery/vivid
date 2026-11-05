@@ -205,7 +205,7 @@ final class InterfacePreferencesTests: XCTestCase {
 
     func testCardAccessibilityLabels() {
         XCTAssertEqual(
-            mediaCardAccessibilityLabel(title: "The Episode", episodeLabel: "S2 · E10", year: 2026, isWatched: true),
+            mediaCardAccessibilityLabel(title: "The Episode", episodeLabel: "S2 · E10", year: "2026", isWatched: true),
             "The Episode, S2 · E10, 2026, Watched"
         )
         XCTAssertEqual(

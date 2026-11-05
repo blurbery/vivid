@@ -49,6 +49,7 @@ struct CatalogGrid: View {
                     posterUrl: item.posterUrl ?? "",
                     thumbhash: item.posterThumbhash,
                     year: item.year,
+                    yearCaption: item.posterYearCaption,
                     userState: item.userState,
                     action: { onItemTap(item) },
                     contentId: item.contentId,

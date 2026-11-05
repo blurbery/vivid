@@ -301,6 +301,7 @@ private struct PosterRow: View, Equatable {
                     posterUrl: item.posterUrl ?? "",
                     posterThumbhash: item.posterThumbhash,
                     year: item.year,
+                    yearCaption: item.posterYearCaption,
                     userState: item.userState,
                     action: { onSelect(item) },
                     playAction: VividMediaType.isDirectlyPlayable(item.type) ? { onPlay(item) } : nil,
