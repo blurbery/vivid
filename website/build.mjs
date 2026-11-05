@@ -55,7 +55,7 @@ const texts = new Map(manifest.texts.map(text => [text.id, text]));
 const markerLink = text => `<a href="#text-${text.id}">${escape(manifest.marker.replace('{title}', text.title))}</a>`;
 let body = '<h1>Open Source Licences</h1>\n    <p>Vivid is built with the open source software below. These are the same notices and licence texts the app shows in Settings → About → Open Source Licences. Each build records the source commit it was made from in Settings → About, and Vivid’s complete source, build instructions and third-party notices are on <a href="https://github.com/blurbery/vivid" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>\n';
 const label = entry => escape([[entry.name, entry.version].filter(Boolean).join(' '), entry.licence].filter(Boolean).join(' · '));
-body += `    <p>${manifest.entries.map(entry => `<a href="#${entry.id}">${label(entry)}</a>`).join('<br>')}<br>${manifest.texts.map(text => `<a href="#text-${text.id}">${escape(text.title)}</a>`).join('<br>')}</p>\n`;
+body += `    <p>${manifest.entries.map(entry => `<a href="#${entry.id}">${label(entry)}</a>`).join('<br>')}<br>${manifest.texts.map(text => `<a href="#text-${text.id}">${escape(text.title)}</a>`).join('<br>')}<br><a href="#website-images">Images on this website</a></p>\n`;
 for (const entry of manifest.entries) {
   const shared = entry.text ? texts.get(entry.text) : undefined;
   if (entry.text && !shared) throw new Error(`Unknown licence text: ${entry.text}`);
@@ -74,6 +74,11 @@ for (const entry of manifest.entries) {
 for (const text of manifest.texts) {
   body += `    <h2 id="text-${text.id}">${escape(text.title)}</h2><pre>${escape(await licenceFile(text.file))}</pre>\n`;
 }
+// The website's app captures use Blender Foundation open-movie artwork,
+// credited here as its Creative Commons licences require.
+const mediaCredits = JSON.parse(await readFile(join(root, 'media-credits.json'), 'utf8'));
+body += `    <h2 id="website-images">Images on this website</h2><p>${escape(mediaCredits.intro)}</p>\n`;
+body += `    <p>${mediaCredits.images.map(image => `${escape(image.title)}: ${escape(image.attribution)}. <a href="${escape(image.source)}" target="_blank" rel="noopener noreferrer">Source</a>, <a href="${escape(image.licence_url)}" target="_blank" rel="noopener noreferrer">${escape(image.licence)}</a>`).join('<br>')}</p>\n`;
 const template = await readFile(join(publicDir, 'support.html'), 'utf8');
 const licencesPage = template
   .replace(/<title>[^<]*<\/title>/, '<title>Open Source Licences · Vivid</title>')
