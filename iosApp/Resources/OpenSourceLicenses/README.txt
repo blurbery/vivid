@@ -50,10 +50,11 @@ Paths in the attribution terms refer to the corresponding source revision
 provided with this build.
 
 Corresponding source and build instructions:
-The first row of Open Source Licences, "Source for this build", gives
-the exact source commit this build was made from and links to
-https://vividapp.co/source for that commit, which offers the commit's
-source as a free .tar.gz or .zip download from GitHub. That revision
+The first row of Open Source Licences, "Source for this build", opens a
+page with the exact source commit this build was made from and the
+address https://vividapp.co/source for that commit (on iPhone and iPad
+the commit is a link), which offers the commit's source as a free
+.tar.gz or .zip download from GitHub. That revision
 contains the complete source, project specs, build instructions and
 THIRD_PARTY_NOTICES.md. Lucid Engine's build pipeline and Vivid's
 engine patches are in its engine/ folder, and the source link under
