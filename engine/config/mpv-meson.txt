@@ -29,3 +29,7 @@
 -Dvo-avfoundation=enabled
 -Dlua=disabled
 -Dios-gl=enabled
+# added -Dcplugins=disabled: no C plugin loader, so the engine cannot dlopen
+# and run plugin code (App Review guideline 2.5.2); meson then also drops
+# mpv's -rdynamic link flag
+-Dcplugins=disabled

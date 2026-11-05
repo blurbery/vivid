@@ -103,6 +103,8 @@ Each patch is licensed like the library it patches:
 | libbluray, including libudfread 1.2.0 | 1.4.0 | LGPL-2.1-or-later |
 | uchardet | 0.0.8 | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (used under LGPL-2.1-or-later) |
 
+uchardet lets recipients choose any one of its three licences, and Vivid uses it under LGPL-2.1-or-later. Its in-app notice is named after that licence and reproduces upstream's `COPYING` unchanged, which holds all three texts: MPL 1.1, GPL 2.0 and LGPL 2.1.
+
 System libraries from Apple's SDKs are not redistributed.
 
 Settings → About → Open Source Licences lists every library above, and each

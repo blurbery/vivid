@@ -2616,10 +2616,14 @@ def cmd_check(args) -> None:
     c.expect("mpv configuration has -Dgpl=false", "-Dgpl=false" in configuration.split())
     features = (c_string(define(mpv_config, "FULLCONFIG")) or "").split()
     c.sets("mpv features", set(features), set(read_list(CONFIG / "expected-mpv-features.txt")))
+    # -Dcplugins=disabled: no C plugin loader (mpv's player/scripting.c).
+    c.equal("HAVE_CPLUGINS", define(mpv_config, "HAVE_CPLUGINS"), "0")
     libmpv = (fws / "Libmpv.framework" / "Libmpv").read_bytes()
     c.expect("Libmpv carries -Dgpl=false", b"-Dgpl=false" in libmpv)
     c.expect("Libmpv has no -Dgpl=true", b"-Dgpl=true" not in libmpv)
     c.expect("Libmpv contains mpv patch 0001", MPV_PATCH_MARKER in libmpv)
+    c.expect("Libmpv has no C plugin loader",
+             "_mp_scripting_cplugin" not in defined["Libmpv"] and b"mpv_open_cplugin" not in libmpv)
     # Vivid's adapter reads the AVFoundation output's restart log line.
     c.expect("Libmpv keeps the AVFoundation 'notification name' log line",
              b"notification name: %s" in libmpv)

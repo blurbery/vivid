@@ -319,7 +319,8 @@ Compilers come from the selected Xcode (`/usr/bin/clang`). Every library except 
 | Slices | arm64 plus arm64e (tvOS device) and x86_64 (simulators); also Catalyst, macOS and visionOS | arm64 only, iOS and tvOS | Vivid links only arm64 on iPhone, iPad and Apple TV |
 | mpv licence | `-Dgpl=true` | `-Dgpl=false` | Decided: LGPL-2.1-or-later libmpv |
 | mpv options | `-Dmoltenvk=enabled -Dvo-avfoundation=enabled` | `-Dvo-avfoundation=enabled` only | `moltenvk` exists only with a third-party mpv patch, and upstream meson rejects it; `vo-avfoundation` comes from Vivid's own patch `0025` |
-| mpv features | include `gpl`, `moltenvk` and `vo-avfoundation` | without `gpl` and `moltenvk` | Follows from the two rows above |
+| mpv C plugins | `cplugins` on (mpv's default), linked with `-rdynamic` | `-Dcplugins=disabled`: no C plugin loader and no `-rdynamic` | Decided (blurbery, 5 November 2026): with Lua and JavaScript already off, the engine has no way to load and run plugin or script code, which keeps App Review guideline 2.5.2 simple. mpv then also drops its script options (`scripts`, `script-opts` and `load-scripts`), so the app accepts a missing `load-scripts` (patch specification 1.7). It takes effect in the next engine release; release `0.1.0`, which the app pins, still has the loader, and the app keeps it unused with `config=no` and `load-scripts=no` |
+| mpv features | include `cplugins`, `gpl`, `moltenvk` and `vo-avfoundation` | without `cplugins`, `gpl` and `moltenvk`; `libdl` stays | Follows from the rows above. mpv's meson reports `libdl` whenever it finds the `dl` dependency, which is part of Apple's libSystem, and has no option to turn it off; with `cplugins` off nothing in mpv's own code calls `dlopen` |
 | FFmpeg licence | `--enable-gpl --enable-version3` (GPL version 3 or later) | neither (LGPL version 2.1 or later) | Decided |
 | FFmpeg TLS | OpenSSL 3.3.5 | Secure Transport, with the patch above | Decided |
 | FFmpeg components | as listed in the facts | without the `delogo` filter, the `whip` muxer and the `dtls`, `ffrtmpcrypt`, `rtmpe` and `rtmpte` protocols | GPL-only filter; the others need OpenSSL |
@@ -435,6 +436,7 @@ Release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) 
 - **mpv:**
   - The recorded meson options match, with `-Dgpl=false` and no `-Dgpl=true` in the binary.
   - The feature list matches `expected-mpv-features.txt`.
+  - There is no C plugin loader: `HAVE_CPLUGINS` is 0, and `Libmpv` neither defines `mp_scripting_cplugin` nor contains the `mpv_open_cplugin` entry point name.
   - The binary contains the text of mpv patch `0001`.
   - The client API version is 2.5, with the four expected headers.
 - **libass and dav1d:** the versions are 0.17.5 (`0x01705000`) and API 7.0.0, and both archives contain their arm64 assembly.
