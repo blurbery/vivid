@@ -816,14 +816,14 @@ private struct TVHomeSpotlightCarousel: View {
         return slides.count == 1 ? visualPosition..<(visualPosition + 1) : lowerPosition..<upperPosition
     }
 
-    private func updatePositionWindow(around position: Int) {
+    private func updatePositionWindow(around position: Int, isIdle: Bool = false) {
         guard slides.count > 1 else { return }
         let margin = slides.count
         let span = slides.count * 3
         // Keep a runway in both directions without changing card identities.
         if position - lowerPosition < margin || upperPosition - position <= margin {
             diagnostics?.event("spotlight.recycle", values: [Double(position), Double(lowerPosition)])
-            if focus.wrappedValue == nil {
+            if focus.wrappedValue == nil || isIdle {
                 // Automatic movement recycles after its animation has finished.
                 var transaction = Transaction(animation: nil)
                 transaction.disablesAnimations = true
@@ -1022,7 +1022,16 @@ private struct TVHomeSpotlightCarousel: View {
         .task(id: rotationKey) {
             guard canRotate else { return }
             let remaining = max(0, 6 - elapsedCycle(at: Date()))
-            do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+            // Scrolling only recycles while focus is already on the new
+            // card, and focus catches up after an automatic scroll ends, so
+            // a focused Spotlight never recycled and stalled once it ran out
+            // of rendered copies. Recycle while the carousel is still, well
+            // clear of the focus update and the next scroll.
+            let recycleDelay = min(1, remaining / 2)
+            do { try await Task.sleep(for: .seconds(recycleDelay)) } catch { return }
+            guard !Task.isCancelled else { return }
+            updatePositionWindow(around: visualPosition, isIdle: true)
+            do { try await Task.sleep(for: .seconds(remaining - recycleDelay)) } catch { return }
             guard !Task.isCancelled else { return }
             pendingPosition = visualPosition + 1
             revealPendingSlide()
