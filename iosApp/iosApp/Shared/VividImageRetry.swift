@@ -5,6 +5,13 @@ struct VividImageHTTPError: Error {
     let statusCode: Int
 }
 
+extension Notification.Name {
+    /// Posted when a server turns down an artwork link (400 to 499), with the
+    /// link as the object, on the thread that downloaded it. Lists that keep
+    /// signed links, which expire, can read theirs again.
+    static let vividArtworkLinkRejected = Notification.Name("vivid.artwork.linkRejected")
+}
+
 /// Retry rules for artwork. `load` gives a dropped connection one more try;
 /// `recover` lets a visible image ride out a short outage.
 enum VividImageRetry {

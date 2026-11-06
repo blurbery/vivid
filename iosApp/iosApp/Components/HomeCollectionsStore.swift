@@ -76,7 +76,19 @@ final class HomeCollectionsStore {
     @ObservationIgnored private var listIsComplete = true
     /// When the last read failed, for `retryDelay`.
     @ObservationIgnored private var failedAt: Date?
+    /// When a turned-down poster last made the list read again, for `retryDelay`.
+    @ObservationIgnored private var rejectedPosterReloadAt: Date?
+    @ObservationIgnored private var rejectedPosterObserver: NSObjectProtocol?
     private let defaults = SharedDefaults.shared
+
+    private init() {
+        rejectedPosterObserver = NotificationCenter.default.addObserver(
+            forName: .vividArtworkLinkRejected, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let url = notification.object as? URL else { return }
+            Task { @MainActor in self?.posterLinkRejected(url) }
+        }
+    }
 
     // MARK: Row
 
@@ -316,6 +328,7 @@ final class HomeCollectionsStore {
         hydratedScope = nil
         listIsComplete = true
         failedAt = nil
+        rejectedPosterReloadAt = nil
         setCollections([])
         loadedAt = nil
         artworkExpiresAt = nil
@@ -361,6 +374,30 @@ final class HomeCollectionsStore {
         let task = Task { await self.load(scope, generation: generation) }
         loadTask = task
         await task.value
+    }
+
+    /// A poster from this list that the server turned down usually means its
+    /// signed link has expired or the poster was replaced, while the list
+    /// still reads as fresh: say a read at launch failed and the saved list
+    /// stayed up. The list is read again, as pull to refresh does, so the
+    /// posters get new links. Every poster on screen can fail at once, so this
+    /// reads at most once per `retryDelay`.
+    private func posterLinkRejected(_ url: URL) {
+        guard isCurrent, Self.retryIsDue(after: rejectedPosterReloadAt) else { return }
+        let serverURL = MediaServerProvider.active == .silo
+            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        guard Self.lists(poster: url, in: collections, serverURL: serverURL) else { return }
+        rejectedPosterReloadAt = Date()
+        Task { await loadIfNeeded(force: true) }
+    }
+
+    /// Whether `url` is one of the entries' posters, resolved the way artwork
+    /// views resolve it.
+    nonisolated static func lists(poster url: URL, in entries: [HomeCollection], serverURL: URL?) -> Bool {
+        entries.contains { entry in
+            guard let raw = entry.collection.posterUrl, !raw.isEmpty else { return false }
+            return SiloAPICompatibility.artworkURL(raw, relativeTo: serverURL) == url
+        }
     }
 
     private var listIsFresh: Bool {
