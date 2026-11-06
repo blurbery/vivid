@@ -387,7 +387,7 @@ final class HomeCollectionsStore {
     /// stayed up. The list is read again, as pull to refresh does, so the
     /// posters get new links. Every poster on screen can fail at once, so this
     /// reads at most once per `retryDelay`, and a link that was already in
-    /// the list before that read is left alone: the read brought it back
+    /// the list before a complete read is left alone: the read brought it back
     /// unchanged, so the server refuses it for good.
     private func posterLinkRejected(_ url: URL) {
         guard isCurrent, Self.retryIsDue(after: rejectedPosterReloadAt),
@@ -396,9 +396,29 @@ final class HomeCollectionsStore {
             ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
         let posters = Self.posterURLs(of: collections, serverURL: serverURL)
         guard posters.contains(url) else { return }
-        rejectedPosterReloadAt = Date()
+        let rejectedAt = Date()
+        rejectedPosterReloadAt = rejectedAt
+        let scope = loadedScope
+        Task { await reloadAfterRejection(of: posters, rejectedAt: rejectedAt, scope: scope) }
+    }
+
+    /// A read already under way answers first, as its links are signed about
+    /// now; when it fails, or none was running, the list is read again. The
+    /// old links are set aside only once a complete read has answered since
+    /// the poster was turned down. After a failed read they aren't, so the
+    /// next refusal after `retryDelay` tries again.
+    private func reloadAfterRejection(of posters: Set<URL>, rejectedAt: Date, scope: Scope?) async {
+        if let loadTask { await loadTask.value }
+        if !completeRead(since: rejectedAt) { await loadIfNeeded(force: true) }
+        guard loadedScope == scope, completeRead(since: rejectedAt) else { return }
         postersBeforeRejectedReload = posters
-        Task { await loadIfNeeded(force: true) }
+    }
+
+    /// `loadedAt` is set to now only by a complete read; a list from the disk
+    /// cache keeps the time it was saved.
+    private func completeRead(since date: Date) -> Bool {
+        guard let loadedAt else { return false }
+        return loadedAt >= date
     }
 
     /// The entries' poster links, resolved the way artwork views resolve them.
