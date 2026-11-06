@@ -119,7 +119,9 @@ struct TVItemDetailRouteSeed: Hashable {
             genre = nil
             logoUrl = item.logoUrl
             // The series background the card or Spotlight was showing (on
-            // Silo a saved lookup), never the episode's own still.
+            // Silo a saved lookup). Never a Silo or Jellyfin episode still;
+            // on Emby it's the episode's backdrop, which is the series
+            // background unless the episode has its own.
             let url = seriesBackdrop?.url.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             backdropUrl = url.isEmpty ? nil : url
             backdropThumbhash = url.isEmpty ? nil : seriesBackdrop?.thumbhash
