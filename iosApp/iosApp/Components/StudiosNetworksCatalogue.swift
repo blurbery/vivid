@@ -20,11 +20,13 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     var watchProviderIds: [Int] = []
     var watchRegion = "US"
     /// Reads a network's series from its streaming list too, not just its
-    /// films. TMDb credits BritBox with only a handful of its own series, so
-    /// matching by network would leave it nearly empty.
+    /// films. TMDb credits BritBox and Crunchyroll with only a handful of
+    /// their own series, so matching by network would leave them nearly
+    /// empty.
     var listsSeriesByWatchProvider = false
     /// Keeps anime in the Popular rows, which leave it out for every other
-    /// brand. Studio Ghibli makes little else.
+    /// brand. Studio Ghibli makes little else, and Crunchyroll streams little
+    /// else.
     var keepsAnime = false
     /// For a logo printed on a solid block (Marvel's box, the Warner Bros.
     /// shield), which would otherwise draw as a plain white shape: its
@@ -73,6 +75,13 @@ extension StudiosNetworksStore {
                              "ITVX", "ITV Encore"]),
         .init(id: "amc", name: "AMC", kind: .network, tmdbId: 174, watchProviderIds: [80, 526, 528, 635, 1854], libraryNames: ["AMC", "AMC+"]),
         .init(id: "fx", name: "FX", kind: .network, tmdbId: 88, watchProviderIds: [123], libraryNames: ["FX", "FXX"]),
+        // Crunchyroll mostly streams series first shown on Japanese channels,
+        // and TMDb credits it with only a handful of its own.
+        .init(id: "crunchyroll", name: "Crunchyroll", kind: .network, tmdbId: 1112, watchProviderIds: [283, 1968],
+              listsSeriesByWatchProvider: true, keepsAnime: true, libraryNames: ["Crunchyroll"]),
+        .init(id: "hallmark", name: "Hallmark", kind: .network, tmdbId: 384, watchProviderIds: [290, 1746, 2058],
+              libraryNames: ["Hallmark", "Hallmark Channel", "Hallmark Movies & Mysteries", "Hallmark Mystery", "Hallmark Drama",
+                             "Hallmark Family", "Hallmark+", "Hallmark Movies Now", "Hallmark Media"]),
         .init(id: "pixar", name: "Pixar", kind: .studio, tmdbId: 3, libraryNames: ["Pixar", "Pixar Animation Studios"]),
         .init(id: "marvel", name: "Marvel Studios", kind: .studio, tmdbId: 420, knocksOutLogoText: true, libraryNames: ["Marvel Studios"]),
         .init(id: "a24", name: "A24", kind: .studio, tmdbId: 41077, libraryNames: ["A24"]),

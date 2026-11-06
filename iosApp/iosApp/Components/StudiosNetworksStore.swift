@@ -36,7 +36,7 @@ final class StudiosNetworksStore {
     nonisolated static let resultsRevision = 5
     /// Bumped when a brand's names change, so the saved library index is
     /// tagged again. Reading the library is the slow part, so it's separate.
-    nonisolated static let indexRevision = 3
+    nonisolated static let indexRevision = 4
     /// Blocks in each of TMDb's weekly trending lists, 500 titles each: the
     /// whole list, as TMDb's only covers the world, not a brand, and a
     /// smaller brand's titles sit far down it. The relay answers a block in

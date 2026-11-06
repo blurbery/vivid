@@ -141,7 +141,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertFalse(StudiosNetworksStore.showsInPopularRows(madeInJapan, keepsAnime: false))
         XCTAssertTrue(StudiosNetworksStore.showsInPopularRows(cartoon, keepsAnime: false))
         XCTAssertTrue(StudiosNetworksStore.showsInPopularRows(drama, keepsAnime: false))
-        XCTAssertEqual(StudiosNetworksStore.catalogue.filter(\.keepsAnime).map(\.id), ["ghibli"])
+        XCTAssertEqual(StudiosNetworksStore.catalogue.filter(\.keepsAnime).map(\.id), ["crunchyroll", "ghibli"])
     }
 
     func testAutomaticPicksRankByUncappedMatchCount() {
