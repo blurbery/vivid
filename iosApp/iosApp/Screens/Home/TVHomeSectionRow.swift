@@ -100,18 +100,7 @@ struct SectionRow: View {
             onItemTap(contentId, item)
             return
         }
-        let isEpisode = item.type.lowercased() == "episode" || item.episodeNumber != nil
-        let seriesId = item.seriesId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if isEpisode, !seriesId.isEmpty, let season = item.seasonNumber {
-            TVSeriesDetailNavigationContextStore.stage(
-                seriesContentId: seriesId,
-                seasonNumber: season,
-                episodeContentId: item.contentId
-            )
-            onItemTap(seriesId, item)
-        } else {
-            onItemTap(item.contentId, item)
-        }
+        onItemTap(TVSeriesDetailNavigationContextStore.destination(for: item), item)
     }
 }
 #endif

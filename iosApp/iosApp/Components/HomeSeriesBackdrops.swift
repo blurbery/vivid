@@ -80,13 +80,25 @@ final class HomeSeriesBackdrops {
     /// series background for an episode once it's known, otherwise the
     /// item's own background or poster, with the thumbhash to match.
     func art(for item: SectionItem) -> (url: String, thumbhash: String?) {
+        if item.type.lowercased() == "episode", let series = seriesArt(for: item) { return series }
         _ = revision
-        if item.type.lowercased() == "episode" {
-            if let url = item.seriesBackdropUrl, !url.isEmpty { return (url, item.seriesBackdropThumbhash) }
-            if let seriesID = item.seriesId, let saved = saved(seriesID) { return (saved.url, saved.thumbhash) }
-        }
         if let backdrop = item.backdropUrl, !backdrop.isEmpty { return (backdrop, item.backdropThumbhash) }
         return (item.posterUrl ?? "", item.posterThumbhash)
+    }
+
+    /// The series background an episode's card shows, so a series page can
+    /// paint it while it loads: Jellyfin's `seriesBackdropUrl`, Silo's saved
+    /// lookup, or Emby's episode backdrop (the series background unless the
+    /// episode has its own, which is also what the card shows). Nil when none
+    /// has one. Silo's and Jellyfin's episode stills are never used.
+    func seriesArt(for item: SectionItem) -> (url: String, thumbhash: String?)? {
+        _ = revision
+        if let url = item.seriesBackdropUrl, !url.isEmpty { return (url, item.seriesBackdropThumbhash) }
+        if let seriesID = item.seriesId, let saved = saved(seriesID) { return (saved.url, saved.thumbhash) }
+        if MediaServerProvider.active == .emby, let backdrop = item.backdropUrl, !backdrop.isEmpty {
+            return (backdrop, item.backdropThumbhash)
+        }
+        return nil
     }
 
     /// Keeps a row's series backgrounds current while it's showing: looks
