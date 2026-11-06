@@ -3,12 +3,18 @@ import Foundation
 /// An artwork response outside 200 to 299.
 struct VividImageHTTPError: Error {
     let statusCode: Int
+
+    /// The answers an expired or replaced link gets: Silo's signed artwork
+    /// route answers 404, S3 and Cloudflare token links 403. A timeout (408)
+    /// or rate limit (429) is temporary, and a fresh link wouldn't help.
+    static let rejectedLinkStatuses: Set<Int> = [403, 404, 410]
 }
 
 extension Notification.Name {
-    /// Posted when a server turns down an artwork link (400 to 499), with the
-    /// link as the object, on the thread that downloaded it. Lists that keep
-    /// signed links, which expire, can read theirs again.
+    /// Posted when a server turns down an artwork link (see
+    /// `VividImageHTTPError.rejectedLinkStatuses`), with the link as the
+    /// object, on the thread that downloaded it. Lists that keep signed links,
+    /// which expire, can read theirs again.
     static let vividArtworkLinkRejected = Notification.Name("vivid.artwork.linkRejected")
 }
 
