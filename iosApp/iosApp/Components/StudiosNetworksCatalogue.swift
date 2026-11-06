@@ -73,6 +73,13 @@ extension StudiosNetworksStore {
                              "ITVX", "ITV Encore"]),
         .init(id: "amc", name: "AMC", kind: .network, tmdbId: 174, watchProviderIds: [80, 526, 528, 635, 1854], libraryNames: ["AMC", "AMC+"]),
         .init(id: "fx", name: "FX", kind: .network, tmdbId: 88, watchProviderIds: [123], libraryNames: ["FX", "FXX"]),
+        // Crunchyroll mostly streams series first shown on Japanese channels,
+        // and TMDb credits it with only a handful of its own.
+        .init(id: "crunchyroll", name: "Crunchyroll", kind: .network, tmdbId: 1112, watchProviderIds: [283, 1968],
+              listsSeriesByWatchProvider: true, keepsAnime: true, libraryNames: ["Crunchyroll"]),
+        .init(id: "hallmark", name: "Hallmark", kind: .network, tmdbId: 384, watchProviderIds: [290, 1746, 2058],
+              libraryNames: ["Hallmark", "Hallmark Channel", "Hallmark Movies & Mysteries", "Hallmark Mystery", "Hallmark Drama",
+                             "Hallmark Family", "Hallmark+", "Hallmark Movies Now", "Hallmark Media"]),
         .init(id: "pixar", name: "Pixar", kind: .studio, tmdbId: 3, libraryNames: ["Pixar", "Pixar Animation Studios"]),
         .init(id: "marvel", name: "Marvel Studios", kind: .studio, tmdbId: 420, knocksOutLogoText: true, libraryNames: ["Marvel Studios"]),
         .init(id: "a24", name: "A24", kind: .studio, tmdbId: 41077, libraryNames: ["A24"]),
