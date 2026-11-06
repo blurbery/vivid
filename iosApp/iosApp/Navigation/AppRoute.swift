@@ -60,9 +60,14 @@ extension Route {
     /// Item detail for a Home or For You card. On Apple TV the card's details
     /// paint the page before the item loads; a Continue Watching episode that
     /// opens its series paints the series instead.
+    @MainActor
     static func itemDetail(destinationContentId: String, sectionItem: SectionItem) -> Route {
         #if os(tvOS)
-        .itemDetail(contentId: destinationContentId, tvSeed: TVItemDetailRouteSeed(sectionItem, opening: destinationContentId))
+        .itemDetail(contentId: destinationContentId, tvSeed: TVItemDetailRouteSeed(
+            sectionItem,
+            opening: destinationContentId,
+            seriesBackdrop: HomeSeriesBackdrops.shared.seriesArt(for: sectionItem)
+        ))
         #else
         .itemDetail(contentId: destinationContentId)
         #endif
@@ -93,7 +98,10 @@ struct TVItemDetailRouteSeed: Hashable {
     let backdropUrl: String?
     let backdropThumbhash: String?
 
-    init(_ item: SectionItem, opening destinationContentId: String) {
+    /// `seriesBackdrop` is the series background the card was showing, for
+    /// an episode that opens its series.
+    init(_ item: SectionItem, opening destinationContentId: String,
+         seriesBackdrop: (url: String, thumbhash: String?)? = nil) {
         let type = item.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let isEpisode = type == "episode" || item.episodeNumber != nil
         let seriesId = item.seriesId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -108,11 +116,11 @@ struct TVItemDetailRouteSeed: Hashable {
             contentRating = nil
             genre = nil
             logoUrl = item.logoUrl
-            // The series background the card or Spotlight was showing, never
-            // the episode's own still.
-            let seriesBackdrop = item.seriesBackdropUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            backdropUrl = seriesBackdrop.isEmpty ? nil : seriesBackdrop
-            backdropThumbhash = seriesBackdrop.isEmpty ? nil : item.seriesBackdropThumbhash
+            // The series background the card or Spotlight was showing (on
+            // Silo a saved lookup), never the episode's own still.
+            let url = seriesBackdrop?.url.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            backdropUrl = url.isEmpty ? nil : url
+            backdropThumbhash = url.isEmpty ? nil : seriesBackdrop?.thumbhash
         } else {
             overlaySummary = item.overlaySummary
             mediaType = item.type

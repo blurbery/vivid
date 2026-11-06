@@ -24,8 +24,10 @@ enum TVSeriesDetailNavigationContextStore {
     }
 
     /// The page a Continue Watching card or Spotlight slide opens. An episode
-    /// stages itself and opens its series straight away, rather than opening
-    /// its own page and redirecting once that loads.
+    /// with a known series and season stages itself and opens its series
+    /// straight away, rather than opening its own page and redirecting once
+    /// that loads. Any other item, including an episode missing either, opens
+    /// its own page.
     static func destination(for item: SectionItem) -> String {
         let isEpisode = item.type.lowercased() == "episode" || item.episodeNumber != nil
         let seriesId = item.seriesId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
