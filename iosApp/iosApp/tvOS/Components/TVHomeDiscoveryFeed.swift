@@ -66,7 +66,9 @@ struct TVHomeDiscoveryFeed: View {
                                 studiosNetworksOpenedDetail = false
                                 collectionsOpenedDetail = false
                                 rowFocusOwnership.rowID = nil
-                                onItemTap(slide.item.contentId, slide.item)
+                                // An episode opens its series directly, as
+                                // its Continue Watching card does.
+                                onItemTap(TVSeriesDetailNavigationContextStore.destination(for: slide.item), slide.item)
                             }
                         )
                         .id(Self.spotlightAnchor)

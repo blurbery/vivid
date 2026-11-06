@@ -108,8 +108,11 @@ struct TVItemDetailRouteSeed: Hashable {
             contentRating = nil
             genre = nil
             logoUrl = item.logoUrl
-            backdropUrl = nil
-            backdropThumbhash = nil
+            // The series background the card or Spotlight was showing, never
+            // the episode's own still.
+            let seriesBackdrop = item.seriesBackdropUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            backdropUrl = seriesBackdrop.isEmpty ? nil : seriesBackdrop
+            backdropThumbhash = seriesBackdrop.isEmpty ? nil : item.seriesBackdropThumbhash
         } else {
             overlaySummary = item.overlaySummary
             mediaType = item.type
