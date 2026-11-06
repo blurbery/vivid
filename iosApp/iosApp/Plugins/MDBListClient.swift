@@ -252,7 +252,7 @@ final class MDBListClient: @unchecked Sendable {
         var request = URLRequest(url: components.url!)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Vivid/0.14.3", forHTTPHeaderField: "User-Agent")
+        request.setValue("Vivid/\(AppleDeviceIdentity.bundleAppVersion)", forHTTPHeaderField: "User-Agent")
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

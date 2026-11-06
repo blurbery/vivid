@@ -150,7 +150,7 @@ final class OpenSubtitlesClient: @unchecked Sendable {
         url.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         var request = URLRequest(url: url.url!)
         request.setValue(key, forHTTPHeaderField: "Api-Key")
-        request.setValue("Vivid v0.14.3", forHTTPHeaderField: "User-Agent")
+        request.setValue("Vivid v\(AppleDeviceIdentity.bundleAppVersion)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             request.httpMethod = "POST"
