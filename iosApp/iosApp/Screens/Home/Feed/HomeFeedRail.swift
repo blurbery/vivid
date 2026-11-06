@@ -74,6 +74,7 @@ struct HomeFeedRow: View {
     private func card(_ item: SectionItem) -> some View {
         let presentation = homeCards.presentation
         let scale = presentation.posterSize.scale
+        let caption = presentation.caption.forEpisodes(EpisodeCardCaption.isEpisode(item))
         let nativeNextRow = MediaServerProvider.active.usesNativeUser && isNextRow
         let removal: (() -> Void)? = isResumeRow ? onRemoveFromContinueWatching.map { remove in { remove(item) } } : nil
         let watched: ((Bool) async -> Bool)? = onSetWatched.map { update in { played in await update(item, played) } }
@@ -83,6 +84,7 @@ struct HomeFeedRow: View {
                 width: HomeFeedMetrics.stillWidth * scale,
                 showsCaption: presentation.caption.showsTitle,
                 showsMetadata: presentation.caption.showsMetadata,
+                showsSecondLine: caption.showsMetadata,
                 showsEpisodeDetails: nativeNextRow,
                 opensResumeContext: isResumeRow || nativeNextRow,
                 usesSeriesBackdrop: usesSeriesBackdrops,
@@ -94,7 +96,7 @@ struct HomeFeedRow: View {
                 item: item,
                 width: HomeFeedMetrics.posterWidth * scale,
                 showsCaption: presentation.caption.showsTitle,
-                showsMetadata: presentation.caption.showsMetadata,
+                showsMetadata: caption.showsMetadata,
                 showsProgress: isResumeRow,
                 opensResumeContext: isResumeRow || nativeNextRow,
                 episodeAccessibilityLabel: EpisodeCardCaption.accessibilityLabel(for: item),
@@ -114,6 +116,8 @@ struct HomeStillCard: View {
     var width: CGFloat
     var showsCaption: Bool
     var showsMetadata: Bool
+    /// The year or episode line. Episodes keep it with Title Only.
+    var showsSecondLine: Bool
     var showsEpisodeDetails: Bool
     var opensResumeContext: Bool
     var usesSeriesBackdrop: Bool
@@ -128,6 +132,7 @@ struct HomeStillCard: View {
         width: CGFloat = HomeFeedMetrics.stillWidth,
         showsCaption: Bool = true,
         showsMetadata: Bool = true,
+        showsSecondLine: Bool = true,
         showsEpisodeDetails: Bool = false,
         opensResumeContext: Bool = false,
         usesSeriesBackdrop: Bool = false,
@@ -138,6 +143,7 @@ struct HomeStillCard: View {
         self.width = width
         self.showsCaption = showsCaption
         self.showsMetadata = showsMetadata
+        self.showsSecondLine = showsSecondLine
         self.showsEpisodeDetails = showsEpisodeDetails
         self.opensResumeContext = opensResumeContext
         self.usesSeriesBackdrop = usesSeriesBackdrop
@@ -314,7 +320,7 @@ struct HomeStillCard: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.vividOnSurface)
                 .lineLimit(1)
-            if showsMetadata || isResumeCard || showsEpisodeDetails {
+            if showsSecondLine || isResumeCard || showsEpisodeDetails {
                 Text(verbatim: secondLine ?? "")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(Color.vividOnSurface.opacity(0.7))

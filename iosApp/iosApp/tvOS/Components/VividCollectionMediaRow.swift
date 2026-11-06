@@ -75,6 +75,7 @@ struct VividCollectionMediaRow: View, Equatable {
                 .environmentObject(overlayStore)
                 .environment(\.homeCardPresentation, presentation)
                 .environment(\.tvHomeStableRows, true)
+                .environment(\.tvHomeRowHasEpisodes, section.tvHomeHasEpisodes)
                 .environment(\.tvArtworkLoadingEnabled, artworkLoadingEnabled)
                 .environment(\.tvHomeRowArtworkGate, artworkGate)
             }

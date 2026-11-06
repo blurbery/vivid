@@ -44,6 +44,12 @@ enum CardCaptionStyle: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var showsTitle: Bool { self != .artwork }
     var showsMetadata: Bool { self == .titleMetadata }
+
+    /// Episode cards are titled by their series, so Title Only keeps their
+    /// season and episode line. Only Artwork Only hides it.
+    func forEpisodes(_ isEpisode: Bool) -> CardCaptionStyle {
+        isEpisode && self == .title ? .titleMetadata : self
+    }
 }
 
 struct CardPresentationPreference: Codable, Equatable, Sendable {

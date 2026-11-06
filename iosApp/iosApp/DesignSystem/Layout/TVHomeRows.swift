@@ -6,6 +6,15 @@ extension EnvironmentValues {
     /// Set by Apple TV Home rows so cards reserve fixed caption heights and
     /// rows keep their height while artwork and text load.
     @Entry var tvHomeStableRows = false
+
+    /// Set by Apple TV Home rows holding an episode, so every card keeps
+    /// room for the episode line that Title Only still shows.
+    @Entry var tvHomeRowHasEpisodes = false
+}
+
+extension ResolvedSection {
+    /// Whether any card in the row is an episode.
+    var tvHomeHasEpisodes: Bool { items.contains(where: EpisodeCardCaption.isEpisode) }
 }
 
 /// Fixed measurements for Apple TV Home rows, worked out from the fonts the
@@ -28,9 +37,16 @@ enum TVHomeRowGeometry {
         return titleHeight + titleToMetadata + metadataHeight
     }
 
-    /// The height of a whole row of cards, padding included.
-    static func stripHeight(layout: MediaRowLayout, posterWidth: CGFloat, presentation: CardPresentationPreference) -> CGFloat {
+    /// The height of a whole row of cards, padding included. Rows holding an
+    /// episode keep room for the episode line.
+    static func stripHeight(
+        layout: MediaRowLayout,
+        posterWidth: CGFloat,
+        presentation: CardPresentationPreference,
+        hasEpisodes: Bool = false
+    ) -> CGFloat {
         let scale = presentation.posterSize.scale
+        let caption = presentation.caption.forEpisodes(hasEpisodes)
         let artworkHeight: CGFloat
         let captionGap: CGFloat
         switch layout {
@@ -42,8 +58,8 @@ enum TVHomeRowGeometry {
             captionGap = thumbnailCaptionGap
         }
         var height = artworkHeight
-        if presentation.caption.showsTitle {
-            height += captionGap + captionHeight(presentation.caption)
+        if caption.showsTitle {
+            height += captionGap + captionHeight(caption)
         }
         return height + cardPadding * 2
     }
