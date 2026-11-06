@@ -76,7 +76,23 @@ final class HomeCollectionsStore {
     @ObservationIgnored private var listIsComplete = true
     /// When the last read failed, for `retryDelay`.
     @ObservationIgnored private var failedAt: Date?
+    /// When a turned-down poster last made the list read again, for `retryDelay`.
+    @ObservationIgnored private var rejectedPosterReloadAt: Date?
+    /// Every poster link the list held when a turned-down poster last made it
+    /// read again. One of these failing after that read came back unchanged,
+    /// so reading again wouldn't help.
+    @ObservationIgnored private var postersBeforeRejectedReload: Set<URL> = []
+    @ObservationIgnored private var rejectedPosterObserver: NSObjectProtocol?
     private let defaults = SharedDefaults.shared
+
+    private init() {
+        rejectedPosterObserver = NotificationCenter.default.addObserver(
+            forName: .vividArtworkLinkRejected, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let url = notification.object as? URL else { return }
+            Task { @MainActor in self?.posterLinkRejected(url) }
+        }
+    }
 
     // MARK: Row
 
@@ -316,6 +332,8 @@ final class HomeCollectionsStore {
         hydratedScope = nil
         listIsComplete = true
         failedAt = nil
+        rejectedPosterReloadAt = nil
+        postersBeforeRejectedReload = []
         setCollections([])
         loadedAt = nil
         artworkExpiresAt = nil
@@ -361,6 +379,53 @@ final class HomeCollectionsStore {
         let task = Task { await self.load(scope, generation: generation) }
         loadTask = task
         await task.value
+    }
+
+    /// A poster from this list that the server turned down usually means its
+    /// signed link has expired or the poster was replaced, while the list
+    /// still reads as fresh: say a read at launch failed and the saved list
+    /// stayed up. The list is read again, as pull to refresh does, so the
+    /// posters get new links. Every poster on screen can fail at once, so this
+    /// reads at most once per `retryDelay`, and a link that was already in
+    /// the list before a complete read is left alone: the read brought it back
+    /// unchanged, so the server refuses it for good.
+    private func posterLinkRejected(_ url: URL) {
+        guard isCurrent, Self.retryIsDue(after: rejectedPosterReloadAt),
+              !postersBeforeRejectedReload.contains(url) else { return }
+        let serverURL = MediaServerProvider.active == .silo
+            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        let posters = Self.posterURLs(of: collections, serverURL: serverURL)
+        guard posters.contains(url) else { return }
+        let rejectedAt = Date()
+        rejectedPosterReloadAt = rejectedAt
+        let scope = loadedScope
+        Task { await reloadAfterRejection(of: posters, rejectedAt: rejectedAt, scope: scope) }
+    }
+
+    /// A read already under way answers first, as its links are signed about
+    /// now; when it fails, or none was running, the list is read again. The
+    /// old links are set aside only once a complete read has answered since
+    /// the poster was turned down. After a failed read they aren't, so the
+    /// next refusal after `retryDelay` tries again.
+    private func reloadAfterRejection(of posters: Set<URL>, rejectedAt: Date, scope: Scope?) async {
+        if let loadTask { await loadTask.value }
+        if !completeRead(since: rejectedAt) { await loadIfNeeded(force: true) }
+        guard loadedScope == scope, completeRead(since: rejectedAt) else { return }
+        postersBeforeRejectedReload = posters
+    }
+
+    /// `loadedAt` is set to now only by a complete read; a list from the disk
+    /// cache keeps the time it was saved.
+    private func completeRead(since date: Date) -> Bool {
+        guard let loadedAt else { return false }
+        return loadedAt >= date
+    }
+
+    /// The entries' poster links, resolved the way artwork views resolve them.
+    nonisolated static func posterURLs(of entries: [HomeCollection], serverURL: URL?) -> Set<URL> {
+        Set(entries.compactMap { entry in
+            entry.collection.posterUrl.flatMap { SiloAPICompatibility.artworkURL($0, relativeTo: serverURL) }
+        })
     }
 
     private var listIsFresh: Bool {

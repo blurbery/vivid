@@ -322,6 +322,9 @@ final class VividImagePipeline: @unchecked Sendable {
             try await session(for: request.cacheScope).data(from: request.url, delegate: transfer)
         }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if VividImageHTTPError.rejectedLinkStatuses.contains(http.statusCode) {
+                NotificationCenter.default.post(name: .vividArtworkLinkRejected, object: request.url)
+            }
             throw VividImageHTTPError(statusCode: http.statusCode)
         }
         guard response is HTTPURLResponse, data.count <= Self.maxDownloadBytes else {
