@@ -49,7 +49,7 @@ body:
     attributes:
       label: Vivid version, build and source commit
       description: Shown in Settings → About. Older builds may not show a source commit.
-      placeholder: 0.14.3 (21), a8d6d80
+      placeholder: 1.0 (110), a8d6d80
     validations:
       required: true
   - type: dropdown
