@@ -20,6 +20,7 @@ struct EpisodeThumbCard: View {
     @FocusState private var isStandaloneFocused: Bool
     @Environment(\.homeCardPresentation) private var homeCardPresentation
     @Environment(\.tvHomeStableRows) private var inHomeRows
+    @Environment(\.tvHomeRowHasEpisodes) private var rowHasEpisodes
 
     /// `initialIsFavorite` is accepted for callers' sake and not used.
     init(
@@ -248,7 +249,7 @@ struct EpisodeThumbCard: View {
                 .truncationMode(.tail)
                 .frame(width: width, alignment: .leading)
                 .clipped()
-            if caption.showsMetadata, let secondLine {
+            if caption.forEpisodes(EpisodeCardCaption.isEpisode(item)).showsMetadata, let secondLine {
                 Text(verbatim: secondLine)
                     .font(.vividPosterMetadata)
                     .foregroundStyle(Color.vividSecondaryText)
@@ -258,7 +259,11 @@ struct EpisodeThumbCard: View {
                     .clipped()
             }
         }
-        .frame(width: width, height: inHomeRows ? TVHomeRowGeometry.captionHeight(caption) : nil, alignment: .topLeading)
+        .frame(
+            width: width,
+            height: inHomeRows ? TVHomeRowGeometry.captionHeight(caption.forEpisodes(rowHasEpisodes)) : nil,
+            alignment: .topLeading
+        )
     }
 }
 

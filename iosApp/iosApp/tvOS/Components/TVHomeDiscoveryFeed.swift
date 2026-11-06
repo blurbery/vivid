@@ -120,7 +120,8 @@ struct TVHomeDiscoveryFeed: View {
                                 + TVHomeRowGeometry.stripHeight(
                                     layout: section.tvHomeUsesLandscapeArtwork ? .thumbnail : .poster,
                                     posterWidth: VividTheme.Skyline.densePosterCardWidth,
-                                    presentation: homeCards.presentation
+                                    presentation: homeCards.presentation,
+                                    hasEpisodes: section.tvHomeHasEpisodes
                                 ), alignment: .top)
                             .id(section.id)
                             .modifier(TVHomeRowArtworkVisibility(index: index, window: rowArtworkWindow))

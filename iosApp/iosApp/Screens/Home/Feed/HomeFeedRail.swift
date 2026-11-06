@@ -314,7 +314,7 @@ struct HomeStillCard: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.vividOnSurface)
                 .lineLimit(1)
-            if showsMetadata || isResumeCard || showsEpisodeDetails {
+            if showsMetadata || isResumeCard || showsEpisodeDetails || EpisodeCardCaption.isEpisode(item) {
                 Text(verbatim: secondLine ?? "")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(Color.vividOnSurface.opacity(0.7))
@@ -421,7 +421,8 @@ private struct HomePosterCard: View {
         VStack(alignment: .leading, spacing: 1) {
             Text(verbatim: HomeFeedMeta.title(for: item))
                 .homePosterTitleStyle()
-            if showsMetadata, let line = HomeFeedMeta.secondLine(for: item) {
+            // Episodes keep their episode line with Title Only.
+            if showsMetadata || EpisodeCardCaption.isEpisode(item), let line = HomeFeedMeta.secondLine(for: item) {
                 Text(verbatim: line)
                     .homePosterSecondLineStyle()
             }

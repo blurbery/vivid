@@ -56,6 +56,7 @@ struct MediaCard: View {
     #else
     @FocusState private var isStandaloneFocused: Bool
     @Environment(\.tvHomeStableRows) private var inHomeRows
+    @Environment(\.tvHomeRowHasEpisodes) private var rowHasEpisodes
     #endif
 
     /// `overlayData` is accepted for callers' sake and not drawn.
@@ -120,6 +121,9 @@ struct MediaCard: View {
     private var secondLine: String? {
         subtitle ?? yearCaption
     }
+
+    /// Only episodes get a spoken episode label.
+    private var isEpisodeCard: Bool { episodeAccessibilityLabel != nil }
 
     private var accessibilityText: String {
         mediaCardAccessibilityLabel(
@@ -220,7 +224,7 @@ struct MediaCard: View {
                 if caption.showsTitle {
                     titleText(width: size.width)
                 }
-                if caption.showsMetadata, let secondLine {
+                if caption.forEpisodes(isEpisodeCard).showsMetadata, let secondLine {
                     secondLineText(secondLine, width: size.width)
                 }
             }
@@ -363,7 +367,7 @@ struct MediaCard: View {
                 .truncationMode(.tail)
                 .frame(width: width, alignment: .leading)
                 .clipped()
-            if caption.showsMetadata, let secondLine {
+            if caption.forEpisodes(isEpisodeCard).showsMetadata, let secondLine {
                 Text(verbatim: secondLine)
                     .font(.vividPosterMetadata)
                     .foregroundStyle(Color.vividSecondaryText)
@@ -375,7 +379,7 @@ struct MediaCard: View {
         }
         .frame(
             width: width,
-            height: inHomeRows ? TVHomeRowGeometry.captionHeight(caption.showsMetadata ? .titleMetadata : .title) : nil,
+            height: inHomeRows ? TVHomeRowGeometry.captionHeight(caption.forEpisodes(rowHasEpisodes)) : nil,
             alignment: .topLeading
         )
     }
