@@ -20,11 +20,13 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     var watchProviderIds: [Int] = []
     var watchRegion = "US"
     /// Reads a network's series from its streaming list too, not just its
-    /// films. TMDb credits BritBox with only a handful of its own series, so
-    /// matching by network would leave it nearly empty.
+    /// films. TMDb credits BritBox and Crunchyroll with only a handful of
+    /// their own series, so matching by network would leave them nearly
+    /// empty.
     var listsSeriesByWatchProvider = false
     /// Keeps anime in the Popular rows, which leave it out for every other
-    /// brand. Studio Ghibli makes little else.
+    /// brand. Studio Ghibli makes little else, and Crunchyroll streams little
+    /// else.
     var keepsAnime = false
     /// For a logo printed on a solid block (Marvel's box, the Warner Bros.
     /// shield), which would otherwise draw as a plain white shape: its
