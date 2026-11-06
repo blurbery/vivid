@@ -58,8 +58,10 @@ enum Route: Hashable {
 
 extension Route {
     /// Item detail for a Home or For You card. On Apple TV the card's details
-    /// paint the page before the item loads; a Continue Watching episode that
-    /// opens its series paints the series instead.
+    /// paint the page before the item loads; an episode that opens its series
+    /// (from Continue Watching, the Spotlight or another Home row) paints the
+    /// series instead, with the series background from
+    /// `HomeSeriesBackdrops.seriesArt(for:)`.
     @MainActor
     static func itemDetail(destinationContentId: String, sectionItem: SectionItem) -> Route {
         #if os(tvOS)
