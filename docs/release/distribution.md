@@ -140,7 +140,7 @@ Remaining validation includes physical iPad behaviour, the remaining iCloud scen
 
 ## App Store submission
 
-Vivid has not been submitted to the App Store yet. TestFlight approval does not carry over to App Review, so check each item against the exact builds being submitted, on both platforms. Apple's [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and [upcoming requirements](https://developer.apple.com/news/upcoming-requirements/) are the source of truth; recheck them before each submission.
+Vivid 1.0 was submitted to the App Store on 7 November 2026 as iOS 1.0 (110) and tvOS 1.0 (102), both from `a99123027e21`. Apple approved the iOS version the same day, and the tvOS version was still waiting for review when this was written. The App Store listing is [apps.apple.com/app/id6809770754](https://apps.apple.com/app/id6809770754). For each later version, TestFlight approval does not carry over to App Review, so check each item against the exact builds being submitted, on both platforms. Apple's [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and [upcoming requirements](https://developer.apple.com/news/upcoming-requirements/) are the source of truth; recheck them before each submission.
 
 | Item | What to check |
 | --- | --- |

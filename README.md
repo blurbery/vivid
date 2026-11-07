@@ -30,7 +30,7 @@
 I’m building Vivid as an open-source media app for iPhone, iPad and Apple TV. Connect your own media server and browse and watch your library across your Apple devices.
 
 > [!NOTE]
-> Vivid is still in development. The source is public, and beta access is offered through the [TestFlight link](https://testflight.apple.com/join/Ycb8t685), subject to available places and device eligibility. There is no public App Store release yet.
+> Vivid 1.0 is on the [App Store](https://apps.apple.com/app/id6809770754) for iPhone and iPad, free, and the Apple TV version follows once Apple approves it. Vivid is still in active development: the source is public, and beta builds are offered through the [TestFlight link](https://testflight.apple.com/join/Ycb8t685), subject to available places and device eligibility.
 
 ## Server support
 
