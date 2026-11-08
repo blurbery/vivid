@@ -1,6 +1,33 @@
 #if os(tvOS)
 import SwiftUI
 
+extension EnvironmentValues {
+    /// The namespace Spotlight cards register their zoom sources in.
+    @Entry var tvSpotlightZoomSpace: Namespace.ID? = nil
+}
+
+/// The zoom source ID for the Spotlight card at a carousel position. Loop
+/// copies of a slide sit at different positions, so each copy is distinct.
+func tvSpotlightZoomSourceID(position: Int) -> String {
+    "spotlight.\(position)"
+}
+
+/// Zooms a detail page out of the Spotlight card that opened it, and back
+/// into it on Back. Other pages keep the standard push, as does Reduce Motion.
+struct TVSpotlightZoomTransition: ViewModifier {
+    let sourceID: String?
+    let namespace: Namespace.ID
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if let sourceID, !reduceMotion {
+            content.navigationTransition(.zoom(sourceID: sourceID, in: namespace))
+        } else {
+            content
+        }
+    }
+}
+
 /// The signed-in Apple TV app: the top bar, the root pages, the navigation
 /// stack and the player, and the focus hand-offs between them.
 struct TVMainTabView: View {
@@ -53,6 +80,8 @@ struct TVMainTabView: View {
     @AppStorage private var showsCalendar: Bool
     @AppStorage private var swapsUtilities: Bool
     @Namespace private var rootScope
+    /// Shared by the Spotlight cards and the detail pages they zoom into.
+    @Namespace private var spotlightZoomSpace
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -74,6 +103,7 @@ struct TVMainTabView: View {
         ZStack(alignment: .top) {
             NavigationStack(path: $router.path) {
                 rootContent
+                    .environment(\.tvSpotlightZoomSpace, spotlightZoomSpace)
                     .navigationDestination(for: Route.self) { destination(for: $0) }
                     .navigationDestination(for: TVSettingsCategory.self) { category in
                         if category == .about {
@@ -220,6 +250,7 @@ struct TVMainTabView: View {
             LibraryCollectionDetailView(libraryId: libraryId, collectionId: collectionId, title: title, kind: kind)
         case .itemDetail(let contentId, let seed):
             ItemDetailView(contentId: contentId, tvSeed: seed)
+                .modifier(TVSpotlightZoomTransition(sourceID: seed?.zoomSourceID, namespace: spotlightZoomSpace))
         case .personDetail(let personId):
             PersonDetailView(personId: personId)
         case .player(let contentId, let startFromBeginning, let resumePosition, let prefersLastUsedVersion):

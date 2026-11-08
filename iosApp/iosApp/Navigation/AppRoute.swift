@@ -63,15 +63,17 @@ extension Route {
     /// series instead, with the series background from
     /// `HomeSeriesBackdrops.seriesArt(for:)`.
     @MainActor
-    static func itemDetail(destinationContentId: String, sectionItem: SectionItem) -> Route {
+    static func itemDetail(destinationContentId: String, sectionItem: SectionItem, zoomSourceID: String? = nil) -> Route {
         #if os(tvOS)
-        .itemDetail(contentId: destinationContentId, tvSeed: TVItemDetailRouteSeed(
+        var seed = TVItemDetailRouteSeed(
             sectionItem,
             opening: destinationContentId,
             seriesBackdrop: HomeSeriesBackdrops.shared.seriesArt(for: sectionItem)
-        ))
+        )
+        seed.zoomSourceID = zoomSourceID
+        return .itemDetail(contentId: destinationContentId, tvSeed: seed)
         #else
-        .itemDetail(contentId: destinationContentId)
+        return .itemDetail(contentId: destinationContentId)
         #endif
     }
 
@@ -99,6 +101,8 @@ struct TVItemDetailRouteSeed: Hashable {
     let logoUrl: String?
     let backdropUrl: String?
     let backdropThumbhash: String?
+    /// The Spotlight card the page zooms out of, and back into on Back.
+    var zoomSourceID: String?
 
     /// `seriesBackdrop` is the series background the card was showing, for
     /// an episode that opens its series.

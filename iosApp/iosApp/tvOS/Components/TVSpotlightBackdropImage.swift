@@ -141,12 +141,23 @@ enum TVSpotlightCrop {
         return topOrigin.isNull ? nil : topOrigin
     }
 
+    /// Apple TV Spotlight cards zoom into a full-screen detail backdrop, so
+    /// they keep to the image's middle band. iPhone and iPad keep the
+    /// subject near the top.
+    #if os(tvOS)
+    private static let prefersMiddleBand = true
+    #else
+    private static let prefersMiddleBand = false
+    #endif
+
     /// Where to draw the image in the viewport. It fills the viewport, or for
     /// the spotlight scales no more than 1.2 times past fitting. Across, an
     /// image no wider than the viewport sits on the trailing edge, and a
     /// wider one centres on the subject (or the middle) at 62%; down, a
-    /// short image sits on the bottom edge and a tall one keeps the subject
-    /// below a little headroom, or shows mostly its top.
+    /// short image sits on the bottom edge. A tall one shows its middle band
+    /// on Apple TV, moved only as far as keeping the subject's top in view
+    /// needs; elsewhere it keeps the subject below a little headroom, or
+    /// shows mostly its top.
     static func layout(image: CGSize, viewport: CGSize, subject: CGRect?, fillsViewport: Bool = false) -> CGRect {
         guard image.width > 0, image.height > 0 else { return CGRect(origin: .zero, size: viewport) }
         let fit = min(viewport.width / image.width, viewport.height / image.height)
@@ -167,12 +178,27 @@ enum TVSpotlightCrop {
         let verticalOffset: CGFloat
         if rendered.height <= viewport.height {
             verticalOffset = viewport.height - rendered.height
-        } else if let subject {
-            let headroom = viewport.height * 0.12
-            verticalOffset = min(0, max(viewport.height - rendered.height,
-                                      headroom - subject.minY * rendered.height))
+        } else if !Self.prefersMiddleBand {
+            if let subject {
+                let headroom = viewport.height * 0.12
+                verticalOffset = min(0, max(viewport.height - rendered.height,
+                                          headroom - subject.minY * rendered.height))
+            } else {
+                verticalOffset = (viewport.height - rendered.height) * 0.15
+            }
         } else {
-            verticalOffset = (viewport.height - rendered.height) * 0.15
+            // As near the middle band as the subject allows, so the zoom into
+            // the full-screen detail backdrop barely moves the image. The
+            // subject's top stays between a little headroom and halfway down.
+            let centred = (viewport.height - rendered.height) / 2
+            var offset = centred
+            if let subject {
+                let subjectTop = subject.minY * rendered.height
+                let lowest = viewport.height * 0.12 - subjectTop
+                let highest = viewport.height * 0.5 - subjectTop
+                offset = min(highest, max(lowest, offset))
+            }
+            verticalOffset = min(0, max(viewport.height - rendered.height, offset))
         }
         return CGRect(
             x: position(length: rendered.width, viewport: viewport.width, minSubject: subject?.minX, maxSubject: subject?.maxX, target: 0.62),

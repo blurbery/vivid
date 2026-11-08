@@ -19,6 +19,8 @@ struct TVHomeDiscoveryFeed: View {
     var onSetWatched: ((SectionItem, Bool) async -> Bool)? = nil
     /// Home pins the Collections row below its rows; other feeds don't.
     var showsCollections = false
+    /// Opens a Spotlight slide with the zoom source of its card.
+    var onSpotlightTap: ((String, SectionItem, String) -> Void)? = nil
 
     @State private var homeCards = TVHomeCardPreferences.shared
     @State private var spotlightEnterRequest = 0
@@ -61,7 +63,7 @@ struct TVHomeDiscoveryFeed: View {
                                 }
                             },
                             onEnterFirstRow: enterStudiosNetworks,
-                            onSelect: { slide in
+                            onSelect: { slide, position in
                                 spotlightOpenedDetail = true
                                 studiosNetworksOpenedDetail = false
                                 collectionsOpenedDetail = false
@@ -69,7 +71,12 @@ struct TVHomeDiscoveryFeed: View {
                                 // An episode with a known series and season
                                 // opens its series directly, as its Continue
                                 // Watching card does.
-                                onItemTap(TVSeriesDetailNavigationContextStore.destination(for: slide.item), slide.item)
+                                let destination = TVSeriesDetailNavigationContextStore.destination(for: slide.item)
+                                if let onSpotlightTap {
+                                    onSpotlightTap(destination, slide.item, tvSpotlightZoomSourceID(position: position))
+                                } else {
+                                    onItemTap(destination, slide.item)
+                                }
                             }
                         )
                         .id(Self.spotlightAnchor)
@@ -744,7 +751,7 @@ private struct TVHomeSpotlightCarousel: View {
     @State private var alignmentAttempted = false
     private var focus: FocusState<Int?>.Binding { $focusedPosition }
     let onPositionChange: (Int) -> Void
-    let onSelect: (TVHomeSpotlightSlide) -> Void
+    let onSelect: (TVHomeSpotlightSlide, Int) -> Void
 
     @State private var visualPosition = 0
     @State private var scrollPosition = ScrollPosition(id: 0, anchor: .center)
@@ -773,7 +780,7 @@ private struct TVHomeSpotlightCarousel: View {
         onPositionChange: @escaping (Int) -> Void,
         onFocusChange: @escaping (Bool) -> Void,
         onEnterFirstRow: @escaping () -> Void,
-        onSelect: @escaping (TVHomeSpotlightSlide) -> Void
+        onSelect: @escaping (TVHomeSpotlightSlide, Int) -> Void
     ) {
         self.slides = slides
         self.enterRequest = enterRequest
@@ -858,7 +865,7 @@ private struct TVHomeSpotlightCarousel: View {
                     HStack(spacing: 22) {
                         ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
-                            Button { onSelect(slide) } label: {
+                            Button { onSelect(slide, position) } label: {
                                 Group {
                                     if abs(position - visualPosition) <= 3 {
                                         TVHomeSpotlightArtwork(slide: slide, onReady: {
@@ -877,6 +884,7 @@ private struct TVHomeSpotlightCarousel: View {
                                 }
                                 .frame(width: cardWidth, height: 580)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
+                                .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
                             }
                             .buttonStyle(TVSpotlightButtonStyle(
                                 artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
@@ -1092,6 +1100,22 @@ private struct TVHomeSpotlightCarousel: View {
             scrollPosition.scrollTo(id: position, anchor: .center)
         }
 
+    }
+}
+
+/// Registers a Spotlight card as the zoom source for the page it opens.
+private struct TVSpotlightZoomSource: ViewModifier {
+    let id: String
+    @Environment(\.tvSpotlightZoomSpace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedTransitionSource(id: id, in: namespace) { source in
+                source.clipShape(RoundedRectangle(cornerRadius: 22))
+            }
+        } else {
+            content
+        }
     }
 }
 
