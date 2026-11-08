@@ -142,7 +142,7 @@ struct TVHomeDiscoveryFeed: View {
                     }
                 }
                 .environment(\.tvHomeStableRows, true)
-                .padding(.top, 152)
+                .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 96 : 91))
                 .padding(.bottom, 80)
             }
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
@@ -882,7 +882,7 @@ private struct TVHomeSpotlightCarousel: View {
                                         Color.clear
                                     }
                                 }
-                                .frame(width: cardWidth, height: 580)
+                                .frame(width: cardWidth, height: 748)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
                             }
@@ -956,31 +956,7 @@ private struct TVHomeSpotlightCarousel: View {
                     onEnterFirstRow()
                 }
             }
-            .frame(height: 580)
-
-            HStack(spacing: 10) {
-                ForEach(slides.indices, id: \.self) { dot in
-                    Capsule()
-                        .fill(Color.white.opacity(0.3))
-                        .overlay(alignment: .leading) {
-                            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !canRotate || reduceMotion || dot != index)) { timeline in
-                                let elapsed = elapsedCycle(at: timeline.date)
-                                let progress = reduceMotion || dot != index ? 1 : min(elapsed / 6, 1)
-                                Rectangle()
-                                    .fill(.white)
-                                    .frame(width: 36 * progress)
-                                    .transaction { $0.animation = nil }
-                            }
-                            .opacity(dot == index ? 1 : 0)
-                        }
-                        .frame(width: dot == index ? 36 : 8, height: 8)
-                        .clipShape(Capsule())
-                }
-            }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: index)
-            .frame(maxWidth: .infinity)
-            .frame(height: 12)
-            .accessibilityHidden(true)
+            .frame(height: 748)
         }
         .onChange(of: enterRequest, initial: true) { _, request in
             guard request > appliedEnterRequest else { return }
@@ -1149,6 +1125,51 @@ private struct TVSpotlightButtonStyle: ButtonStyle {
     }
 }
 
+/// A Spotlight slide's overview in at most three lines that never stops
+/// mid-sentence: the whole overview when it fits, otherwise as many
+/// complete sentences as fit.
+private struct TVSpotlightOverview: View {
+    let text: String
+
+    private static let fontSize: CGFloat = 22
+    private static let width: CGFloat = 760
+    private static let maxLines = 3
+
+    var body: some View {
+        Text(Self.fitted(text))
+            .font(.system(size: Self.fontSize, weight: .regular))
+            .foregroundStyle(.white.opacity(0.75))
+            .lineLimit(Self.maxLines)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private static func fitted(_ text: String) -> String {
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .regular)
+        let limit = font.lineHeight * CGFloat(maxLines) + 1
+        func fits(_ candidate: String) -> Bool {
+            let height = (candidate as NSString).boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font], context: nil
+            ).height
+            return ceil(height) <= limit
+        }
+        if fits(text) { return text }
+        var sentenceEnds: [String.Index] = []
+        text.enumerateSubstrings(in: text.startIndex..., options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
+            sentenceEnds.append(range.upperBound)
+        }
+        // Longest run of whole sentences that fits; the first sentence alone
+        // is the last resort, and the line limit catches one too long to fit.
+        for end in sentenceEnds.dropLast().reversed() {
+            let candidate = text[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            if fits(candidate) { return candidate }
+        }
+        return sentenceEnds.first.map { text[..<$0].trimmingCharacters(in: .whitespacesAndNewlines) } ?? text
+    }
+}
+
 /// Scroll measurements do not invalidate artwork or the Home view on each frame.
 private final class TVSpotlightScrollGeometry {
     var offset: CGFloat = 0
@@ -1211,6 +1232,16 @@ private struct TVHomeSpotlightArtwork: View {
                     startPoint: .top, endPoint: .bottom
                 )
                 LinearGradient(colors: [.clear, .black.opacity(0.4)], startPoint: .center, endPoint: .bottom)
+                // Darkens the corner behind the logo so it stands off bright
+                // artwork while the rest of the image stays clear.
+                RadialGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.6), location: 0),
+                        .init(color: .black.opacity(0.3), location: 0.45),
+                        .init(color: .clear, location: 1)
+                    ],
+                    center: .bottomLeading, startRadius: 0, endRadius: geometry.size.width * 0.6
+                )
                 Image(uiImage: Self.fadeDither)
                     .resizable(resizingMode: .tile)
                     .opacity(0.008)
@@ -1226,13 +1257,15 @@ private struct TVHomeSpotlightArtwork: View {
                     if let logo {
                         Image(uiImage: logo)
                             .resizable().interpolation(.high).scaledToFit()
-                            .frame(width: 480, height: 160, alignment: .bottom)
+                            .frame(width: 600, height: 200, alignment: .bottom)
+                            .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     } else {
                         Text(slide.content.title)
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 760, alignment: .center)
+                            .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
                     Text(([typeLabel] + spotlightMetaParts
                           + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
@@ -1240,7 +1273,14 @@ private struct TVHomeSpotlightArtwork: View {
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                        .frame(width: logo == nil ? 760 : 480, alignment: .center)
+                        .frame(width: logo == nil ? 760 : 600, alignment: .center)
+                        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
+                    if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !overview.isEmpty {
+                        TVSpotlightOverview(text: overview)
+                            .frame(width: 760, alignment: .leading)
+                            .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
+                    }
                 }
                 .foregroundStyle(.white)
                 .padding(.vertical, 48)

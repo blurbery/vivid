@@ -54,7 +54,7 @@ extension TVMainTabView {
                 HStack(spacing: 0) {
                     ScrollView(.vertical) {
                         VStack(alignment: .leading, spacing: 32) {
-                            Color.clear.frame(height: 144)
+                            Color.clear.frame(height: VividTheme.Skyline.barTopInset + 88)
                             libraryTabs
                             if let model {
                                 LibraryControlRow(model: model, lastControl: $lastControl)
