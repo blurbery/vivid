@@ -1253,32 +1253,28 @@ private struct TVHomeSpotlightArtwork: View {
                             .init(color: .clear, location: 1)
                         ], startPoint: .leading, endPoint: .trailing)
                     }
-                VStack(alignment: .leading, spacing: 18) {
-                    // The logo or title and the details line centre on each
-                    // other; the overview below runs from the left edge.
-                    VStack(alignment: .center, spacing: 18) {
-                        if let logo {
-                            Image(uiImage: logo)
-                                .resizable().interpolation(.high).scaledToFit()
-                                .frame(width: 600, height: 200, alignment: .bottom)
-                                .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
-                        } else {
-                            Text(slide.content.title)
-                                .font(.system(size: 62, weight: .bold))
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 760)
-                                .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
-                        }
-                        Text(([typeLabel] + spotlightMetaParts
-                              + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
-                            .font(.system(size: 23, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .frame(width: logo == nil ? 760 : 600)
-                            .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
+                VStack(alignment: .center, spacing: 18) {
+                    if let logo {
+                        Image(uiImage: logo)
+                            .resizable().interpolation(.high).scaledToFit()
+                            .frame(width: 600, height: 200, alignment: .bottom)
+                            .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
+                    } else {
+                        Text(slide.content.title)
+                            .font(.system(size: 62, weight: .bold))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 760, alignment: .center)
+                            .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
+                    Text(([typeLabel] + spotlightMetaParts
+                          + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
+                        .font(.system(size: 23, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(width: logo == nil ? 760 : 600, alignment: .center)
+                        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
                     if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !overview.isEmpty {
                         TVSpotlightOverview(text: overview)
