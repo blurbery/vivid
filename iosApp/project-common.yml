@@ -51,7 +51,7 @@ targetTemplates:
   ShippableProduct:
     settings:
       base:
-        MARKETING_VERSION: "1.0"
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: 21
         "CURRENT_PROJECT_VERSION[sdk=appletv*]": 20
         # Surfaced to the app as the `VividBuildChannel` Info.plist key and

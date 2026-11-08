@@ -30,7 +30,7 @@ struct TopShelfNativeClient {
     /// Read here rather than through AppleDeviceIdentity, so this file still
     /// compiles on its own in scripts/tests/topshelf-native-tests.py.
     private static let appVersion =
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1"
 
     func fetchHomeSections() async throws -> TopShelfSectionsResponse {
         let user = try safeID(userID)
