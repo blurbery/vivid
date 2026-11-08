@@ -109,7 +109,7 @@ struct TVSeriesEpisodeShelf: View {
                     .buttonStyle(TVSeasonPillStyle(isHighlighted: isShown))
                     .accessibilityLabel(Text(verbatim: entry.range ?? Self.pillTitle(season)))
                     .focused($focusedPillId, equals: season.contentId)
-                    .modifier(SeasonWatchedContextMenu(season: season))
+                    .modifier(SeasonWatchedContextMenu(season: season, isEnabled: entry.range == nil))
                 }
             }
             .padding(4)
@@ -126,10 +126,10 @@ struct TVSeriesEpisodeShelf: View {
         )
     }
 
-    /// One button in the season pill: a season, or a closed section standing
-    /// in for its seasons under its range ("S7 - S13"). A closed section
-    /// uses its first season's identity, so focusing it opens the section
-    /// with focus on that season.
+    /// One button in the season pill: a season, or a closed range standing
+    /// in for its seasons ("S13 - S29"). A range uses the identity of the
+    /// season beside the open section, so focusing it opens that season's
+    /// section with focus on it.
     private struct PillEntry {
         let season: Season
         let range: String?
@@ -176,9 +176,11 @@ struct TVSeriesEpisodeShelf: View {
 
     /// The open section's seasons, with everything before it as one range
     /// and everything after it as another, so a long series never shows
-    /// more than a few closed groups. A range takes the identity of the
-    /// adjacent section's first season, so moving onto it opens the next
-    /// section along.
+    /// more than a few closed groups. Each range takes the identity of the
+    /// season next to the open section (the previous section's last season,
+    /// or the next section's first), so moving onto it opens that section
+    /// on the neighbouring season and left and right step through every
+    /// season in order.
     private var pillEntries: [PillEntry] {
         let sections = pillSections
         let specials = sections.filter { $0.first?.seasonNumber == 0 }.flatMap { $0 }
@@ -189,9 +191,8 @@ struct TVSeriesEpisodeShelf: View {
             entries += numbered.flatMap { $0 }.map { PillEntry(season: $0, range: nil) }
             return entries
         }
-        if open > 0, let first = numbered[0].first, let last = numbered[open - 1].last,
-           let adjacent = numbered[open - 1].first {
-            entries.append(PillEntry(season: adjacent, range: Self.rangeTitle(first, last)))
+        if open > 0, let first = numbered[0].first, let adjacent = numbered[open - 1].last {
+            entries.append(PillEntry(season: adjacent, range: Self.rangeTitle(first, adjacent)))
         }
         entries += numbered[open].map { PillEntry(season: $0, range: nil) }
         if open < numbered.count - 1, let adjacent = numbered[open + 1].first,

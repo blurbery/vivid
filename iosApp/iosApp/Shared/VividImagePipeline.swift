@@ -506,6 +506,8 @@ final class VividImagePipeline: @unchecked Sendable {
                 height: height,
                 bitsPerComponent: 8,
                 bytesPerRow: width,
+                // Swift requires a colour space here; Core Graphics ignores it
+                // for an alpha-only bitmap and creates the context.
                 space: CGColorSpaceCreateDeviceGray(),
                 bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
             ) else { return false }

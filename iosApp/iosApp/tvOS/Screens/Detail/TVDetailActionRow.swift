@@ -159,9 +159,10 @@ struct TVDetailActionRow<MoreMenu: View>: View {
     }
 }
 
-/// Sizes for the action row. The control that has focus (Play when focus
-/// is elsewhere) widens to show its label and the rest stay circles, so the
-/// row's width never changes and nothing beside or above it moves.
+/// Sizes for the action row. One control is wide with its label and the
+/// rest stay circles, so the row's width never changes and nothing beside
+/// or above it moves. The wide control is the one last focused in the row
+/// (Play when the page opens).
 enum TVDetailActionRowLayout {
     static let controlHeight: CGFloat = 76
     static let expandedWidth: CGFloat = 280
@@ -207,8 +208,8 @@ extension EnvironmentValues {
     }
 }
 
-/// Play or Resume: wide with its label while it has focus or nothing else
-/// in the row does, otherwise a circle.
+/// Play or Resume: wide with its label while it's the row's last-focused
+/// control (as it is when the page opens), otherwise a circle.
 private struct TVDetailPlayButton: View {
     let action: TVDetailPlayAction
     var focus: FocusState<TVDetailHeroFocus?>.Binding
