@@ -51117,6 +51117,18 @@
         }
       }
     },
+    "S%@ - S%@" : {
+      "comment" : "A closed group of seasons on the season pill, from its first to its last season",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "S%1$@ - S%2$@"
+          }
+        }
+      }
+    },
     "S%@ E%@" : {
       "comment" : "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02",
       "extractionState" : "manual",
@@ -51556,6 +51568,10 @@
           }
         }
       }
+    },
+    "SP" : {
+      "comment" : "Short label for the Specials season on a collapsed season pill",
+      "extractionState" : "manual"
     },
     "STUDIOS" : {
       "extractionState" : "manual",
