@@ -238,6 +238,6 @@ For TV layout, read [browsing guidance](apple-tv-browsing.md) and [focus guidanc
 
 The design is Vivid's. Server names identify connections and capabilities, not the app's branding.
 
-On iPhone, iPad and Apple TV, long-pressing a season opens its native watched/unwatched menu. Series menus order watched actions as Episode, Season, then Series, targeting the Play/Resume episode. Season writes reuse the existing optimistic episode updates and rollback on failure. On tvOS, browsing episodes leaves the main resume target unchanged. The series menu does not include Show Series Info. Episode advancement waits for an unloaded season rather than skipping it, and the movie page responds to the remote Play/Pause button.
+On iPhone, iPad and Apple TV, long-pressing a season opens its native watched/unwatched menu. The closed ranges on the Apple TV season pill (for example S13 - S29) stand for several seasons and have no menu. Series menus order watched actions as Episode, Season, then Series, targeting the Play/Resume episode. Season writes reuse the existing optimistic episode updates and rollback on failure. On tvOS, browsing episodes leaves the main resume target unchanged. The series menu does not include Show Series Info. Episode advancement waits for an unloaded season rather than skipping it, and the movie page responds to the remote Play/Pause button.
 
 On tvOS, Manage Servers uses the shared settings content width and a centred column, matching the other settings pages.

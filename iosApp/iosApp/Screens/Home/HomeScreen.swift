@@ -146,7 +146,14 @@ struct HomeView: View {
             onItemTap: openItem,
             onRemoveFromContinueWatching: removeFromContinueWatching,
             onSetWatched: setWatched,
-            showsCollections: true
+            showsCollections: true,
+            onSpotlightTap: { destinationContentId, item, zoomSourceID in
+                router.navigate(to: .itemDetail(
+                    destinationContentId: destinationContentId,
+                    sectionItem: item,
+                    zoomSourceID: zoomSourceID
+                ))
+            }
         )
         .id(layout.layoutRevision)
     }

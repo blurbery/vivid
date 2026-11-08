@@ -42,6 +42,9 @@ struct VividImageRequest: Hashable, Sendable {
     /// Gaussian blur applied once at decode, as a fraction of the decoded
     /// width, so the cached image is already soft and nothing runs per frame.
     var softening: Float?
+    /// Crops transparent margins at decode, so a logo's visible edge sits
+    /// where the layout puts the image.
+    var trimsTransparentEdges = false
 
     init(url: URL, priority: Priority = .normal, cacheScope: String = VividCacheScope.artwork) {
         self.url = url
@@ -54,6 +57,7 @@ struct VividImageRequest: Hashable, Sendable {
             && lhs.cacheScope == rhs.cacheScope
             && lhs.thumbnail == rhs.thumbnail
             && lhs.softening == rhs.softening
+            && lhs.trimsTransparentEdges == rhs.trimsTransparentEdges
     }
 
     func hash(into hasher: inout Hasher) {
@@ -61,12 +65,13 @@ struct VividImageRequest: Hashable, Sendable {
         hasher.combine(cacheScope)
         hasher.combine(thumbnail)
         hasher.combine(softening)
+        hasher.combine(trimsTransparentEdges)
     }
 
     /// The memory cache key.
     var key: NSString {
         let size = "\(thumbnail?.width ?? 0)x\(thumbnail?.height ?? 0)"
-        return "\(cacheScope)|\(url.absoluteString)|\(size)|\(thumbnail?.fill ?? false)|\(softening ?? 0)" as NSString
+        return "\(cacheScope)|\(url.absoluteString)|\(size)|\(thumbnail?.fill ?? false)|\(softening ?? 0)|\(trimsTransparentEdges ? "trim" : "")" as NSString
     }
 }
 
@@ -453,8 +458,11 @@ final class VividImagePipeline: @unchecked Sendable {
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize(of: source, for: request.thumbnail),
         ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        guard var image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw URLError(.cannotDecodeContentData)
+        }
+        if request.trimsTransparentEdges, let trimmed = trimTransparentEdges(image) {
+            image = trimmed
         }
         guard let softening = request.softening, softening > 0 else {
             return UIImage(cgImage: image)
@@ -479,6 +487,52 @@ final class VividImagePipeline: @unchecked Sendable {
         let heightScale = Double(thumbnail.height) / max(1, height)
         let scale = thumbnail.fill ? max(widthScale, heightScale) : min(widthScale, heightScale)
         return min(maxDecodedEdge, max(1, ceil(longest * min(1, scale))))
+    }
+
+    /// The image cropped to its visible pixels, or nil when it has no
+    /// transparent margin to remove (or nothing visible at all).
+    private static func trimTransparentEdges(_ image: CGImage) -> CGImage? {
+        guard image.alphaInfo != .none, image.alphaInfo != .noneSkipFirst, image.alphaInfo != .noneSkipLast else {
+            return nil
+        }
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else { return nil }
+        var alpha = [UInt8](repeating: 0, count: width * height)
+        let drawn = alpha.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width,
+                // Swift requires a colour space here; Core Graphics ignores it
+                // for an alpha-only bitmap and creates the context.
+                space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+
+        // Faint anti-aliasing and stray specks don't count as the edge.
+        let threshold: UInt8 = 12
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            let row = y * width
+            for x in 0..<width where alpha[row + x] > threshold {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        if minX == 0, minY == 0, maxX == width - 1, maxY == height - 1 { return nil }
+        // The alpha buffer's rows run top to bottom, matching CGImage cropping.
+        let rect = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+        return image.cropping(to: rect)
     }
 
     private static let softeningContext = CIContext(options: [.cacheIntermediates: false])

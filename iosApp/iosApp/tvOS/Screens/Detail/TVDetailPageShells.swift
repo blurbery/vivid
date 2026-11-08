@@ -52,7 +52,9 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
                     .padding(.top, 150)
                     .padding(.horizontal, TVDetailHeroLayout.horizontalInset)
                     .padding(.bottom, TVDetailHeroLayout.pageBottomPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // At least a screen tall, so a page with few shelves
+                    // can still scroll the whole hero away.
+                    .frame(maxWidth: .infinity, minHeight: viewport.height - 26, alignment: .topLeading)
                     .overlay(alignment: .top) {
                         TVDetailShelfLogo(logoUrl: logoUrl, title: title)
                     }
@@ -63,7 +65,7 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
         .modifier(TVDetailFoldScrolling(
             viewportSize: viewport,
             showcaseHeight: showcase,
-            logoThreshold: TVDetailHeroLayout.browsingTopInset(for: showcase) + 160
+            logoThreshold: TVDetailHeroLayout.logoTopInset + TVDetailHeroLayout.logoHeight
         ))
     }
 }

@@ -48,12 +48,17 @@ extension EnvironmentValues {
 /// unwatched, with an alert when that fails.
 struct SeasonWatchedContextMenu: ViewModifier {
     let season: Season
+    /// Off for a control that stands for more than one season (a closed
+    /// range on the Apple TV season pill). The modifier stays applied, so
+    /// the control keeps its identity and focus when that changes.
+    var isEnabled = true
 
     @Environment(\.seasonWatchedAction) private var setWatched
     @State private var showsFailure = false
 
-    init(season: Season) {
+    init(season: Season, isEnabled: Bool = true) {
         self.season = season
+        self.isEnabled = isEnabled
     }
 
     func body(content: Content) -> some View {
@@ -61,18 +66,20 @@ struct SeasonWatchedContextMenu: ViewModifier {
             let isPlayed = season.userData?.played == true
             content
                 .contextMenu {
-                    Button {
-                        let seasonId = season.contentId
-                        Task {
-                            if await !setWatched(seasonId, !isPlayed) {
-                                showsFailure = true
+                    if isEnabled {
+                        Button {
+                            let seasonId = season.contentId
+                            Task {
+                                if await !setWatched(seasonId, !isPlayed) {
+                                    showsFailure = true
+                                }
                             }
-                        }
-                    } label: {
-                        if isPlayed {
-                            Label("Mark Season Unwatched", systemImage: "checkmark.circle")
-                        } else {
-                            Label("Mark Season Watched", systemImage: "checkmark.circle")
+                        } label: {
+                            if isPlayed {
+                                Label("Mark Season Unwatched", systemImage: "checkmark.circle")
+                            } else {
+                                Label("Mark Season Watched", systemImage: "checkmark.circle")
+                            }
                         }
                     }
                 }

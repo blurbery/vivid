@@ -137,10 +137,13 @@ struct TVMovieDetailPage: View {
             logoUrl: detail.logoUrl,
             title: detail.title
         ) { showcase in
-            TVDetailHeroPanel(layout: .showcase(height: showcase), creditLine: TVHeroMetadata.creditLine(detail)) {
+            TVDetailHeroPanel(
+                layout: .showcase(height: showcase),
+                poster: TVDetailHeroPoster(url: detail.posterUrl, thumbhash: detail.posterThumbhash),
+                logo: TVDetailHeroLogo(logoUrl: detail.logoUrl, title: detail.title),
+                creditLine: TVHeroMetadata.creditLine(detail)
+            ) {
                 TVDetailCompactPrimary(
-                    title: detail.title,
-                    logoUrl: detail.logoUrl,
                     headingTokens: [String(localized: "Movie")],
                     genres: TVHeroMetadata.genreTokens(detail),
                     contentRating: TVHeroMetadata.contentRating(detail),
