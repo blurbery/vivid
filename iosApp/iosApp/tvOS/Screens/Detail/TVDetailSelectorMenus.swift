@@ -79,6 +79,8 @@ private struct TVDetailAudioMenu: View {
     let inputs: TVDetailSelectorInputs
     var focus: FocusState<TVDetailHeroFocus?>.Binding
 
+    @Environment(\.tvDetailExpandedAction) private var expanded
+
     var body: some View {
         let options: [DetailPlaybackFormatting.AudioOption] = DetailPlaybackFormatting.audioOptions(
             version: inputs.version,
@@ -92,6 +94,7 @@ private struct TVDetailAudioMenu: View {
         TVDetailCircleButton(
             title: "Audio Tracks",
             systemImage: "speaker.wave.2",
+            isExpanded: expanded == .audio,
             isFocused: focus.wrappedValue == .audio,
             isPressed: false
         ) {
@@ -136,6 +139,8 @@ private struct TVDetailSubtitleMenu: View {
     let inputs: TVDetailSelectorInputs
     var focus: FocusState<TVDetailHeroFocus?>.Binding
 
+    @Environment(\.tvDetailExpandedAction) private var expanded
+
     @State private var requestedContext: OpenSubtitlePlaybackContext?
     @State private var readTracks: [PlayerTrack] = []
     @State private var readFailed = false
@@ -159,6 +164,7 @@ private struct TVDetailSubtitleMenu: View {
         TVDetailCircleButton(
             title: "Subtitles",
             systemImage: "captions.bubble",
+            isExpanded: expanded == .subtitles,
             isFocused: isFocused,
             isPressed: false
         ) {

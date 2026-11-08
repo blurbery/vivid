@@ -48,8 +48,13 @@ struct TVDetailLoadingPage: View {
             logoUrl: seed?.logoUrl,
             title: seedTitle ?? ""
         ) { showcaseHeight in
-            skeletonEditorial(layout: .showcase(height: showcaseHeight))
-                .frame(height: showcaseHeight, alignment: .topLeading)
+            ZStack(alignment: .topLeading) {
+                if let seedTitle {
+                    TVDetailHeroLogo(logoUrl: seed?.logoUrl, title: seedTitle)
+                }
+                skeletonEditorial(layout: .showcase(height: showcaseHeight))
+            }
+            .frame(height: showcaseHeight, alignment: .topLeading)
         } shelves: {
             EmptyView()
         }
@@ -100,10 +105,14 @@ struct TVDetailLoadingPage: View {
     // MARK: Skeleton editorial
 
     private func skeletonEditorial(layout: TVDetailHeroLayout) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // The native pages put the poster beside the details; the skeleton
+        // keeps its place so the loaded page lands without moving.
+        let inset = layout.isCompact ? TVDetailHeroLayout.posterInset : 0
+        let width = TVDetailHeroLayout.editorialWidth + inset
+        return VStack(alignment: .leading, spacing: 12) {
             ZStack(alignment: .topLeading) {
                 if layout.isCompact {
-                    nativeBlock
+                    nativeBlock(inset: inset)
                 } else {
                     standardBlock
                 }
@@ -123,14 +132,15 @@ struct TVDetailLoadingPage: View {
                     }
                     .frame(height: 40, alignment: .topLeading)
                 }
+                .padding(.leading, inset)
                 .frame(
-                    width: TVDetailHeroLayout.editorialWidth,
+                    width: width,
                     height: TVDetailHeroLayout.editorialHeight,
                     alignment: .bottomLeading
                 )
             }
             .frame(
-                width: TVDetailHeroLayout.editorialWidth,
+                width: width,
                 height: TVDetailHeroLayout.editorialHeight,
                 alignment: .topLeading
             )
@@ -141,21 +151,29 @@ struct TVDetailLoadingPage: View {
                     placeholder(width: 76, height: 76, radius: 38)
                 }
             }
+            .padding(.leading, inset)
+        }
+        .overlay(alignment: .topLeading) {
+            if layout.isCompact {
+                TVDetailHeroPosterTile()
+                    .padding(.top, TVDetailHeroLayout.compactHeadingTop)
+            }
         }
         .padding(.top, layout.topInset)
         .padding(.horizontal, TVDetailHeroLayout.horizontalInset)
         .frame(maxWidth: .infinity, maxHeight: layout.height, alignment: .topLeading)
     }
 
-    /// The compact editorial layout with the seed's heading.
-    private var nativeBlock: some View {
+    /// The compact editorial layout with the seed's heading, beside the
+    /// poster's place.
+    private func nativeBlock(inset: CGFloat) -> some View {
         let type = seed?.mediaType.lowercased() ?? ""
         let token = type == "movie"
             ? String(localized: "Movie")
             : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
         return VStack(alignment: .leading, spacing: 0) {
-            loadingTitle(native: true)
-                .frame(height: 160, alignment: .bottomLeading)
+            Color.clear
+                .frame(height: 160)
             TVDetailCompactHeading(
                 tokens: [token],
                 genres: seed?.genre.map { [$0] } ?? [],
@@ -163,11 +181,13 @@ struct TVDetailLoadingPage: View {
             )
             .frame(height: 36, alignment: .leading)
             .padding(.top, 10)
+            .padding(.leading, inset)
             loadingSynopsis
                 .frame(height: 140, alignment: .topLeading)
                 .padding(.top, 12)
+                .padding(.leading, inset)
         }
-        .frame(width: TVDetailHeroLayout.editorialWidth, height: 350, alignment: .topLeading)
+        .frame(width: TVDetailHeroLayout.editorialWidth + inset, height: 350, alignment: .topLeading)
     }
 
     private var standardBlock: some View {

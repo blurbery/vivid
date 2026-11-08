@@ -39,16 +39,19 @@ extension View {
     func vividPrimaryGlass(in shape: some InsettableShape) -> some View {
         vividGlass(in: shape, tint: .black.opacity(0.26), interactive: true)
             .overlay {
-                shape.strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+                shape.strokeBorder(LinearGradient.vividPrimaryRim, lineWidth: 1)
             }
     }
+}
+
+extension LinearGradient {
+    /// The bright rim of primary glass: strongest at the top-leading and
+    /// bottom-trailing corners.
+    static let vividPrimaryRim = LinearGradient(
+        colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 }
 
 private enum GlassRecipe {

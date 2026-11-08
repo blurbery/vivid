@@ -133,10 +133,13 @@ struct TVSeriesDetailPage: View {
     }
 
     private func hero(showcase: CGFloat, playback: PlaybackInputs) -> some View {
-        TVDetailHeroPanel(layout: .showcase(height: showcase), creditLine: TVHeroMetadata.creditLine(detail)) {
+        TVDetailHeroPanel(
+            layout: .showcase(height: showcase),
+            poster: TVDetailHeroPoster(url: detail.posterUrl, thumbhash: detail.posterThumbhash),
+            logo: TVDetailHeroLogo(logoUrl: detail.logoUrl, title: detail.title),
+            creditLine: TVHeroMetadata.creditLine(detail)
+        ) {
             TVDetailCompactPrimary(
-                title: detail.title,
-                logoUrl: detail.logoUrl,
                 headingTokens: [seriesTypeLabel] + TVHeroMetadata.seriesHeadingFacts(
                     detail: detail,
                     seasons: viewModel.seasons,

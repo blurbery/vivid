@@ -92,22 +92,29 @@ struct TVSeriesEpisodeShelf: View {
 
     private func pills(_ proxy: ScrollViewProxy) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 20) {
-                ForEach(seasons, id: \.contentId) { season in
+            HStack(spacing: 4) {
+                ForEach(pillEntries, id: \.season.contentId) { entry in
+                    let season = entry.season
+                    let isShown = entry.range == nil && season.contentId == shownSeasonId
                     Button {
                         selectPill(season, proxy: proxy)
                     } label: {
-                        Text(verbatim: Self.pillTitle(season))
-                            .font(.system(size: 22, weight: .semibold))
-                            .fixedSize()
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                        TVSeasonPillLabel(
+                            title: entry.range ?? Self.pillTitle(season),
+                            shortTitle: entry.range ?? Self.pillShortTitle(season),
+                            isExpanded: isShown,
+                            isRange: entry.range != nil
+                        )
                     }
-                    .buttonStyle(TVSeasonPillStyle(isShown: season.contentId == shownSeasonId))
+                    .buttonStyle(TVSeasonPillStyle(isHighlighted: isShown))
+                    .accessibilityLabel(Text(verbatim: entry.range ?? Self.pillTitle(season)))
                     .focused($focusedPillId, equals: season.contentId)
                     .modifier(SeasonWatchedContextMenu(season: season))
                 }
             }
+            .padding(4)
+            .vividGlass(in: Capsule(), tint: .black.opacity(0.26))
+            .animation(reduceMotion ? nil : TVDetailActionRowLayout.resize, value: openSectionIndex)
         }
         .scrollClipDisabled()
         .focusSection()
@@ -117,6 +124,95 @@ struct TVSeriesEpisodeShelf: View {
             referenceSeasonId,
             priority: focusedPillId == nil ? .userInitiated : .automatic
         )
+    }
+
+    /// One button in the season pill: a season, or a closed section standing
+    /// in for its seasons under its range ("S7 - S13"). A closed section
+    /// uses its first season's identity, so focusing it opens the section
+    /// with focus on that season.
+    private struct PillEntry {
+        let season: Season
+        let range: String?
+    }
+
+    /// Specials on their own, then the numbered seasons in sections of six
+    /// once there are more than six. A lone season left at the end joins
+    /// the section before it.
+    private var pillSections: [[Season]] {
+        let specials = seasons.filter { $0.seasonNumber == 0 }
+        let numbered = seasons.filter { $0.seasonNumber != 0 }
+        var sections: [[Season]] = specials.isEmpty ? [] : [specials]
+        guard numbered.count > Self.seasonsPerSection else {
+            if !numbered.isEmpty { sections.append(numbered) }
+            return sections
+        }
+        var chunks = stride(from: 0, to: numbered.count, by: Self.seasonsPerSection).map {
+            Array(numbered[$0..<min($0 + Self.seasonsPerSection, numbered.count)])
+        }
+        if chunks.count > 1, let last = chunks.last, last.count == 1 {
+            chunks.removeLast()
+            chunks[chunks.count - 1].append(contentsOf: last)
+        }
+        sections.append(contentsOf: chunks)
+        return sections
+    }
+
+    private static let seasonsPerSection = 6
+
+    /// The numbered section shown open: the one holding the shown season,
+    /// else the one the page is on, else the first.
+    private var openSectionIndex: Int? {
+        let sections = pillSections
+        let numbered = sections.indices.filter { sections[$0].first?.seasonNumber != 0 }
+        let candidates = [shownSeasonId, referenceSeasonId, selectedSeason?.contentId]
+        for id in candidates {
+            guard let id else { continue }
+            if let index = numbered.first(where: { sections[$0].contains { $0.contentId == id } }) {
+                return index
+            }
+        }
+        return numbered.first
+    }
+
+    /// The open section's seasons, with everything before it as one range
+    /// and everything after it as another, so a long series never shows
+    /// more than a few closed groups. A range takes the identity of the
+    /// adjacent section's first season, so moving onto it opens the next
+    /// section along.
+    private var pillEntries: [PillEntry] {
+        let sections = pillSections
+        let specials = sections.filter { $0.first?.seasonNumber == 0 }.flatMap { $0 }
+        let numbered = sections.filter { $0.first?.seasonNumber != 0 }
+        var entries = specials.map { PillEntry(season: $0, range: nil) }
+        guard numbered.count > 1, let openIndex = openSectionIndex,
+              let open = numbered.firstIndex(where: { $0.first?.contentId == sections[openIndex].first?.contentId }) else {
+            entries += numbered.flatMap { $0 }.map { PillEntry(season: $0, range: nil) }
+            return entries
+        }
+        if open > 0, let first = numbered[0].first, let last = numbered[open - 1].last,
+           let adjacent = numbered[open - 1].first {
+            entries.append(PillEntry(season: adjacent, range: Self.rangeTitle(first, last)))
+        }
+        entries += numbered[open].map { PillEntry(season: $0, range: nil) }
+        if open < numbered.count - 1, let adjacent = numbered[open + 1].first,
+           let last = numbered[numbered.count - 1].last {
+            entries.append(PillEntry(season: adjacent, range: Self.rangeTitle(adjacent, last)))
+        }
+        return entries
+    }
+
+    private static func rangeTitle(_ first: Season, _ last: Season) -> String {
+        String(
+            localized: "S\(String(first.seasonNumber)) - S\(String(last.seasonNumber))",
+            comment: "A closed group of seasons on the season pill, from its first to its last season"
+        )
+    }
+
+    /// The collapsed pill's label: the season number, or "SP" for specials.
+    static func pillShortTitle(_ season: Season) -> String {
+        season.seasonNumber == 0
+            ? String(localized: "SP", comment: "Short label for the Specials season on a collapsed season pill")
+            : String(season.seasonNumber)
     }
 
     /// "Specials" or "Season N"; a season's own title isn't used here.
@@ -332,33 +428,69 @@ struct TVSeriesEpisodeShelf: View {
     }
 }
 
+/// A season pill's text: the full name while it's the season shown, and
+/// just its number in a circle otherwise.
+private struct TVSeasonPillLabel: View {
+    let title: String
+    let shortTitle: String
+    let isExpanded: Bool
+    /// A closed group of seasons: padded like an expanded pill and a
+    /// little dimmer, so it reads as a group rather than a season.
+    var isRange = false
+
+    static let height: CGFloat = 48
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Text(verbatim: isExpanded ? title : shortTitle)
+            .font(.system(size: 22, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize()
+            .contentTransition(.opacity)
+            .opacity(isRange ? 0.72 : 1)
+            .padding(.horizontal, isExpanded || isRange ? 20 : 0)
+            .frame(minWidth: Self.height, minHeight: Self.height)
+            .animation(reduceMotion ? nil : TVDetailActionRowLayout.resize, value: isExpanded)
+    }
+}
+
+/// A button inside the season pill, which carries the tinted glass of the
+/// action row. The season shown stays highlighted, and the focused button
+/// takes the bright rim.
 private struct TVSeasonPillStyle: ButtonStyle {
-    let isShown: Bool
+    let isHighlighted: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        TVSeasonPillBody(configuration: configuration, isShown: isShown)
+        TVSeasonPillBody(configuration: configuration, isHighlighted: isHighlighted)
     }
 }
 
 private struct TVSeasonPillBody: View {
     let configuration: ButtonStyleConfiguration
-    let isShown: Bool
+    let isHighlighted: Bool
 
     @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var fill: Color {
-        if isFocused { return .white }
-        return .white.opacity(isShown ? 0.36 : 0.10)
-    }
-
     var body: some View {
         configuration.label
-            .foregroundStyle(isFocused ? Color.black : Color.white)
-            .background(Capsule().fill(fill))
-            .opacity(configuration.isPressed ? 0.8 : 1)
+            .foregroundStyle(Color.white)
+            .background(Capsule().fill(Color.white.opacity(isHighlighted ? 0.18 : 0)))
+            .overlay {
+                Capsule()
+                    .strokeBorder(LinearGradient.vividPrimaryRim, lineWidth: 2.5)
+                    .opacity(isFocused ? 1 : 0)
+            }
+            .shadow(
+                color: .black.opacity(isFocused ? 0.34 : 0),
+                radius: isFocused ? 12 : 0,
+                y: isFocused ? 4 : 0
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .focusEffectDisabled()
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHighlighted)
     }
 }
 

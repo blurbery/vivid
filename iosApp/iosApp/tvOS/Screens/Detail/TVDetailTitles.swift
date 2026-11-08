@@ -9,6 +9,9 @@ struct TVDetailLogoTitle<Fallback: View>: View {
     let maxWidth: CGFloat
     let maxHeight: CGFloat
     var alignment: Alignment = .bottomLeading
+    /// Crops the logo's transparent margins, so its visible edge lines up
+    /// with the layout.
+    var trimsTransparentEdges = false
     @ViewBuilder let fallback: () -> Fallback
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,11 +27,17 @@ struct TVDetailLogoTitle<Fallback: View>: View {
             .accessibilityLabel(Text(verbatim: label))
     }
 
+    private func request(for url: URL) -> VividImageRequest {
+        var request = VividImageRequest(url: url)
+        request.trimsTransparentEdges = trimsTransparentEdges
+        return request
+    }
+
     @ViewBuilder
     private var content: some View {
         if let url {
             let animation: Animation? = reduceMotion ? nil : .easeInOut(duration: 0.2)
-            VividLazyImage(request: VividImageRequest(url: url), transaction: Transaction(animation: animation)) { state in
+            VividLazyImage(request: request(for: url), transaction: Transaction(animation: animation)) { state in
                 if let image = state.image {
                     image
                         .resizable()
@@ -138,7 +147,14 @@ struct TVDetailShelfLogo: View {
     private var isVisible: Bool { scroll?.showsShelfLogo ?? false }
 
     var body: some View {
-        TVDetailLogoTitle(logoUrl: logoUrl, label: title, maxWidth: 480, maxHeight: 110, alignment: .bottom) {
+        TVDetailLogoTitle(
+            logoUrl: logoUrl,
+            label: title,
+            maxWidth: 480,
+            maxHeight: 110,
+            alignment: .bottom,
+            trimsTransparentEdges: true
+        ) {
             Text(verbatim: title)
                 .font(.system(size: 54, weight: .bold))
                 .lineLimit(2)
