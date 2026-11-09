@@ -45,7 +45,7 @@ final class StudiosNetworksStore {
     /// Trending blocks read at once. A block the relay hasn't cached reads 25
     /// pages from TMDb, so only a few go at a time.
     nonisolated static let concurrentTrendingBlocks = 4
-    static let refreshInterval: TimeInterval = 24 * 60 * 60
+    nonisolated static let refreshInterval: TimeInterval = 24 * 60 * 60
     /// How long results saved without a trending list wait before the
     /// trending lists are read again, and between later tries.
     static let trendingRetryDelay: TimeInterval = 60 * 60
@@ -323,6 +323,9 @@ final class StudiosNetworksStore {
     /// Shows saved results straight away when there are any, refreshing them
     /// in the background once a day; otherwise runs the first load.
     private func prepare(_ scope: Scope) async {
+        if let folder = scope.cacheURL("results")?.deletingLastPathComponent() {
+            Self.removeAbandonedPartials(in: folder)
+        }
         guard let cached = await Self.read(StudioNetworkResultsFile.self, scope.cacheURL("results")) else {
             guard loadedScope == scope else { return }
             status = .loading
@@ -533,18 +536,20 @@ final class StudiosNetworksStore {
 
     /// This device's loads for one server and profile, kept so a load that
     /// keeps getting the app closed partway through stops starting on its own.
-    private struct LoadRecord: Codable {
+    struct LoadRecord: Codable, Equatable {
         /// The app version that recorded it, so an update starts afresh.
         var app: String
-        /// The process whose load is running, nil when none is.
+        /// The process ID whose load is running, nil when none is.
         var running: String?
         /// Loads in a row cut short by the app closing while open.
         var interrupted = 0
+        /// When the last of them was cut short.
+        var interruptedAt: Date?
     }
 
     /// Loads in a row cut short before they stop starting on their own.
-    static let maxInterruptedLoads = 2
-    private static let processID = UUID().uuidString
+    nonisolated static let maxInterruptedLoads = 2
+    private static let processID = String(getpid())
     private static var appVersion: String {
         "\(AppleDeviceIdentity.bundleAppVersion) (\(AppleDeviceIdentity.bundleAppBuild))"
     }
@@ -552,26 +557,44 @@ final class StudiosNetworksStore {
     /// Starts a load or poster refresh unless the last two were cut short by
     /// the app crashing or being closed while open, as tvOS does when a very
     /// large library uses too much memory. Every launch would otherwise start
-    /// the same load from the beginning and close again. Try Again, or a new
-    /// app version, starts one anyway.
+    /// the same load from the beginning and close again.
     private func beginGuardedLoad(_ scope: Scope) -> Bool {
-        var record = loadRecord(scope).flatMap { $0.app == Self.appVersion ? $0 : nil }
-            ?? LoadRecord(app: Self.appVersion)
-        // A load an earlier process left running never ended. It counts when
-        // that process crashed or was closed while open, not when it was
-        // closed in the background, which is routine.
-        if let running = record.running, running != Self.processID {
-            if AppHealthMonitor.previousSessionEndedUnexpectedly { record.interrupted += 1 }
-            record.running = nil
-        }
-        if retryRequested {
-            retryRequested = false
-            record.interrupted = 0
-        }
-        let starts = record.interrupted < Self.maxInterruptedLoads
-        if starts { record.running = Self.processID }
+        let (starts, record) = Self.guardedStart(
+            loadRecord(scope), app: Self.appVersion, process: Self.processID,
+            previousExit: AppHealthMonitor.previousExit, retrying: retryRequested, now: Date()
+        )
+        retryRequested = false
         saveLoadRecord(record, scope)
         return starts
+    }
+
+    /// Whether a load starts, and the record to save. A load an earlier
+    /// process left running counts as cut short only when that exact process
+    /// crashed or was closed while open, not when it was closed in the
+    /// background, which is routine. Try Again, a new app version, or a day
+    /// passing since the last one was cut short starts one anyway; a day on,
+    /// one more cut short stops them again, so at worst the app closes once a
+    /// day rather than on every launch.
+    nonisolated static func guardedStart(
+        _ saved: LoadRecord?, app: String, process: String,
+        previousExit: AppHealthMonitor.PreviousExit?, retrying: Bool, now: Date
+    ) -> (starts: Bool, record: LoadRecord) {
+        var record = saved.flatMap { $0.app == app ? $0 : nil } ?? LoadRecord(app: app)
+        if let running = record.running, running != process {
+            if let pid = previousExit?.pid, String(pid) == running {
+                record.interrupted += 1
+                record.interruptedAt = now
+            }
+            record.running = nil
+        }
+        if retrying { record.interrupted = 0 }
+        if record.interrupted >= maxInterruptedLoads, let since = record.interruptedAt,
+           now.timeIntervalSince(since) > refreshInterval {
+            record.interrupted = maxInterruptedLoads - 1
+        }
+        let starts = record.interrupted < maxInterruptedLoads
+        if starts { record.running = process }
+        return (starts, record)
     }
 
     /// A load that finished clears the interrupted ones before it. One that
@@ -686,6 +709,17 @@ final class StudiosNetworksStore {
             let movies = LibraryMovieLookup(cards: index.movies, savedAt: index.savedAt)
             guard (try? JSONPieceWriter.write(to: lookup) { try movies.writeFields(to: &$0) }) != nil else { return }
             await StudiosNetworksStore.movieLookupSaved()
+        }
+    }
+
+    /// Removes files a write left unfinished when the app closed partway
+    /// through (see `JSONPieceWriter`). A recent one may still be in use.
+    nonisolated static func removeAbandonedPartials(in folder: URL, now: Date = Date()) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.hasPrefix(".") && name.hasSuffix(".partial") {
+            let url = folder.appendingPathComponent(name)
+            guard let modified = modificationDate(url), now.timeIntervalSince(modified) > 10 * 60 else { continue }
+            try? FileManager.default.removeItem(at: url)
         }
     }
 
