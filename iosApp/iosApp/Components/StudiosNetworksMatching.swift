@@ -18,20 +18,40 @@ struct StudioNetworkResult: Codable, Equatable {
     /// Titles the Popular rows leave out: talk shows, and anime unless the
     /// brand keeps it. All in Your Library still lists them.
     var leftOutOfRows: Set<String>?
-    /// Every library title the server tags with the brand, plus every TMDb
-    /// match, for the All in Your Library grid. It has no cap.
-    var all: [BrowseItem] = []
-    /// The titles in `all`. Ranks the automatic picks.
+    /// The content IDs of every library title the server tags with the
+    /// brand, plus every TMDb match, for the All in Your Library grid. It has
+    /// no cap, so it holds IDs only: a brand page reads the titles from the
+    /// saved library when it opens.
+    var allIDs: [String] = []
+    /// The titles in `allIDs`. Ranks the automatic picks.
     var matchCount = 0
 
     var count: Int { matchCount }
 
-    /// Every title the page can show, for reading poster expiry.
+    /// Every title the rows can show, for reading poster expiry. The grid's
+    /// come from the saved library, which keeps its own.
     var items: [BrowseItem] {
         let popular = movies + series + recentSeries + recentMovies
         let trending = (trendingSeries ?? []) + (trendingMovies ?? [])
-        return popular + trending + all
+        return popular + trending
     }
+}
+
+/// Finds a library title by TMDb ID or by title and year.
+protocol StudioTitleLookup: Sendable {
+    func title(forKey key: String) -> BrowseItem?
+}
+
+extension Dictionary: StudioTitleLookup where Key == String, Value == BrowseItem {
+    func title(forKey key: String) -> BrowseItem? { self[key] }
+}
+
+/// One kind of title in the saved library.
+struct StudioLibraryTitles: StudioTitleLookup {
+    let library: StudioLibraryDatabase
+    let media: StudioLibraryDatabase.Media
+
+    func title(forKey key: String) -> BrowseItem? { library.item(media: media, key: key) }
 }
 
 extension StudiosNetworksStore {
@@ -129,18 +149,18 @@ extension StudiosNetworksStore {
 
     /// TMDb ID first, then exact title and year. Allowing a year either side
     /// matched unrelated titles sharing a name in large libraries.
-    nonisolated static func lookup(_ result: TVTMDbStore.DiscoverPage.Result, in index: [String: BrowseItem]) -> BrowseItem? {
-        if let item = index[String(result.id)] { return item }
+    nonisolated static func lookup(_ result: TVTMDbStore.DiscoverPage.Result, in index: some StudioTitleLookup) -> BrowseItem? {
+        if let item = index.title(forKey: String(result.id)) { return item }
         guard let title = result.title ?? result.name,
               let date = result.releaseDate ?? result.firstAirDate,
               let year = Int(date.prefix(4)) else { return nil }
-        return index[titleKey(title, year: year)]
+        return index.title(forKey: titleKey(title, year: year))
     }
 
     /// Library matches for one TMDb list, in its order, each title once.
     nonisolated static func matches(
         _ results: [TVTMDbStore.DiscoverPage.Result],
-        _ index: [String: BrowseItem]
+        _ index: some StudioTitleLookup
     ) -> [(item: BrowseItem, popularity: Double)] {
         var seen = Set<String>()
         return results.compactMap { result in
@@ -152,7 +172,7 @@ extension StudiosNetworksStore {
     /// Library matches for a whole trending list, in trending order. The list
     /// runs to about 10,000 titles, so it's matched once for every brand.
     nonisolated static func trendingMatches(
-        _ results: [TVTMDbStore.DiscoverPage.Result], _ index: [String: BrowseItem]
+        _ results: [TVTMDbStore.DiscoverPage.Result], _ index: some StudioTitleLookup
     ) -> [TrendingMatch] {
         var seen = Set<String>()
         return results.compactMap { result in
@@ -187,24 +207,26 @@ extension StudiosNetworksStore {
     /// the TMDb matches it doesn't, each title once. TMDb is the only source
     /// of a network's films, and finds a studio's films a server lists
     /// without the studio.
-    nonisolated static func libraryTitles(tagged: [BrowseItem], matched: [BrowseItem]) -> [BrowseItem] {
+    nonisolated static func libraryTitles(tagged: [String], matched: [String]) -> [String] {
         var seen = Set<String>()
-        return (tagged + matched).filter { seen.insert($0.contentId).inserted }
+        return (tagged + matched).filter { seen.insert($0).inserted }
     }
 
     /// Matches every brand's lists with the library, off the main actor so
     /// matching never competes with drawing.
     nonisolated static func matched(
         _ lists: [String: BrandLists], trending: TrendingLists, previous: [String: StudioNetworkResult],
-        index: StudioNetworkIndexFile
+        library: StudioLibraryDatabase
     ) async -> [String: StudioNetworkResult] {
         await Task.detached(priority: .utility) {
-            let trendingSeries = trending.series.map { trendingMatches($0, index.series) }
-            let trendingMovies = trending.movies.map { trendingMatches($0, index.movies) }
+            let movies = StudioLibraryTitles(library: library, media: .movie)
+            let series = StudioLibraryTitles(library: library, media: .series)
+            let trendingSeries = trending.series.map { trendingMatches($0, series) }
+            let trendingMovies = trending.movies.map { trendingMatches($0, movies) }
             return Dictionary(uniqueKeysWithValues: lists.map { id, brandLists in
                 (id, result(for: brandLists, trendingSeries: trendingSeries, trendingMovies: trendingMovies,
-                            previous: previous[id], keepsAnime: keepsAnime(id), index: index,
-                            tagged: index.tagged?[id] ?? []))
+                            previous: previous[id], keepsAnime: keepsAnime(id), movieIndex: movies,
+                            seriesIndex: series, tagged: library.taggedIDs(brand: id)))
             })
         }.value
     }
@@ -212,12 +234,12 @@ extension StudiosNetworksStore {
     /// The saved results with freshly read trending titles. A brand's titles
     /// are the ones its saved results list.
     nonisolated static func withTrending(
-        _ trending: TrendingLists, in results: [String: StudioNetworkResult], index: StudioNetworkIndexFile
+        _ trending: TrendingLists, in results: [String: StudioNetworkResult], library: StudioLibraryDatabase
     ) async -> [String: StudioNetworkResult] {
         await Task.detached(priority: .utility) {
             guard let series = trending.series, let movies = trending.movies else { return results }
-            let seriesMatches = trendingMatches(series, index.series)
-            let movieMatches = trendingMatches(movies, index.movies)
+            let seriesMatches = trendingMatches(series, StudioLibraryTitles(library: library, media: .series))
+            let movieMatches = trendingMatches(movies, StudioLibraryTitles(library: library, media: .movie))
             var updated = results
             for (id, saved) in results {
                 let titles = brandTitles(of: saved)
@@ -233,19 +255,20 @@ extension StudiosNetworksStore {
     /// brand's trending titles from `previous`.
     private nonisolated static func result(
         for lists: BrandLists, trendingSeries: [TrendingMatch]?, trendingMovies: [TrendingMatch]?,
-        previous: StudioNetworkResult?, keepsAnime: Bool, index: StudioNetworkIndexFile, tagged: [BrowseItem]
+        previous: StudioNetworkResult?, keepsAnime: Bool,
+        movieIndex: some StudioTitleLookup, seriesIndex: some StudioTitleLookup, tagged: [String]
     ) -> StudioNetworkResult {
-        let series = matches(lists.series, index.series).map(\.item)
-        let movies = matches(lists.movies, index.movies).map(\.item)
-        let recentSeries = matches(lists.recentSeries, index.series).map(\.item)
-        let recentMovies = matches(lists.recentMovies, index.movies).map(\.item)
-        let all = libraryTitles(tagged: tagged, matched: movies + series)
-        let brandTitles = Set((all + recentSeries + recentMovies).map(\.contentId))
-        func leftOut(_ results: [TVTMDbStore.DiscoverPage.Result], _ index: [String: BrowseItem]) -> [BrowseItem] {
-            matches(results.filter { !showsInPopularRows($0, keepsAnime: keepsAnime) }, index).map(\.item)
+        let series = matches(lists.series, seriesIndex).map(\.item)
+        let movies = matches(lists.movies, movieIndex).map(\.item)
+        let recentSeries = matches(lists.recentSeries, seriesIndex).map(\.item)
+        let recentMovies = matches(lists.recentMovies, movieIndex).map(\.item)
+        let all = libraryTitles(tagged: tagged, matched: (movies + series).map(\.contentId))
+        let brandTitles = Set(all + (recentSeries + recentMovies).map(\.contentId))
+        func leftOut(_ results: [TVTMDbStore.DiscoverPage.Result], _ index: some StudioTitleLookup) -> [String] {
+            matches(results.filter { !showsInPopularRows($0, keepsAnime: keepsAnime) }, index).map(\.item.contentId)
         }
-        let leftOutOfRows = leftOut(lists.series + lists.recentSeries, index.series)
-            + leftOut(lists.movies + lists.recentMovies, index.movies)
+        let leftOutOfRows = leftOut(lists.series + lists.recentSeries, seriesIndex)
+            + leftOut(lists.movies + lists.recentMovies, movieIndex)
         return StudioNetworkResult(
             logoURL: lists.logoURL,
             movies: movies,
@@ -256,14 +279,14 @@ extension StudiosNetworksStore {
                 ?? previous?.trendingSeries,
             trendingMovies: trendingMovies.map { trendingTitles($0, brandTitles: brandTitles, keepsAnime: keepsAnime) }
                 ?? previous?.trendingMovies,
-            leftOutOfRows: Set(leftOutOfRows.map(\.contentId)),
-            all: all,
+            leftOutOfRows: Set(leftOutOfRows),
+            allIDs: all,
             matchCount: all.count
         )
     }
 
     private nonisolated static func brandTitles(of result: StudioNetworkResult) -> Set<String> {
-        Set((result.all + result.recentSeries + result.recentMovies).map(\.contentId))
+        Set(result.allIDs + (result.recentSeries + result.recentMovies).map(\.contentId))
     }
 
     private nonisolated static func keepsAnime(_ id: String) -> Bool {
@@ -280,11 +303,9 @@ extension StudiosNetworksStore {
     /// refresh show without asking TMDb again.
     nonisolated static func replacingArtwork(
         in results: [String: StudioNetworkResult],
-        with titles: some Sequence<BrowseItem>,
-        tagged: [String: [BrowseItem]]
+        with current: [String: BrowseItem],
+        tagged: [String: [String]]
     ) -> [String: StudioNetworkResult] {
-        var current: [String: BrowseItem] = [:]
-        for title in titles { current[title.contentId] = title }
         func refreshed(_ items: [BrowseItem]) -> [BrowseItem] { items.compactMap { current[$0.contentId] } }
         var updated = results
         for (id, saved) in results {
@@ -295,8 +316,8 @@ extension StudiosNetworksStore {
             result.recentMovies = refreshed(saved.recentMovies)
             result.trendingSeries = saved.trendingSeries.map(refreshed)
             result.trendingMovies = saved.trendingMovies.map(refreshed)
-            result.all = libraryTitles(tagged: tagged[id] ?? [], matched: result.movies + result.series)
-            result.matchCount = result.all.count
+            result.allIDs = libraryTitles(tagged: tagged[id] ?? [], matched: (result.movies + result.series).map(\.contentId))
+            result.matchCount = result.allIDs.count
             updated[id] = result
         }
         return updated

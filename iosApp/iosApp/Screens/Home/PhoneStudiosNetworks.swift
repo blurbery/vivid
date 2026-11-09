@@ -60,6 +60,9 @@ struct PhoneStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
     @State private var filter = StudioNetworkLibraryFilter()
+    /// All in Your Library, read from the saved library when the page opens
+    /// and again whenever the brand's list changes.
+    @State private var all: [BrowseItem] = []
     @Environment(AppRouter.self) private var router
     @Environment(\.duoSideStrip) private var duoSideStrip
 
@@ -82,11 +85,11 @@ struct PhoneStudioNetworkPage: View {
                     rail(title: row.title, items: row.items)
                 }
 
-                if !result.all.isEmpty {
+                if !all.isEmpty {
                     VStack(alignment: .leading, spacing: HomeFeedMetrics.headerGap) {
-                        libraryHeader(result.all)
+                        libraryHeader(all)
                         CatalogGrid(
-                            items: filter.apply(to: result.all),
+                            items: filter.apply(to: all),
                             isLoading: false,
                             hasMore: false,
                             forcesThreeColumnsOnPhone: true,
@@ -104,6 +107,7 @@ struct PhoneStudioNetworkPage: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.loadIfNeeded() }
+        .task(id: result.allIDs) { all = await store.libraryTitles(for: brandId) }
     }
 
     /// In landscape on the iPhone Duo the side status bar strip narrows the

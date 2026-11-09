@@ -7,6 +7,8 @@ import SwiftUI
 /// TMDb ID when the server lists one and otherwise by exact title and year.
 /// Results and the library index are cached per server and profile, so Home
 /// shows the row straight away and refreshes once a day in the background.
+/// The library index is a SQLite file (`StudioLibraryDatabase`), so memory
+/// never grows with the size of the library.
 ///
 /// The brand catalogue is in `StudiosNetworksCatalogue.swift`, matching in
 /// `StudiosNetworksMatching.swift` and the library, TMDb and disk reads in
@@ -33,10 +35,10 @@ final class StudiosNetworksStore {
     /// Your Library, and it's read twice as deep. The relay allows 10.
     nonisolated static let networkMoviePages = 10
     /// Bumped when matching changes, so saved results are matched again.
-    nonisolated static let resultsRevision = 5
+    nonisolated static let resultsRevision = 6
     /// Bumped when a brand's names change, so the saved library index is
     /// tagged again. Reading the library is the slow part, so it's separate.
-    nonisolated static let indexRevision = 4
+    nonisolated static let indexRevision = 5
     /// Blocks in each of TMDb's weekly trending lists, 500 titles each: the
     /// whole list, as TMDb's only covers the world, not a brand, and a
     /// smaller brand's titles sit far down it. The relay answers a block in
@@ -46,6 +48,10 @@ final class StudiosNetworksStore {
     /// pages from TMDb, so only a few go at a time.
     nonisolated static let concurrentTrendingBlocks = 4
     nonisolated static let refreshInterval: TimeInterval = 24 * 60 * 60
+    /// A library read cut short carries on from where it stopped if it's
+    /// started again within this long. Later, it starts again, as Silo's
+    /// signed poster links from the first part would be close to expiring.
+    nonisolated static let resumeWindow: TimeInterval = 60 * 60
     /// How long results saved without a trending list wait before the
     /// trending lists are read again, and between later tries.
     static let trendingRetryDelay: TimeInterval = 60 * 60
@@ -99,7 +105,8 @@ final class StudiosNetworksStore {
     private var libraryIsRead = false
     private var loadTask: Task<Void, Never>?
     private let defaults = SharedDefaults.shared
-    @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
+    /// The saved library for the current server and profile, opened once.
+    @ObservationIgnored private var library: (scope: Scope, database: StudioLibraryDatabase)?
     @ObservationIgnored private var searchIndexCache: (scope: Scope, modified: Date, index: LibrarySearchIndex)?
     @ObservationIgnored private var searchIndexTask: Task<Void, Never>?
     /// Set by Try Again, so the next load starts even after interrupted ones.
@@ -218,8 +225,9 @@ final class StudiosNetworksStore {
         /// This device's `LoadRecord`. Not synced.
         var loadRecordKey: String { "studiosNetworks.loadRecord.v1.\(server).\(profile)" }
 
-        /// `Caches/StudiosNetworks/<name>-v1-<token>.json`, creating the folder.
-        func cacheURL(_ name: String) -> URL? {
+        /// `Caches/StudiosNetworks/<name>-v<version>-<token>.<ext>`, creating
+        /// the folder. Version 1 held the library as JSON.
+        func cacheURL(_ name: String, version: Int = 2, extension ext: String = "json") -> URL? {
             let token = Data("\(server)|\(profile)".utf8).base64EncodedString()
                 .filter { $0.isLetter || $0.isNumber }
             guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
@@ -227,7 +235,17 @@ final class StudiosNetworksStore {
             }
             let folder = caches.appendingPathComponent("StudiosNetworks", isDirectory: true)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            return folder.appendingPathComponent("\(name)-v1-\(token).json")
+            return folder.appendingPathComponent("\(name)-v\(version)-\(token).\(ext)")
+        }
+
+        /// The library index in use. Only a complete read is moved here.
+        var libraryURL: URL? { cacheURL("library", extension: "sqlite") }
+        /// The library index a read is writing, kept if it's cut short.
+        var buildingLibraryURL: URL? { cacheURL("library-building", extension: "sqlite") }
+
+        /// Files older versions saved, which are no longer read.
+        var legacyCacheURLs: [URL] {
+            ["results", "library", "movies"].compactMap { cacheURL($0, version: 1) }
         }
     }
 
@@ -258,6 +276,7 @@ final class StudiosNetworksStore {
         loadTask?.cancel()
         loadTask = nil
         loadedScope = scope
+        library = nil
         searchIndexCache = nil
         results = [:]
         resultsSavedAt = nil
@@ -326,6 +345,7 @@ final class StudiosNetworksStore {
         if let folder = scope.cacheURL("results")?.deletingLastPathComponent() {
             Self.removeAbandonedPartials(in: folder)
         }
+        Self.removeLegacyCaches(scope)
         guard let cached = await Self.read(StudioNetworkResultsFile.self, scope.cacheURL("results")) else {
             guard loadedScope == scope else { return }
             status = .loading
@@ -339,7 +359,7 @@ final class StudiosNetworksStore {
         resultsMissTrending = cached.missesTrending ?? false
         status = .ready
         topUpForEditing()
-        let expiry = await Self.artworkExpiry(in: cached.results)
+        let expiry = await Self.artworkExpiry(in: cached.results, library: openLibrary(scope))
         guard loadedScope == scope else { return }
         artworkExpiresAt = expiry
         // Brands added since the results were saved have nothing to show
@@ -352,7 +372,6 @@ final class StudiosNetworksStore {
             await load(scope)
             return
         }
-        Self.saveMissingMovieLookup(library: scope.cacheURL("library"), lookup: scope.cacheURL("movies"))
         if artworkNeedsRefresh { await refreshArtwork(scope) }
         if trendingNeedsRetry { await retryTrending(scope) }
     }
@@ -377,19 +396,18 @@ final class StudiosNetworksStore {
             // `trendingResults`.
             async let lists = Self.brandLists(Self.catalogue) { [weak self] in self?.noteListsLoaded(scope) }
             async let trending = Self.trendingLists()
-            let index = try await libraryForMatching(scope)
-            await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
+            let library = try await libraryForMatching(scope)
             libraryIsRead = true
             if loadedScope == scope { showMatchingProgress() }
             // The saved results stay on screen while TMDb is matched, and stay
             // if it fails, so expired posters take the library's fresh links now.
             if loadedScope == scope, !results.isEmpty, artworkHasLapsed {
-                await applyArtwork(from: index, scope)
+                await applyArtwork(from: library, scope)
             }
             let brandLists = try await lists
             let trendingLists = await trending
             // A trending list that didn't load keeps each brand's last one.
-            let loaded = await Self.matched(brandLists, trending: trendingLists, previous: results, index: index)
+            let loaded = await Self.matched(brandLists, trending: trendingLists, previous: results, library: library)
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
             let savedAt = Date()
@@ -406,7 +424,7 @@ final class StudiosNetworksStore {
                                                       missesTrending: resultsMissTrending),
                              scope.cacheURL("results"))
             finished = true
-            let expiry = await Self.artworkExpiry(in: loaded)
+            let expiry = await Self.artworkExpiry(in: loaded, library: library)
             if loadedScope == scope { artworkExpiresAt = expiry }
         } catch {
             guard loadedScope == scope else { return }
@@ -418,14 +436,15 @@ final class StudiosNetworksStore {
         }
     }
 
-    /// The saved library index while it's from today, tagged with the current
+    /// The saved library while it's from today, read with the current brand
     /// names and its posters still load; otherwise a fresh library read.
-    private func libraryForMatching(_ scope: Scope) async throws -> StudioNetworkIndexFile {
-        if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
-           cached.revision == Self.indexRevision,
-           Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval,
-           await Self.hasCurrentArtwork(cached) {
-            return cached
+    private func libraryForMatching(_ scope: Scope) async throws -> StudioLibraryDatabase {
+        if let saved = openLibrary(scope),
+           saved.meta("revision") == String(Self.indexRevision),
+           let savedAt = saved.meta("savedAt").flatMap(Double.init),
+           Date().timeIntervalSince1970 - savedAt < Self.refreshInterval,
+           !Self.artworkHasLapsed(expiresAt: await Self.posterExpiry(of: saved)) {
+            return saved
         }
         // Counts as a poster refresh, so a page that waited on a read that
         // failed doesn't read the library again straight away. Not once the
@@ -472,9 +491,8 @@ final class StudiosNetworksStore {
     private func retryTrending(_ scope: Scope) async {
         trendingRetriedAt = Date()
         let trending = await Self.trendingLists()
-        guard trending.isComplete, loadedScope == scope,
-              let index = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")) else { return }
-        let updated = await Self.withTrending(trending, in: results, index: index)
+        guard trending.isComplete, loadedScope == scope, let library = openLibrary(scope) else { return }
+        let updated = await Self.withTrending(trending, in: results, library: library)
         guard loadedScope == scope else { return }
         results = updated
         resultsMissTrending = false
@@ -494,11 +512,10 @@ final class StudiosNetworksStore {
         var finished = false
         defer { endGuardedLoad(scope, finished: finished) }
         do {
-            let index = try await readLibrary(scope, reportsProgress: false)
-            await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
+            let library = try await readLibrary(scope, reportsProgress: false)
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
-            await applyArtwork(from: index, scope)
+            await applyArtwork(from: library, scope)
             finished = true
         } catch {
             // Keep the current results. The next visit after the cooldown
@@ -508,13 +525,17 @@ final class StudiosNetworksStore {
 
     /// Swaps a library read's poster links into the shown results and saves
     /// them, keeping when they were matched.
-    private func applyArtwork(from index: StudioNetworkIndexFile, _ scope: Scope) async {
+    private func applyArtwork(from library: StudioLibraryDatabase, _ scope: Scope) async {
         let current = results
-        let refreshed = await Task.detached(priority: .utility) {
-            Self.replacingArtwork(in: current, with: [index.movies.values, index.series.values].joined(),
-                                  tagged: index.tagged ?? [:])
+        let refreshed = await Task.detached(priority: .utility) { () -> [String: StudioNetworkResult] in
+            let shown = Set(current.values.flatMap { $0.items.map(\.contentId) })
+            var fresh: [String: BrowseItem] = [:]
+            for item in library.items(contentIds: Array(shown)) { fresh[item.contentId] = item }
+            var tagged: [String: [String]] = [:]
+            for id in current.keys { tagged[id] = library.taggedIDs(brand: id) }
+            return Self.replacingArtwork(in: current, with: fresh, tagged: tagged)
         }.value
-        let expiry = await Self.artworkExpiry(in: refreshed)
+        let expiry = await Self.artworkExpiry(in: refreshed, library: library)
         guard loadedScope == scope else { return }
         results = refreshed
         artworkExpiresAt = expiry
@@ -523,13 +544,20 @@ final class StudiosNetworksStore {
                          scope.cacheURL("results"))
     }
 
-    /// Whether a saved index's posters will still load for a while. Runs off
-    /// the main actor, as the index holds every library title.
-    private nonisolated static func hasCurrentArtwork(_ index: StudioNetworkIndexFile) async -> Bool {
-        await Task.detached(priority: .utility) {
-            guard let expiry = artworkExpiry(of: [index.movies.values, index.series.values].joined()) else { return true }
-            return expiry.timeIntervalSinceNow >= artworkRefreshLead
-        }.value
+    /// The earliest signed poster link among the results and the saved
+    /// library behind their grids.
+    private nonisolated static func artworkExpiry(
+        in results: [String: StudioNetworkResult], library: StudioLibraryDatabase?
+    ) async -> Date? {
+        let shown = await artworkExpiry(in: results)
+        guard let library else { return shown }
+        let saved = await posterExpiry(of: library)
+        return [shown, saved].compactMap { $0 }.min()
+    }
+
+    /// Reads every title, so it runs off the main actor.
+    private nonisolated static func posterExpiry(of library: StudioLibraryDatabase) async -> Date? {
+        await Task.detached(priority: .utility) { library.earliestPosterExpiry() }.value
     }
 
     // MARK: Interrupted loads
@@ -618,8 +646,24 @@ final class StudiosNetworksStore {
 
     // MARK: Library index
 
-    /// Reads every library title from the server and saves the index.
-    private func readLibrary(_ scope: Scope, reportsProgress: Bool) async throws -> StudioNetworkIndexFile {
+    /// The saved library for `scope`, opened once and kept until a newer read
+    /// replaces it. nil until the library has been read.
+    private func openLibrary(_ scope: Scope) -> StudioLibraryDatabase? {
+        if let library, library.scope == scope { return library.database }
+        guard let url = scope.libraryURL, FileManager.default.fileExists(atPath: url.path),
+              let database = try? StudioLibraryDatabase(url: url, writable: false) else { return nil }
+        library = (scope, database)
+        return database
+    }
+
+    /// Reads every library title from the server into a new library file,
+    /// carrying on from a read cut short within the last hour, and puts it in
+    /// place of the saved one once it's complete.
+    private func readLibrary(_ scope: Scope, reportsProgress: Bool) async throws -> StudioLibraryDatabase {
+        guard let buildingURL = scope.buildingLibraryURL, let libraryURL = scope.libraryURL else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let building = try await Self.openBuilding(buildingURL)
         if reportsProgress { titlesRead = [:] }
         let report: @MainActor (String, Int) -> Void = { [weak self] type, count in
             guard reportsProgress, let self, self.loadedScope == scope else { return }
@@ -627,36 +671,94 @@ final class StudiosNetworksStore {
             let titles = self.titlesRead.values.reduce(0, +).formatted()
             self.progressText = String(localized: "Reading your library… \(titles) titles", comment: "Studios & Networks first-load progress. The count is already formatted, e.g. 1,234")
         }
-        async let movies = Self.libraryIndex(type: "movie", report: report)
-        async let series = Self.libraryIndex(type: "series", report: report)
-        let (movieIndex, seriesIndex) = try await (movies, series)
-        let index = StudioNetworkIndexFile(
-            savedAt: Date(), movies: movieIndex.index, series: seriesIndex.index,
-            tagged: movieIndex.tagged.merging(seriesIndex.tagged) { $0 + $1 }, revision: Self.indexRevision
-        )
-        await Self.write(index, scope.cacheURL("library"))
-        return index
+        async let movies: Void = Self.readLibrary(.movie, into: building, report: report)
+        async let series: Void = Self.readLibrary(.series, into: building, report: report)
+        _ = try await (movies, series)
+        try await Task.detached(priority: .utility) {
+            try building.setMeta("savedAt", value: String(Date().timeIntervalSince1970))
+            building.close()
+            try Self.replaceDatabase(at: libraryURL, with: buildingURL)
+        }.value
+        // Readers still holding the replaced file finish with it; the next
+        // lookup opens the new one.
+        if library?.scope == scope { library = nil }
+        movieLookupRevision &+= 1
+        guard let saved = openLibrary(scope) else { throw CocoaError(.fileReadUnknown) }
+        return saved
+    }
+
+    /// The library file a read writes to: the one a read cut short left, if
+    /// it's recent and written the same way, or a new one.
+    private nonisolated static func openBuilding(_ url: URL) async throws -> StudioLibraryDatabase {
+        try await Task.detached(priority: .utility) {
+            if let existing = try? StudioLibraryDatabase(url: url, writable: true) {
+                if existing.meta("revision") == String(indexRevision),
+                   let started = existing.meta("startedAt").flatMap(Double.init),
+                   Date().timeIntervalSince1970 - started < resumeWindow {
+                    return existing
+                }
+                existing.close()
+            }
+            removeDatabase(at: url)
+            let fresh = try StudioLibraryDatabase(url: url, writable: true)
+            try fresh.setMeta("revision", value: String(indexRevision))
+            try fresh.setMeta("startedAt", value: String(Date().timeIntervalSince1970))
+            return fresh
+        }.value
+    }
+
+    /// Moves a complete library file over the saved one in a single rename.
+    private nonisolated static func replaceDatabase(at url: URL, with built: URL) throws {
+        try? FileManager.default.removeItem(at: journal(of: url))
+        try? FileManager.default.removeItem(at: journal(of: built))
+        guard rename(built.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    private nonisolated static func removeDatabase(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.removeItem(at: journal(of: url))
+    }
+
+    private nonisolated static func journal(of url: URL) -> URL {
+        URL(fileURLWithPath: url.path + "-journal")
+    }
+
+    private nonisolated static func removeLegacyCaches(_ scope: Scope) {
+        for url in scope.legacyCacheURLs { try? FileManager.default.removeItem(at: url) }
+    }
+
+    // MARK: Library titles
+
+    /// The saved library's titles with these content IDs, in the order
+    /// given, for Search's matches and a brand page's grid.
+    func libraryItems(_ contentIds: [String]) async -> [BrowseItem] {
+        guard !contentIds.isEmpty, let scope = Scope.current, let library = openLibrary(scope) else { return [] }
+        return await Task.detached(priority: .userInitiated) { library.items(contentIds: contentIds) }.value
+    }
+
+    /// A brand's All in Your Library titles, read when its page opens.
+    func libraryTitles(for brandId: String) async -> [BrowseItem] {
+        await libraryItems(results[brandId]?.allIDs ?? [])
     }
 
     // MARK: Search index
 
-    /// Every movie and series in the saved library index, for Search to match
+    /// Every movie and series in the saved library, for Search to match
     /// titles on the device. nil while it first loads and until the library
     /// has been read, so a search never waits for it: the first call starts
-    /// the load in the background. It follows the saved index, which every
-    /// library read rewrites, and the previous one serves while a newer loads.
+    /// the load in the background. It follows the saved library, which every
+    /// library read replaces, and the previous one serves while a newer loads.
+    /// It holds titles only; Search reads its matches' details afterwards.
     func searchIndex() -> LibrarySearchIndex? {
-        guard let scope = Scope.current, let url = scope.cacheURL("library"),
+        guard let scope = Scope.current, let url = scope.libraryURL,
               let modified = Self.modificationDate(url) else { return nil }
         let cached = searchIndexCache.flatMap { $0.scope == scope ? $0 : nil }
         if let cached, cached.modified == modified { return cached.index }
-        if searchIndexTask == nil {
+        if searchIndexTask == nil, let library = openLibrary(scope) {
             searchIndexTask = Task { [weak self] in
                 let index = await Task.detached(priority: .userInitiated) { () -> LibrarySearchIndex? in
-                    guard let data = try? Data(contentsOf: url),
-                          let file = try? JSONDecoder().decode(StudioNetworkIndexTitles.self, from: data)
-                    else { return nil }
-                    return LibrarySearchIndex(items: Array([file.movies.values, file.series.values].joined()))
+                    let titles = library.searchTitles()
+                    return titles.isEmpty ? nil : LibrarySearchIndex(titles: titles)
                 }.value
                 guard let self else { return }
                 self.searchIndexTask = nil
@@ -668,48 +770,11 @@ final class StudiosNetworksStore {
 
     // MARK: Movie lookup
 
-    /// The saved movie lookup for this server and profile, read once in the
-    /// background and kept until a newer one is saved. nil until the library
-    /// has been indexed with a TMDb connection.
+    /// Finds library movies for a movie page's collection row in the saved
+    /// library. nil until the library has been read.
     func movieLookup() async -> LibraryMovieLookup? {
-        guard let scope = Scope.current, let url = scope.cacheURL("movies"),
-              let modified = Self.modificationDate(url) else { return nil }
-        if let cache = movieLookupCache, cache.scope == scope, cache.modified == modified { return cache.lookup }
-        guard let lookup = await Self.read(LibraryMovieLookup.self, url), Scope.current == scope else { return nil }
-        movieLookupCache = (scope, modified, lookup)
-        return lookup
-    }
-
-    /// Saves the movie lookup unless one from this index is already saved.
-    private nonisolated static func saveMovieLookup(_ index: StudioNetworkIndexFile, to url: URL?) async {
-        guard let url else { return }
-        if let modified = modificationDate(url), modified >= index.savedAt { return }
-        let saved = await Task.detached(priority: .utility) { () -> Bool in
-            let lookup = LibraryMovieLookup(index: index.movies, savedAt: index.savedAt)
-            return (try? JSONPieceWriter.write(to: url) { try lookup.writeFields(to: &$0) }) != nil
-        }.value
-        if saved { await movieLookupSaved() }
-    }
-
-    private static func movieLookupSaved() {
-        shared.movieLookupRevision &+= 1
-    }
-
-    /// A library indexed before movie pages used the lookup gets one from its
-    /// saved index, once. It waits for Home to settle, runs at the lowest
-    /// priority and reads only the movie cards.
-    private nonisolated static func saveMissingMovieLookup(library: URL?, lookup: URL?) {
-        guard let library, let lookup, modificationDate(lookup) == nil else { return }
-        Task.detached(priority: .background) {
-            do { try await Task.sleep(for: .seconds(15)) } catch { return }
-            guard StudiosNetworksStore.modificationDate(lookup) == nil,
-                  let data = try? Data(contentsOf: library),
-                  let index = try? JSONDecoder().decode(StudioNetworkIndexMovieCards.self, from: data)
-            else { return }
-            let movies = LibraryMovieLookup(cards: index.movies, savedAt: index.savedAt)
-            guard (try? JSONPieceWriter.write(to: lookup) { try movies.writeFields(to: &$0) }) != nil else { return }
-            await StudiosNetworksStore.movieLookupSaved()
-        }
+        guard let scope = Scope.current, let library = openLibrary(scope) else { return nil }
+        return LibraryMovieLookup(library: library)
     }
 
     /// Removes files a write left unfinished when the app closed partway
@@ -729,9 +794,9 @@ final class StudiosNetworksStore {
     /// for a profile, used when its account is removed.
     nonisolated static func removeCache(server: String, profile: String) {
         let scope = Scope(server: server, profile: profile)
-        for name in ["results", "library", "movies"] {
-            if let url = scope.cacheURL(name) { try? FileManager.default.removeItem(at: url) }
-        }
+        if let url = scope.cacheURL("results") { try? FileManager.default.removeItem(at: url) }
+        for url in [scope.libraryURL, scope.buildingLibraryURL].compactMap({ $0 }) { removeDatabase(at: url) }
+        removeLegacyCaches(scope)
         UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
     }
 }
