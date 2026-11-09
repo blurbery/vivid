@@ -83,7 +83,7 @@
       }
     },
     "%@ (%@)" : {
-      "comment" : "Quality picker option: preset name and its bitrate, e.g. 1080p High (10 Mbps)",
+      "comment" : "A saved profile's name with its server, when two profiles share a name\nQuality picker option: preset name and its bitrate, e.g. 1080p High (10 Mbps)",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -1120,6 +1120,7 @@
       }
     },
     "%@ · %@" : {
+      "comment" : "A saved profile's role and server, for example Admin · Emby",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -1506,6 +1507,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@ and %lld more" : {
+      "comment" : "The first two saved profiles' names and how many others there are",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@ and %3$lld more"
           }
         }
       }
@@ -9037,6 +9050,10 @@
         }
       }
     },
+    "Admin" : {
+      "comment" : "Role of a server administrator, shown with the server name on a saved profile",
+      "extractionState" : "manual"
+    },
     "Advanced" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10372,7 +10389,7 @@
       }
     },
     "App privacy information · Updated 30 October 2026" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -21262,6 +21279,9 @@
           }
         }
       }
+    },
+    "Current profile" : {
+      "extractionState" : "manual"
     },
     "Current season" : {
       "extractionState" : "manual",
@@ -36703,6 +36723,9 @@
         }
       }
     },
+    "Move %@. Move up or down, then press centre to drop and save." : {
+      "extractionState" : "manual"
+    },
     "Move collection" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -42654,6 +42677,9 @@
         }
       }
     },
+    "PIN and sign out" : {
+      "extractionState" : "manual"
+    },
     "PIN removed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42793,6 +42819,9 @@
           }
         }
       }
+    },
+    "PIN, household and sign out" : {
+      "extractionState" : "manual"
     },
     "PLAYBACK" : {
       "extractionState" : "manual",
@@ -57255,6 +57284,9 @@
         }
       }
     },
+    "Sign in to another server" : {
+      "extractionState" : "manual"
+    },
     "Sign in to start watching." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57502,6 +57534,9 @@
           }
         }
       }
+    },
+    "Signed out · %@" : {
+      "extractionState" : "manual"
     },
     "Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile." : {
       "extractionState" : "manual",
@@ -61066,6 +61101,12 @@
           }
         }
       }
+    },
+    "Switch between the profiles saved on this Apple TV. Press and hold one to arrange them." : {
+      "extractionState" : "manual"
+    },
+    "Switch between the profiles saved on this device, or tap Edit to arrange them." : {
+      "extractionState" : "manual"
     },
     "Switch to this server. Server names are managed by the server administrator" : {
       "extractionState" : "manual",
@@ -70412,6 +70453,10 @@
           }
         }
       }
+    },
+    "User" : {
+      "comment" : "Role of a server user who isn't an administrator, shown with the server name on a saved profile",
+      "extractionState" : "manual"
     },
     "User Collections" : {
       "extractionState" : "manual",
