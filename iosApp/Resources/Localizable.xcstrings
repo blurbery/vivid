@@ -61143,6 +61143,9 @@
         }
       }
     },
+    "Switch, sign in or arrange them" : {
+      "extractionState" : "manual"
+    },
     "Switches between time remaining and total duration" : {
       "extractionState" : "manual",
       "localizations" : {

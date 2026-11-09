@@ -7,9 +7,24 @@ import SwiftUI
 /// Profile. Placed in one List section.
 struct PhoneSettingsProfileRows: View {
     let openEditor: (String?) -> Void
+    /// Only the Profiles row, beside the iPhone Duo's side strip, which
+    /// already shows the profiles' pictures and Add Profile.
+    var profilesOnly = false
     @State private var store = TVSavedAccountStore.shared
 
     var body: some View {
+        if profilesOnly {
+            if store.accounts.count > 1 {
+                NavigationLink { PhoneSettingsProfilesPage() } label: { allProfilesRow }
+                    .disabled(store.busy)
+            }
+        } else {
+            rows
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
         if let current = store.accounts.first(where: store.isCurrent) {
             Button { openEditor(current.id) } label: { currentCard(current) }
                 .disabled(store.busy)
@@ -54,6 +69,23 @@ struct PhoneSettingsProfileRows: View {
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Every profile, for the Duo layout, where no signed-in row sits above.
+    private var allProfilesRow: some View {
+        HStack(spacing: Self.iconSpacing) {
+            SavedAccountAvatarStack(accounts: store.accounts, size: 28)
+                .frame(width: Self.iconColumn, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Profiles").font(.body.weight(.medium))
+                Text("Switch, sign in or arrange them")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 

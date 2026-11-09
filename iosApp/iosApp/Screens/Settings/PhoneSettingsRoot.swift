@@ -31,9 +31,11 @@ extension SettingsView {
                 .accessibilityAddTraits(.isHeader)
                 .modifier(CentredOnPad())
                 .settingsPageHeaderRow()
-            if duoSideStrip == nil {
+            // Beside the Duo's side strip only the Profiles row shows, and
+            // only when there's more than one profile to switch or arrange.
+            if duoSideStrip == nil || TVSavedAccountStore.shared.accounts.count > 1 {
                 Section {
-                    PhoneSettingsProfileRows(openEditor: openEditor)
+                    PhoneSettingsProfileRows(openEditor: openEditor, profilesOnly: duoSideStrip != nil)
                 } header: { PhoneSettingsSectionHeader("Profiles") }
             }
             Section {
