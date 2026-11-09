@@ -21,6 +21,25 @@ struct TVSavedAccount: Codable, Identifiable, Hashable {
     /// row in Settings > Servers. Each profile keeps its own, so two profiles
     /// on one server can name it differently. Nil shows the server's own label.
     var serverName: String? = nil
+    /// Whether this sign-in is an administrator on its server, as the server
+    /// last reported it. Nil until a session for it is next saved, which
+    /// shows the server label alone.
+    var isAdmin: Bool? = nil
+
+    /// "Admin" or "User", or nil while the role isn't known yet.
+    var roleLabel: String? {
+        isAdmin.map { $0 ? String(localized: "Admin", comment: "Role of a server administrator, shown with the server name on a saved profile") : String(localized: "User", comment: "Role of a server user who isn't an administrator, shown with the server name on a saved profile") }
+    }
+
+    /// The server label this profile shows: its own name for the server, or
+    /// the server's.
+    var serverLabel: String { serverName ?? defaultServerLabel }
+
+    /// "Admin · Emby", or the server label alone while the role isn't known.
+    var roleAndServerLabel: String {
+        guard let roleLabel else { return serverLabel }
+        return String(localized: "\(roleLabel) · \(serverLabel)", comment: "A saved profile's role and server, for example Admin · Emby")
+    }
 
     /// The label under this saved profile when it has no server name: "Emby"
     /// or "Jellyfin", or the Silo server's own name.
@@ -130,6 +149,8 @@ enum VerifiedServerLogin {
 
 enum TVAccountRoute: Hashable {
     case editor(String?)
+    /// Settings > Profiles: every saved profile as a row.
+    case profiles
 }
 
 /// The Silo viewing profile login preparation should enter.

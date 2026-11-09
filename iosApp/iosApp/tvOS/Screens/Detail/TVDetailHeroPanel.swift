@@ -125,6 +125,8 @@ struct TVDetailHeroLogo: View {
             height: TVDetailHeroLayout.logoHeight,
             alignment: .topLeading
         )
+        // Hidden while a Spotlight logo flies into this spot.
+        .opacity(TVSpotlightLogoFlight.shared.hidesDetailLogo ? 0 : 1)
         .padding(.top, TVDetailHeroLayout.logoTopInset)
         .padding(.leading, TVDetailHeroLayout.horizontalInset)
     }

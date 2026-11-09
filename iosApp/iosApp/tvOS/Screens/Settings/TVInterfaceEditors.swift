@@ -81,6 +81,7 @@ extension TVSettingsView {
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($focus, equals: .done)
                 }
+                .icon(.symbol("rectangle.3.group"))
                 .focusSection()
                 if isLoading && arranged.isEmpty {
                     ProgressView()
@@ -244,6 +245,7 @@ extension TVSettingsView {
         var body: some View {
             EditorPage {
                 TVSettingsPageHeader(title: "Tab Bar", subtitle: "Choose and arrange your navigation tabs.")
+                    .icon(.symbol("rectangle.3.group"))
                 preview
                 searchAndProfile
                 visibleSection
@@ -458,6 +460,7 @@ extension TVSettingsView {
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($doneFocused)
                 }
+                .icon(.symbol("rectangle.3.group"))
                 if isLoading && sections.isEmpty {
                     ProgressView().frame(maxWidth: .infinity)
                 } else if failed && sections.isEmpty {
