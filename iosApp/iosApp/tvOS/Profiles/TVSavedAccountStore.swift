@@ -333,7 +333,8 @@ final class TVSavedAccountStore {
                                    username: user.username, profile: profile, requiresLogin: false,
                                    pinEnabled: existing?.pinEnabled,
                                    siloProfileID: owner.binding,
-                                   serverName: existing?.serverName)
+                                   serverName: existing?.serverName,
+                                   isAdmin: user.isAdmin ?? existing?.isAdmin)
         do {
             try saveSession(stored, id: id)
         } catch {
@@ -583,7 +584,7 @@ final class TVSavedAccountStore {
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,
                                          pinEnabled: existing?.pinEnabled, siloProfileID: existing?.siloProfileID,
-                                         serverName: existing?.serverName)
+                                         serverName: existing?.serverName, isAdmin: existing?.isAdmin)
             // Re-authentication requires a fresh PIN proof for a protected pairing.
             let pairing = existing?.profile.flatMap { $0.hasPin ? nil : $0 }
             let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
@@ -943,7 +944,8 @@ final class TVSavedAccountStore {
         let imported = TVSavedAccount(
             id: localID, serverID: remote.serverID, userID: remote.userID, username: remote.username,
             profile: remote.profile, requiresLogin: remote.requiresLogin, pinEnabled: remote.pinEnabled,
-            siloProfileID: remote.siloProfileID, serverName: remote.serverName
+            siloProfileID: remote.siloProfileID, serverName: remote.serverName,
+            isAdmin: remote.isAdmin
         )
         if let saved = envelope.session {
             guard (try? saveSession(saved, id: localID)) != nil else { return }
