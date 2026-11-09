@@ -77,7 +77,14 @@ extension TVSavedAccount {
     /// "blur", "blur and blurbery", or "blur, blurbery and 2 more", for the
     /// Profiles row under the signed-in profile.
     static func namesSummary(_ accounts: [TVSavedAccount]) -> String {
-        let names = accounts.map(\.displayName)
+        // Profiles sharing a name are told apart by their server.
+        let counts = Dictionary(accounts.map { ($0.displayName, 1) }, uniquingKeysWith: +)
+        let names = accounts.map { account in
+            counts[account.displayName, default: 0] > 1
+                ? String(localized: "\(account.displayName) (\(account.serverLabel))",
+                         comment: "A saved profile's name with its server, when two profiles share a name")
+                : account.displayName
+        }
         switch names.count {
         case 0: return ""
         case 1...3: return ListFormatter.localizedString(byJoining: names)

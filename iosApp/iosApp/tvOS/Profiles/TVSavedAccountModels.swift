@@ -149,6 +149,8 @@ enum VerifiedServerLogin {
 
 enum TVAccountRoute: Hashable {
     case editor(String?)
+    /// Settings > Profiles: every saved profile as a row.
+    case profiles
 }
 
 /// The Silo viewing profile login preparation should enter.

@@ -116,6 +116,8 @@ struct TVMainTabView: View {
                         switch route {
                         case .editor(let accountID):
                             TVSavedAccountEditor(accountID: accountID)
+                        case .profiles:
+                            TVSettingsProfilesPage()
                         }
                     }
             }

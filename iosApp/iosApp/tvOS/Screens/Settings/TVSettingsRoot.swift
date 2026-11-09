@@ -158,10 +158,8 @@ struct TVSettingsView: View {
                 .padding(.bottom, TVSettingsLayout.scaled(16))
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 TVSettingsSectionHeader("PROFILES", topInset: 0)
-                TVSavedAccountCards()
-                    .padding(.horizontal, TVSettingsLayout.scaled(8))
-                    .padding(.top, TVSettingsLayout.scaled(12))
-                    .padding(.bottom, TVSettingsLayout.scaled(4))
+                TVSettingsProfileSection()
+                    .padding(.bottom, TVSettingsLayout.scaled(12))
             }
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 TVSettingsSectionHeader("SETTINGS", topInset: 0)
