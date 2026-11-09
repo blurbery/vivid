@@ -68,6 +68,21 @@ final class StudiosNetworksSavingTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(Titles.self, from: Data(contentsOf: url)), empty)
     }
 
+    func testResultsFromTheJSONVersionCarryOverAsIDs() throws {
+        let json = #"""
+        {"savedAt":800000000,"revision":5,"results":{"pixar":{
+          "movies":[{"contentId":"a","type":"movie","title":"A"}],"series":[],"recentSeries":[],"recentMovies":[],
+          "all":[{"contentId":"a","type":"movie","title":"A"},{"contentId":"b","type":"movie","title":"B"}],
+          "matchCount":2}}}
+        """#
+        let old = try JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: Data(json.utf8))
+        let current = old.current
+        XCTAssertEqual(current.results["pixar"]?.allIDs, ["a", "b"])
+        XCTAssertEqual(current.results["pixar"]?.movies.map(\.contentId), ["a"])
+        XCTAssertEqual(current.results["pixar"]?.matchCount, 2)
+        XCTAssertNil(current.revision, "Matched again on the first load")
+    }
+
     func testAFailedWriteKeepsTheOldFile() throws {
         struct Broken: Error {}
         let url = folder.appendingPathComponent("results.json")

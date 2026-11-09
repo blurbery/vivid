@@ -53,7 +53,12 @@ final class StudioLibraryDatabaseTests: XCTestCase {
         try library.add(titles.map { entry($0) }, media: .movie, progress: .init(offset: 1_200, isDone: true))
         let wanted = ["m1199", "gone", "m0", "m600"]
         XCTAssertEqual(library.items(contentIds: wanted).map(\.contentId), ["m1199", "m0", "m600"])
-        XCTAssertEqual(library.items(contentIds: titles.map(\.contentId)).count, 1_200, "Long lists are read in chunks")
+        let backwards = Array(titles.map(\.contentId).reversed())
+        XCTAssertEqual(library.items(contentIds: backwards).map(\.contentId), backwards,
+                       "Order holds across the 500-title chunks")
+        let stop = StudioLibraryDatabase.StopFlag()
+        stop.set()
+        XCTAssertEqual(library.items(contentIds: backwards, stop: stop), [], "A stopped read returns nothing")
     }
 
     func testTagsListMoviesThenSeriesInReadOrder() throws {

@@ -44,6 +44,15 @@ final class StudioLibraryDatabase: @unchecked Sendable {
         let tmdbId: String?
     }
 
+    /// Set to stop a long read between chunks.
+    final class StopFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isSet = false
+        init() {}
+        func set() { lock.lock(); isSet = true; lock.unlock() }
+        var isStopped: Bool { lock.lock(); defer { lock.unlock() }; return isSet }
+    }
+
     enum Failure: Error {
         case open(String)
         case statement(String)
@@ -244,13 +253,14 @@ final class StudioLibraryDatabase: @unchecked Sendable {
 
     /// The titles with these content IDs, in the order given. IDs no longer
     /// in the library are left out.
-    func items(contentIds: [String]) -> [BrowseItem] {
+    func items(contentIds: [String], stop: StopFlag? = nil) -> [BrowseItem] {
         guard !contentIds.isEmpty else { return [] }
         var found: [String: BrowseItem] = [:]
         found.reserveCapacity(contentIds.count)
         // SQLite caps how many values one statement binds, so a long list is
         // read in chunks, decoded together as one JSON array.
         for start in stride(from: 0, to: contentIds.count, by: 500) {
+            if stop?.isStopped == true { return [] }
             let chunk = Array(contentIds[start..<min(start + 500, contentIds.count)])
             let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
             let blobs: [Data] = (try? locked {

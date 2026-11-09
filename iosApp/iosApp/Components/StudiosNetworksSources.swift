@@ -36,6 +36,44 @@ struct StudioNetworkResultsFile: Codable, Sendable {
     var missesTrending: Bool?
 }
 
+/// Results saved before the library index moved to SQLite, when each brand's
+/// grid held full titles. Read once after the update, as IDs, so Home keeps
+/// its row while the first load runs; that load matches them again.
+struct LegacyStudioNetworkResultsFile: Decodable {
+    struct Result: Decodable {
+        var logoURL: URL?
+        var movies: [BrowseItem]
+        var series: [BrowseItem]
+        var recentSeries: [BrowseItem]
+        var recentMovies: [BrowseItem]
+        var trendingSeries: [BrowseItem]?
+        var trendingMovies: [BrowseItem]?
+        var leftOutOfRows: Set<String>?
+        var all: [BrowseItem]
+        var matchCount: Int
+    }
+
+    let savedAt: Date
+    let results: [String: Result]
+    var missesTrending: Bool?
+
+    /// Larger files are left: reading one would need the memory this
+    /// version saves, and the row comes back once the first load finishes.
+    static let largestRead = 64 * 1024 * 1024
+
+    /// The same results, with no revision so they're matched again.
+    var current: StudioNetworkResultsFile {
+        StudioNetworkResultsFile(savedAt: savedAt, results: results.mapValues { old in
+            StudioNetworkResult(
+                logoURL: old.logoURL, movies: old.movies, series: old.series,
+                recentSeries: old.recentSeries, recentMovies: old.recentMovies,
+                trendingSeries: old.trendingSeries, trendingMovies: old.trendingMovies,
+                leftOutOfRows: old.leftOutOfRows, allIDs: old.all.map(\.contentId), matchCount: old.matchCount
+            )
+        }, revision: nil, missesTrending: missesTrending)
+    }
+}
+
 /// Finds library movies for a movie page's TMDb collection row in the saved
 /// library index, so the page never searches the server.
 struct LibraryMovieLookup: Sendable {
@@ -216,6 +254,8 @@ extension StudiosNetworksStore {
         report: @MainActor (String, Int) -> Void
     ) async throws {
         let type = media.rawValue
+        // One four-hour allowance for the player across the whole read.
+        let playerDeadline = Date().addingTimeInterval(playerWaitLimit)
         @Sendable func page(_ offset: Int, total: Bool) async throws -> StudioNetworkIndexPage {
             try await VividAPI.shared.catalog(query: [
                 "source": "query", "type": type, "offset": String(offset), "limit": String(libraryPageSize),
@@ -232,7 +272,7 @@ extension StudiosNetworksStore {
             await report(type, offset)
             return
         }
-        try await waitWhilePlayerOpen()
+        try await waitWhilePlayerOpen(until: playerDeadline)
         let first = try await page(offset, total: true)
         offset += first.items.count
         var more = first.hasMore == true && !first.items.isEmpty
@@ -245,7 +285,7 @@ extension StudiosNetworksStore {
         if more, first.items.count == libraryPageSize, let total = first.total, total > offset {
             let offsets = Array(stride(from: offset, to: min(total, offset + libraryPageSize * maxLibraryPages), by: libraryPageSize))
             for start in stride(from: 0, to: offsets.count, by: concurrentLibraryPages) {
-                try await waitWhilePlayerOpen()
+                try await waitWhilePlayerOpen(until: playerDeadline)
                 let batch = Array(offsets[start..<min(start + concurrentLibraryPages, offsets.count)])
                 let pages = try await withThrowingTaskGroup(of: (Int, StudioNetworkIndexPage).self) { group in
                     for pageOffset in batch {
@@ -269,7 +309,7 @@ extension StudiosNetworksStore {
 
         // Titles added while reading, or a server without a total.
         for _ in 0..<maxLibraryPages where more {
-            try await waitWhilePlayerOpen()
+            try await waitWhilePlayerOpen(until: playerDeadline)
             let result = try await page(offset, total: false)
             offset += result.items.count
             more = result.hasMore == true && !result.items.isEmpty
@@ -278,14 +318,16 @@ extension StudiosNetworksStore {
         }
     }
 
+    /// How long a library read or matching waits for the player in all,
+    /// in case the player's closing was never recorded.
+    nonisolated static let playerWaitLimit: TimeInterval = 4 * 60 * 60
+
     /// Holds the library read and matching while the player is open, so a
     /// large read never adds to what a film is already using, and carries on
-    /// within a couple of seconds of it closing. After four hours it carries
-    /// on anyway, in case the player's closing was never recorded.
-    nonisolated static func waitWhilePlayerOpen() async throws {
+    /// within a couple of seconds of it closing, or at `deadline` anyway.
+    nonisolated static func waitWhilePlayerOpen(until deadline: Date) async throws {
         try Task.checkCancellation()
-        let started = Date()
-        while AppHealthContext.snapshot().playerOpen, Date().timeIntervalSince(started) < 4 * 60 * 60 {
+        while AppHealthContext.snapshot().playerOpen, Date() < deadline {
             try await Task.sleep(for: .seconds(2))
         }
     }

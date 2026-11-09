@@ -352,6 +352,10 @@ final class StudiosNetworksStore {
         if let folder = scope.cacheURL("results")?.deletingLastPathComponent() {
             Self.removeAbandonedPartials(in: folder)
         }
+        if let legacy = scope.cacheURL("results", version: 1), let saved = scope.cacheURL("results"),
+           !FileManager.default.fileExists(atPath: saved.path) {
+            await Self.carryOverLegacyResults(from: legacy, to: saved)
+        }
         Self.removeLegacyCaches(scope)
         guard let cached = await Self.read(StudioNetworkResultsFile.self, scope.cacheURL("results")) else {
             guard loadedScope == scope else { return }
@@ -417,7 +421,7 @@ final class StudiosNetworksStore {
             let trendingLists = await trending
             // Matching holds the brands' matched titles, so it waits for the
             // player too.
-            try await Self.waitWhilePlayerOpen()
+            try await Self.waitWhilePlayerOpen(until: Date().addingTimeInterval(Self.playerWaitLimit))
             // A trending list that didn't load keeps each brand's last one.
             let loaded = await Self.matched(brandLists, trending: trendingLists, previous: results, library: library)
             try Task.checkCancellation()
@@ -701,6 +705,11 @@ final class StudiosNetworksStore {
         async let movies: Void = Self.readLibrary(.movie, into: building, report: report)
         async let series: Void = Self.readLibrary(.series, into: building, report: report)
         _ = try await (movies, series)
+        // A read that stopped at the page limit isn't the whole library, so
+        // it stays where it is rather than being saved as complete.
+        guard building.progress(.movie)?.isDone == true, building.progress(.series)?.isDone == true else {
+            throw CocoaError(.fileReadTooLarge)
+        }
         try await Task.detached(priority: .utility) {
             try building.setMeta("savedAt", value: String(Date().timeIntervalSince1970))
             building.close()
@@ -750,6 +759,19 @@ final class StudiosNetworksStore {
         URL(fileURLWithPath: url.path + "-journal")
     }
 
+    /// Keeps the row an older version saved, as IDs (see
+    /// `LegacyStudioNetworkResultsFile`).
+    private nonisolated static func carryOverLegacyResults(from legacy: URL, to saved: URL) async {
+        await Task.detached(priority: .utility) {
+            guard let size = (try? FileManager.default.attributesOfItem(atPath: legacy.path))?[.size] as? Int,
+                  size <= LegacyStudioNetworkResultsFile.largestRead,
+                  let data = try? Data(contentsOf: legacy),
+                  let old = try? JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: data) else { return }
+            let current = old.current
+            try? JSONPieceWriter.write(to: saved) { try current.writeFields(to: &$0) }
+        }.value
+    }
+
     private nonisolated static func removeLegacyCaches(_ scope: Scope) {
         for url in scope.legacyCacheURLs { try? FileManager.default.removeItem(at: url) }
     }
@@ -760,7 +782,14 @@ final class StudiosNetworksStore {
     /// given, for Search's matches and a brand page's grid.
     func libraryItems(_ contentIds: [String]) async -> [BrowseItem] {
         guard !contentIds.isEmpty, let scope = Scope.current, let library = openLibrary(scope) else { return [] }
-        return await Task.detached(priority: .userInitiated) { library.items(contentIds: contentIds) }.value
+        // The read runs off the main actor, and stops between chunks once the
+        // page that asked has gone, so a large brand isn't read for nothing.
+        let stop = StudioLibraryDatabase.StopFlag()
+        return await withTaskCancellationHandler {
+            await Task.detached(priority: .userInitiated) { library.items(contentIds: contentIds, stop: stop) }.value
+        } onCancel: {
+            stop.set()
+        }
     }
 
     /// A brand's All in Your Library titles, read when its page opens.
