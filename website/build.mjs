@@ -77,9 +77,16 @@ for (const text of manifest.texts) {
 }
 // The website's app captures show a demo library of commercial films and
 // series, named here with a notice that their artwork belongs to its owners.
+// The App Store screenshots still use Blender Foundation open-movie artwork,
+// credited after them as its Creative Commons licences require, until the
+// new App Store set ships.
 const mediaCredits = JSON.parse(await readFile(join(root, 'media-credits.json'), 'utf8'));
 body += `    <h2 id="website-images">Images on this website</h2><p>${escape(mediaCredits.intro)}</p>\n`;
 body += `    <p>${mediaCredits.titles.map(title => `${escape(title.title)} (${escape(String(title.year))}, ${escape(title.kind.toLowerCase())})`).join('<br>')}</p>\n`;
+if (mediaCredits.app_store) {
+  body += `    <p>${escape(mediaCredits.app_store.intro)}</p>\n`;
+  body += `    <p>${mediaCredits.app_store.images.map(image => `${escape(image.title)}: ${escape(image.attribution)}. <a href="${escape(image.source)}" target="_blank" rel="noopener noreferrer">Source</a>, <a href="${escape(image.licence_url)}" target="_blank" rel="noopener noreferrer">${escape(image.licence)}</a>`).join('<br>')}</p>\n`;
+}
 const template = await readFile(join(publicDir, 'support.html'), 'utf8');
 const licencesPage = template
   .replace(/<title>[^<]*<\/title>/, '<title>Open Source Licences · Vivid</title>')
