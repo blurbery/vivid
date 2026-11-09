@@ -314,20 +314,24 @@ final class StudiosNetworksStore {
             // A load that failed keeps the saved results, whose posters may
             // still need fresh links. A failed library read has already
             // started the cooldown, so it's tried again on a later visit.
-            guard self.loadTask == nil, status == .ready, artworkNeedsRefresh || trendingNeedsRetry else { return }
+            guard self.loadTask == nil, status == .ready,
+                  artworkNeedsRefresh || trendingNeedsRetry || libraryNeedsReload else { return }
         }
         guard let scope = loadedScope else { return }
         // Ready results only need fresh posters, for an app left open past
-        // their expiry, or a trending list that didn't load.
+        // their expiry, a trending list that didn't load, or the library file
+        // behind them read again.
         let isReady = status == .ready
-        if isReady, !artworkNeedsRefresh, !trendingNeedsRetry { return }
+        if isReady, !artworkNeedsRefresh, !trendingNeedsRetry, !libraryNeedsReload { return }
         // A retry shows as loading straight away, so nothing waiting on it
         // mistakes the last attempt's failure for this one's.
         if status == .failed || status == .needsAccount { status = .loading }
         // One task covers the cache read and any load, so Home and Settings
         // asking at the same time share a single load.
         let task = Task { [weak self] in
-            if isReady {
+            if isReady, self?.libraryNeedsReload == true {
+                await self?.load(scope)
+            } else if isReady {
                 if self?.artworkNeedsRefresh == true { await self?.refreshArtwork(scope) }
                 if self?.trendingNeedsRetry == true { await self?.retryTrending(scope) }
             } else {
@@ -408,6 +412,9 @@ final class StudiosNetworksStore {
             }
             let brandLists = try await lists
             let trendingLists = await trending
+            // Matching holds the brands' matched titles, so it waits for the
+            // player too.
+            try await Self.waitWhilePlayerOpen()
             // A trending list that didn't load keeps each brand's last one.
             let loaded = await Self.matched(brandLists, trending: trendingLists, previous: results, library: library)
             try Task.checkCancellation()
@@ -471,6 +478,16 @@ final class StudiosNetworksStore {
 
     private var artworkNeedsRefresh: Bool {
         guard artworkHasLapsed else { return false }
+        guard let artworkRefreshedAt else { return true }
+        return Date().timeIntervalSince(artworkRefreshedAt) > Self.artworkRefreshCooldown
+    }
+
+    /// Results on screen whose library file has gone, as when the system
+    /// clears caches or a reload at launch failed, have nothing behind their
+    /// grids, Search or collection rows, so the library is read again, at
+    /// most every 15 minutes.
+    private var libraryNeedsReload: Bool {
+        guard status == .ready, let scope = loadedScope, openLibrary(scope) == nil else { return false }
         guard let artworkRefreshedAt else { return true }
         return Date().timeIntervalSince(artworkRefreshedAt) > Self.artworkRefreshCooldown
     }
