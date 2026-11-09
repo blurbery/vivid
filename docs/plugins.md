@@ -73,8 +73,8 @@ TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collect
   </thead>
   <tbody>
     <tr>
-      <td align="center" valign="top"><img src="images/plugins/tmdb-rating.jpg" width="260" alt="A movie page on iPhone (Tears of Steel) with the TMDb rating under the year, runtime and genres"></td>
-      <td align="center" valign="top"><img src="images/plugins/trailers.jpg" width="260" alt="The Trailers row on a movie page on iPhone (Tears of Steel), above Cast and Crew"></td>
+      <td align="center" valign="top"><img src="images/plugins/tmdb-rating.jpg" width="260" alt="A movie page on iPhone (Jurassic World Rebirth) with the TMDb rating under the year, runtime and genres"></td>
+      <td align="center" valign="top"><img src="images/plugins/trailers.jpg" width="260" alt="The Trailers row on a series page on iPhone (The Boys), above Cast and Crew"></td>
       <td align="center" valign="top"><img src="images/plugins/studios-networks-home.jpg" width="260" alt="The Studios and Networks row under the Spotlight on Home on iPhone, showing sample text wordmarks"></td>
     </tr>
   </tbody>
@@ -88,8 +88,8 @@ On Apple TV, the TMDb rating sits after the quality badges, trailers sit just ab
   </thead>
   <tbody>
     <tr>
-      <td align="center" valign="middle"><img src="images/plugins/tv-tmdb-rating.jpg" width="420" alt="A movie page on Apple TV (Sintel) with the TMDb rating after the quality badges"></td>
-      <td align="center" valign="middle"><img src="images/plugins/tv-trailers.jpg" width="420" alt="The Trailers row on a movie page on Apple TV (Sintel), above Cast and Crew"></td>
+      <td align="center" valign="middle"><img src="images/plugins/tv-tmdb-rating.jpg" width="420" alt="A movie page on Apple TV (Dune: Part Two) with the TMDb rating after the quality badges"></td>
+      <td align="center" valign="middle"><img src="images/plugins/tv-trailers.jpg" width="420" alt="The Trailers row on a movie page on Apple TV (Dune: Part Two), above Cast and Crew"></td>
     </tr>
   </tbody>
 </table>

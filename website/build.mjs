@@ -75,11 +75,11 @@ for (const entry of manifest.entries) {
 for (const text of manifest.texts) {
   body += `    <h2 id="text-${text.id}">${escape(text.title)}</h2><pre>${escape(await licenceFile(text.file))}</pre>\n`;
 }
-// The website's app captures use Blender Foundation open-movie artwork,
-// credited here as its Creative Commons licences require.
+// The website's app captures show a demo library of commercial films and
+// series, named here with a notice that their artwork belongs to its owners.
 const mediaCredits = JSON.parse(await readFile(join(root, 'media-credits.json'), 'utf8'));
 body += `    <h2 id="website-images">Images on this website</h2><p>${escape(mediaCredits.intro)}</p>\n`;
-body += `    <p>${mediaCredits.images.map(image => `${escape(image.title)}: ${escape(image.attribution)}. <a href="${escape(image.source)}" target="_blank" rel="noopener noreferrer">Source</a>, <a href="${escape(image.licence_url)}" target="_blank" rel="noopener noreferrer">${escape(image.licence)}</a>`).join('<br>')}</p>\n`;
+body += `    <p>${mediaCredits.titles.map(title => `${escape(title.title)} (${escape(String(title.year))}, ${escape(title.kind.toLowerCase())})`).join('<br>')}</p>\n`;
 const template = await readFile(join(publicDir, 'support.html'), 'utf8');
 const licencesPage = template
   .replace(/<title>[^<]*<\/title>/, '<title>Open Source Licences · Vivid</title>')
