@@ -254,7 +254,8 @@ struct PhoneSettingsProfilesPage: View {
     }
 
     private func open(_ account: TVSavedAccount) {
-        guard !store.busy else { return }
+        // Rows only move while arranging.
+        guard !store.busy, !editMode.isEditing else { return }
         if store.needsLogin(account) || store.isCurrent(account) {
             editor = .init(accountID: account.id)
         } else if store.hasPIN(account.id) {
