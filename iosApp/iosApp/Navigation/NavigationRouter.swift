@@ -73,6 +73,11 @@ final class AppRouter {
         didSet { authStateDidChange(from: oldValue) }
     }
     var path = NavigationPath()
+    /// Goes up whenever the page at the bottom of the stack is swapped for
+    /// another without going back to the root first, so anything tied to the
+    /// page that started the stack, like the Spotlight flight back, knows
+    /// it's gone.
+    private(set) var stackRootReplacements = 0
     /// Written by a card just before it opens a detail; never redraws.
     @ObservationIgnored var pendingZoomSourceID: String?
     var presentedPlayer: PlayerPresentation?
@@ -121,6 +126,7 @@ final class AppRouter {
         case .needsLogin where path.isEmpty:
             path = NavigationPath([Route.serverSetup, Route.login])
         case .needsServerSetup where previous != .loading:
+            stackRootReplacements += 1
             path = NavigationPath([Route.serverSetup])
         default:
             break
@@ -156,6 +162,7 @@ final class AppRouter {
     func resetToLogin() {
         recordScreen("login", action: "reset")
         #if os(tvOS)
+        stackRootReplacements += 1
         path = NavigationPath([Route.serverSetup, Route.login])
         #else
         path = NavigationPath()
@@ -178,6 +185,7 @@ final class AppRouter {
     func resetToServerSetup() {
         recordScreen("serverSetup", action: "reset")
         #if os(tvOS)
+        stackRootReplacements += 1
         path = NavigationPath([Route.serverSetup])
         #else
         path = NavigationPath()
@@ -239,6 +247,7 @@ final class AppRouter {
 
     func replaceCurrent(with route: Route) {
         recordScreen(route.diagnosticsName, action: "replace")
+        if path.count == 1 { stackRootReplacements += 1 }
         if !path.isEmpty { path.removeLast() }
         path.append(route)
     }
@@ -267,6 +276,7 @@ final class AppRouter {
     /// empty stack on the way and moves focus to the top level.
     func showSearchReplacingStack() {
         recordScreen("search", action: "siri")
+        stackRootReplacements += 1
         path = NavigationPath([Route.search])
     }
     #endif
