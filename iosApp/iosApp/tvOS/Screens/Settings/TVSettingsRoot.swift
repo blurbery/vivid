@@ -225,6 +225,7 @@ struct TVSettingsView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 TVSettingsPageHeader(title: category.title, subtitle: category.pageDescription)
+                    .icon(category.assetIcon.map(TVSettingsHeaderIcon.asset) ?? .symbol(category.symbol))
                 pane(category)
                     .padding(.top, TVSettingsLayout.scaled(18))
             }
@@ -381,6 +382,7 @@ extension TVSettingsView {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                     TVSettingsPageHeader(title: Text("Rename Server"), subtitle: Text(address))
+                        .icon(.symbol("server.rack"))
                         .padding(.horizontal, TVSettingsLayout.scaled(24))
                         .padding(.bottom, TVSettingsLayout.scaled(18))
                     TVSettingsGroup {

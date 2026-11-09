@@ -153,6 +153,7 @@ struct TVSettingsProfilesPage: View {
                 VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                     TVSettingsPageHeader(title: "Profiles",
                                          subtitle: "Switch between the profiles saved on this Apple TV. Press and hold one to arrange them.")
+                        .icon(.symbol("person.2.fill"))
                     TVSettingsGroup {
                         ForEach(displayedAccounts) { account in
                             row(account)
