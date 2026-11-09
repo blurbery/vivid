@@ -48,6 +48,7 @@ extension SettingsView {
         .navigationTitle("")
         .environment(\.colorScheme, .dark)
         .overlay { duoProfileStrip }
+        .modifier(PhoneSavedProfilesSync(isActive: duoSideStrip == nil))
         .navigationDestination(item: $editor) { target in
             PhoneSavedProfilesScreen.AccountEditor(accountID: target.accountID)
         }

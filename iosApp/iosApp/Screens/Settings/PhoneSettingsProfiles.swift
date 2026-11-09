@@ -13,7 +13,6 @@ struct PhoneSettingsProfileRows: View {
         if let current = store.accounts.first(where: store.isCurrent) {
             Button { openEditor(current.id) } label: { currentCard(current) }
                 .disabled(store.busy)
-                .modifier(PhoneSavedProfilesSync())
         }
         if !store.otherAccounts.isEmpty {
             NavigationLink { PhoneSettingsProfilesPage() } label: { profilesRow }
@@ -121,18 +120,22 @@ struct PhoneAddProfileRowLabel: View {
 /// profile's details (its role included) once, and other devices' changes
 /// through iCloud every ten seconds.
 struct PhoneSavedProfilesSync: ViewModifier {
+    /// Off where another view already keeps the profiles current, such as the
+    /// iPhone Duo's side strip.
+    var isActive = true
     @State private var store = TVSavedAccountStore.shared
     @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
-            .task {
+            .task(id: isActive) {
+                guard isActive else { return }
                 await CurrentProfileStore.shared.refresh(force: true)
                 await store.captureCurrent()
             }
-            .task(id: scenePhase == .active) {
-                guard scenePhase == .active else { return }
+            .task(id: isActive && scenePhase == .active) {
+                guard isActive, scenePhase == .active else { return }
                 while !Task.isCancelled {
                     await VividCloudAccountSync.shared.synchronize(router: router)
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }

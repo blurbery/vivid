@@ -561,7 +561,10 @@ final class TVSavedAccountStore {
                 try saveServer()
                 try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
                 if let identity = await TokenStore.shared.refreshAccountIdentity() {
-                    capturedUser = (identity, UserInfo(id: userID, username: login.user.username, isAdmin: nil))
+                    // Silo's sign-in carries the account's real role, so the
+                    // chosen profile is saved with it.
+                    capturedUser = (identity, UserInfo(id: userID, username: login.user.username,
+                                                       isAdmin: login.user.role == "admin"))
                 }
                 pendingProfileChoice = PendingSiloProfileChoice(serverID: serverID)
                 activeID = nil
