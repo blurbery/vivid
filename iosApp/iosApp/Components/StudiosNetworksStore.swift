@@ -38,7 +38,7 @@ final class StudiosNetworksStore {
     nonisolated static let resultsRevision = 6
     /// Bumped when a brand's names change, so the saved library index is
     /// tagged again. Reading the library is the slow part, so it's separate.
-    nonisolated static let indexRevision = 5
+    nonisolated static let indexRevision = 6
     /// Blocks in each of TMDb's weekly trending lists, 500 titles each: the
     /// whole list, as TMDb's only covers the world, not a brand, and a
     /// smaller brand's titles sit far down it. The relay answers a block in
@@ -366,7 +366,9 @@ final class StudiosNetworksStore {
         // until they're matched, so a new brand refreshes them early, as do
         // results matched the way an older version did.
         let missesBrands = Self.catalogue.contains { cached.results[$0.id] == nil }
-        let isOutdated = cached.revision != Self.resultsRevision
+        // Results whose library file has gone, as when the system clears
+        // caches, have nothing behind their grids, Search or collection rows.
+        let isOutdated = cached.revision != Self.resultsRevision || openLibrary(scope) == nil
         let isOld = Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval
         if missesBrands || isOutdated || isOld {
             await load(scope)
@@ -609,7 +611,9 @@ final class StudiosNetworksStore {
     ) -> (starts: Bool, record: LoadRecord) {
         var record = saved.flatMap { $0.app == app ? $0 : nil } ?? LoadRecord(app: app)
         if let running = record.running, running != process {
-            if let pid = previousExit?.pid, String(pid) == running {
+            // The library read waits while the player is open, so a close
+            // during playback isn't the load's.
+            if let exit = previousExit, !exit.playerOpen, let pid = exit.pid, String(pid) == running {
                 record.interrupted += 1
                 record.interruptedAt = now
             }
@@ -650,8 +654,11 @@ final class StudiosNetworksStore {
     /// replaces it. nil until the library has been read.
     private func openLibrary(_ scope: Scope) -> StudioLibraryDatabase? {
         if let library, library.scope == scope { return library.database }
+        // A file an older version wrote has another layout, so it isn't
+        // read; the next load replaces it.
         guard let url = scope.libraryURL, FileManager.default.fileExists(atPath: url.path),
-              let database = try? StudioLibraryDatabase(url: url, writable: false) else { return nil }
+              let database = try? StudioLibraryDatabase(url: url, writable: false),
+              database.meta("revision") == String(Self.indexRevision) else { return nil }
         library = (scope, database)
         return database
     }
@@ -739,6 +746,12 @@ final class StudiosNetworksStore {
     /// A brand's All in Your Library titles, read when its page opens.
     func libraryTitles(for brandId: String) async -> [BrowseItem] {
         await libraryItems(results[brandId]?.allIDs ?? [])
+    }
+
+    /// Changes when a brand's grid needs reading again: its titles changed,
+    /// or a new library read brought fresh poster links.
+    func libraryGridKey(for brandId: String) -> StudioLibraryGridKey {
+        StudioLibraryGridKey(ids: results[brandId]?.allIDs ?? [], revision: movieLookupRevision)
     }
 
     // MARK: Search index

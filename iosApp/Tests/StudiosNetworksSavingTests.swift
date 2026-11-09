@@ -91,6 +91,11 @@ final class StudiosNetworksSavingTests: XCTestCase {
         XCTAssertEqual(otherProcess.record.interrupted, 0, "Another process's crash isn't this load's")
         let background = start(running)
         XCTAssertEqual(background.record.interrupted, 0, "A close in the background is routine")
+        let duringPlayback = StudiosNetworksStore.guardedStart(
+            running, app: "1.1 (2)", process: "300",
+            previousExit: AppHealthMonitor.PreviousExit(pid: 200, playerOpen: true), retrying: false, now: now
+        )
+        XCTAssertEqual(duringPlayback.record.interrupted, 0, "The library read waits while the player is open")
     }
 
     func testTwoInARowStopLoadsUntilTryAgainAnUpdateOrADayLater() {

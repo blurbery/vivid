@@ -37,6 +37,12 @@ struct StudioNetworkResult: Codable, Equatable {
     }
 }
 
+/// What a brand page's grid was read for. See `libraryGridKey(for:)`.
+struct StudioLibraryGridKey: Equatable {
+    let ids: [String]
+    let revision: Int
+}
+
 /// Finds a library title by TMDb ID or by title and year.
 protocol StudioTitleLookup: Sendable {
     func title(forKey key: String) -> BrowseItem?

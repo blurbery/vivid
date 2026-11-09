@@ -107,7 +107,10 @@ struct PhoneStudioNetworkPage: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.loadIfNeeded() }
-        .task(id: result.allIDs) { all = await store.libraryTitles(for: brandId) }
+        .task(id: store.libraryGridKey(for: brandId)) {
+            let titles = await store.libraryTitles(for: brandId)
+            if !Task.isCancelled { all = titles }
+        }
     }
 
     /// In landscape on the iPhone Duo the side status bar strip narrows the

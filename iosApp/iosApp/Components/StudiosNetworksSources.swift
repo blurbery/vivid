@@ -134,44 +134,11 @@ struct JSONPieceWriter {
         try raw("}")
     }
 
-    /// A field holding a list, written a piece at a time.
-    mutating func arrayField<Element: Encodable>(_ name: String, _ items: [Element]?) throws {
-        guard let items else { return }
-        try key(name)
-        try array(items)
-    }
-
-    /// A field holding a dictionary of lists, each written a piece at a time.
-    mutating func listsField<Element: Encodable>(_ name: String, _ lists: [String: [Element]]?) throws {
-        guard let lists else { return }
-        try key(name)
-        try raw("{")
-        var first = true
-        for (listKey, items) in lists {
-            if !first { try raw(",") }
-            first = false
-            try handle.write(contentsOf: encoder.encode(listKey))
-            try raw(":")
-            try array(items)
-        }
-        try raw("}")
-    }
-
     private mutating func key(_ name: String) throws {
         if hasField { try raw(",") }
         hasField = true
         try handle.write(contentsOf: encoder.encode(name))
         try raw(":")
-    }
-
-    private func array<Element: Encodable>(_ items: [Element]) throws {
-        try raw("[")
-        var first = true
-        for start in stride(from: 0, to: items.count, by: Self.piece) {
-            let end = Swift.min(start + Self.piece, items.count)
-            try inner(Array(items[start..<end]), first: &first)
-        }
-        try raw("]")
     }
 
     /// A piece's entries without the brackets around them, after a comma

@@ -121,7 +121,10 @@ struct TVStudioNetworkPage: View {
         )
         .equatable()
         .task { await store.loadIfNeeded() }
-        .task(id: result.allIDs) { all = await store.libraryTitles(for: brandId) }
+        .task(id: store.libraryGridKey(for: brandId)) {
+            let titles = await store.libraryTitles(for: brandId)
+            if !Task.isCancelled { all = titles }
+        }
     }
 }
 

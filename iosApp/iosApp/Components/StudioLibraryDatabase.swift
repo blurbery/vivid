@@ -88,10 +88,9 @@ final class StudioLibraryDatabase: @unchecked Sendable {
                         type TEXT NOT NULL,
                         title TEXT NOT NULL,
                         year INTEGER,
-                        tmdb_id TEXT,
-                        poster_expiry REAL,
-                        item BLOB NOT NULL
+                        tmdb_id TEXT
                     );
+                    CREATE TABLE IF NOT EXISTS blobs (id INTEGER PRIMARY KEY, item BLOB NOT NULL);
                     CREATE TABLE IF NOT EXISTS keys (
                         media TEXT NOT NULL, key TEXT NOT NULL, title INTEGER NOT NULL,
                         PRIMARY KEY (media, key)
@@ -139,11 +138,14 @@ final class StudioLibraryDatabase: @unchecked Sendable {
         try locked {
             try execute("BEGIN IMMEDIATE")
             do {
+                var earliest = metaValue("posterExpiry").flatMap(Double.init)
                 for row in rows {
                     let item = row.entry.item
+                    // The details live in their own table, so reading every
+                    // title's name for Search never reads them.
                     let insert = try statement("""
-                        INSERT OR IGNORE INTO titles (content_id, media, type, title, year, tmdb_id, poster_expiry, item)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT OR IGNORE INTO titles (content_id, media, type, title, year, tmdb_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         """)
                     bind(insert, 1, item.contentId)
                     bind(insert, 2, media.rawValue)
@@ -151,11 +153,14 @@ final class StudioLibraryDatabase: @unchecked Sendable {
                     bind(insert, 4, item.title)
                     bind(insert, 5, item.year)
                     bind(insert, 6, row.entry.tmdbId.flatMap { $0.isEmpty ? nil : $0 })
-                    bind(insert, 7, row.expiry?.timeIntervalSince1970)
-                    bind(insert, 8, row.blob)
                     try step(insert)
                     guard sqlite3_changes(connection) > 0 else { continue }
                     let id = sqlite3_last_insert_rowid(connection)
+                    let details = try statement("INSERT INTO blobs (id, item) VALUES (?, ?)")
+                    sqlite3_bind_int64(details, 1, id)
+                    bind(details, 2, row.blob)
+                    try step(details)
+                    if let expiry = row.expiry?.timeIntervalSince1970 { earliest = min(earliest ?? expiry, expiry) }
                     if let tmdbId = row.entry.tmdbId, !tmdbId.isEmpty { try addKey(tmdbId, media: media, title: id) }
                     // Servers that leave provider IDs out of lists still match here.
                     if let year = item.year { try addKey(StudiosNetworksStore.titleKey(item.title, year: year), media: media, title: id) }
@@ -166,6 +171,9 @@ final class StudioLibraryDatabase: @unchecked Sendable {
                         try step(tag)
                     }
                 }
+                // The earliest signed poster link, kept as titles are added so
+                // checking it never reads the whole library.
+                if let earliest { try setMeta("posterExpiry", String(earliest)) }
                 try setMeta("progress.\(media.rawValue)", "\(progress.offset)|\(progress.isDone ? 1 : 0)")
                 try execute("COMMIT")
             } catch {
@@ -191,12 +199,14 @@ final class StudioLibraryDatabase: @unchecked Sendable {
     }
 
     func meta(_ name: String) -> String? {
-        try? locked {
-            let query = try statement("SELECT value FROM meta WHERE name = ?")
-            bind(query, 1, name)
-            defer { sqlite3_reset(query) }
-            return sqlite3_step(query) == SQLITE_ROW ? text(query, 0) : nil
-        }
+        (try? locked { metaValue(name) }) ?? nil
+    }
+
+    private func metaValue(_ name: String) -> String? {
+        guard let query = try? statement("SELECT value FROM meta WHERE name = ?") else { return nil }
+        bind(query, 1, name)
+        defer { sqlite3_reset(query) }
+        return sqlite3_step(query) == SQLITE_ROW ? text(query, 0) : nil
     }
 
     func setMeta(_ name: String, value: String) throws {
@@ -221,7 +231,7 @@ final class StudioLibraryDatabase: @unchecked Sendable {
     func lookup(media: Media, key: String) -> (item: BrowseItem, tmdbId: String?)? {
         try? locked {
             let query = try statement("""
-                SELECT t.item, t.tmdb_id FROM keys k JOIN titles t ON t.id = k.title
+                SELECT b.item, t.tmdb_id FROM keys k JOIN titles t ON t.id = k.title JOIN blobs b ON b.id = t.id
                 WHERE k.media = ? AND k.key = ?
                 """)
             bind(query, 1, media.rawValue)
@@ -246,7 +256,7 @@ final class StudioLibraryDatabase: @unchecked Sendable {
             let blobs: [Data] = (try? locked {
                 // Prepared afresh, as the placeholder count varies.
                 var query: OpaquePointer?
-                let sql = "SELECT item FROM titles WHERE content_id IN (\(placeholders))"
+                let sql = "SELECT b.item FROM titles t JOIN blobs b ON b.id = t.id WHERE t.content_id IN (\(placeholders))"
                 guard sqlite3_prepare_v2(connection, sql, -1, &query, nil) == SQLITE_OK, let query else {
                     throw Failure.statement(sql)
                 }
@@ -300,12 +310,7 @@ final class StudioLibraryDatabase: @unchecked Sendable {
     /// When the first signed poster link in the library stops working, or
     /// nil when none carries an expiry, as with Emby and Jellyfin.
     func earliestPosterExpiry() -> Date? {
-        try? locked {
-            let query = try statement("SELECT min(poster_expiry) FROM titles")
-            defer { sqlite3_reset(query) }
-            guard sqlite3_step(query) == SQLITE_ROW, sqlite3_column_type(query, 0) != SQLITE_NULL else { return nil }
-            return Date(timeIntervalSince1970: sqlite3_column_double(query, 0))
-        }
+        meta("posterExpiry").flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
     }
 
     var titleCount: Int {
@@ -402,6 +407,9 @@ final class StudioLibraryDatabase: @unchecked Sendable {
             joined.append(blob)
         }
         joined.append(UInt8(ascii: "]"))
-        return (try? JSONDecoder().decode([BrowseItem].self, from: joined)) ?? []
+        let decoder = JSONDecoder()
+        if let items = try? decoder.decode([BrowseItem].self, from: joined) { return items }
+        // One that won't decode shouldn't take the rest with it.
+        return blobs.compactMap { try? decoder.decode(BrowseItem.self, from: $0) }
     }
 }
