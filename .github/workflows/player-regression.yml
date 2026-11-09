@@ -319,9 +319,12 @@ jobs:
           # Lucid Engine's binary targets download from GitHub releases. A
           # runner can hold a stale SwiftPM artifact cache ("already exists in
           # file system") and the download can time out, so start from a clean
-          # cache and retry before the build relies on the packages.
+          # cache and retry before the build relies on the packages. Each try
+          # clears all of SourcePackages, not just its artifacts: a failed try
+          # leaves workspace state that records the artifacts as present, and
+          # the next try would then report success without downloading them.
           for attempt in 1 2 3; do
-            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages/artifacts"
+            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages"
             if xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj \
               -scheme "$RESOLVE_SCHEME" -derivedDataPath "$RESOLVE_DERIVED"; then
               exit 0
@@ -464,9 +467,12 @@ jobs:
           # Lucid Engine's binary targets download from GitHub releases. A
           # runner can hold a stale SwiftPM artifact cache ("already exists in
           # file system") and the download can time out, so start from a clean
-          # cache and retry before the build relies on the packages.
+          # cache and retry before the build relies on the packages. Each try
+          # clears all of SourcePackages, not just its artifacts: a failed try
+          # leaves workspace state that records the artifacts as present, and
+          # the next try would then report success without downloading them.
           for attempt in 1 2 3; do
-            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages/artifacts"
+            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages"
             if xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj \
               -scheme "$RESOLVE_SCHEME" -derivedDataPath "$RESOLVE_DERIVED"; then
               exit 0
@@ -555,9 +561,12 @@ jobs:
           # Lucid Engine's binary targets download from GitHub releases. A
           # runner can hold a stale SwiftPM artifact cache ("already exists in
           # file system") and the download can time out, so start from a clean
-          # cache and retry before the build relies on the packages.
+          # cache and retry before the build relies on the packages. Each try
+          # clears all of SourcePackages, not just its artifacts: a failed try
+          # leaves workspace state that records the artifacts as present, and
+          # the next try would then report success without downloading them.
           for attempt in 1 2 3; do
-            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages/artifacts"
+            rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts" "$RESOLVE_DERIVED/SourcePackages"
             if xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj \
               -scheme "$RESOLVE_SCHEME" -derivedDataPath "$RESOLVE_DERIVED"; then
               exit 0

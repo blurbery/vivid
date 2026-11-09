@@ -253,6 +253,7 @@ struct TVOpenSourceAcknowledgementsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(title: "Open Source Licences")
+                    .icon(.symbol("doc.text"))
                 TVSettingsGroup {
                     row(.source)
                     ForEach(catalogue.entries) { row(.entry($0)) }
@@ -289,6 +290,7 @@ private struct TVLicencePage: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: TVSettingsLayout.scaled(24)) {
                 TVSettingsPageHeader(title: page.title, subtitle: page.subtitle)
+                    .icon(.symbol("doc.text"))
                 if blocks.isEmpty {
                     ProgressView("Loading licence…")
                 }

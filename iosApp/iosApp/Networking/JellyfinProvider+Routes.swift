@@ -14,7 +14,9 @@ extension JellyfinAdapter {
             return try await connection.request("POST", "/Sessions/Logout")
         case "/api/v1/auth/me":
             let user = try await connection.object("GET", "/Users/\(userID)")
-            return ["id": Self.numberID(userID), "username": user["Name"] as? String ?? "Jellyfin", "role": "user", "email": ""]
+            let isAdmin = (user["Policy"] as? [String: Any])?["IsAdministrator"] as? Bool ?? false
+            return ["id": Self.numberID(userID), "username": user["Name"] as? String ?? "Jellyfin",
+                    "role": isAdmin ? "admin" : "user", "email": ""]
         case "/api/v1/profiles" where method == "GET":
             let user = try await connection.object("GET", "/Users/\(userID)")
             let profile: [String: Any] = [

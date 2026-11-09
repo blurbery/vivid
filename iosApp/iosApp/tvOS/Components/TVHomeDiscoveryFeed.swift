@@ -73,7 +73,14 @@ struct TVHomeDiscoveryFeed: View {
                                 // Watching card does.
                                 let destination = TVSeriesDetailNavigationContextStore.destination(for: slide.item)
                                 if let onSpotlightTap {
-                                    onSpotlightTap(destination, slide.item, tvSpotlightZoomSourceID(position: position))
+                                    let zoomSourceID = tvSpotlightZoomSourceID(position: position)
+                                    // The card's logo goes a frame before the page
+                                    // opens, so the flying copy never doubles it.
+                                    TVSpotlightLogoFlight.shared.prepare(sourceID: zoomSourceID, slideID: slide.id)
+                                    DispatchQueue.main.async {
+                                        TVSpotlightLogoFlight.shared.open(sourceID: zoomSourceID, slideID: slide.id)
+                                        onSpotlightTap(destination, slide.item, zoomSourceID)
+                                    }
                                 } else {
                                     onItemTap(destination, slide.item)
                                 }
@@ -142,7 +149,7 @@ struct TVHomeDiscoveryFeed: View {
                     }
                 }
                 .environment(\.tvHomeStableRows, true)
-                .padding(.top, 152)
+                .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 96 : 91))
                 .padding(.bottom, 80)
             }
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
@@ -759,6 +766,12 @@ private struct TVHomeSpotlightCarousel: View {
     @State private var lowerPosition: Int
     @State private var upperPosition: Int
     @State private var pendingPosition: Int?
+    /// Set when a card is pressed, so an automatic advance can't start under
+    /// the zoom and play back the other way on Back.
+    @State private var holdsForSelection = false
+    /// Whether the press being held for opened a page, so only its flight
+    /// back releases the hold.
+    @State private var holdOpenedPage = false
     @State private var isOnScreen = false
     @State private var initialCardPresented = false
     @State private var centredPosition: Int?
@@ -812,7 +825,7 @@ private struct TVHomeSpotlightCarousel: View {
             && !TVLoginPreparation.shared.isPresented
     }
     private var canRotate: Bool {
-        initialCardPresented && homeIsOpen && isOnScreen && slides.count > 1 && !scrollIsMoving
+        initialCardPresented && homeIsOpen && !holdsForSelection && isOnScreen && slides.count > 1 && !scrollIsMoving
             && !voiceOverEnabled && centredPosition == visualPosition
             && readyPositions[visualPosition] == slide(at: visualPosition).id
     }
@@ -865,10 +878,10 @@ private struct TVHomeSpotlightCarousel: View {
                     HStack(spacing: 22) {
                         ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
-                            Button { onSelect(slide, position) } label: {
+                            Button { selectCard(slide, at: position) } label: {
                                 Group {
                                     if abs(position - visualPosition) <= 3 {
-                                        TVHomeSpotlightArtwork(slide: slide, onReady: {
+                                        TVHomeSpotlightArtwork(slide: slide, zoomSourceID: tvSpotlightZoomSourceID(position: position), onReady: {
                                             readyPositions[position] = slide.id
                                             revealPendingSlide()
                                         })
@@ -882,7 +895,7 @@ private struct TVHomeSpotlightCarousel: View {
                                         Color.clear
                                     }
                                 }
-                                .frame(width: cardWidth, height: 580)
+                                .frame(width: cardWidth, height: 748)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
                             }
@@ -956,31 +969,7 @@ private struct TVHomeSpotlightCarousel: View {
                     onEnterFirstRow()
                 }
             }
-            .frame(height: 580)
-
-            HStack(spacing: 10) {
-                ForEach(slides.indices, id: \.self) { dot in
-                    Capsule()
-                        .fill(Color.white.opacity(0.3))
-                        .overlay(alignment: .leading) {
-                            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !canRotate || reduceMotion || dot != index)) { timeline in
-                                let elapsed = elapsedCycle(at: timeline.date)
-                                let progress = reduceMotion || dot != index ? 1 : min(elapsed / 6, 1)
-                                Rectangle()
-                                    .fill(.white)
-                                    .frame(width: 36 * progress)
-                                    .transaction { $0.animation = nil }
-                            }
-                            .opacity(dot == index ? 1 : 0)
-                        }
-                        .frame(width: dot == index ? 36 : 8, height: 8)
-                        .clipShape(Capsule())
-                }
-            }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: index)
-            .frame(maxWidth: .infinity)
-            .frame(height: 12)
-            .accessibilityHidden(true)
+            .frame(height: 748)
         }
         .onChange(of: enterRequest, initial: true) { _, request in
             guard request > appliedEnterRequest else { return }
@@ -1009,7 +998,31 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = nil
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
-            if open { completeInitialPresentationIfReady() }
+            // Only a page on the stack counts as the press having opened one;
+            // backgrounding or the profile picker also close Home.
+            if !open, holdsForSelection, !router.path.isEmpty { holdOpenedPage = true }
+            if open {
+                // Home is back as Back starts; the hold lasts until the flight
+                // back has landed, so the carousel can't move under it. Home
+                // back without a page keeps the two-second release.
+                if holdsForSelection {
+                    let delay = holdOpenedPage ? TVSpotlightLogoFlight.totalDuration + 0.1 : 2
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(delay))
+                        if homeIsOpen, holdsForSelection {
+                            holdsForSelection = false
+                            holdOpenedPage = false
+                        }
+                    }
+                }
+                completeInitialPresentationIfReady()
+            }
+        }
+        .task(id: holdsForSelection) {
+            // Lets go if the press never opened a page.
+            guard holdsForSelection else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            if homeIsOpen, !holdOpenedPage { holdsForSelection = false }
         }
         .onChange(of: canRotate, initial: true) { _, running in
             if running {
@@ -1045,6 +1058,27 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = visualPosition + 1
             revealPendingSlide()
         }
+    }
+
+    /// Opens a card. Rotation stops at once, and a slide already on its way
+    /// to the next card snaps back to the pressed one without animation, so
+    /// the zoom leaves from and returns to the card that was chosen.
+    private func selectCard(_ slide: TVHomeSpotlightSlide, at position: Int) {
+        holdsForSelection = true
+        pendingPosition = nil
+        // The card gets its full six seconds once Home is back.
+        cycleElapsed = 0
+        cycleResumedAt = nil
+        if visualPosition != position {
+            automaticAdvanceInFlight = false
+            selectPosition(position)
+            var snap = Transaction(animation: nil)
+            snap.disablesAnimations = true
+            withTransaction(snap) {
+                scrollPosition.scrollTo(id: position, anchor: .center)
+            }
+        }
+        onSelect(slide, position)
     }
 
     private func selectPosition(_ position: Int) {
@@ -1149,6 +1183,51 @@ private struct TVSpotlightButtonStyle: ButtonStyle {
     }
 }
 
+/// A Spotlight slide's overview in at most three lines that never stops
+/// mid-sentence: the whole overview when it fits, otherwise as many
+/// complete sentences as fit.
+private struct TVSpotlightOverview: View {
+    let text: String
+
+    private static let fontSize: CGFloat = 22
+    private static let width: CGFloat = 760
+    private static let maxLines = 3
+
+    var body: some View {
+        Text(Self.fitted(text))
+            .font(.system(size: Self.fontSize, weight: .regular))
+            .foregroundStyle(.white.opacity(0.75))
+            .lineLimit(Self.maxLines)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private static func fitted(_ text: String) -> String {
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .regular)
+        let limit = font.lineHeight * CGFloat(maxLines) + 1
+        func fits(_ candidate: String) -> Bool {
+            let height = (candidate as NSString).boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font], context: nil
+            ).height
+            return ceil(height) <= limit
+        }
+        if fits(text) { return text }
+        var sentenceEnds: [String.Index] = []
+        text.enumerateSubstrings(in: text.startIndex..., options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
+            sentenceEnds.append(range.upperBound)
+        }
+        // Longest run of whole sentences that fits; the first sentence alone
+        // is the last resort, and the line limit catches one too long to fit.
+        for end in sentenceEnds.dropLast().reversed() {
+            let candidate = text[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            if fits(candidate) { return candidate }
+        }
+        return sentenceEnds.first.map { text[..<$0].trimmingCharacters(in: .whitespacesAndNewlines) } ?? text
+    }
+}
+
 /// Scroll measurements do not invalidate artwork or the Home view on each frame.
 private final class TVSpotlightScrollGeometry {
     var offset: CGFloat = 0
@@ -1157,6 +1236,9 @@ private final class TVSpotlightScrollGeometry {
 
 private struct TVHomeSpotlightArtwork: View {
     let slide: TVHomeSpotlightSlide
+    /// This card's zoom source, which also keys its logo for the flight to
+    /// the detail page.
+    let zoomSourceID: String
     let onReady: () -> Void
     @State private var artworkReady = false
     @State private var logoReady = false
@@ -1203,7 +1285,11 @@ private struct TVHomeSpotlightArtwork: View {
                 model.tintColor
                 if let url = model.backdropURL {
                     TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true,
-                                             onReady: { artworkReady = true })
+                                             onReady: { artworkReady = true },
+                                             onLayout: { image, crop in
+                                                 TVSpotlightLogoFlight.shared.registerBackdrop(
+                                                     sourceID: zoomSourceID, slideID: slide.id, image: image, crop: crop)
+                                             })
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 LinearGradient(
@@ -1211,6 +1297,16 @@ private struct TVHomeSpotlightArtwork: View {
                     startPoint: .top, endPoint: .bottom
                 )
                 LinearGradient(colors: [.clear, .black.opacity(0.4)], startPoint: .center, endPoint: .bottom)
+                // Darkens the corner behind the logo so it stands off bright
+                // artwork while the rest of the image stays clear.
+                RadialGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.6), location: 0),
+                        .init(color: .black.opacity(0.3), location: 0.45),
+                        .init(color: .clear, location: 1)
+                    ],
+                    center: .bottomLeading, startRadius: 0, endRadius: geometry.size.width * 0.6
+                )
                 Image(uiImage: Self.fadeDither)
                     .resizable(resizingMode: .tile)
                     .opacity(0.008)
@@ -1226,13 +1322,20 @@ private struct TVHomeSpotlightArtwork: View {
                     if let logo {
                         Image(uiImage: logo)
                             .resizable().interpolation(.high).scaledToFit()
-                            .frame(width: 480, height: 160, alignment: .bottom)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                                TVSpotlightLogoFlight.shared.register(sourceID: zoomSourceID, slideID: slide.id,
+                                                                      image: logo, frame: frame)
+                            }
+                            .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == zoomSourceID ? 0 : 1)
+                            .frame(width: 600, height: 200, alignment: .bottom)
+                            .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     } else {
                         Text(slide.content.title)
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 760, alignment: .center)
+                            .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
                     Text(([typeLabel] + spotlightMetaParts
                           + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
@@ -1240,7 +1343,14 @@ private struct TVHomeSpotlightArtwork: View {
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                        .frame(width: logo == nil ? 760 : 480, alignment: .center)
+                        .frame(width: logo == nil ? 760 : 600, alignment: .center)
+                        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
+                    if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !overview.isEmpty {
+                        TVSpotlightOverview(text: overview)
+                            .frame(width: 760, alignment: .leading)
+                            .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
+                    }
                 }
                 .foregroundStyle(.white)
                 .padding(.vertical, 48)
@@ -1249,6 +1359,9 @@ private struct TVHomeSpotlightArtwork: View {
             }
         }
         .allowsHitTesting(false)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            TVSpotlightLogoFlight.shared.registerCard(sourceID: zoomSourceID, frame: frame)
+        }
         .onAppear {
             model.resume()
             model.seed(slide.content)
@@ -1262,7 +1375,11 @@ private struct TVHomeSpotlightArtwork: View {
         .task(id: slide.item.logoUrl) {
             defer { logoReady = true }
             guard let string = slide.item.logoUrl, let url = URL(string: string) else { return }
-            let image = try? await VividImagePipeline.shared.image(for: VividImageRequest(url: url))
+            // Trimmed, so a logo with empty space baked into its image
+            // still sits right on the details line.
+            var request = VividImageRequest(url: url)
+            request.trimsTransparentEdges = true
+            let image = try? await VividImagePipeline.shared.image(for: request)
             guard !Task.isCancelled else { return }
             logo = image
         }

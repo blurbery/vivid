@@ -52,10 +52,17 @@ private struct RowSeparator: View {
 
 // MARK: - Page
 
+/// The symbol in a Settings page header's tile, as on iPhone and iPad.
+enum TVSettingsHeaderIcon {
+    case symbol(String)
+    case asset(String)
+}
+
 struct TVSettingsPageHeader<Actions: View>: View {
     private let title: Text
     private let subtitle: Text?
     private let actions: () -> Actions
+    private var icon: TVSettingsHeaderIcon?
 
     init(title: Text, subtitle: Text? = nil, @ViewBuilder actions: @escaping () -> Actions) {
         self.title = title
@@ -67,8 +74,16 @@ struct TVSettingsPageHeader<Actions: View>: View {
         self.init(title: Text(title), subtitle: subtitle.map { Text($0) }, actions: actions)
     }
 
+    /// Shows the page's symbol in a tile before the title.
+    func icon(_ icon: TVSettingsHeaderIcon?) -> Self {
+        var header = self
+        header.icon = icon
+        return header
+    }
+
     var body: some View {
         HStack(spacing: TVSettingsLayout.scaled(24)) {
+            if let icon { iconTile(icon) }
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 title
                     .font(.tvSettings(40, weight: .bold, design: .rounded))
@@ -84,6 +99,26 @@ struct TVSettingsPageHeader<Actions: View>: View {
         }
         .padding(.horizontal, TVSettingsLayout.scaled(24))
         .padding(.vertical, TVSettingsLayout.scaled(8))
+    }
+
+    /// The iPhone header's tile at Apple TV scale.
+    private func iconTile(_ icon: TVSettingsHeaderIcon) -> some View {
+        let shape = RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(16), style: .continuous)
+        return Group {
+            switch icon {
+            case .symbol(let name):
+                Image(systemName: name)
+                    .font(.tvSettings(30, weight: .medium))
+            case .asset(let name):
+                Image(name).renderingMode(.template).resizable().scaledToFit()
+                    .frame(width: TVSettingsLayout.scaled(32), height: TVSettingsLayout.scaled(32))
+            }
+        }
+        .foregroundStyle(.white.opacity(0.85))
+        .frame(width: TVSettingsLayout.scaled(64), height: TVSettingsLayout.scaled(64))
+        .background(Color(red: 0.12, green: 0.13, blue: 0.15), in: shape)
+        .overlay(shape.strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .accessibilityHidden(true)
     }
 }
 

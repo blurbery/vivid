@@ -412,7 +412,7 @@ XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) co
 
 The [player regression workflow](../../.github/workflows/player-regression.yml) starts on every pull request, on pushes to `main` that change anything under `iosApp/` (the apps, their extensions, resources, entitlements and tests, the project specs and `Package.resolved`) or `scripts/xcode/`, the test and check scripts it runs from `scripts/tests/` and `scripts/ci/`, or the workflow, and on manual runs. On a pull request its `changes` job skips the build and test jobs unless one of those paths changed or it can't compare the pull request with its base commit, and `Player regression result` always runs and fails when any job failed or was cancelled. The build and test jobs use `macos-15` with Xcode 26.3.
 
-Before building, the `validate`, `tvos-tests` and `device-builds` jobs download XcodeGen with up to five retries, then clear the runner's SwiftPM artifact cache and resolve Swift packages, including Lucid Engine's binary targets, with up to three attempts. The build then uses those resolved packages from the same derived data path.
+Before building, the `validate`, `tvos-tests` and `device-builds` jobs download XcodeGen with up to five retries, then resolve Swift packages, including Lucid Engine's binary targets, with up to three attempts, clearing the runner's SwiftPM artifact cache and the job's Swift packages before each one so a failed attempt can't leave the binaries recorded as downloaded. The build then uses those resolved packages from the same derived data path.
 
 <table width="100%">
   <thead>
