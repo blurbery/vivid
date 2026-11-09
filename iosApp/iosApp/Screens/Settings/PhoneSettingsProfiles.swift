@@ -153,6 +153,7 @@ struct PhoneSettingsProfilesPage: View {
     @State private var pinAccount: TVSavedAccount?
     @State private var pin = ""
     @State private var pinError: String?
+    @State private var editMode: EditMode = .inactive
     @Environment(AppRouter.self) private var router
 
     var body: some View {
@@ -178,7 +179,9 @@ struct PhoneSettingsProfilesPage: View {
         .toolbar {
             if store.accounts.count > 1 { EditButton() }
         }
-        .modifier(PhoneSavedProfilesSync())
+        // Paused while rows are being arranged, as on Apple TV.
+        .modifier(PhoneSavedProfilesSync(isActive: !editMode.isEditing))
+        .environment(\.editMode, $editMode)
         .navigationDestination(item: $editor) { target in
             PhoneSavedProfilesScreen.AccountEditor(accountID: target.accountID)
         }
