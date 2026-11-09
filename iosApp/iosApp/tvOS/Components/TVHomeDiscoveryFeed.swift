@@ -998,14 +998,18 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = nil
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
-            if !open, holdsForSelection { holdOpenedPage = true }
+            // Only a page on the stack counts as the press having opened one;
+            // backgrounding or the profile picker also close Home.
+            if !open, holdsForSelection, !router.path.isEmpty { holdOpenedPage = true }
             if open {
                 // Home is back as Back starts; the hold lasts until the flight
-                // back has landed, so the carousel can't move under it.
+                // back has landed, so the carousel can't move under it. Home
+                // back without a page keeps the two-second release.
                 if holdsForSelection {
+                    let delay = holdOpenedPage ? TVSpotlightLogoFlight.totalDuration + 0.1 : 2
                     Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(TVSpotlightLogoFlight.totalDuration + 0.1))
-                        if homeIsOpen {
+                        try? await Task.sleep(for: .seconds(delay))
+                        if homeIsOpen, holdsForSelection {
                             holdsForSelection = false
                             holdOpenedPage = false
                         }
