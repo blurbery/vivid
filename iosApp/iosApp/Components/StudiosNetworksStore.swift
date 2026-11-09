@@ -352,11 +352,12 @@ final class StudiosNetworksStore {
         if let folder = scope.cacheURL("results")?.deletingLastPathComponent() {
             Self.removeAbandonedPartials(in: folder)
         }
+        var keepsLegacyResults = false
         if let legacy = scope.cacheURL("results", version: 1), let saved = scope.cacheURL("results"),
            !FileManager.default.fileExists(atPath: saved.path) {
-            await Self.carryOverLegacyResults(from: legacy, to: saved)
+            keepsLegacyResults = await Self.carryOverLegacyResults(from: legacy, to: saved)
         }
-        Self.removeLegacyCaches(scope)
+        Self.removeLegacyCaches(scope, keepingResults: keepsLegacyResults)
         guard let cached = await Self.read(StudioNetworkResultsFile.self, scope.cacheURL("results")) else {
             guard loadedScope == scope else { return }
             status = .loading
@@ -760,20 +761,47 @@ final class StudiosNetworksStore {
     }
 
     /// Keeps the row an older version saved, as IDs (see
-    /// `LegacyStudioNetworkResultsFile`).
-    private nonisolated static func carryOverLegacyResults(from legacy: URL, to saved: URL) async {
-        await Task.detached(priority: .utility) {
-            guard let size = (try? FileManager.default.attributesOfItem(atPath: legacy.path))?[.size] as? Int,
+    /// `LegacyStudioNetworkResultsFile`). Returns true when the old file
+    /// should stay for another try: it read fine but the new one couldn't be
+    /// saved. The old file is moved aside while it's read, so a launch that
+    /// closes partway through leaves it there and the next launch drops it
+    /// instead of trying again.
+    private nonisolated static func carryOverLegacyResults(from legacy: URL, to saved: URL) async -> Bool {
+        await Task.detached(priority: .utility) { () -> Bool in
+            let files = FileManager.default
+            let reading = carryingURL(legacy)
+            if files.fileExists(atPath: reading.path) {
+                try? files.removeItem(at: reading)
+                return false
+            }
+            guard let size = (try? files.attributesOfItem(atPath: legacy.path))?[.size] as? Int,
                   size <= LegacyStudioNetworkResultsFile.largestRead,
-                  let data = try? Data(contentsOf: legacy),
-                  let old = try? JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: data) else { return }
+                  rename(legacy.path, reading.path) == 0 else { return false }
+            guard let data = try? Data(contentsOf: reading),
+                  let old = try? JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: data) else {
+                try? files.removeItem(at: reading)
+                return false
+            }
             let current = old.current
-            try? JSONPieceWriter.write(to: saved) { try current.writeFields(to: &$0) }
+            guard (try? JSONPieceWriter.write(to: saved) { try current.writeFields(to: &$0) }) != nil else {
+                _ = rename(reading.path, legacy.path)
+                return true
+            }
+            try? files.removeItem(at: reading)
+            return false
         }.value
     }
 
-    private nonisolated static func removeLegacyCaches(_ scope: Scope) {
-        for url in scope.legacyCacheURLs { try? FileManager.default.removeItem(at: url) }
+    private nonisolated static func carryingURL(_ legacy: URL) -> URL {
+        URL(fileURLWithPath: legacy.path + ".carrying")
+    }
+
+    private nonisolated static func removeLegacyCaches(_ scope: Scope, keepingResults: Bool = false) {
+        let results = scope.cacheURL("results", version: 1)
+        for url in scope.legacyCacheURLs where !(keepingResults && url == results) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let results { try? FileManager.default.removeItem(at: carryingURL(results)) }
     }
 
     // MARK: Library titles
@@ -867,6 +895,7 @@ final class StudiosNetworksStore {
             }
         }
         for url in [scope.libraryURL, scope.buildingLibraryURL].compactMap({ $0 }) { removeDatabase(at: url) }
+        if let legacy = scope.cacheURL("results", version: 1) { try? FileManager.default.removeItem(at: carryingURL(legacy)) }
         UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
     }
 }

@@ -57,9 +57,10 @@ struct LegacyStudioNetworkResultsFile: Decodable {
     let results: [String: Result]
     var missesTrending: Bool?
 
-    /// Larger files are left: reading one would need the memory this
-    /// version saves, and the row comes back once the first load finishes.
-    static let largestRead = 64 * 1024 * 1024
+    /// Larger files are left: decoding one takes two to three times its size
+    /// in memory, which this version avoids, and the row comes back once the
+    /// first load finishes. Typical saved results are 10 to 20 MB.
+    static let largestRead = 24 * 1024 * 1024
 
     /// The same results, with no revision so they're matched again.
     var current: StudioNetworkResultsFile {
