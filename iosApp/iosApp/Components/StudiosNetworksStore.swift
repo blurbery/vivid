@@ -282,7 +282,10 @@ final class StudiosNetworksStore {
     /// `retrying` is for Try Again: it starts a load even after loads that
     /// were cut short (see `beginGuardedLoad`).
     func loadIfNeeded(retrying: Bool = false) async {
+        // Only this call's load uses it, so a Try Again that starts nothing
+        // doesn't leave the next automatic load past the guard.
         if retrying { retryRequested = true }
+        defer { if retrying { retryRequested = false } }
         refresh()
         let tmdb = TVTMDbStore.shared
         tmdb.reloadForCurrentProfile()
@@ -730,7 +733,14 @@ final class StudiosNetworksStore {
     nonisolated static func removeCache(server: String, profile: String) {
         let scope = Scope(server: server, profile: profile)
         for name in ["results", "library", "movies"] {
-            if let url = scope.cacheURL(name) { try? FileManager.default.removeItem(at: url) }
+            guard let url = scope.cacheURL(name) else { continue }
+            try? FileManager.default.removeItem(at: url)
+            // Unfinished writes of the same file, whatever their age.
+            let folder = url.deletingLastPathComponent()
+            for partial in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            where partial.hasPrefix(".\(url.lastPathComponent).") && partial.hasSuffix(".partial") {
+                try? FileManager.default.removeItem(at: folder.appendingPathComponent(partial))
+            }
         }
         UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
     }

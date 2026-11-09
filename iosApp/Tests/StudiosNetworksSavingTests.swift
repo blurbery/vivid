@@ -46,6 +46,33 @@ final class StudiosNetworksSavingTests: XCTestCase {
                        "Nothing is left beside it")
     }
 
+    func testTheLibraryIndexAndMovieListReadBackAcrossManyPieces() throws {
+        // More than 200 of each, so every field is written in several pieces.
+        let movies = try (0..<450).map { try item("m\($0)") }
+        let index = StudioNetworkIndexFile(
+            savedAt: Date(timeIntervalSinceReferenceDate: 812_345_678.5),
+            movies: Dictionary(uniqueKeysWithValues: movies.map { ("t:\($0.contentId)", $0) }),
+            series: [:],
+            tagged: ["netflix": Array(movies.prefix(430)), "hbo": [], "pixar": [movies[0]]],
+            revision: 4
+        )
+        let indexURL = folder.appendingPathComponent("library.json")
+        try JSONPieceWriter.write(to: indexURL) { try index.writeFields(to: &$0) }
+        let readIndex = try JSONDecoder().decode(StudioNetworkIndexFile.self, from: Data(contentsOf: indexURL))
+        XCTAssertEqual(readIndex.savedAt, index.savedAt)
+        XCTAssertEqual(readIndex.movies, index.movies)
+        XCTAssertEqual(readIndex.series, [:])
+        XCTAssertEqual(readIndex.tagged, index.tagged, "Each list keeps its titles in order")
+        XCTAssertEqual(readIndex.revision, 4)
+
+        let lookup = LibraryMovieLookup(index: index.movies, savedAt: index.savedAt)
+        let lookupURL = folder.appendingPathComponent("movies.json")
+        try JSONPieceWriter.write(to: lookupURL) { try lookup.writeFields(to: &$0) }
+        let readLookup = try JSONDecoder().decode(LibraryMovieLookup.self, from: Data(contentsOf: lookupURL))
+        XCTAssertEqual(readLookup.movies.map(\.card), lookup.movies.map(\.card))
+        XCTAssertEqual(readLookup.keys, lookup.keys)
+    }
+
     func testAFailedWriteKeepsTheOldFile() throws {
         struct Broken: Error {}
         let url = folder.appendingPathComponent("results.json")
