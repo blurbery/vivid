@@ -11,7 +11,7 @@ Jellyfin has its own server core. Its provider card opens Vivid's existing serve
 
 `JellyfinProvider.swift` owns Jellyfin discovery, sign-in and authenticated transport, with its catalogue mapping in `JellyfinProvider+Items.swift` and `JellyfinProvider+Routes.swift`. `JellyfinPlayback.swift` owns playback negotiation and reporting. `JellyfinDownloads.swift` and `JellyfinLocalPreferences.swift` keep download records and client preferences separate from other providers. Shared Vivid code selects the provider and presents its results. Silo and Emby wire implementations remain unchanged.
 
-Server identities use a `jellyfin:` prefix. Native user IDs and access tokens remain scoped to that server account in Keychain. Requests capture their account identity and reject results after a session switch. Authentication uses Jellyfin's MediaBrowser authorisation header. Credentials are not placed in generated image, subtitle or media URLs, and API redirects are rejected. Custom server base paths are preserved without adding `/emby` or `/jellyfin`.
+Server identities use a `jellyfin:` prefix. Native user IDs and access tokens remain scoped to that server account in Keychain. The current user's details come from `/Users/{userId}`, and its `Policy.IsAdministrator` becomes the Admin or User shown on the profile in Settings. Requests capture their account identity and reject results after a session switch. Authentication uses Jellyfin's MediaBrowser authorisation header. Credentials are not placed in generated image, subtitle or media URLs, and API redirects are rejected. Custom server base paths are preserved without adding `/emby` or `/jellyfin`.
 
 ### Quick Connect
 

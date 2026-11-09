@@ -22,7 +22,7 @@ Server addresses and account credentials are supplied at setup, not embedded in 
 
 Rows and messages Vivid writes itself, such as Continue Watching, Next Up, Latest and error text, follow Vivid's language; titles and other metadata come from Emby in the server's metadata language. See [Localisation](../localisation.md).
 
-On iPhone, iPad and Apple TV, the Emby provider card opens the existing native server and login form. Setup probes `/System/Info/Public`; login uses `/Users/AuthenticateByName`. An explicitly entered HTTPS address keeps HTTPS during Emby discovery. Saved sessions retain the native Emby user ID.
+On iPhone, iPad and Apple TV, the Emby provider card opens the existing native server and login form. Setup probes `/System/Info/Public`; login uses `/Users/AuthenticateByName`. An explicitly entered HTTPS address keeps HTTPS during Emby discovery. Saved sessions retain the native Emby user ID. The current user's details come from `/Users/{userId}`, and its `Policy.IsAdministrator` becomes the Admin or User shown on the profile in Settings.
 
 ### Emby Connect
 

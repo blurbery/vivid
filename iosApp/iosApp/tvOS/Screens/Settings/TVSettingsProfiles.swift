@@ -20,8 +20,10 @@ struct TVSettingsProfileSection: View {
                     .buttonStyle(TVSettingsView.RailRowStyle())
             }
             if store.canAddAccount {
-                NavigationLink(value: TVAccountRoute.editor(nil)) { TVAddProfileRowLabel() }
-                    .buttonStyle(TVSettingsView.RailRowStyle())
+                NavigationLink(value: TVAccountRoute.editor(nil)) {
+                    TVAddProfileRowLabel(iconColumn: Self.iconColumn, spacing: Self.iconSpacing)
+                }
+                .buttonStyle(TVSettingsView.RailRowStyle())
             }
         }
         // Refreshes the signed-in profile's saved details, its role
@@ -41,9 +43,14 @@ struct TVSettingsProfileSection: View {
         }
     }
 
+    /// Every row's picture sits in a column as wide as the signed-in
+    /// profile's, so the text in all three starts on one line.
+    static let iconColumn = TVSettingsLayout.scaled(92)
+    static let iconSpacing = TVSettingsLayout.scaled(22)
+
     private func currentCard(_ account: TVSavedAccount) -> some View {
-        HStack(spacing: TVSettingsLayout.scaled(22)) {
-            SavedAccountAvatar(account: account, size: TVSettingsLayout.scaled(92))
+        HStack(spacing: Self.iconSpacing) {
+            SavedAccountAvatar(account: account, size: Self.iconColumn)
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(4)) {
                 Text(account.displayName)
                     .font(.tvSettings(34, weight: .bold, design: .rounded))
@@ -67,8 +74,9 @@ struct TVSettingsProfileSection: View {
     }
 
     private var profilesRow: some View {
-        HStack(spacing: TVSettingsLayout.scaled(16)) {
-            SavedAccountAvatarStack(accounts: store.otherAccounts, size: TVSettingsLayout.scaled(48))
+        HStack(spacing: Self.iconSpacing) {
+            SavedAccountAvatarStack(accounts: store.otherAccounts, size: TVSettingsLayout.scaled(40))
+                .frame(width: Self.iconColumn, alignment: .leading)
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(2)) {
                 Text("Profiles")
                     .font(.tvSettings(25, weight: .medium))
@@ -88,25 +96,32 @@ struct TVSettingsProfileSection: View {
     /// What the signed-in profile's page holds.
     static func accountPageSummary(for account: TVSavedAccount) -> String {
         MediaServerProvider.forServerID(account.serverID) == .silo
-            ? String(localized: "Account PIN, household and sign out")
-            : String(localized: "Account PIN and sign out")
+            ? String(localized: "PIN, household and sign out")
+            : String(localized: "PIN and sign out")
     }
 }
 
 /// Add Profile as a Settings row: a plus in the icon tile.
 struct TVAddProfileRowLabel: View {
+    /// The width of the picture column in the rows around it, so the text
+    /// lines up with theirs.
+    var iconColumn = TVSettingsLayout.scaled(48)
+    var spacing = TVSettingsLayout.scaled(16)
+
     var body: some View {
-        HStack(spacing: TVSettingsLayout.scaled(16)) {
+        HStack(spacing: spacing) {
             let shape = RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(12), style: .continuous)
+            // The same tile and symbol size as the Settings category icons.
             Image(systemName: "plus")
-                .font(.tvSettings(22, weight: .semibold))
+                .font(.tvSettings(22, weight: .medium))
                 .frame(width: TVSettingsLayout.scaled(48), height: TVSettingsLayout.scaled(48))
                 .background(TVSettingsPalette.iconFill, in: shape)
                 .overlay(shape.strokeBorder(TVSettingsPalette.separator, lineWidth: 1))
+                .frame(width: iconColumn, alignment: .leading)
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(2)) {
                 Text("Add Profile")
                     .font(.tvSettings(25, weight: .medium))
-                Text("Sign in to another server or account")
+                Text("Sign in to another server")
                     .font(.tvSettings(19))
                     .opacity(0.7)
                     .lineLimit(1)
@@ -143,7 +158,9 @@ struct TVSettingsProfilesPage: View {
                             row(account)
                         }
                         if store.canAddAccount {
-                            NavigationLink(value: TVAccountRoute.editor(nil)) { TVAddProfileRowLabel() }
+                            NavigationLink(value: TVAccountRoute.editor(nil)) {
+                                TVAddProfileRowLabel(iconColumn: TVSettingsLayout.scaled(56))
+                            }
                                 .buttonStyle(TVSettingsView.RailRowStyle())
                                 .disabled(movingID != nil)
                         }
