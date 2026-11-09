@@ -63,11 +63,19 @@ final class ServerAddressForm {
         isBusy = true
         message = nil
         attempt = Task {
-            let status = await firstAnswer(from: candidates, provider: provider) { candidate in
-                try await AuthService.shared.checkServer(url: candidate, provider: provider)
+            var saved: SetupStatus?
+            let answer = await firstAnswer(from: candidates, provider: provider) { candidate in
+                let status = try await AuthService.shared.checkServer(url: candidate, provider: provider)
+                saved = status
+                return status
             }
-            // A cancelled attempt leaves the page as Cancel left it.
-            guard !Task.isCancelled else { return }
+            // Making the server active rebuilds the screens, which closes this
+            // page and cancels the attempt. Once the server is saved and active
+            // sign-in has to follow anyway, or the app is left on the server
+            // choice until it's opened again.
+            let status = answer ?? saved
+            // An attempt cancelled before that leaves the page as Cancel left it.
+            guard status != nil || !Task.isCancelled else { return }
             if let status {
                 #if os(iOS) || os(tvOS)
                 TVSavedAccountStore.shared.noteChosenServer()
