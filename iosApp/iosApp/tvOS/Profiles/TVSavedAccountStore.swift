@@ -14,6 +14,9 @@ final class TVSavedAccountStore {
     static let shared = TVSavedAccountStore()
 
     private(set) var accounts: [TVSavedAccount] = []
+    /// Set while a Settings Profiles page is arranging profiles, so every
+    /// iCloud check holds off and can't reorder the list under the draft.
+    @ObservationIgnored var isArrangingProfiles = false
     private(set) var activeID: String? {
         didSet {
             // A saved profile on the chosen server is in use, so the note has

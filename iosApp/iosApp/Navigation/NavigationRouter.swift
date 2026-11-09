@@ -74,9 +74,9 @@ final class AppRouter {
     }
     var path = NavigationPath()
     /// Goes up whenever the page at the bottom of the stack is swapped for
-    /// another without going back to the root first, so anything tied to the
-    /// page that started the stack, like the Spotlight flight back, knows
-    /// it's gone.
+    /// another without going back to the root first, or the app resets to
+    /// Home, the profile picker or sign-in, so anything tied to the page that
+    /// started the stack, like the Spotlight flight back, knows it's gone.
     private(set) var stackRootReplacements = 0
     /// Written by a card just before it opens a detail; never redraws.
     @ObservationIgnored var pendingZoomSourceID: String?
@@ -112,6 +112,7 @@ final class AppRouter {
         let reason = stagedReason ?? "external"
         stagedReason = nil
         guard authState != previous else { return }
+        stackRootReplacements += 1
 
         #if os(iOS)
         presentedItemDetail = nil
@@ -178,6 +179,7 @@ final class AppRouter {
 
     func resetToHome() {
         recordScreen("home", action: "reset")
+        stackRootReplacements += 1
         path = NavigationPath()
         setAuthState(.authenticated, reason: "resetToHome")
     }

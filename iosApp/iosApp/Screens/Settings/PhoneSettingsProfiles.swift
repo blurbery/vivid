@@ -169,7 +169,9 @@ struct PhoneSavedProfilesSync: ViewModifier {
             .task(id: isActive && scenePhase == .active) {
                 guard isActive, scenePhase == .active else { return }
                 while !Task.isCancelled {
-                    await VividCloudAccountSync.shared.synchronize(router: router)
+                    if !store.isArrangingProfiles {
+                        await VividCloudAccountSync.shared.synchronize(router: router)
+                    }
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }
                 }
             }
@@ -214,6 +216,8 @@ struct PhoneSettingsProfilesPage: View {
         // Paused while rows are being arranged, as on Apple TV.
         .modifier(PhoneSavedProfilesSync(isActive: !editMode.isEditing))
         .environment(\.editMode, $editMode)
+        .onChange(of: editMode.isEditing) { _, editing in store.isArrangingProfiles = editing }
+        .onDisappear { store.isArrangingProfiles = false }
         .navigationDestination(item: $editor) { target in
             PhoneSavedProfilesScreen.AccountEditor(accountID: target.accountID)
         }

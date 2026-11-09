@@ -37,7 +37,9 @@ struct TVSettingsProfileSection: View {
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
-                await VividCloudAccountSync.shared.synchronize(router: router)
+                if !store.isArrangingProfiles {
+                    await VividCloudAccountSync.shared.synchronize(router: router)
+                }
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
@@ -199,6 +201,7 @@ struct TVSettingsProfilesPage: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { cancelArrangement() }
         }
+        .onChange(of: movingID) { _, id in store.isArrangingProfiles = id != nil }
         // Picks up profiles changed on another device while this page is
         // open, except while one is being moved.
         .task(id: scenePhase == .active && movingID == nil) {
