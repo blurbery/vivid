@@ -305,6 +305,9 @@ struct TVSettingsProfilesPage: View {
 
     private func cancelArrangement() {
         let returnID = movingID
+        // Cleared here as well as on change, since a page that is closing
+        // may not see the change.
+        store.isArrangingProfiles = false
         movingID = nil
         draftOrder = []
         if let returnID { focused = returnID }

@@ -151,6 +151,10 @@ struct TVMainTabView: View {
         .onChange(of: router.path.count) { old, new in
             TVSpotlightLogoFlight.shared.pathCountChanged(from: old, to: new)
         }
+        // The shell goes away with the profile picker, session expiry or
+        // sign-in, in the same update as those, so the counter below never
+        // reaches it then; anything opened from the Spotlight is gone too.
+        .onDisappear { TVSpotlightLogoFlight.shared.stackReplaced() }
         .onChange(of: router.stackRootReplacements) {
             // The page the Spotlight opened was swapped out (Search replacing
             // the stack, say), so Back no longer returns to its card.
