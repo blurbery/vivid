@@ -763,36 +763,12 @@ final class StudiosNetworksStore {
     /// Keeps the row an older version saved, as IDs (see
     /// `LegacyStudioNetworkResultsFile`). Returns true when the old file
     /// should stay for another try: it read fine but the new one couldn't be
-    /// saved. The old file is moved aside while it's read, so a launch that
-    /// closes partway through leaves it there and the next launch drops it
-    /// instead of trying again.
+    /// saved. See `LegacyResultsCarryOver`.
     private nonisolated static func carryOverLegacyResults(from legacy: URL, to saved: URL) async -> Bool {
-        await Task.detached(priority: .utility) { () -> Bool in
-            let files = FileManager.default
-            let reading = carryingURL(legacy)
-            if files.fileExists(atPath: reading.path) {
-                try? files.removeItem(at: reading)
-                return false
-            }
-            guard let size = (try? files.attributesOfItem(atPath: legacy.path))?[.size] as? Int,
-                  size <= LegacyStudioNetworkResultsFile.largestRead,
-                  rename(legacy.path, reading.path) == 0 else { return false }
-            guard let data = try? Data(contentsOf: reading),
-                  let old = try? JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: data) else {
-                try? files.removeItem(at: reading)
-                return false
-            }
-            let current = old.current
-            guard (try? JSONPieceWriter.write(to: saved) { try current.writeFields(to: &$0) }) != nil else {
-                _ = rename(reading.path, legacy.path)
-                return true
-            }
-            try? files.removeItem(at: reading)
-            return false
-        }.value
+        await LegacyResultsCarryOver.shared.run(from: legacy, to: saved)
     }
 
-    private nonisolated static func carryingURL(_ legacy: URL) -> URL {
+    fileprivate nonisolated static func carryingURL(_ legacy: URL) -> URL {
         URL(fileURLWithPath: legacy.path + ".carrying")
     }
 
@@ -897,5 +873,41 @@ final class StudiosNetworksStore {
         for url in [scope.libraryURL, scope.buildingLibraryURL].compactMap({ $0 }) { removeDatabase(at: url) }
         if let legacy = scope.cacheURL("results", version: 1) { try? FileManager.default.removeItem(at: carryingURL(legacy)) }
         UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
+    }
+}
+
+/// Carries over an older version's saved results one at a time, so a quick
+/// switch away from a profile and back can't have two read the same file.
+/// The old file is moved aside while it's read: with carry-overs one at a
+/// time, finding it moved aside means an earlier launch closed partway
+/// through, so it's dropped rather than read again on every launch.
+private actor LegacyResultsCarryOver {
+    static let shared = LegacyResultsCarryOver()
+
+    /// Synchronous on purpose: an await here would let another carry-over in.
+    func run(from legacy: URL, to saved: URL) -> Bool {
+        let files = FileManager.default
+        // An earlier carry-over for this profile has finished.
+        if files.fileExists(atPath: saved.path) { return false }
+        let reading = StudiosNetworksStore.carryingURL(legacy)
+        if files.fileExists(atPath: reading.path) {
+            try? files.removeItem(at: reading)
+            return false
+        }
+        guard let size = (try? files.attributesOfItem(atPath: legacy.path))?[.size] as? Int,
+              size <= LegacyStudioNetworkResultsFile.largestRead,
+              rename(legacy.path, reading.path) == 0 else { return false }
+        guard let data = try? Data(contentsOf: reading),
+              let old = try? JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: data) else {
+            try? files.removeItem(at: reading)
+            return false
+        }
+        let current = old.current
+        guard (try? JSONPieceWriter.write(to: saved) { try current.writeFields(to: &$0) }) != nil else {
+            _ = rename(reading.path, legacy.path)
+            return true
+        }
+        try? files.removeItem(at: reading)
+        return false
     }
 }
