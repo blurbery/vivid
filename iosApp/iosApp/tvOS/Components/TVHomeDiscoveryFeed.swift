@@ -1264,7 +1264,11 @@ private struct TVHomeSpotlightArtwork: View {
                 model.tintColor
                 if let url = model.backdropURL {
                     TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true,
-                                             onReady: { artworkReady = true })
+                                             onReady: { artworkReady = true },
+                                             onLayout: { image, crop in
+                                                 TVSpotlightLogoFlight.shared.registerBackdrop(
+                                                     sourceID: zoomSourceID, image: image, crop: crop)
+                                             })
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 LinearGradient(
@@ -1333,6 +1337,9 @@ private struct TVHomeSpotlightArtwork: View {
             }
         }
         .allowsHitTesting(false)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            TVSpotlightLogoFlight.shared.registerCard(sourceID: zoomSourceID, frame: frame)
+        }
         .onAppear {
             model.resume()
             model.seed(slide.content)

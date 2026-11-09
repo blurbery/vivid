@@ -11,6 +11,9 @@ struct TVSpotlightBackdropImage: View {
     let size: CGSize
     var fillsViewport = false
     var onReady: () -> Void = {}
+    /// Reports the loaded image and where it's drawn in the viewport, for
+    /// the Apple TV Spotlight's flight into the detail page.
+    var onLayout: ((UIImage, CGRect) -> Void)? = nil
     @State private var image: UIImage?
     @State private var subject: CGRect?
     @Environment(\.displayScale) private var displayScale
@@ -56,6 +59,7 @@ struct TVSpotlightBackdropImage: View {
             guard !Task.isCancelled else { return }
             subject = region
             image = loaded
+            onLayout?(loaded, TVSpotlightCrop.layout(image: loaded.size, viewport: size, subject: region, fillsViewport: fillsViewport))
             onReady()
         }
     }
