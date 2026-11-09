@@ -118,8 +118,9 @@ final class TVSpotlightLogoFlight {
         fly(sourceID: sourceID, toDetail: true)
     }
 
-    /// The navigation stack was swapped for another of the same depth, so
-    /// Back no longer returns to the Spotlight card the page came from.
+    /// The page at the bottom of the stack, the one the card opened, was
+    /// replaced without going back to Home, so Back no longer returns to
+    /// that card.
     func stackReplaced() {
         guard openedSourceID != nil else { return }
         reset()
