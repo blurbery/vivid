@@ -769,6 +769,9 @@ private struct TVHomeSpotlightCarousel: View {
     /// Set when a card is pressed, so an automatic advance can't start under
     /// the zoom and play back the other way on Back.
     @State private var holdsForSelection = false
+    /// Whether the press being held for opened a page, so only its flight
+    /// back releases the hold.
+    @State private var holdOpenedPage = false
     @State private var isOnScreen = false
     @State private var initialCardPresented = false
     @State private var centredPosition: Int?
@@ -995,13 +998,17 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = nil
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
+            if !open, holdsForSelection { holdOpenedPage = true }
             if open {
                 // Home is back as Back starts; the hold lasts until the flight
                 // back has landed, so the carousel can't move under it.
                 if holdsForSelection {
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(TVSpotlightLogoFlight.totalDuration + 0.1))
-                        if homeIsOpen { holdsForSelection = false }
+                        if homeIsOpen {
+                            holdsForSelection = false
+                            holdOpenedPage = false
+                        }
                     }
                 }
                 completeInitialPresentationIfReady()
@@ -1011,7 +1018,7 @@ private struct TVHomeSpotlightCarousel: View {
             // Lets go if the press never opened a page.
             guard holdsForSelection else { return }
             do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            if homeIsOpen { holdsForSelection = false }
+            if homeIsOpen, !holdOpenedPage { holdsForSelection = false }
         }
         .onChange(of: canRotate, initial: true) { _, running in
             if running {

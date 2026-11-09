@@ -151,10 +151,10 @@ struct TVMainTabView: View {
         .onChange(of: router.path.count) { old, new in
             TVSpotlightLogoFlight.shared.pathCountChanged(from: old, to: new)
         }
-        .onChange(of: router.path) { old, new in
-            // A stack swapped for another of the same depth, such as Search
-            // replacing the page, no longer ends at the Spotlight's page.
-            if old.count == new.count, old != new { TVSpotlightLogoFlight.shared.stackReplaced() }
+        .onChange(of: router.stackRootReplacements) {
+            // The page the Spotlight opened was swapped out (Search replacing
+            // the stack, say), so Back no longer returns to its card.
+            TVSpotlightLogoFlight.shared.stackReplaced()
         }
         .onChange(of: router.requestedTab) { handleRequestedTab() }
         .onChange(of: router.requestedSearch, initial: true) { handleSiriSearch() }
