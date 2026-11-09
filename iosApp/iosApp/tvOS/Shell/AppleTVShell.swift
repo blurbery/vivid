@@ -120,7 +120,9 @@ struct TVMainTabView: View {
                     }
             }
             if router.path.isEmpty {
+                // Fades with the page transition rather than popping.
                 topBar
+                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
             }
         }
         .ignoresSafeArea(edges: [.top, .horizontal])
@@ -144,6 +146,9 @@ struct TVMainTabView: View {
             Task { await loadLibraries(for: authority) }
         }
         .onChange(of: router.path.isEmpty) { pathEmptinessChanged() }
+        .onChange(of: router.path.count) { old, new in
+            TVSpotlightLogoFlight.shared.pathCountChanged(from: old, to: new)
+        }
         .onChange(of: router.requestedTab) { handleRequestedTab() }
         .onChange(of: router.requestedSearch, initial: true) { handleSiriSearch() }
         .onChange(of: isEnabled) {

@@ -73,7 +73,14 @@ struct TVHomeDiscoveryFeed: View {
                                 // Watching card does.
                                 let destination = TVSeriesDetailNavigationContextStore.destination(for: slide.item)
                                 if let onSpotlightTap {
-                                    onSpotlightTap(destination, slide.item, tvSpotlightZoomSourceID(position: position))
+                                    let zoomSourceID = tvSpotlightZoomSourceID(position: position)
+                                    // The card's logo goes a frame before the page
+                                    // opens, so the flying copy never doubles it.
+                                    TVSpotlightLogoFlight.shared.prepare(sourceID: zoomSourceID)
+                                    DispatchQueue.main.async {
+                                        TVSpotlightLogoFlight.shared.open(sourceID: zoomSourceID)
+                                        onSpotlightTap(destination, slide.item, zoomSourceID)
+                                    }
                                 } else {
                                     onItemTap(destination, slide.item)
                                 }
@@ -868,7 +875,7 @@ private struct TVHomeSpotlightCarousel: View {
                             Button { onSelect(slide, position) } label: {
                                 Group {
                                     if abs(position - visualPosition) <= 3 {
-                                        TVHomeSpotlightArtwork(slide: slide, onReady: {
+                                        TVHomeSpotlightArtwork(slide: slide, zoomSourceID: tvSpotlightZoomSourceID(position: position), onReady: {
                                             readyPositions[position] = slide.id
                                             revealPendingSlide()
                                         })
@@ -1178,6 +1185,9 @@ private final class TVSpotlightScrollGeometry {
 
 private struct TVHomeSpotlightArtwork: View {
     let slide: TVHomeSpotlightSlide
+    /// This card's zoom source, which also keys its logo for the flight to
+    /// the detail page.
+    let zoomSourceID: String
     let onReady: () -> Void
     @State private var artworkReady = false
     @State private var logoReady = false
@@ -1257,6 +1267,10 @@ private struct TVHomeSpotlightArtwork: View {
                     if let logo {
                         Image(uiImage: logo)
                             .resizable().interpolation(.high).scaledToFit()
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                                TVSpotlightLogoFlight.shared.register(sourceID: zoomSourceID, image: logo, frame: frame)
+                            }
+                            .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == zoomSourceID ? 0 : 1)
                             .frame(width: 600, height: 200, alignment: .bottom)
                             .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     } else {
