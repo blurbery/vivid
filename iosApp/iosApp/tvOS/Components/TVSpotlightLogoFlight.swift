@@ -24,13 +24,19 @@ final class TVSpotlightLogoFlight {
     static let fadeIn: TimeInterval = 0.12
     /// How long the backdrop copy takes to reveal what's under it at the end.
     static let fadeOut: TimeInterval = 0.25
+    /// How long the copies are on screen, from the press or Back to landing.
+    static let totalDuration: TimeInterval = duration + fadeOut
 
+    /// Each entry records the slide it was drawn for, since a carousel
+    /// position shows another slide once Home refreshes its rows.
     private struct Logo {
+        var slideID: String
         var image: UIImage
         var frame: CGRect
     }
 
     private struct Backdrop {
+        var slideID: String?
         var image: UIImage?
         /// Where the image is drawn inside the card, in card points.
         var crop: CGRect = .zero
@@ -47,6 +53,7 @@ final class TVSpotlightLogoFlight {
     private static let sourceLimit = 16
     /// The card the open detail page came from, for the flight back.
     @ObservationIgnored private var openedSourceID: String?
+    @ObservationIgnored private var openedSlideID: String?
     @ObservationIgnored private var flyingViews: [UIView] = []
     @ObservationIgnored private var generation = 0
 
@@ -59,14 +66,15 @@ final class TVSpotlightLogoFlight {
 
     // MARK: Sources
 
-    func register(sourceID: String, image: UIImage, frame: CGRect) {
+    func register(sourceID: String, slideID: String, image: UIImage, frame: CGRect) {
         guard frame.width > 0, frame.height > 0 else { return }
-        logos[sourceID] = Logo(image: image, frame: frame)
+        logos[sourceID] = Logo(slideID: slideID, image: image, frame: frame)
         touch(sourceID)
     }
 
-    func registerBackdrop(sourceID: String, image: UIImage, crop: CGRect) {
-        backdrops[sourceID, default: Backdrop()].image = image
+    func registerBackdrop(sourceID: String, slideID: String, image: UIImage, crop: CGRect) {
+        backdrops[sourceID, default: Backdrop()].slideID = slideID
+        backdrops[sourceID]?.image = image
         backdrops[sourceID]?.crop = crop
         touch(sourceID)
     }
@@ -80,9 +88,11 @@ final class TVSpotlightLogoFlight {
     private func touch(_ sourceID: String) {
         sourceOrder.removeAll { $0 == sourceID }
         sourceOrder.append(sourceID)
-        while sourceOrder.count > Self.sourceLimit {
-            let oldest = sourceOrder.removeFirst()
-            guard oldest != openedSourceID else { continue }
+        // The oldest entries go first, never the open card's, which the
+        // flight back needs and which stays in the order to go later.
+        while sourceOrder.count > Self.sourceLimit,
+              let index = sourceOrder.firstIndex(where: { $0 != openedSourceID }) {
+            let oldest = sourceOrder.remove(at: index)
             logos.removeValue(forKey: oldest)
             backdrops.removeValue(forKey: oldest)
         }
@@ -92,27 +102,37 @@ final class TVSpotlightLogoFlight {
 
     /// Hides the card's logo ahead of `open(sourceID:)`, which follows on
     /// the next turn of the run loop with the push.
-    func prepare(sourceID: String) {
-        guard !UIAccessibility.isReduceMotionEnabled, logos[sourceID] != nil else { return }
+    func prepare(sourceID: String, slideID: String) {
+        guard !UIAccessibility.isReduceMotionEnabled, logos[sourceID]?.slideID == slideID else { return }
         hiddenSourceID = sourceID
     }
 
     /// Starts the flight to the detail page for the card being opened.
-    func open(sourceID: String) {
-        guard !UIAccessibility.isReduceMotionEnabled, logos[sourceID] != nil else {
+    func open(sourceID: String, slideID: String) {
+        guard !UIAccessibility.isReduceMotionEnabled, logos[sourceID]?.slideID == slideID else {
             reset()
             return
         }
         openedSourceID = sourceID
+        openedSlideID = slideID
         fly(sourceID: sourceID, toDetail: true)
+    }
+
+    /// The navigation stack was swapped for another of the same depth, so
+    /// Back no longer returns to the Spotlight card the page came from.
+    func stackReplaced() {
+        guard openedSourceID != nil else { return }
+        reset()
     }
 
     /// Follows the navigation path, flying back when the page the logo flew
     /// to is closed straight back to Home.
     func pathCountChanged(from old: Int, to new: Int) {
         guard new == 0, let sourceID = openedSourceID else { return }
+        let slideID = openedSlideID
         openedSourceID = nil
-        guard old == 1, !UIAccessibility.isReduceMotionEnabled, logos[sourceID] != nil else {
+        openedSlideID = nil
+        guard old == 1, !UIAccessibility.isReduceMotionEnabled, logos[sourceID]?.slideID == slideID else {
             reset()
             return
         }
@@ -138,7 +158,9 @@ final class TVSpotlightLogoFlight {
 
         let screen = window.bounds
         let detailLogo = Self.detailLogoFrame(for: logo.image.size)
-        let backdrop = backdrops[sourceID].flatMap(Self.backdropFlight(screen: screen))
+        let backdrop = backdrops[sourceID]
+            .flatMap { $0.slideID == logo.slideID ? $0 : nil }
+            .flatMap(Self.backdropFlight(screen: screen))
 
         // Backdrop first, so the logo draws above it.
         var backdropViews: (container: UIView, image: UIImageView, shade: UIView)?
@@ -227,6 +249,7 @@ final class TVSpotlightLogoFlight {
     private func reset() {
         generation += 1
         openedSourceID = nil
+        openedSlideID = nil
         land()
         hiddenSourceID = nil
     }

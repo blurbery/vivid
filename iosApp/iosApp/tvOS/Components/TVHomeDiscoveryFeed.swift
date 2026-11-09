@@ -76,9 +76,9 @@ struct TVHomeDiscoveryFeed: View {
                                     let zoomSourceID = tvSpotlightZoomSourceID(position: position)
                                     // The card's logo goes a frame before the page
                                     // opens, so the flying copy never doubles it.
-                                    TVSpotlightLogoFlight.shared.prepare(sourceID: zoomSourceID)
+                                    TVSpotlightLogoFlight.shared.prepare(sourceID: zoomSourceID, slideID: slide.id)
                                     DispatchQueue.main.async {
-                                        TVSpotlightLogoFlight.shared.open(sourceID: zoomSourceID)
+                                        TVSpotlightLogoFlight.shared.open(sourceID: zoomSourceID, slideID: slide.id)
                                         onSpotlightTap(destination, slide.item, zoomSourceID)
                                     }
                                 } else {
@@ -996,7 +996,14 @@ private struct TVHomeSpotlightCarousel: View {
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
             if open {
-                holdsForSelection = false
+                // Home is back as Back starts; the hold lasts until the flight
+                // back has landed, so the carousel can't move under it.
+                if holdsForSelection {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(TVSpotlightLogoFlight.totalDuration + 0.1))
+                        if homeIsOpen { holdsForSelection = false }
+                    }
+                }
                 completeInitialPresentationIfReady()
             }
         }
@@ -1048,6 +1055,9 @@ private struct TVHomeSpotlightCarousel: View {
     private func selectCard(_ slide: TVHomeSpotlightSlide, at position: Int) {
         holdsForSelection = true
         pendingPosition = nil
+        // The card gets its full six seconds once Home is back.
+        cycleElapsed = 0
+        cycleResumedAt = nil
         if visualPosition != position {
             automaticAdvanceInFlight = false
             selectPosition(position)
@@ -1267,7 +1277,7 @@ private struct TVHomeSpotlightArtwork: View {
                                              onReady: { artworkReady = true },
                                              onLayout: { image, crop in
                                                  TVSpotlightLogoFlight.shared.registerBackdrop(
-                                                     sourceID: zoomSourceID, image: image, crop: crop)
+                                                     sourceID: zoomSourceID, slideID: slide.id, image: image, crop: crop)
                                              })
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -1302,7 +1312,8 @@ private struct TVHomeSpotlightArtwork: View {
                         Image(uiImage: logo)
                             .resizable().interpolation(.high).scaledToFit()
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                                TVSpotlightLogoFlight.shared.register(sourceID: zoomSourceID, image: logo, frame: frame)
+                                TVSpotlightLogoFlight.shared.register(sourceID: zoomSourceID, slideID: slide.id,
+                                                                      image: logo, frame: frame)
                             }
                             .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == zoomSourceID ? 0 : 1)
                             .frame(width: 600, height: 200, alignment: .bottom)
