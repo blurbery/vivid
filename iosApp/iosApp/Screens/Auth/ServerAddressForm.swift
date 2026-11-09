@@ -83,6 +83,9 @@ final class ServerAddressForm {
                 router.resetToLogin()
                 if status.needsSetup { router.navigate(to: .serverNeedsSetup) }
             }
+            // `cancel()` has already cleared these, and a newer attempt may
+            // have set them since.
+            guard !Task.isCancelled else { return }
             isBusy = false
             attempt = nil
         }
@@ -113,9 +116,10 @@ final class ServerAddressForm {
     }
     #endif
 
-    /// Stops a Connect or Find in progress. Nothing it was doing navigates
-    /// or shows an error afterwards, and the form keeps what was typed. A
-    /// server that answered just before this may already be saved.
+    /// Stops a Connect or Find in progress, and the form keeps what was typed.
+    /// Nothing it was doing shows an error afterwards. A Connect whose server
+    /// had already answered and been made active still goes on to sign-in,
+    /// as that server is now the one Vivid uses.
     func cancel() {
         guard let attempt else { return }
         attempt.cancel()
