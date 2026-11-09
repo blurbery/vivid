@@ -301,7 +301,10 @@ final class StudiosNetworksStore {
     /// `retrying` is for Try Again: it starts a load even after loads that
     /// were cut short (see `beginGuardedLoad`).
     func loadIfNeeded(retrying: Bool = false) async {
+        // Only this call's load uses it, so a Try Again that starts nothing
+        // doesn't leave the next automatic load past the guard.
         if retrying { retryRequested = true }
+        defer { if retrying { retryRequested = false } }
         refresh()
         let tmdb = TVTMDbStore.shared
         tmdb.reloadForCurrentProfile()
@@ -824,9 +827,17 @@ final class StudiosNetworksStore {
     /// for a profile, used when its account is removed.
     nonisolated static func removeCache(server: String, profile: String) {
         let scope = Scope(server: server, profile: profile)
-        if let url = scope.cacheURL("results") { try? FileManager.default.removeItem(at: url) }
+        // The results, the files older versions saved, and any unfinished
+        // writes of them, whatever their age.
+        for url in [scope.cacheURL("results")].compactMap({ $0 }) + scope.legacyCacheURLs {
+            try? FileManager.default.removeItem(at: url)
+            let folder = url.deletingLastPathComponent()
+            for partial in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            where partial.hasPrefix(".\(url.lastPathComponent).") && partial.hasSuffix(".partial") {
+                try? FileManager.default.removeItem(at: folder.appendingPathComponent(partial))
+            }
+        }
         for url in [scope.libraryURL, scope.buildingLibraryURL].compactMap({ $0 }) { removeDatabase(at: url) }
-        removeLegacyCaches(scope)
         UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
     }
 }

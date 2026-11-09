@@ -121,7 +121,8 @@ enum AppHealthMonitor {
 
     /// A previous session that crashed or was closed while open.
     struct PreviousExit: Equatable, Sendable {
-        /// Its process ID, when the exit marker recorded one.
+        /// Its process ID, from the exit marker. nil for a crash in the
+        /// background, which leaves no marker.
         let pid: Int32?
         /// Whether the player was open when it ended.
         let playerOpen: Bool

@@ -117,6 +117,7 @@ To choose your own, open **Settings → General** and choose **Studios & Network
 
 - **No trailers, ratings or Studios & Networks.** Check you're signed in to a server and have chosen a profile. If you have, Vivid's TMDb relay may be busy or over its daily limit, so try again later.
 - **No trailers on Apple TV.** Install the YouTube app from the App Store.
+- **Studios & Networks stopped loading after Vivid closed while it loaded.** If Vivid closes twice in a row while Studios & Networks is loading, it stops loading on its own so Vivid can still open. With no row saved yet, choose **Try Again** in **Settings → General → Studios & Networks**. Otherwise it tries again a day later, or after an app update.
 
 ## MDBList
 

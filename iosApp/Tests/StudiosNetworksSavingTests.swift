@@ -46,6 +46,28 @@ final class StudiosNetworksSavingTests: XCTestCase {
                        "Nothing is left beside it")
     }
 
+    /// A file whose only field uses the default piece size, as the results'
+    /// lists of titles would.
+    private struct Titles: Codable, Equatable, PiecewiseJSONFile {
+        let titles: [String: BrowseItem]
+
+        func writeFields(to writer: inout JSONPieceWriter) throws {
+            try writer.objectField("titles", titles)
+        }
+    }
+
+    func testADictionaryReadsBackAcrossManyPieces() throws {
+        // More than 200, so it's written in several pieces.
+        let file = Titles(titles: Dictionary(uniqueKeysWithValues: try (0..<450).map { ("k\($0)", try item("m\($0)")) }))
+        let url = folder.appendingPathComponent("titles.json")
+        try JSONPieceWriter.write(to: url) { try file.writeFields(to: &$0) }
+        XCTAssertEqual(try JSONDecoder().decode(Titles.self, from: Data(contentsOf: url)), file)
+
+        let empty = Titles(titles: [:])
+        try JSONPieceWriter.write(to: url) { try empty.writeFields(to: &$0) }
+        XCTAssertEqual(try JSONDecoder().decode(Titles.self, from: Data(contentsOf: url)), empty)
+    }
+
     func testAFailedWriteKeepsTheOldFile() throws {
         struct Broken: Error {}
         let url = folder.appendingPathComponent("results.json")
