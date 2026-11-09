@@ -1548,7 +1548,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@、%2$@ 等 %3$lld 个"
+            "value" : "%1$@、%2$@ 及另外 %3$lld 个"
           }
         }
       }
