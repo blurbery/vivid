@@ -202,7 +202,7 @@ struct PhoneSettingsProfilesPage: View {
                 .onMove(perform: move)
                 if store.canAddAccount {
                     Button { editor = .init(accountID: nil) } label: { PhoneAddProfileRowLabel() }
-                        .disabled(store.busy)
+                        .disabled(store.busy || editMode.isEditing)
                 }
             }
         }
