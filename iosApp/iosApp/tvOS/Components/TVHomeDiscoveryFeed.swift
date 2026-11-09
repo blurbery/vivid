@@ -766,6 +766,9 @@ private struct TVHomeSpotlightCarousel: View {
     @State private var lowerPosition: Int
     @State private var upperPosition: Int
     @State private var pendingPosition: Int?
+    /// Set when a card is pressed, so an automatic advance can't start under
+    /// the zoom and play back the other way on Back.
+    @State private var holdsForSelection = false
     @State private var isOnScreen = false
     @State private var initialCardPresented = false
     @State private var centredPosition: Int?
@@ -819,7 +822,7 @@ private struct TVHomeSpotlightCarousel: View {
             && !TVLoginPreparation.shared.isPresented
     }
     private var canRotate: Bool {
-        initialCardPresented && homeIsOpen && isOnScreen && slides.count > 1 && !scrollIsMoving
+        initialCardPresented && homeIsOpen && !holdsForSelection && isOnScreen && slides.count > 1 && !scrollIsMoving
             && !voiceOverEnabled && centredPosition == visualPosition
             && readyPositions[visualPosition] == slide(at: visualPosition).id
     }
@@ -872,7 +875,7 @@ private struct TVHomeSpotlightCarousel: View {
                     HStack(spacing: 22) {
                         ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
-                            Button { onSelect(slide, position) } label: {
+                            Button { selectCard(slide, at: position) } label: {
                                 Group {
                                     if abs(position - visualPosition) <= 3 {
                                         TVHomeSpotlightArtwork(slide: slide, zoomSourceID: tvSpotlightZoomSourceID(position: position), onReady: {
@@ -992,7 +995,16 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = nil
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
-            if open { completeInitialPresentationIfReady() }
+            if open {
+                holdsForSelection = false
+                completeInitialPresentationIfReady()
+            }
+        }
+        .task(id: holdsForSelection) {
+            // Lets go if the press never opened a page.
+            guard holdsForSelection else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            if homeIsOpen { holdsForSelection = false }
         }
         .onChange(of: canRotate, initial: true) { _, running in
             if running {
@@ -1028,6 +1040,24 @@ private struct TVHomeSpotlightCarousel: View {
             pendingPosition = visualPosition + 1
             revealPendingSlide()
         }
+    }
+
+    /// Opens a card. Rotation stops at once, and a slide already on its way
+    /// to the next card snaps back to the pressed one without animation, so
+    /// the zoom leaves from and returns to the card that was chosen.
+    private func selectCard(_ slide: TVHomeSpotlightSlide, at position: Int) {
+        holdsForSelection = true
+        pendingPosition = nil
+        if visualPosition != position {
+            automaticAdvanceInFlight = false
+            selectPosition(position)
+            var snap = Transaction(animation: nil)
+            snap.disablesAnimations = true
+            withTransaction(snap) {
+                scrollPosition.scrollTo(id: position, anchor: .center)
+            }
+        }
+        onSelect(slide, position)
     }
 
     private func selectPosition(_ position: Int) {
