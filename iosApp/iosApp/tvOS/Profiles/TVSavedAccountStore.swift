@@ -945,7 +945,8 @@ final class TVSavedAccountStore {
             id: localID, serverID: remote.serverID, userID: remote.userID, username: remote.username,
             profile: remote.profile, requiresLogin: remote.requiresLogin, pinEnabled: remote.pinEnabled,
             siloProfileID: remote.siloProfileID, serverName: remote.serverName,
-            isAdmin: remote.isAdmin
+            // A copy from a device that doesn't know the role yet keeps ours.
+            isAdmin: remote.isAdmin ?? existingIndex.flatMap { accounts[$0].isAdmin }
         )
         if let saved = envelope.session {
             guard (try? saveSession(saved, id: localID)) != nil else { return }

@@ -145,6 +145,7 @@ struct TVSettingsProfilesPage: View {
     @State private var draftOrder: [String] = []
     @FocusState private var focused: String?
     @Environment(AppRouter.self) private var router
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -195,6 +196,18 @@ struct TVSettingsProfilesPage: View {
             }
         }
         .onDisappear { cancelArrangement() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { cancelArrangement() }
+        }
+        // Picks up profiles changed on another device while this page is
+        // open, except while one is being moved.
+        .task(id: scenePhase == .active && movingID == nil) {
+            guard scenePhase == .active, movingID == nil else { return }
+            while !Task.isCancelled {
+                await VividCloudAccountSync.shared.synchronize(router: router)
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
     }
 
     @ViewBuilder
