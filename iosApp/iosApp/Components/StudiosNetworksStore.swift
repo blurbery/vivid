@@ -102,6 +102,8 @@ final class StudiosNetworksStore {
     @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
     @ObservationIgnored private var searchIndexCache: (scope: Scope, modified: Date, index: LibrarySearchIndex)?
     @ObservationIgnored private var searchIndexTask: Task<Void, Never>?
+    /// Set by Try Again, so the next load starts even after interrupted ones.
+    @ObservationIgnored private var retryRequested = false
 
     /// A load or refresh is running for the current server and profile.
     var isLoading: Bool { loadTask != nil }
@@ -213,6 +215,9 @@ final class StudiosNetworksStore {
         /// Synced through the private vault, which lists this key.
         var preferencesKey: String { "tvos.homeStudiosNetworks.v1.\(server).\(profile)" }
 
+        /// This device's `LoadRecord`. Not synced.
+        var loadRecordKey: String { "studiosNetworks.loadRecord.v1.\(server).\(profile)" }
+
         /// `Caches/StudiosNetworks/<name>-v1-<token>.json`, creating the folder.
         func cacheURL(_ name: String) -> URL? {
             let token = Data("\(server)|\(profile)".utf8).base64EncodedString()
@@ -274,7 +279,10 @@ final class StudiosNetworksStore {
 
     // MARK: Loading
 
-    func loadIfNeeded() async {
+    /// `retrying` is for Try Again: it starts a load even after loads that
+    /// were cut short (see `beginGuardedLoad`).
+    func loadIfNeeded(retrying: Bool = false) async {
+        if retrying { retryRequested = true }
         refresh()
         let tmdb = TVTMDbStore.shared
         tmdb.reloadForCurrentProfile()
@@ -347,6 +355,14 @@ final class StudiosNetworksStore {
     }
 
     private func load(_ scope: Scope) async {
+        guard beginGuardedLoad(scope) else {
+            guard loadedScope == scope else { return }
+            progressText = nil
+            status = results.isEmpty ? .failed : .ready
+            return
+        }
+        var finished = false
+        defer { endGuardedLoad(scope, finished: finished) }
         listsLoaded = 0
         libraryIsRead = false
         do {
@@ -386,6 +402,7 @@ final class StudiosNetworksStore {
             await Self.write(StudioNetworkResultsFile(savedAt: savedAt, results: loaded, revision: Self.resultsRevision,
                                                       missesTrending: resultsMissTrending),
                              scope.cacheURL("results"))
+            finished = true
             let expiry = await Self.artworkExpiry(in: loaded)
             if loadedScope == scope { artworkExpiresAt = expiry }
         } catch {
@@ -470,12 +487,16 @@ final class StudiosNetworksStore {
     /// stay as they are, so this runs unseen behind the current results.
     private func refreshArtwork(_ scope: Scope) async {
         artworkRefreshedAt = Date()
+        guard beginGuardedLoad(scope) else { return }
+        var finished = false
+        defer { endGuardedLoad(scope, finished: finished) }
         do {
             let index = try await readLibrary(scope, reportsProgress: false)
             await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
             await applyArtwork(from: index, scope)
+            finished = true
         } catch {
             // Keep the current results. The next visit after the cooldown
             // tries again, and the daily refresh reads the library anyway.
@@ -506,6 +527,70 @@ final class StudiosNetworksStore {
             guard let expiry = artworkExpiry(of: [index.movies.values, index.series.values].joined()) else { return true }
             return expiry.timeIntervalSinceNow >= artworkRefreshLead
         }.value
+    }
+
+    // MARK: Interrupted loads
+
+    /// This device's loads for one server and profile, kept so a load that
+    /// keeps getting the app closed partway through stops starting on its own.
+    private struct LoadRecord: Codable {
+        /// The app version that recorded it, so an update starts afresh.
+        var app: String
+        /// The process whose load is running, nil when none is.
+        var running: String?
+        /// Loads in a row cut short by the app closing while open.
+        var interrupted = 0
+    }
+
+    /// Loads in a row cut short before they stop starting on their own.
+    static let maxInterruptedLoads = 2
+    private static let processID = UUID().uuidString
+    private static var appVersion: String {
+        "\(AppleDeviceIdentity.bundleAppVersion) (\(AppleDeviceIdentity.bundleAppBuild))"
+    }
+
+    /// Starts a load or poster refresh unless the last two were cut short by
+    /// the app crashing or being closed while open, as tvOS does when a very
+    /// large library uses too much memory. Every launch would otherwise start
+    /// the same load from the beginning and close again. Try Again, or a new
+    /// app version, starts one anyway.
+    private func beginGuardedLoad(_ scope: Scope) -> Bool {
+        var record = loadRecord(scope).flatMap { $0.app == Self.appVersion ? $0 : nil }
+            ?? LoadRecord(app: Self.appVersion)
+        // A load an earlier process left running never ended. It counts when
+        // that process crashed or was closed while open, not when it was
+        // closed in the background, which is routine.
+        if let running = record.running, running != Self.processID {
+            if AppHealthMonitor.previousSessionEndedUnexpectedly { record.interrupted += 1 }
+            record.running = nil
+        }
+        if retryRequested {
+            retryRequested = false
+            record.interrupted = 0
+        }
+        let starts = record.interrupted < Self.maxInterruptedLoads
+        if starts { record.running = Self.processID }
+        saveLoadRecord(record, scope)
+        return starts
+    }
+
+    /// A load that finished clears the interrupted ones before it. One that
+    /// failed or was cancelled leaves them as they were.
+    private func endGuardedLoad(_ scope: Scope, finished: Bool) {
+        guard var record = loadRecord(scope), record.running == Self.processID else { return }
+        record.running = nil
+        if finished { record.interrupted = 0 }
+        saveLoadRecord(record, scope)
+    }
+
+    private func loadRecord(_ scope: Scope) -> LoadRecord? {
+        UserDefaults.standard.data(forKey: scope.loadRecordKey)
+            .flatMap { try? JSONDecoder().decode(LoadRecord.self, from: $0) }
+    }
+
+    private func saveLoadRecord(_ record: LoadRecord, _ scope: Scope) {
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        UserDefaults.standard.set(data, forKey: scope.loadRecordKey)
     }
 
     // MARK: Library index
@@ -578,8 +663,7 @@ final class StudiosNetworksStore {
         if let modified = modificationDate(url), modified >= index.savedAt { return }
         let saved = await Task.detached(priority: .utility) { () -> Bool in
             let lookup = LibraryMovieLookup(index: index.movies, savedAt: index.savedAt)
-            guard let data = try? JSONEncoder().encode(lookup) else { return false }
-            return (try? data.write(to: url, options: .atomic)) != nil
+            return (try? JSONPieceWriter.write(to: url) { try lookup.writeFields(to: &$0) }) != nil
         }.value
         if saved { await movieLookupSaved() }
     }
@@ -597,10 +681,10 @@ final class StudiosNetworksStore {
             do { try await Task.sleep(for: .seconds(15)) } catch { return }
             guard StudiosNetworksStore.modificationDate(lookup) == nil,
                   let data = try? Data(contentsOf: library),
-                  let index = try? JSONDecoder().decode(StudioNetworkIndexMovieCards.self, from: data),
-                  let encoded = try? JSONEncoder().encode(LibraryMovieLookup(cards: index.movies, savedAt: index.savedAt))
+                  let index = try? JSONDecoder().decode(StudioNetworkIndexMovieCards.self, from: data)
             else { return }
-            guard (try? encoded.write(to: lookup, options: .atomic)) != nil else { return }
+            let movies = LibraryMovieLookup(cards: index.movies, savedAt: index.savedAt)
+            guard (try? JSONPieceWriter.write(to: lookup) { try movies.writeFields(to: &$0) }) != nil else { return }
             await StudiosNetworksStore.movieLookupSaved()
         }
     }
@@ -614,5 +698,6 @@ final class StudiosNetworksStore {
         for name in ["results", "library", "movies"] {
             if let url = scope.cacheURL(name) { try? FileManager.default.removeItem(at: url) }
         }
+        UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
     }
 }
