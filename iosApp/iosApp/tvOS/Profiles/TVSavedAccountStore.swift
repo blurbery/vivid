@@ -333,7 +333,8 @@ final class TVSavedAccountStore {
                                    username: user.username, profile: profile, requiresLogin: false,
                                    pinEnabled: existing?.pinEnabled,
                                    siloProfileID: owner.binding,
-                                   serverName: existing?.serverName)
+                                   serverName: existing?.serverName,
+                                   isAdmin: user.isAdmin ?? existing?.isAdmin)
         do {
             try saveSession(stored, id: id)
         } catch {
@@ -560,7 +561,10 @@ final class TVSavedAccountStore {
                 try saveServer()
                 try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
                 if let identity = await TokenStore.shared.refreshAccountIdentity() {
-                    capturedUser = (identity, UserInfo(id: userID, username: login.user.username, isAdmin: nil))
+                    // Silo's sign-in carries the account's real role, so the
+                    // chosen profile is saved with it.
+                    capturedUser = (identity, UserInfo(id: userID, username: login.user.username,
+                                                       isAdmin: login.user.role == "admin"))
                 }
                 pendingProfileChoice = PendingSiloProfileChoice(serverID: serverID)
                 activeID = nil
@@ -583,7 +587,7 @@ final class TVSavedAccountStore {
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,
                                          pinEnabled: existing?.pinEnabled, siloProfileID: existing?.siloProfileID,
-                                         serverName: existing?.serverName)
+                                         serverName: existing?.serverName, isAdmin: existing?.isAdmin)
             // Re-authentication requires a fresh PIN proof for a protected pairing.
             let pairing = existing?.profile.flatMap { $0.hasPin ? nil : $0 }
             let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
@@ -943,7 +947,9 @@ final class TVSavedAccountStore {
         let imported = TVSavedAccount(
             id: localID, serverID: remote.serverID, userID: remote.userID, username: remote.username,
             profile: remote.profile, requiresLogin: remote.requiresLogin, pinEnabled: remote.pinEnabled,
-            siloProfileID: remote.siloProfileID, serverName: remote.serverName
+            siloProfileID: remote.siloProfileID, serverName: remote.serverName,
+            // A copy from a device that doesn't know the role yet keeps ours.
+            isAdmin: remote.isAdmin ?? existingIndex.flatMap { accounts[$0].isAdmin }
         )
         if let saved = envelope.session {
             guard (try? saveSession(saved, id: localID)) != nil else { return }

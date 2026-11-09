@@ -82,6 +82,7 @@ struct AboutSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(title: "About")
+                    .icon(.asset("AboutInfoIcon"))
                 brand
                 TVSettingsGroup {
                     NavigationLink { TVOpenSourceAcknowledgementsPage() } label: {

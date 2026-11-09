@@ -36,7 +36,10 @@ struct TVSavedProfilesScreen: View {
                 }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: TVAccountRoute.self) { route in
-                    switch route { case .editor(let id): TVSavedAccountEditor(accountID: id) }
+                    switch route {
+                    case .editor(let id): TVSavedAccountEditor(accountID: id)
+                    case .profiles: TVSettingsProfilesPage()
+                    }
                 }
             }
             .opacity(store.showsAnimation ? 0 : 1)
@@ -665,7 +668,7 @@ struct TVSavedAccountEditor: View {
 }
 
 /// Asks for a profile's PIN before entering it.
-private struct TVSavedAccountPINPrompt: View {
+struct TVSavedAccountPINPrompt: View {
     let account: TVSavedAccount
     let onPIN: (String) -> Void
     @State private var pin = ""

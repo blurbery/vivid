@@ -332,6 +332,7 @@ struct TVStudiosNetworksSettingsView: View {
                         .focused($focus, equals: .done)
                         .disabled(store.needsMorePicks)
                 }
+                .icon(.symbol("square.grid.3x1.below.line.grid.1x2"))
 
                 switch store.status {
                 case .ready:

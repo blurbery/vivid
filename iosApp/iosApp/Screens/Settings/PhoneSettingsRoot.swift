@@ -33,11 +33,8 @@ extension SettingsView {
                 .settingsPageHeaderRow()
             if duoSideStrip == nil {
                 Section {
-                    PhoneSavedProfilesScreen.AccountCards(layout: .settings, openEditor: openEditor)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 8, trailing: 0))
-                } header: { PhoneSettingsSectionHeader("Profiles").modifier(CentredOnPad()) }
+                    PhoneSettingsProfileRows(openEditor: openEditor)
+                } header: { PhoneSettingsSectionHeader("Profiles") }
             }
             Section {
                 destinationRows
@@ -51,6 +48,7 @@ extension SettingsView {
         .navigationTitle("")
         .environment(\.colorScheme, .dark)
         .overlay { duoProfileStrip }
+        .modifier(PhoneSavedProfilesSync(isActive: duoSideStrip == nil))
         .navigationDestination(item: $editor) { target in
             PhoneSavedProfilesScreen.AccountEditor(accountID: target.accountID)
         }

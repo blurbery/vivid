@@ -164,6 +164,7 @@ struct TVHomeCollectionsSettingsView: View {
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($focus, equals: .done)
                 }
+                .icon(.symbol("square.stack.3d.up"))
                 statusContent
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)

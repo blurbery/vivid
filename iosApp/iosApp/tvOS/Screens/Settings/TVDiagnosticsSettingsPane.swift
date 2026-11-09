@@ -122,6 +122,7 @@ private struct TVDiagnosticsGroupPage: View {
                     subtitle: [group.kind.title, group.latest.technicalCode, group.latest.issueID]
                         .compactMap { $0 }.joined(separator: " · ")
                 )
+                .icon(.symbol("stethoscope"))
                 TVSettingsGroup {
                     ForEach(group.reports) { report in
                         NavigationLink { TVDiagnosticsReportPage(report: report) } label: {
@@ -184,6 +185,7 @@ private struct TVDiagnosticsReportPage: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: report.displaySummary, subtitle: report.kind.title)
+                    .icon(.symbol("stethoscope"))
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                     TVDiagnosticsReadingSection(index: index, title: section.title, lines: section.lines,
                                                 focusedSection: $focusedSection)
@@ -280,6 +282,7 @@ private struct TVLatestPlaybackPage: View {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: Text("Latest Playback"),
                                      subtitle: Text(report.startedAt.formatted(date: .abbreviated, time: .shortened)))
+                    .icon(.symbol("play.rectangle"))
                 TVSettingsGroup {
                     TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send Latest Playback", status: status, action: send)
@@ -377,6 +380,7 @@ private struct TVDiagnosticsSendPage: View {
             VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: "Send to Vivid",
                                      subtitle: "\(reports.count) reports")
+                    .icon(.symbol("paperplane"))
                 TVSettingsGroup {
                     TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send", status: status, action: send)
