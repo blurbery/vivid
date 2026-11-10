@@ -94,7 +94,6 @@ enum TVDetailPlaybackRules {
                 runtime: item.runtime,
                 contentRating: item.contentRating,
                 genres: item.genres,
-                ratingImdb: item.ratingImdb,
                 ratingTmdb: item.ratingTmdb,
                 ratingRtCritic: item.ratingRtCritic,
                 ratingRtAudience: item.ratingRtAudience,

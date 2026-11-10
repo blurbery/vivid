@@ -10,7 +10,6 @@ struct BrowseItem: Codable, Identifiable, Hashable {
     let genres: [String]?
     let contentRating: String?
     let status: String?
-    let ratingImdb: Double?
     let ratingTmdb: Double?
     let ratingRtCritic: Int?
     let ratingRtAudience: Int?
@@ -42,7 +41,6 @@ struct BrowseItem: Codable, Identifiable, Hashable {
         genres = try c.decodeIfPresent([String].self, forKey: .genres)
         contentRating = try c.decodeIfPresent(String.self, forKey: .contentRating)
         status = try c.decodeIfPresent(String.self, forKey: .status)
-        ratingImdb = try c.decodeIfPresent(Double.self, forKey: .ratingImdb)
         ratingTmdb = try c.decodeIfPresent(Double.self, forKey: .ratingTmdb)
         ratingRtCritic = try c.decodeIfPresent(Int.self, forKey: .ratingRtCritic)
         ratingRtAudience = try c.decodeIfPresent(Int.self, forKey: .ratingRtAudience)
@@ -68,7 +66,7 @@ struct BrowseItem: Codable, Identifiable, Hashable {
 /// Tech-level overlay data derived server-side from the best-ranked file's
 /// media metadata. Mirrors `internal/overlays/summary.go` →
 /// `OverlaySummary` on the Go side. Ratings, metadata, and ribbon overlays
-/// pull their values from item-level fields (ratingImdb, year, …), not this
+/// pull their values from item-level fields (year, ratings, …), not this
 /// struct.
 struct OverlaySummary: Codable, Hashable {
     let resolution: String?
@@ -159,7 +157,6 @@ struct SectionItem: Codable, Identifiable, Hashable {
     let year: Int?
     let genres: [String]?
     let status: String?
-    let ratingImdb: Double?
     let ratingTmdb: Double?
     let ratingRtCritic: Int?
     let ratingRtAudience: Int?
@@ -200,7 +197,6 @@ struct SectionItem: Codable, Identifiable, Hashable {
         year = try c.decodeIfPresent(Int.self, forKey: .year)
         genres = try c.decodeIfPresent([String].self, forKey: .genres)
         status = try c.decodeIfPresent(String.self, forKey: .status)
-        ratingImdb = try c.decodeIfPresent(Double.self, forKey: .ratingImdb)
         ratingTmdb = try c.decodeIfPresent(Double.self, forKey: .ratingTmdb)
         ratingRtCritic = try c.decodeIfPresent(Int.self, forKey: .ratingRtCritic)
         ratingRtAudience = try c.decodeIfPresent(Int.self, forKey: .ratingRtAudience)
@@ -391,7 +387,6 @@ struct ItemDetail: Codable {
     let runtime: Int?
     let contentRating: String?
     let genres: [String]?
-    let ratingImdb: Double?
     let ratingTmdb: Double?
     let ratingRtCritic: Int?
     let ratingRtAudience: Int?

@@ -42,11 +42,16 @@ enum CatalogSortKey: String, CaseIterable, Codable, Hashable {
     /// Series by when their newest episode joined the server.
     case lastEpisodeAdded = "latest_episode_added"
     case year
-    case ratingImdb = "rating_imdb"
     case runtime
     case resolution
 
     var field: String { rawValue }
+
+    /// A saved filter whose sort Vivid no longer offers (or doesn't know)
+    /// sorts by title rather than failing to load.
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .title
+    }
 
     var defaultOrder: CatalogSortOrder {
         self == .title ? .asc : .desc
@@ -60,7 +65,6 @@ enum CatalogSortKey: String, CaseIterable, Codable, Hashable {
         case .lastEpisodeReleased: String(localized: "Date Last Episode Released")
         case .lastEpisodeAdded: String(localized: "Date Last Episode Added")
         case .year: String(localized: "Year")
-        case .ratingImdb: String(localized: "Rating")
         case .runtime: String(localized: "Runtime")
         case .resolution: String(localized: "Resolution")
         }
@@ -75,7 +79,7 @@ enum CatalogSortKey: String, CaseIterable, Codable, Hashable {
             return ascending ? String(localized: "Oldest") : String(localized: "Newest")
         case .runtime:
             return ascending ? String(localized: "Shortest") : String(localized: "Longest")
-        case .ratingImdb, .resolution:
+        case .resolution:
             return ascending ? String(localized: "Lowest") : String(localized: "Highest")
         }
     }

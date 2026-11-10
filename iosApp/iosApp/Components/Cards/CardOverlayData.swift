@@ -13,7 +13,6 @@ struct OverlayData: Hashable {
     var edition: String?
     var multiAudio: Bool?
     var multiSub: Bool?
-    var ratingImdb: Double?
     var ratingTmdb: Double?
     var ratingRtCritic: Int?
     var ratingRtAudience: Int?
@@ -30,7 +29,6 @@ struct OverlayData: Hashable {
     static func from(_ item: BrowseItem) -> OverlayData {
         OverlayData(
             summary: item.overlaySummary,
-            ratingImdb: item.ratingImdb,
             ratingTmdb: item.ratingTmdb,
             ratingRtCritic: item.ratingRtCritic,
             ratingRtAudience: item.ratingRtAudience,
@@ -47,7 +45,6 @@ struct OverlayData: Hashable {
     static func from(_ item: SectionItem) -> OverlayData {
         OverlayData(
             summary: item.overlaySummary,
-            ratingImdb: item.ratingImdb,
             ratingTmdb: item.ratingTmdb,
             ratingRtCritic: item.ratingRtCritic,
             ratingRtAudience: item.ratingRtAudience,
@@ -63,7 +60,6 @@ struct OverlayData: Hashable {
 
     private init(
         summary: OverlaySummary?,
-        ratingImdb: Double?,
         ratingTmdb: Double?,
         ratingRtCritic: Int?,
         ratingRtAudience: Int?,
@@ -88,7 +84,6 @@ struct OverlayData: Hashable {
             multiAudio = summary.multiAudio
             multiSub = summary.multiSub
         }
-        self.ratingImdb = ratingImdb
         self.ratingTmdb = ratingTmdb
         self.ratingRtCritic = ratingRtCritic
         self.ratingRtAudience = ratingRtAudience
