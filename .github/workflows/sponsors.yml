@@ -21,7 +21,8 @@ jobs:
   render:
     if: github.repository == 'blurbery/vivid'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Render and publish take under a minute; the jsDelivr refresh can take up to about 5.5.
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -87,14 +88,22 @@ jobs:
         run: |
           url="https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@sponsors/sponsors.svg"
           purge="https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@sponsors/sponsors.svg"
+          current() {
+            curl -fsS --max-time 15 "$url" -o "$RUNNER_TEMP/jsdelivr.svg" \
+              && cmp -s "$RUNNER_TEMP/jsdelivr.svg" "$RUNNER_TEMP/sponsors.svg"
+          }
+          # At most 15 seconds, then five rounds of at most 60, so about 5.25 minutes in all.
+          if current; then
+            echo "jsDelivr serves the current image."
+            exit 0
+          fi
           for attempt in 1 2 3 4 5; do
-            if curl -fsS --max-time 30 "$url" -o "$RUNNER_TEMP/jsdelivr.svg" \
-              && cmp -s "$RUNNER_TEMP/jsdelivr.svg" "$RUNNER_TEMP/sponsors.svg"; then
-              echo "jsDelivr serves the current image."
+            sleep 20
+            curl -fsS --max-time 15 "$purge" >/dev/null || true
+            sleep 10
+            if current; then
+              echo "jsDelivr serves the current image after $attempt purge(s)."
               exit 0
             fi
-            sleep 20
-            curl -fsS --max-time 30 "$purge" >/dev/null || true
-            sleep 10
           done
           echo "::warning::jsDelivr still serves an older sponsors.svg; it refreshes on its own within 12 hours."
