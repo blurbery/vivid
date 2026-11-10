@@ -5,9 +5,10 @@
 //   SPONSORS_TOKEN=<classic token with read:user> node scripts/sponsors/render-sponsors.mjs --out sponsors.svg
 //   node scripts/sponsors/render-sponsors.mjs --fixture sponsors.json --out sponsors.svg
 //
-// Only public sponsorships are shown. Active sponsors on the $25 tier or above are
-// Gold sponsors, shown with their name; other active sponsors are Silver sponsors with a smaller avatar, and sponsors
-// whose sponsorship has ended are listed as past sponsors. Avatars are embedded as
+// Only public sponsorships are shown. Active sponsors on a monthly tier of $25 or more are
+// Gold sponsors, shown with their name; other active sponsors, including one-time sponsors,
+// are Silver sponsors with a smaller avatar, and sponsors whose sponsorship has ended are
+// listed as past sponsors. Avatars are embedded as
 // data URIs because GitHub won't load external images inside an SVG.
 
 import { readFile, writeFile } from 'node:fs/promises';
