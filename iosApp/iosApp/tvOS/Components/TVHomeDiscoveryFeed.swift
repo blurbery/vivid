@@ -806,14 +806,19 @@ private struct TVHomeSpotlightGlow: View {
                 back = nil
                 return
             }
-            guard let string = artworkURL, let url = URL(string: string) else { return }
+            // A slide with no artwork has no colour of its own; don't leave
+            // the last slide's showing.
+            guard let string = artworkURL, let url = URL(string: string) else {
+                hide()
+                return
+            }
             let cached = TVHomeMetadataCache.shared.cachedSpotlightTint(for: url)
             let prepared: Color?
             if let cached { prepared = cached } else {
                 prepared = await TVHomeMetadataCache.shared.preparedSpotlightTint(for: url)
             }
-            guard !Task.isCancelled, let tint = prepared else { return }
-            show(tint)
+            guard !Task.isCancelled else { return }
+            if let tint = prepared { show(tint) } else { hide() }
         }
     }
 
@@ -861,6 +866,21 @@ private struct TVHomeSpotlightGlow: View {
             ],
             startPoint: .bottomLeading, endPoint: .topTrailing
         )
+    }
+
+    /// Fades the backdrop out to the theme.
+    private func hide() {
+        guard front != nil || back != nil else { return }
+        run += 1
+        let token = run
+        var snap = Transaction(animation: nil)
+        snap.disablesAnimations = true
+        withTransaction(snap) { back = nil }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 1.6)) {
+            frontOpacity = 0
+        } completion: {
+            if token == run { front = nil }
+        }
     }
 
     /// The colour on show drops behind and the new one fades in over it.
