@@ -479,6 +479,9 @@ class PlayerViewModel {
     let settings = PlayerSettings.shared
     let sleepTimer = SleepTimer()
     let nowPlaying = VividVideoNowPlayingCoordinator()
+    /// Apple TV withdraws Now Playing when a video ends, so tvOS doesn't
+    /// badge a finished item. True until something plays again.
+    var nowPlayingWithdrawnAtEnd = false
     /// Poster and backdrop URLs the presenter supplies, so Now Playing can
     /// show artwork without fetching the catalogue item just for them. Set
     /// through `applyArtworkURLHints`. Nil falls back to a fetch in
