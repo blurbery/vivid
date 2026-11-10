@@ -17510,7 +17510,39 @@
       }
     },
     "Colours Home’s background to match the Spotlight." : {
-      "extractionState" : "manual"
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Färbt den Hintergrund von Home passend zum Spotlight."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colorea el fondo de Inicio a juego con Destacados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colore l’arrière-plan de l’Accueil selon À la une."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ホームの背景をスポットライトに合わせた色にします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让主页背景的颜色与聚光灯相配。"
+          }
+        }
+      }
     },
     "Combine Next Up with Continue Watching" : {
       "extractionState" : "manual",
@@ -56085,7 +56117,39 @@
       }
     },
     "Sets the background across Vivid." : {
-      "extractionState" : "manual"
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legt den Hintergrund in ganz Vivid fest."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Define el fondo en todo Vivid."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définit l’arrière-plan dans tout Vivid."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid全体の背景を設定します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置整个 Vivid 的背景。"
+          }
+        }
+      }
     },
     "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly." : {
       "extractionState" : "manual",
@@ -59238,7 +59302,39 @@
       }
     },
     "Spotlight Gradient" : {
-      "extractionState" : "manual"
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight-Verlauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Degradado de Destacados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dégradé À la une"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スポットライトのグラデーション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聚光灯渐变"
+          }
+        }
+      }
     },
     "Spotlight and your enabled Home rows are saved on this Apple TV for the current server and profile. Each row keeps up to 20 items; Spotlight keeps up to 10 slides." : {
       "extractionState" : "manual",

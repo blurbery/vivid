@@ -57,7 +57,7 @@ struct TVHomeDiscoveryFeed: View {
                             initialPosition: rowFocusMemory.spotlightPosition,
                             onPositionChange: {
                                 rowFocusMemory.spotlightPosition = $0
-                                spotlightAmbience.artworkURL = spotlightArtworkURL(at: $0)
+                                spotlightAmbience.position = $0
                             },
                             onFocusChange: { focused in
                                 rowFocusMemory.spotlightFocused = focused
@@ -161,7 +161,8 @@ struct TVHomeDiscoveryFeed: View {
                     if !slides.isEmpty {
                         TVHomeSpotlightGlow(
                             ambience: spotlightAmbience,
-                            initialURL: spotlightArtworkURL(at: rowFocusMemory.spotlightPosition)
+                            slides: slides,
+                            initialPosition: rowFocusMemory.spotlightPosition
                         )
                     }
                 }
@@ -177,12 +178,6 @@ struct TVHomeDiscoveryFeed: View {
                 if spotlightOpenedDetail { enterSpotlight() }
                 else if studiosNetworksOpenedDetail { enterStudiosNetworks() }
                 else if collectionsOpenedDetail { enterCollections() }
-            }
-            .onChange(of: slides.map(\.id)) {
-                // The slide at the current position can change without the
-                // position moving (a reload, edited rows, another profile),
-                // so the backdrop takes its colour from the new slide.
-                spotlightAmbience.artworkURL = spotlightArtworkURL(at: rowFocusMemory.spotlightPosition)
             }
             .onChange(of: slides.isEmpty) { _, empty in
                 if empty && rowFocusMemory.spotlightFocused { enterStudiosNetworks() }
@@ -205,13 +200,6 @@ struct TVHomeDiscoveryFeed: View {
         // Loads Studios & Networks, and again once TMDb is available for the account.
         .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
-    }
-
-    /// The artwork the slide at a carousel position shows.
-    private func spotlightArtworkURL(at position: Int) -> String? {
-        guard !slides.isEmpty else { return nil }
-        let slide = slides[((position % slides.count) + slides.count) % slides.count]
-        return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
     }
 
     private func enterSpotlight() {
@@ -772,11 +760,11 @@ enum TVSpotlightGradientSetting {
     static let defaultValue = true
 }
 
-/// The current slide's artwork, for the glow behind Home. Only the glow
+/// The carousel's position, for the glow behind Home. Only the glow
 /// observes it, so a slide change doesn't invalidate the feed.
 @Observable
 private final class TVHomeSpotlightAmbience {
-    var artworkURL: String?
+    var position: Int?
 }
 
 /// An opaque backdrop in the current slide's colour behind the top of Home:
@@ -785,7 +773,9 @@ private final class TVHomeSpotlightAmbience {
 /// only opacity animates.
 private struct TVHomeSpotlightGlow: View {
     let ambience: TVHomeSpotlightAmbience
-    let initialURL: String?
+    let slides: [TVHomeSpotlightSlide]
+    /// Where the carousel starts, until it reports a position.
+    let initialPosition: Int
 
     @State private var front: Color?
     @State private var back: Color?
@@ -809,14 +799,14 @@ private struct TVHomeSpotlightGlow: View {
         .frame(height: Self.height)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .task(id: isEnabled ? ambience.artworkURL ?? initialURL : nil) {
+        .task(id: isEnabled ? artworkURL : nil) {
             // Off: the theme shows as before and no colour is looked up.
             guard isEnabled else {
                 front = nil
                 back = nil
                 return
             }
-            guard let string = ambience.artworkURL ?? initialURL, let url = URL(string: string) else { return }
+            guard let string = artworkURL, let url = URL(string: string) else { return }
             let cached = TVHomeMetadataCache.shared.cachedSpotlightTint(for: url)
             let prepared: Color?
             if let cached { prepared = cached } else {
@@ -825,6 +815,16 @@ private struct TVHomeSpotlightGlow: View {
             guard !Task.isCancelled, let tint = prepared else { return }
             show(tint)
         }
+    }
+
+    /// The artwork the current slide shows. Worked out here from the live
+    /// slides, so it follows a reload that changes the slide in place and an
+    /// episode's series background arriving after the slide first appears.
+    private var artworkURL: String? {
+        guard !slides.isEmpty else { return nil }
+        let position = ambience.position ?? initialPosition
+        let slide = slides[((position % slides.count) + slides.count) % slides.count]
+        return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
     }
 
     /// The first screen is the plain gradient. Only the strip below it,
