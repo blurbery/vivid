@@ -6,7 +6,7 @@
 //   node scripts/sponsors/render-sponsors.mjs --fixture sponsors.json --out sponsors.svg
 //
 // Only public sponsorships are shown. Active sponsors on the $25 tier or above are
-// featured with their name, other active sponsors get a smaller avatar, and sponsors
+// Gold sponsors, shown with their name; other active sponsors are Silver sponsors with a smaller avatar, and sponsors
 // whose sponsorship has ended are listed as past sponsors. Avatars are embedded as
 // data URIs because GitHub won't load external images inside an SVG.
 
@@ -14,7 +14,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const MAINTAINER = process.env.SPONSORS_LOGIN || 'blurbery';
-const FEATURED_MIN_DOLLARS = Number(process.env.SPONSORS_FEATURED_MIN || 25);
+const GOLD_MIN_DOLLARS = Number(process.env.SPONSORS_GOLD_MIN || 25);
 
 // Display names for sponsors whose GitHub profile has no name set.
 const DISPLAY_NAMES = {
@@ -25,9 +25,9 @@ const WIDTH = 800;
 const FONT = "Geist, -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif";
 
 const TIERS = [
-  { key: 'featured', title: 'Featured sponsors', avatar: 120, gap: 48, slot: 168, names: true },
-  { key: 'sponsors', title: 'Sponsors', avatar: 64, gap: 20, slot: 64, names: false },
-  { key: 'past', title: 'Past sponsors', avatar: 40, gap: 12, slot: 40, names: false, muted: true },
+  { key: 'gold', title: 'Gold sponsors', avatar: 120, gap: 48, slot: 168, names: true, metal: 'gold' },
+  { key: 'silver', title: 'Silver sponsors', avatar: 64, gap: 20, slot: 64, names: false, metal: 'silver' },
+  { key: 'past', title: 'Past sponsors', avatar: 40, gap: 12, slot: 40, names: false, muted: true, metal: 'silver' },
 ];
 
 function parseArgs(argv) {
@@ -81,7 +81,7 @@ async function fetchSponsorships(token) {
 }
 
 export function groupSponsors(nodes) {
-  const groups = { featured: [], sponsors: [], past: [] };
+  const groups = { gold: [], silver: [], past: [] };
   const seen = new Set();
   const usable = nodes.filter((n) => n.sponsorEntity && n.sponsorEntity.login && n.privacyLevel !== 'PRIVATE');
   // Longest-standing sponsors first.
@@ -92,7 +92,7 @@ export function groupSponsors(nodes) {
     if (seen.has(login)) continue;
     seen.add(login);
     const monthly = node.tier && !node.tier.isOneTime && !node.isOneTimePayment ? node.tier.monthlyPriceInDollars : 0;
-    (monthly >= FEATURED_MIN_DOLLARS ? groups.featured : groups.sponsors).push(node.sponsorEntity);
+    (monthly >= GOLD_MIN_DOLLARS ? groups.gold : groups.silver).push(node.sponsorEntity);
   }
   for (const node of usable.filter((n) => !n.isActive)) {
     const login = node.sponsorEntity.login.toLowerCase();
@@ -135,7 +135,7 @@ export function renderSvg(groups, avatars) {
 
   sections.forEach((tier, index) => {
     if (index > 0) y += 44;
-    parts.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" font-family="${FONT}" font-size="14" font-weight="600" letter-spacing="4.5" fill="url(#silverText)">${escapeXml(tier.title.toUpperCase())}</text>`);
+    parts.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" font-family="${FONT}" font-size="14" font-weight="600" letter-spacing="4.5" fill="url(#${tier.metal}Text)">${escapeXml(tier.title.toUpperCase())}</text>`);
     y += 30;
 
     const people = groups[tier.key];
@@ -158,7 +158,7 @@ export function renderSvg(groups, avatars) {
           + `<title>${escapeXml(label)}</title>`
           + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#252525"/>`
           + `<image href="${avatars.get(person.login)}" x="${cx - r}" y="${cy - r}" width="${tier.avatar}" height="${tier.avatar}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/>`
-          + `<circle cx="${cx}" cy="${cy}" r="${r + (tier.names ? 3 : 1.5)}" fill="none" stroke="url(#silverRing)" stroke-width="${tier.names ? 2.5 : 1.5}"/>`
+          + `<circle cx="${cx}" cy="${cy}" r="${r + (tier.names ? 3 : 1.5)}" fill="none" stroke="url(#${tier.metal}Ring)" stroke-width="${tier.names ? 2.5 : 1.5}"/>`
           + '</g>');
         if (tier.names) {
           const name = truncate(displayName(person), 20);
@@ -183,6 +183,8 @@ export function renderSvg(groups, avatars) {
 <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#191919"/><stop offset="1" stop-color="#101010"/></linearGradient>
 <radialGradient id="glow" cx="0.5" cy="0" r="0.75"><stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
 <linearGradient id="silverText" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8e7e8"/><stop offset="1" stop-color="#9a9a9a"/></linearGradient>
+<linearGradient id="goldText" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6e3a8"/><stop offset="1" stop-color="#c9a04e"/></linearGradient>
+<linearGradient id="goldRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e3a8"/><stop offset="0.5" stop-color="#d4af5f"/><stop offset="1" stop-color="#8a6a2c"/></linearGradient>
 <linearGradient id="silverRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e8e7e8"/><stop offset="0.5" stop-color="#9a9a9a"/><stop offset="1" stop-color="#6c6b6b"/></linearGradient>
 <filter id="muted"><feColorMatrix type="saturate" values="0.25"/></filter>
 ${defs.join('\n')}
@@ -206,11 +208,11 @@ async function main() {
   }
   const groups = groupSponsors(nodes);
   const avatars = new Map();
-  for (const person of [...groups.featured, ...groups.sponsors, ...groups.past]) {
+  for (const person of [...groups.gold, ...groups.silver, ...groups.past]) {
     avatars.set(person.login, await embedAvatar(person.avatarUrl));
   }
   await writeFile(args.out, renderSvg(groups, avatars));
-  console.log(`Wrote ${args.out}: ${groups.featured.length} featured, ${groups.sponsors.length} sponsors, ${groups.past.length} past.`);
+  console.log(`Wrote ${args.out}: ${groups.gold.length} gold, ${groups.silver.length} silver, ${groups.past.length} past.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
