@@ -21,7 +21,7 @@ jobs:
   render:
     if: github.repository == 'blurbery/vivid'
     runs-on: ubuntu-latest
-    # Render and publish take under a minute; the jsDelivr refresh can take up to about 5.5.
+    # Render and publish take under a minute; the jsDelivr refresh can take up to about 5.25.
     timeout-minutes: 10
     permissions:
       contents: write
