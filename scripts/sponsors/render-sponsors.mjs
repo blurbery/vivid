@@ -16,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 const MAINTAINER = process.env.SPONSORS_LOGIN || 'blurbery';
 const GOLD_MIN_DOLLARS = Number(process.env.SPONSORS_GOLD_MIN || 25);
 
-// Display names for sponsors whose GitHub profile has no name set.
+// Names to show instead of a sponsor's GitHub profile name (or login, when the profile has no name).
 const DISPLAY_NAMES = {
   xrandallx1: 'Randall',
 };
@@ -87,12 +87,20 @@ export function groupSponsors(nodes) {
   // Longest-standing sponsors first.
   usable.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 
+  // A sponsor with more than one active sponsorship is placed by their highest monthly tier.
+  // One-time payments count as Silver whatever their size.
+  const monthlyDollars = (n) => (n.tier && !n.tier.isOneTime && !n.isOneTimePayment ? n.tier.monthlyPriceInDollars : 0);
+  const best = new Map();
   for (const node of usable.filter((n) => n.isActive)) {
     const login = node.sponsorEntity.login.toLowerCase();
-    if (seen.has(login)) continue;
+    const current = best.get(login);
+    if (!current || monthlyDollars(node) > current.monthly) {
+      best.set(login, { entity: node.sponsorEntity, monthly: monthlyDollars(node) });
+    }
+  }
+  for (const [login, { entity, monthly }] of best) {
     seen.add(login);
-    const monthly = node.tier && !node.tier.isOneTime && !node.isOneTimePayment ? node.tier.monthlyPriceInDollars : 0;
-    (monthly >= GOLD_MIN_DOLLARS ? groups.gold : groups.silver).push(node.sponsorEntity);
+    (monthly >= GOLD_MIN_DOLLARS ? groups.gold : groups.silver).push(entity);
   }
   for (const node of usable.filter((n) => !n.isActive)) {
     const login = node.sponsorEntity.login.toLowerCase();
