@@ -18,7 +18,7 @@ Vivid supplies the player UI for every playback path. On Apple TV, the bar uses 
 
 Near the end of an episode, Next Up places the continuing 960 × 540-point player preview at the top right and Play Now, Keep Watching and Back along the bottom left as applicable. The primary button keeps a fixed width, and the autoplay countdown remains beside it when active. Before EOF, the countdown follows remaining media time. The tvOS On Deck shelf is removed. Loading and next-episode transitions use four staggered white bouncing dots at screen centre; Reduce Motion keeps them still.
 
-While a video plays, Apple TV publishes it to Now Playing, so it shows on a connected iPhone and in Control Centre. When the video ends, the player withdraws it from Now Playing instead of leaving a paused, finished item, because from tvOS 27.2 the system shows a Now Playing badge in the top-right corner for one. It comes back as soon as something plays again: the next episode, Keep Watching or a seek back from the end.
+While a video plays, Apple TV publishes it to Now Playing, so it shows on a connected iPhone and in Control Centre. When the video ends, the player withdraws it from Now Playing instead of leaving a paused, finished item, because tvOS 27.2 has been seen showing a Now Playing badge in the top-right corner when playback stops. It comes back as soon as playback starts again: the next episode, or Keep Watching.
 
 ## iPhone and iPad controls
 

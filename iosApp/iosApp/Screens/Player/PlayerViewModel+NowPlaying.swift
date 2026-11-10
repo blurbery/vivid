@@ -89,12 +89,15 @@ extension PlayerViewModel {
     func withdrawNowPlayingAtEnd() {
         #if os(tvOS)
         nowPlaying.detach()
+        // `syncNowPlayingDestination` sets it again when playback resumes.
+        nowPlaying.nativeMetadataHandler = nil
         nowPlayingWithdrawnAtEnd = true
         #endif
     }
 
-    /// Re-publishes Now Playing, with its artwork, once a video withdrawn at
-    /// its end plays again (Keep Watching, or a seek back from the end).
+    /// Re-publishes Now Playing, with its artwork, once something withdrawn at
+    /// its end plays: the next episode, or Keep Watching. Seeks are blocked
+    /// on the end screen.
     func restoreNowPlayingAfterEndIfNeeded() {
         guard nowPlayingWithdrawnAtEnd else { return }
         nowPlayingWithdrawnAtEnd = false
@@ -130,7 +133,8 @@ extension PlayerViewModel {
     /// otherwise the item is fetched. Best effort: a failure leaves the
     /// artwork as it was.
     func pushNowPlayingArtwork(contentId: String) {
-        guard !contentId.isEmpty else { return }
+        // While withdrawn the coordinator drops artwork; the restore asks again.
+        guard !contentId.isEmpty, !nowPlayingWithdrawnAtEnd else { return }
         if let hint = Self.nonEmptyURLString(artworkPosterURLHint) ?? Self.nonEmptyURLString(artworkBackdropURLHint),
            let url = URL(string: hint) {
             nowPlaying.setArtworkURL(url)
