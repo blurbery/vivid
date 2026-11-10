@@ -760,6 +760,13 @@ private struct TVHomeSpotlightCarousel: View {
     let onPositionChange: (Int) -> Void
     let onSelect: (TVHomeSpotlightSlide, Int) -> Void
 
+    /// The space either side of the centred card.
+    private static let sideMargin: CGFloat = 60
+    /// The gap between cards. As wide as the side margin, so the cards
+    /// either side of the centred one rest just off screen and only show
+    /// while the carousel slides.
+    private static let cardSpacing: CGFloat = sideMargin
+
     @State private var visualPosition = 0
     @State private var scrollPosition = ScrollPosition(id: 0, anchor: .center)
     @State private var scrollGeometry = TVSpotlightScrollGeometry()
@@ -873,9 +880,9 @@ private struct TVHomeSpotlightCarousel: View {
     var body: some View {
         VStack(spacing: 22) {
             GeometryReader { geometry in
-                let cardWidth = max(1, geometry.size.width - 120)
+                let cardWidth = max(1, geometry.size.width - Self.sideMargin * 2)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 22) {
+                    HStack(spacing: Self.cardSpacing) {
                         ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
                             Button { selectCard(slide, at: position) } label: {
@@ -920,7 +927,7 @@ private struct TVHomeSpotlightCarousel: View {
                     }
                     .scrollTargetLayout()
                 }
-                .contentMargins(.horizontal, 60, for: .scrollContent)
+                .contentMargins(.horizontal, Self.sideMargin, for: .scrollContent)
                 .scrollTargetBehavior(.viewAligned)
                 .defaultScrollAnchor(.center, for: .initialOffset)
                 .scrollPosition($scrollPosition)
@@ -928,7 +935,7 @@ private struct TVHomeSpotlightCarousel: View {
                     $0.contentOffset.x + $0.contentInsets.leading
                 } action: { _, offset in
                     scrollGeometry.offset = offset
-                    scrollGeometry.cardStride = cardWidth + 22
+                    scrollGeometry.cardStride = cardWidth + Self.cardSpacing
                     if focus.wrappedValue == visualPosition {
                         updatePositionWindow(around: visualPosition)
                     }
@@ -953,7 +960,7 @@ private struct TVHomeSpotlightCarousel: View {
                         alignmentAttempted = true
                         diagnostics?.event("spotlight.align", values: [Double(scrollGeometry.offset), Double(target)])
                         let residual = abs(scrollGeometry.offset - target)
-                        var transaction = Transaction(animation: reduceMotion || residual < scrollGeometry.cardStride - 22
+                        var transaction = Transaction(animation: reduceMotion || residual < scrollGeometry.cardStride - Self.cardSpacing
                             ? nil : .easeOut(duration: 0.12))
                         transaction.disablesAnimations = transaction.animation == nil
                         withTransaction(transaction) {
