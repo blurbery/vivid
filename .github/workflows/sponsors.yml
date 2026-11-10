@@ -37,7 +37,7 @@ jobs:
           SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
         run: |
           if [ -z "$SPONSORS_TOKEN" ]; then
-            echo "::warning::Add a SPONSORS_TOKEN secret (a classic token with read:user) to update the sponsors image."
+            echo "::warning::Add a SPONSORS_TOKEN secret (a classic token; fine-grained tokens cannot read sponsor tiers) to update the sponsors image."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
