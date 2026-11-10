@@ -1,5 +1,5 @@
 {
-  "intro": "The app captures on this website show Vivid running on a demo library of the films and series below. Their posters, backdrops, title logos and episode stills belong to their studios and other rights holders, and are shown only to illustrate how Vivid presents a library. The artwork and metadata come from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Vivid isn't affiliated with or endorsed by any of these titles' owners, and it doesn't provide, sell or stream any of them: it plays media from your own Silo, Emby or Jellyfin server.",
+  "intro": "The app captures on this website, and Vivid's iPhone and Apple TV App Store screenshots, show Vivid running on a demo library of the films and series below. Their posters, backdrops, title logos and episode stills belong to their studios and other rights holders, and are shown only to illustrate how Vivid presents a library. The artwork and metadata come from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Vivid isn't affiliated with or endorsed by any of these titles' owners, and it doesn't provide, sell or stream any of them: it plays media from your own Silo, Emby or Jellyfin server.",
   "titles": [
     {
       "title": "Dune: Part Two",
@@ -83,7 +83,7 @@
     }
   ],
   "app_store": {
-    "intro": "Vivid's current App Store screenshots show sample titles from the Blender Foundation's open movies, on a demo library. Each image below is used under its Creative Commons Attribution licence. They were cropped and resized, and the Sintel and Sprite Fright images were retouched to remove a title and small labels. The title logos in those screenshots were made for Vivid and are not the films' own logos. Vivid isn't affiliated with or endorsed by the Blender Foundation.",
+    "intro": "Vivid's iPad App Store screenshots show sample titles from the Blender Foundation's open movies, on a demo library. Each image below is used under its Creative Commons Attribution licence. They were cropped and resized, and the Sintel and Sprite Fright images were retouched to remove a title and small labels. The title logos in those screenshots were made for Vivid and are not the films' own logos. Vivid isn't affiliated with or endorsed by the Blender Foundation.",
     "images": [
       {
         "title": "Elephants Dream",
