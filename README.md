@@ -98,6 +98,30 @@ Join the [Vivid Discord](https://discord.gg/3jcxk3vJ4X) to get help, share feedb
 
 If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery). Testing the app, reporting issues and spreading the word helps a lot too.
 
+## Sponsors
+
+A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery). Your support keeps development going.
+
+<table width="100%">
+  <thead>
+    <tr><th align="left" colspan="2">Featured sponsor</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center" valign="middle"><a href="https://github.com/xrandallx1"><img src="https://avatars.githubusercontent.com/u/255303889?s=192&amp;v=4" width="96" height="96" alt="Randall's GitHub avatar"></a></td>
+      <td width="10000" valign="middle">
+        <strong><a href="https://github.com/xrandallx1">Randall</a></strong> · <a href="https://github.com/xrandallx1">@xrandallx1</a><br>
+        <img src="https://img.shields.io/badge/featured%20sponsor-%2425%20a%20month-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Featured sponsor, $25 a month"><br>
+        Thank you, Randall, for backing Vivid every month. It genuinely helps me keep building it.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p align="center">
+  <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/become%20a%20sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Become a sponsor on GitHub"></a>
+</p>
+
 ## Licence
 
 Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Portions derived from Silo Apple, copyright 2026 Silo Media L.L.C. and contributors, remain under AGPL-3.0-or-later with the Silo Apple App Store exception. Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
