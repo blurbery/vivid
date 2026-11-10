@@ -26,6 +26,7 @@ struct TVHomeDiscoveryFeed: View {
     @State private var spotlightEnterRequest = 0
     @State private var rowFocusOwnership = TVHomeFocusOwnership()
     @State private var rowFocusMemory = TVHomeRowFocusMemory()
+    @State private var spotlightAmbience = TVHomeSpotlightAmbience()
     @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
     @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
@@ -54,7 +55,10 @@ struct TVHomeDiscoveryFeed: View {
                             slides: slides,
                             enterRequest: spotlightEnterRequest,
                             initialPosition: rowFocusMemory.spotlightPosition,
-                            onPositionChange: { rowFocusMemory.spotlightPosition = $0 },
+                            onPositionChange: {
+                                rowFocusMemory.spotlightPosition = $0
+                                spotlightAmbience.artworkURL = spotlightArtworkURL(at: $0)
+                            },
                             onFocusChange: { focused in
                                 rowFocusMemory.spotlightFocused = focused
                                 if focused {
@@ -151,6 +155,16 @@ struct TVHomeDiscoveryFeed: View {
                 .environment(\.tvHomeStableRows, true)
                 .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 96 : 91))
                 .padding(.bottom, 80)
+                // Part of the scrolling content, so it leaves with the
+                // spotlight and has faded out by the first rows.
+                .background(alignment: .top) {
+                    if !slides.isEmpty {
+                        TVHomeSpotlightGlow(
+                            ambience: spotlightAmbience,
+                            initialURL: spotlightArtworkURL(at: rowFocusMemory.spotlightPosition)
+                        )
+                    }
+                }
             }
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
             .onChange(of: focusRequest, initial: true) { _, request in
@@ -185,6 +199,13 @@ struct TVHomeDiscoveryFeed: View {
         // Loads Studios & Networks, and again once TMDb is available for the account.
         .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
+    }
+
+    /// The artwork the slide at a carousel position shows.
+    private func spotlightArtworkURL(at position: Int) -> String? {
+        guard !slides.isEmpty else { return nil }
+        let slide = slides[((position % slides.count) + slides.count) % slides.count]
+        return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
     }
 
     private func enterSpotlight() {
@@ -736,6 +757,126 @@ private final class TVHomeArtworkWarmup {
     func stop() {
         prefetcher.stopPrefetching()
         PosterImageCache.setHomeBrowsingMemoryBudget(false)
+    }
+}
+
+/// Settings > General > Spotlight Gradient, on Apple TV only.
+enum TVSpotlightGradientSetting {
+    static let storageKey = "vivid.tv.spotlightGradient"
+    static let defaultValue = true
+}
+
+/// The current slide's artwork, for the glow behind Home. Only the glow
+/// observes it, so a slide change doesn't invalidate the feed.
+@Observable
+private final class TVHomeSpotlightAmbience {
+    var artworkURL: String?
+}
+
+/// An opaque backdrop in the current slide's colour behind the top of Home:
+/// brightest at the top right, darkest at the bottom left. It covers the
+/// first screen and fades out below it, so it ends without an edge. A new slide's colour fades in over the old one;
+/// only opacity animates.
+private struct TVHomeSpotlightGlow: View {
+    let ambience: TVHomeSpotlightAmbience
+    let initialURL: String?
+
+    @State private var front: Color?
+    @State private var back: Color?
+    @State private var frontOpacity: Double = 0
+    @State private var run = 0
+    @AppStorage(TVSpotlightGradientSetting.storageKey) private var isEnabled = TVSpotlightGradientSetting.defaultValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Solid for the whole first screen, then fading out below it.
+    private static let height: CGFloat = 1620
+    private static let solidHeight: CGFloat = 1100
+
+    var body: some View {
+        ZStack {
+            if isEnabled {
+                if let back { backdrop(back) }
+                if let front { backdrop(front).opacity(frontOpacity) }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.height)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: isEnabled ? ambience.artworkURL ?? initialURL : nil) {
+            // Off: the theme shows as before and no colour is looked up.
+            guard isEnabled else {
+                front = nil
+                back = nil
+                return
+            }
+            guard let string = ambience.artworkURL ?? initialURL, let url = URL(string: string) else { return }
+            let cached = TVHomeMetadataCache.shared.cachedSpotlightTint(for: url)
+            let prepared: Color?
+            if let cached { prepared = cached } else {
+                prepared = await TVHomeMetadataCache.shared.preparedSpotlightTint(for: url)
+            }
+            guard !Task.isCancelled, let tint = prepared else { return }
+            show(tint)
+        }
+    }
+
+    /// The first screen is the plain gradient. Only the strip below it,
+    /// off screen until Home scrolls, is masked to fade out; both pieces
+    /// are windows onto the same gradient, so they meet without a seam.
+    private func backdrop(_ tint: Color) -> some View {
+        VStack(spacing: 0) {
+            wash(tint)
+                .frame(height: Self.height)
+                .frame(height: Self.solidHeight, alignment: .top)
+                .clipped()
+            wash(tint)
+                .frame(height: Self.height)
+                .frame(height: Self.height - Self.solidHeight, alignment: .bottom)
+                .clipped()
+                .mask { LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom) }
+        }
+    }
+
+    /// Opaque shades of the slide's own hue, so the theme behind doesn't
+    /// show through: near black at the bottom left, lit at the top right.
+    private func wash(_ tint: Color) -> some View {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(tint).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let rich = min(1, saturation * 1.25)
+        func shade(_ value: CGFloat) -> Color {
+            Color(hue: hue, saturation: rich, brightness: value)
+        }
+        return LinearGradient(
+            stops: [
+                .init(color: shade(0.02), location: 0),
+                .init(color: shade(0.07), location: 0.55),
+                .init(color: shade(0.26), location: 1)
+            ],
+            startPoint: .bottomLeading, endPoint: .topTrailing
+        )
+    }
+
+    /// The colour on show drops behind and the new one fades in over it.
+    private func show(_ tint: Color) {
+        run += 1
+        let token = run
+        var snap = Transaction(animation: nil)
+        snap.disablesAnimations = true
+        withTransaction(snap) {
+            if let front, frontOpacity > 0.5 { back = front }
+            front = tint
+            frontOpacity = 0
+        }
+        DispatchQueue.main.async {
+            guard token == run else { return }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 1.6)) {
+                frontOpacity = 1
+            } completion: {
+                // The colour underneath is fully covered now; stop drawing it.
+                if token == run { back = nil }
+            }
+        }
     }
 }
 

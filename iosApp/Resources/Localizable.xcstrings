@@ -17509,6 +17509,9 @@
         }
       }
     },
+    "Colours Home’s background to match the Spotlight." : {
+      "extractionState" : "manual"
+    },
     "Combine Next Up with Continue Watching" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -56081,6 +56084,9 @@
         }
       }
     },
+    "Sets the background across Vivid." : {
+      "extractionState" : "manual"
+    },
     "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -59230,6 +59236,9 @@
           }
         }
       }
+    },
+    "Spotlight Gradient" : {
+      "extractionState" : "manual"
     },
     "Spotlight and your enabled Home rows are saved on this Apple TV for the current server and profile. Each row keeps up to 20 items; Spotlight keeps up to 10 slides." : {
       "extractionState" : "manual",
