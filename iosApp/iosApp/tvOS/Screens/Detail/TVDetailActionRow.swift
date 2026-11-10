@@ -23,6 +23,8 @@ struct TVDetailPlayAction {
     var offersStartOver: Bool
     var play: () -> Void
     var startOver: () -> Void
+    /// Adds Shuffle to Play's long-press menu. Series pages only.
+    var shuffle: (() -> Void)? = nil
 }
 
 /// Identifies the page for the one focus claim the row makes.
@@ -245,9 +247,10 @@ private struct TVDetailPlayButton: View {
             .accessibilityLabel(titleText)
             .contextMenu {
                 if action.offersStartOver {
-                    Button(action: action.startOver) {
-                        Label("Start Over", systemImage: "backward.end.fill")
-                    }
+                    TVDetailMoreMenuRows.startOver(action: action.startOver)
+                }
+                if let shuffle = action.shuffle {
+                    TVDetailMoreMenuRows.shuffle(action: shuffle)
                 }
             }
         }

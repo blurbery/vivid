@@ -166,7 +166,8 @@ struct MobileMoviePage: View {
                     title: playTitle,
                     action: playTapped,
                     fullWidth: true,
-                    resumeProgress: ResumePresentation(position: resumePosition, duration: detail.userData?.durationSeconds)
+                    resumeProgress: ResumePresentation(position: resumePosition, duration: detail.userData?.durationSeconds),
+                    startOver: resumePosition == nil ? nil : { play(fromBeginning: true) }
                 )
             } selectors: {
                 if effectiveVersion != nil {

@@ -27,6 +27,20 @@ extension PlayerViewModel {
             return
         }
 
+        // Shuffle already knows what plays next, so there's nothing to look up.
+        if let queue = shuffleQueue {
+            nextUpEpisode = queue.episode(after: detail.contentId).map {
+                PlayerNextUpEpisode(episode: $0, seriesId: queue.seriesId,
+                                    seriesTitle: queue.seriesTitle ?? detail.seriesTitle)
+            }
+            if showNextUpScreen {
+                startNextUpCountdownIfNeeded()
+            } else {
+                updateNextUpPresentation(for: currentTime)
+            }
+            return
+        }
+
         isLoadingNextUpEpisode = true
         nextUpLookupTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
@@ -405,7 +419,8 @@ extension PlayerViewModel {
             preferredAudioTrackIndex: nil,
             preferredSubtitleTrackIndex: nil,
             preferredSidecarSubtitleTrackId: nil,
-            startFromBeginning: false
+            // A shuffled episode plays from its start, wherever it was left.
+            startFromBeginning: shuffleQueue != nil
         )
         request.preferredQualityOverride = ApplePlaybackQuality.nextEpisodeQualityOverride(
             activeQualityId: activeQualityId

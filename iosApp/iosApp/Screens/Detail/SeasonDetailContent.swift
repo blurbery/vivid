@@ -92,7 +92,8 @@ struct MobileSeasonPage: View {
                     title: playTitle,
                     action: playTapped,
                     fullWidth: true,
-                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode)
+                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode),
+                    startOver: startOverAction
                 )
             } selectors: {
                 MobileSelectorsPlacement {
@@ -180,6 +181,12 @@ struct MobileSeasonPage: View {
                 Button("Mark Series as Watched") { Task { await model.toggleSeriesWatched() } }
             }
         }
+    }
+
+    /// Start Over in Play's long-press menu, when the next episode is part-way.
+    private var startOverAction: (() -> Void)? {
+        guard let episode = nextUpEpisode, episode.userData?.isInProgress == true else { return nil }
+        return { play(episode, fromBeginning: true) }
     }
 
     private func playTapped() {

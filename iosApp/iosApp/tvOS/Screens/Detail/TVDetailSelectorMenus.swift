@@ -389,6 +389,13 @@ enum TVDetailMoreMenuRows {
         }
     }
 
+    /// Plays the series' episodes in a random order.
+    static func shuffle(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label("Shuffle", systemImage: "shuffle")
+        }
+    }
+
     /// "Mark Episode Watched" or "Mark Episode Unwatched".
     static func episodeWatched(isWatched: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {

@@ -31,6 +31,9 @@ extension PlayerViewModel {
             offlineDownloadId: offlineDownloadId
         )
         request.prefersLastUsedVersion = prefersLastUsedVersion
+        // A shuffle staged for this episode starts here; any other start
+        // ends one.
+        shuffleQueue = EpisodeShuffleHandoff.shared.take(for: contentId)
         viewingSubtitlePrefs = nil
         viewingAudioLanguage = nil
         viewingAudioSeedOrdinal = preferredAudioTrackIndex

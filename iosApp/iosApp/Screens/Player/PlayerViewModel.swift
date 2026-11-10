@@ -255,6 +255,10 @@ class PlayerViewModel {
     /// isn't ready.
     var isNextUpTransitioning = false
     var nextUpEpisode: PlayerNextUpEpisode?
+    /// The shuffle order this viewing plays through, when it started from
+    /// Shuffle. Next Up follows it instead of the series order, and every
+    /// episode in it starts from the beginning.
+    var shuffleQueue: EpisodeShuffleQueue?
     var nextUpOnDeckItems: [PlayerOnDeckItem] = []
     var isLoadingNextUpEpisode = false
     var isLoadingNextUpOnDeck = false
@@ -882,6 +886,7 @@ class PlayerViewModel {
     /// stops no server session.
     func cleanup() {
         guard !isDisposed else { return }
+        shuffleQueue = nil
         #if os(iOS) || os(tvOS)
         AppHealthMonitor.playerClosed()
         #endif

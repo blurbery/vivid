@@ -58,12 +58,14 @@ final class PhoneDuoSafeguardTests: XCTestCase {
         XCTAssertFalse(coordinator.isDuoTabletop)
     }
 
-    func testActionMetricsKeepThePhoneSizes() throws {
+    /// The row under Play uses the Duo's larger circles in fixed slots
+    /// (blurbery's change, 10 November 2026).
+    func testActionMetricsUseTheLargerCircles() throws {
         try skipOnDuo()
         let metrics = PhoneLabeledActionMetrics(sharesRow: false)
-        XCTAssertEqual(metrics.circle, 42)
-        XCTAssertEqual(metrics.iconSize, 19)
-        XCTAssertNil(metrics.slotWidth)
+        XCTAssertEqual(metrics.circle, 52)
+        XCTAssertEqual(metrics.iconSize, 21)
+        XCTAssertEqual(metrics.slotWidth, 52)
     }
 
     /// Play stays above the actions with each detail page's own gap (14
@@ -94,8 +96,8 @@ final class PhoneDuoSafeguardTests: XCTestCase {
         }
     }
 
-    /// The named actions spread across the full width with the rule under
-    /// them, as on every iPhone before the Duo work.
+    /// The row keeps the full width, with its actions centred in it and the
+    /// rule under them.
     func testActionRowKeepsItsFullWidthAndRule() throws {
         try skipOnDuo()
         for sizeClass in [UserInterfaceSizeClass.compact, .regular] {

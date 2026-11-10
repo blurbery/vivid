@@ -17,6 +17,8 @@ struct TVSeriesDetailPage: View {
     /// Plays an episode with the file the page sends, from the beginning
     /// when true. The entry page makes it the Play target first.
     let playEpisode: (String, Int?, Bool) -> Void
+    /// Plays the series' episodes in a random order.
+    let shuffle: () -> Void
 
     @ObservedObject private var profilePrefs = ProfilePrefsStore.shared
     @FocusState private var heroFocus: TVDetailHeroFocus?
@@ -122,7 +124,8 @@ struct TVSeriesDetailPage: View {
             progress: progress,
             offersStartOver: progress != nil,
             play: { playEpisode(target.contentId, file, false) },
-            startOver: { playEpisode(target.contentId, file, true) }
+            startOver: { playEpisode(target.contentId, file, true) },
+            shuffle: shuffle
         )
     }
 
@@ -196,6 +199,9 @@ struct TVSeriesDetailPage: View {
         if let target = playTarget, target.userData?.isInProgress == true {
             let file = fileId(for: target.contentId, playback: playback)
             TVDetailMoreMenuRows.startOver { playEpisode(target.contentId, file, true) }
+        }
+        if playTarget != nil {
+            TVDetailMoreMenuRows.shuffle(action: shuffle)
         }
         TVDetailMoreMenuRows.favorite(isFavorite: viewModel.isFavorite, action: actions.toggleFavorite)
         if let target = playTarget {

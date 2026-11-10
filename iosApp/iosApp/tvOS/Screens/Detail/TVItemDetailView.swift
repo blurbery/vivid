@@ -18,6 +18,8 @@ struct TVItemDetailView: View {
     @State private var nextUp = TVDetailNextUp()
     /// The series page's Play target, pinned apart from browsing.
     @State private var activeEpisodeId: String?
+    /// Gathering a shuffle order. A second Shuffle press waits for it.
+    @State private var shuffleTask: Task<Void, Never>?
     @State private var pendingCompletion: TVPlaybackStateRefreshEvent?
     @State private var pendingContext: TVSeriesDetailNavigationContextStore.Context?
     @State private var hasLoadedOnce = false
@@ -182,7 +184,8 @@ struct TVItemDetailView: View {
             playEpisode: { id, fileId, fromBeginning in
                 activateEpisode(id)
                 playSeriesEpisode(id, fileId: fileId, fromBeginning: fromBeginning)
-            }
+            },
+            shuffle: { shuffleSeries(detail) }
         )
         .task(id: target?.contentId) {
             await loadSeriesNextUp(target?.contentId)
@@ -588,6 +591,22 @@ extension TVItemDetailView {
             fromBeginning: fromBeginning,
             resume: resume
         )
+    }
+
+    /// Gathers every regular episode in a random order and plays the first,
+    /// from its start. The player follows the order through Next Up. The
+    /// page's Play target doesn't move, since the order isn't the series'.
+    private func shuffleSeries(_ series: ItemDetail) {
+        guard shuffleTask == nil else { return }
+        shuffleTask = Task { @MainActor in
+            defer { shuffleTask = nil }
+            guard let queue = try? await EpisodeShuffleQueue.load(seriesId: series.contentId, seriesTitle: series.title),
+                  let first = queue.episodes.first, !Task.isCancelled else { return }
+            pendingCompletion = nil
+            EpisodeShuffleHandoff.shared.stage(queue)
+            navigateToPlayer(contentId: first.contentId, fileId: nil, audio: nil, subtitle: nil,
+                             fromBeginning: true, resume: nil)
+        }
     }
 
     /// Selects a season from the shelf. A newer request always wins, and a

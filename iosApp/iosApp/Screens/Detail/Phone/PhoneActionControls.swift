@@ -19,12 +19,13 @@ struct PhoneLabeledActionMetrics {
     var tvStyle: Bool = false
 
     static let rowSpacing: CGFloat = 12
+    /// The gap between actions in the row under Play, which sits centred
+    /// rather than spread across the width.
+    static let stackedRowSpacing: CGFloat = 14
 
-    private var isLarge: Bool { sharesRow || tvStyle }
-
-    var circle: CGFloat { isLarge ? 52 : 42 }
-    var iconSize: CGFloat { isLarge ? 21 : 19 }
-    var slotWidth: CGFloat? { isLarge ? circle : nil }
+    var circle: CGFloat { 52 }
+    var iconSize: CGFloat { 21 }
+    var slotWidth: CGFloat? { circle }
     var showsCaption: Bool { !tvStyle }
     var minHeight: CGFloat { tvStyle ? circle : 58 }
 }
@@ -37,6 +38,10 @@ struct PhonePrimaryPillButton: View {
     let action: () -> Void
     var fullWidth: Bool = false
     var resumeProgress: ResumePresentation? = nil
+    /// Long-press menu items: Start Over when there's something to resume,
+    /// Shuffle on a series. No menu when both are nil.
+    var startOver: (() -> Void)? = nil
+    var shuffle: (() -> Void)? = nil
 
     @Environment(\.phoneDetailUsesTVStyle) private var usesTVStyle
 
@@ -45,16 +50,38 @@ struct PhonePrimaryPillButton: View {
         title: String,
         action: @escaping () -> Void,
         fullWidth: Bool = false,
-        resumeProgress: ResumePresentation? = nil
+        resumeProgress: ResumePresentation? = nil,
+        startOver: (() -> Void)? = nil,
+        shuffle: (() -> Void)? = nil
     ) {
         self.icon = icon
         self.title = title
         self.action = action
         self.fullWidth = fullWidth
         self.resumeProgress = resumeProgress
+        self.startOver = startOver
+        self.shuffle = shuffle
     }
 
     var body: some View {
+        if startOver == nil && shuffle == nil {
+            button
+        } else {
+            button.contextMenu {
+                if let startOver {
+                    Button(action: startOver) {
+                        Label("Start Over", systemImage: "backward.end.fill")
+                    }
+                }
+                if let shuffle {
+                    MobileShuffleMenuButton(action: shuffle)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var button: some View {
         if usesTVStyle {
             Button(action: action) {
                 label
@@ -189,7 +216,8 @@ struct PhoneLabeledActionRow<Content: View>: View {
             }
         } else {
             VStack(spacing: 12) {
-                HStack(alignment: .top, spacing: sharesRow ? PhoneLabeledActionMetrics.rowSpacing : 0) {
+                HStack(alignment: .top, spacing: sharesRow
+                       ? PhoneLabeledActionMetrics.rowSpacing : PhoneLabeledActionMetrics.stackedRowSpacing) {
                     content()
                 }
                 .frame(maxWidth: sharesRow ? nil : .infinity)
@@ -291,6 +319,18 @@ struct MobileNamedMenu<Items: View>: View {
             }
         }
         .accessibilityLabel(Text(caption))
+    }
+}
+
+/// Shuffle as a menu row: in Play's long-press menu, and in the iPad hero's
+/// More menu.
+struct MobileShuffleMenuButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Shuffle", systemImage: "shuffle")
+        }
     }
 }
 

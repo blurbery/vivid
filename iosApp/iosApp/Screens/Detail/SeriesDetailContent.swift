@@ -23,6 +23,8 @@ struct MobileSeriesPage: View {
 
     @State private var pendingPlay: PendingPlay?
     @State private var resumeEpisode: EpisodeListItem?
+    /// Gathering a shuffle order. A second Shuffle press waits for it.
+    @State private var shuffleTask: Task<Void, Never>?
     @State private var tmdbScore: TMDbRatingResult?
     @State private var similarTitles = MobileSimilarTitles()
     @Environment(AppRouter.self) private var router
@@ -186,7 +188,9 @@ struct MobileSeriesPage: View {
                     title: playTitle,
                     action: playTapped,
                     fullWidth: true,
-                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode)
+                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode),
+                    startOver: startOverAction,
+                    shuffle: shuffleSeries
                 )
             } selectors: {
                 if nextUpEpisode != nil {
@@ -228,6 +232,10 @@ struct MobileSeriesPage: View {
             seriesWatchedButtons
         }
         .mobileMovesToMore()
+        MobileNamedAction(icon: "shuffle", caption: "Shuffle") {
+            shuffleSeries()
+        }
+        .mobileMovesToMore()
         SeriesDownloadMenuButton(
             detail: detail,
             seasons: model.seasons,
@@ -237,6 +245,7 @@ struct MobileSeriesPage: View {
             style: .labeled
         )
         MobileMoreMenu {
+            MobileShuffleMenuButton(action: shuffleSeries)
             MobileFavoriteMenuButton(isFavorite: model.isFavorite) {
                 Task { await model.toggleFavorite() }
             }
@@ -268,6 +277,32 @@ struct MobileSeriesPage: View {
             Button("Mark Series as Unwatched") { Task { await model.toggleWatched() } }
         } else {
             Button("Mark Series as Watched") { Task { await model.toggleWatched() } }
+        }
+    }
+
+    /// Start Over in Play's long-press menu, when the next episode is part-way.
+    private var startOverAction: (() -> Void)? {
+        guard let episode = nextUpEpisode, episode.userData?.isInProgress == true else { return nil }
+        return { play(episode, fromBeginning: true) }
+    }
+
+    /// Gathers every regular episode in a random order and streams the
+    /// first from its start. The player follows the order through Next Up.
+    /// Always streams: a downloaded copy plays offline, without Next Up.
+    private func shuffleSeries() {
+        guard shuffleTask == nil else { return }
+        let series = detail
+        shuffleTask = Task { @MainActor in
+            defer { shuffleTask = nil }
+            guard let queue = try? await EpisodeShuffleQueue.load(seriesId: series.contentId, seriesTitle: series.title),
+                  let first = queue.episodes.first, !Task.isCancelled,
+                  ConnectionMonitor.shared.isServerReachable else { return }
+            EpisodeShuffleHandoff.shared.stage(queue)
+            session.stream(
+                MobilePlayRequest(contentId: first.contentId, fileId: nil, audioTrackIndex: nil,
+                                  startFromBeginning: true, resumePosition: nil),
+                router: router
+            )
         }
     }
 
