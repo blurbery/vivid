@@ -2,7 +2,7 @@
 // Renders the README sponsors image (sponsors.svg) from blurbery's GitHub Sponsors.
 //
 // Usage:
-//   SPONSORS_TOKEN=<classic token with read:user> node scripts/sponsors/render-sponsors.mjs --out sponsors.svg
+//   SPONSORS_TOKEN=<classic token with read:user and read:org> node scripts/sponsors/render-sponsors.mjs --out sponsors.svg
 //   node scripts/sponsors/render-sponsors.mjs --fixture sponsors.json --out sponsors.svg
 //
 // Only public sponsorships are shown. Active sponsors on a monthly tier of $25 or more are
@@ -45,6 +45,7 @@ function parseArgs(argv) {
 }
 
 // Fine-grained tokens can't read tiers at all, so SPONSORS_TOKEN must be a classic token.
+// Organisation sponsors' login, name and avatar need the read:org scope.
 // isActive, createdAt and privacyLevel need the read:user scope, so the script asks for active
 // and all sponsorships separately and relies on includePrivate: false and the CREATED_AT order
 // instead. isOneTimePayment needs read:user too, but it's the only way to tell a one-time payment
@@ -107,7 +108,10 @@ async function fetchPage(token, activeOnly, withPayment) {
     const body = await response.json();
     if (!response.ok || body.errors) {
       const detail = JSON.stringify(body.errors || body.message || response.status);
-      if (withPayment && body.errors?.length && body.errors.every((e) => e.type === 'INSUFFICIENT_SCOPES')) {
+      // Only a missing read:user scope for isOneTimePayment is worth retrying without it; any other
+      // missing scope (such as read:org for organisation sponsors) fails the run with GitHub's message.
+      if (withPayment && body.errors?.length
+        && body.errors.every((e) => e.type === 'INSUFFICIENT_SCOPES' && String(e.message).includes('isOneTimePayment'))) {
         throw new MissingScopeError(detail);
       }
       const hint = detail.includes('Resource not accessible by personal access token')
@@ -254,7 +258,7 @@ async function main() {
     nodes = JSON.parse(await readFile(args.fixture, 'utf8'));
   } else {
     const token = process.env.SPONSORS_TOKEN;
-    if (!token) throw new Error('Set SPONSORS_TOKEN to a classic GitHub token with the read:user scope.');
+    if (!token) throw new Error('Set SPONSORS_TOKEN to a classic GitHub token with the read:user and read:org scopes.');
     nodes = await fetchSponsorships(token);
   }
   const groups = groupSponsors(nodes);
