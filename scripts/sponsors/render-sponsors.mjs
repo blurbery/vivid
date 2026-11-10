@@ -6,9 +6,9 @@
 //   node scripts/sponsors/render-sponsors.mjs --fixture sponsors.json --out sponsors.svg
 //
 // Only public sponsorships are shown. Active sponsors on a monthly tier of $25 or more are
-// Gold sponsors, shown with their name; other active sponsors, including one-time sponsors,
-// are Silver sponsors with a smaller avatar, and sponsors whose sponsorship has ended are
-// listed as past sponsors. Avatars are embedded as
+// Gold sponsors, with a large avatar and their name; other active sponsors, including one-time
+// sponsors, are Silver sponsors, with a smaller avatar and their name; and sponsors whose
+// sponsorship has ended are listed as past sponsors, avatar only. Avatars are embedded as
 // data URIs because GitHub won't load external images inside an SVG.
 
 import { readFile, writeFile } from 'node:fs/promises';
@@ -29,8 +29,8 @@ const PROFILE = 'https://github.com/';
 // Laid out like sponsorkit's images: a transparent background and mid-grey text, so it reads
 // on GitHub's light and dark themes, with a centred title and a row of round avatars per tier.
 const TIERS = [
-  { key: 'gold', title: 'Gold Sponsors', avatar: 90, slot: 120, gap: 10, names: true, ring: 'gold' },
-  { key: 'silver', title: 'Silver Sponsors', avatar: 60, slot: 90, gap: 10, names: true, ring: 'silver' },
+  { key: 'gold', title: 'Gold Sponsors', avatar: 90, slot: 120, gap: 10, names: true, nameMax: 16, ring: 'gold' },
+  { key: 'silver', title: 'Silver Sponsors', avatar: 60, slot: 90, gap: 10, names: true, nameMax: 13, ring: 'silver' },
   { key: 'past', title: 'Past Sponsors', avatar: 35, slot: 35, gap: 3, names: false, muted: true },
 ];
 
@@ -207,7 +207,7 @@ export function renderSvg(groups, avatars) {
           + (tier.ring ? `<circle cx="${cx}" cy="${cy}" r="${r + 1.5}" fill="none" stroke="url(#${tier.ring}Ring)" stroke-width="2"/>` : '')
           + '</g>';
         if (tier.names) {
-          item += `<text x="${cx}" y="${cy + r + 20}" text-anchor="middle" class="sponsor-name">${escapeXml(truncate(label, 16))}</text>`;
+          item += `<text x="${cx}" y="${cy + r + 20}" text-anchor="middle" class="sponsor-name">${escapeXml(truncate(label, tier.nameMax))}</text>`;
         }
         parts.push(`${item}</a>`);
         x += tier.slot + tier.gap;
