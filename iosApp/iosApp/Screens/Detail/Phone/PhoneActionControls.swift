@@ -267,7 +267,7 @@ struct MobileActionRowLayout: Layout {
     /// Each action's width, the gap between them and the leading inset that
     /// centres the row.
     static func placement(widths ideal: [CGFloat], available: CGFloat, spacing: CGFloat,
-                          minSpacing: CGFloat, minItemWidth: CGFloat = 52) -> (widths: [CGFloat], gap: CGFloat, leading: CGFloat) {
+                          minSpacing: CGFloat, minItemWidth: CGFloat = PhoneLabeledActionMetrics.circleSize) -> (widths: [CGFloat], gap: CGFloat, leading: CGFloat) {
         guard !ideal.isEmpty else { return ([], 0, 0) }
         let gaps = CGFloat(ideal.count - 1)
         let content = ideal.reduce(0, +)
