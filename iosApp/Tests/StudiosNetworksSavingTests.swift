@@ -46,31 +46,41 @@ final class StudiosNetworksSavingTests: XCTestCase {
                        "Nothing is left beside it")
     }
 
-    func testTheLibraryIndexAndMovieListReadBackAcrossManyPieces() throws {
-        // More than 200 of each, so every field is written in several pieces.
-        let movies = try (0..<450).map { try item("m\($0)") }
-        let index = StudioNetworkIndexFile(
-            savedAt: Date(timeIntervalSinceReferenceDate: 812_345_678.5),
-            movies: Dictionary(uniqueKeysWithValues: movies.map { ("t:\($0.contentId)", $0) }),
-            series: [:],
-            tagged: ["netflix": Array(movies.prefix(430)), "hbo": [], "pixar": [movies[0]]],
-            revision: 4
-        )
-        let indexURL = folder.appendingPathComponent("library.json")
-        try JSONPieceWriter.write(to: indexURL) { try index.writeFields(to: &$0) }
-        let readIndex = try JSONDecoder().decode(StudioNetworkIndexFile.self, from: Data(contentsOf: indexURL))
-        XCTAssertEqual(readIndex.savedAt, index.savedAt)
-        XCTAssertEqual(readIndex.movies, index.movies)
-        XCTAssertEqual(readIndex.series, [:])
-        XCTAssertEqual(readIndex.tagged, index.tagged, "Each list keeps its titles in order")
-        XCTAssertEqual(readIndex.revision, 4)
+    /// A file whose only field uses the default piece size, as the results'
+    /// lists of titles would.
+    private struct Titles: Codable, Equatable, PiecewiseJSONFile {
+        let titles: [String: BrowseItem]
 
-        let lookup = LibraryMovieLookup(index: index.movies, savedAt: index.savedAt)
-        let lookupURL = folder.appendingPathComponent("movies.json")
-        try JSONPieceWriter.write(to: lookupURL) { try lookup.writeFields(to: &$0) }
-        let readLookup = try JSONDecoder().decode(LibraryMovieLookup.self, from: Data(contentsOf: lookupURL))
-        XCTAssertEqual(readLookup.movies.map(\.card), lookup.movies.map(\.card))
-        XCTAssertEqual(readLookup.keys, lookup.keys)
+        func writeFields(to writer: inout JSONPieceWriter) throws {
+            try writer.objectField("titles", titles)
+        }
+    }
+
+    func testADictionaryReadsBackAcrossManyPieces() throws {
+        // More than 200, so it's written in several pieces.
+        let file = Titles(titles: Dictionary(uniqueKeysWithValues: try (0..<450).map { ("k\($0)", try item("m\($0)")) }))
+        let url = folder.appendingPathComponent("titles.json")
+        try JSONPieceWriter.write(to: url) { try file.writeFields(to: &$0) }
+        XCTAssertEqual(try JSONDecoder().decode(Titles.self, from: Data(contentsOf: url)), file)
+
+        let empty = Titles(titles: [:])
+        try JSONPieceWriter.write(to: url) { try empty.writeFields(to: &$0) }
+        XCTAssertEqual(try JSONDecoder().decode(Titles.self, from: Data(contentsOf: url)), empty)
+    }
+
+    func testResultsFromTheJSONVersionCarryOverAsIDs() throws {
+        let json = #"""
+        {"savedAt":800000000,"revision":5,"results":{"pixar":{
+          "movies":[{"contentId":"a","type":"movie","title":"A"}],"series":[],"recentSeries":[],"recentMovies":[],
+          "all":[{"contentId":"a","type":"movie","title":"A"},{"contentId":"b","type":"movie","title":"B"}],
+          "matchCount":2}}}
+        """#
+        let old = try JSONDecoder().decode(LegacyStudioNetworkResultsFile.self, from: Data(json.utf8))
+        let current = old.current
+        XCTAssertEqual(current.results["pixar"]?.allIDs, ["a", "b"])
+        XCTAssertEqual(current.results["pixar"]?.movies.map(\.contentId), ["a"])
+        XCTAssertEqual(current.results["pixar"]?.matchCount, 2)
+        XCTAssertNil(current.revision, "Matched again on the first load")
     }
 
     func testAFailedWriteKeepsTheOldFile() throws {
@@ -118,6 +128,40 @@ final class StudiosNetworksSavingTests: XCTestCase {
         XCTAssertEqual(otherProcess.record.interrupted, 0, "Another process's crash isn't this load's")
         let background = start(running)
         XCTAssertEqual(background.record.interrupted, 0, "A close in the background is routine")
+        let duringPlayback = StudiosNetworksStore.guardedStart(
+            running, app: "1.1 (2)", process: "300",
+            previousExit: AppHealthMonitor.PreviousExit(pid: 200, playerOpen: true), retrying: false, now: now
+        )
+        XCTAssertEqual(duringPlayback.record.interrupted, 0, "A close while the player was open isn't counted against the load")
+    }
+
+    // MARK: Waiting for the player
+
+    func testTheLoadWaitsUntilThePlayerCloses() async throws {
+        var checks = 0
+        try await StudiosNetworksStore.waitWhilePlayerOpen(until: Date().addingTimeInterval(60), every: .milliseconds(1)) {
+            checks += 1
+            return checks < 4
+        }
+        XCTAssertEqual(checks, 4, "Waits while the player is open and goes on once it closes")
+    }
+
+    func testTheWaitEndsAtItsDeadlineWhileThePlayerStaysOpen() async throws {
+        var checks = 0
+        try await StudiosNetworksStore.waitWhilePlayerOpen(until: Date().addingTimeInterval(0.05), every: .milliseconds(10)) {
+            checks += 1
+            return true
+        }
+        XCTAssertGreaterThan(checks, 1, "Kept waiting until the deadline")
+    }
+
+    func testTheWaitDoesNotHoldUpALoadWithThePlayerClosed() async throws {
+        var checks = 0
+        try await StudiosNetworksStore.waitWhilePlayerOpen(until: Date().addingTimeInterval(60), every: .seconds(60)) {
+            checks += 1
+            return false
+        }
+        XCTAssertEqual(checks, 1)
     }
 
     func testTwoInARowStopLoadsUntilTryAgainAnUpdateOrADayLater() {

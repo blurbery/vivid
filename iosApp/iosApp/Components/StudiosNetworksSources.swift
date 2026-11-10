@@ -36,90 +36,62 @@ struct StudioNetworkResultsFile: Codable, Sendable {
     var missesTrending: Bool?
 }
 
-/// Every library title. Reading the library is the slow part, so it's saved
-/// on its own and the quicker TMDb matching can run again without it.
-struct StudioNetworkIndexFile: Codable, Sendable {
-    let savedAt: Date
-    let movies: [String: BrowseItem]
-    let series: [String: BrowseItem]
-    /// Library titles by the brand the server tags them with, in title order.
-    var tagged: [String: [BrowseItem]]?
-    /// The index revision the tags were read with. An index saved before tags
-    /// were read, or before a brand's names changed, is read again.
-    var revision: Int?
-}
-
-/// Only the movie cards from a saved library index. Decoding this skips the
-/// series and every field a poster card doesn't use.
-struct StudioNetworkIndexMovieCards: Decodable, Sendable {
-    let savedAt: Date
-    let movies: [String: SimilarPosterItem]
-}
-
-/// The movie and series cards from a saved library index, for Search.
-/// Decoding this skips the brand tags' copies of them.
-struct StudioNetworkIndexTitles: Decodable, Sendable {
-    let movies: [String: BrowseItem]
-    let series: [String: BrowseItem]
-}
-
-/// Library movies with just what a poster card needs, keyed like the library
-/// index. Saved beside it, so a movie page can find the rest of its TMDb
-/// collection without searching the server.
-struct LibraryMovieLookup: Codable, Sendable {
-    struct Movie: Codable, Sendable {
-        let card: SimilarPosterItem
-        var tmdbId: String?
+/// Results saved before the library index moved to SQLite, when each brand's
+/// grid held full titles. Read once after the update, as IDs, so Home keeps
+/// its row while the first load runs; that load matches them again.
+struct LegacyStudioNetworkResultsFile: Decodable {
+    struct Result: Decodable {
+        var logoURL: URL?
+        var movies: [BrowseItem]
+        var series: [BrowseItem]
+        var recentSeries: [BrowseItem]
+        var recentMovies: [BrowseItem]
+        var trendingSeries: [BrowseItem]?
+        var trendingMovies: [BrowseItem]?
+        var leftOutOfRows: Set<String>?
+        var all: [BrowseItem]
+        var matchCount: Int
     }
 
     let savedAt: Date
-    let movies: [Movie]
-    /// A TMDb ID or title and year key, to a position in `movies`.
-    let keys: [String: Int]
+    let results: [String: Result]
+    var missesTrending: Bool?
 
-    init(index: [String: BrowseItem], savedAt: Date) {
-        self.init(cards: index.mapValues(SimilarPosterItem.init(item:)), savedAt: savedAt)
+    /// Larger files are left: decoding one takes two to three times its size
+    /// in memory, which this version avoids, and the row comes back once the
+    /// first load finishes. Typical saved results are 10 to 20 MB.
+    static let largestRead = 24 * 1024 * 1024
+
+    /// The same results, with no revision so they're matched again.
+    var current: StudioNetworkResultsFile {
+        StudioNetworkResultsFile(savedAt: savedAt, results: results.mapValues { old in
+            StudioNetworkResult(
+                logoURL: old.logoURL, movies: old.movies, series: old.series,
+                recentSeries: old.recentSeries, recentMovies: old.recentMovies,
+                trendingSeries: old.trendingSeries, trendingMovies: old.trendingMovies,
+                leftOutOfRows: old.leftOutOfRows, allIDs: old.all.map(\.contentId), matchCount: old.matchCount
+            )
+        }, revision: nil, missesTrending: missesTrending)
     }
+}
 
-    init(cards: [String: SimilarPosterItem], savedAt: Date) {
-        var movies: [Movie] = []
-        var positions: [String: Int] = [:]
-        var keys: [String: Int] = [:]
-        for (key, card) in cards {
-            // A title kept under two keys is stored once.
-            let position: Int
-            if let existing = positions[card.contentId] {
-                position = existing
-            } else {
-                position = movies.count
-                positions[card.contentId] = position
-                movies.append(Movie(card: card))
-            }
-            keys[key] = position
-            // Title and year keys are never plain numbers.
-            if Int(key) != nil { movies[position].tmdbId = key }
-        }
-        self.savedAt = savedAt
-        self.movies = movies
-        self.keys = keys
-    }
+/// Finds library movies for a movie page's TMDb collection row in the saved
+/// library index, so the page never searches the server.
+struct LibraryMovieLookup: Sendable {
+    let library: StudioLibraryDatabase
 
-    /// By TMDb ID first, then by exact title and year from a movie that
-    /// doesn't carry a different TMDb ID.
+    /// By TMDb ID first, then by exact title and year from a movie the server
+    /// lists without a TMDb ID.
     func movie(tmdbId: Int, titles: [String], year: Int?) -> SimilarPosterItem? {
-        if let movie = movie(forKey: String(tmdbId)) { return movie.card }
+        if let found = library.item(media: .movie, key: String(tmdbId)) { return SimilarPosterItem(item: found) }
         guard let year else { return nil }
         for title in titles {
-            if let movie = movie(forKey: StudiosNetworksStore.titleKey(title, year: year)), movie.tmdbId == nil {
-                return movie.card
+            let key = StudiosNetworksStore.titleKey(title, year: year)
+            if let found = library.lookup(media: .movie, key: key), found.tmdbId == nil {
+                return SimilarPosterItem(item: found.item)
             }
         }
         return nil
-    }
-
-    private func movie(forKey key: String) -> Movie? {
-        guard let position = keys[key], movies.indices.contains(position) else { return nil }
-        return movies[position]
     }
 }
 
@@ -201,44 +173,11 @@ struct JSONPieceWriter {
         try raw("}")
     }
 
-    /// A field holding a list, written a piece at a time.
-    mutating func arrayField<Element: Encodable>(_ name: String, _ items: [Element]?) throws {
-        guard let items else { return }
-        try key(name)
-        try array(items)
-    }
-
-    /// A field holding a dictionary of lists, each written a piece at a time.
-    mutating func listsField<Element: Encodable>(_ name: String, _ lists: [String: [Element]]?) throws {
-        guard let lists else { return }
-        try key(name)
-        try raw("{")
-        var first = true
-        for (listKey, items) in lists {
-            if !first { try raw(",") }
-            first = false
-            try handle.write(contentsOf: encoder.encode(listKey))
-            try raw(":")
-            try array(items)
-        }
-        try raw("}")
-    }
-
     private mutating func key(_ name: String) throws {
         if hasField { try raw(",") }
         hasField = true
         try handle.write(contentsOf: encoder.encode(name))
         try raw(":")
-    }
-
-    private func array<Element: Encodable>(_ items: [Element]) throws {
-        try raw("[")
-        var first = true
-        for start in stride(from: 0, to: items.count, by: Self.piece) {
-            let end = Swift.min(start + Self.piece, items.count)
-            try inner(Array(items[start..<end]), first: &first)
-        }
-        try raw("]")
     }
 
     /// A piece's entries without the brackets around them, after a comma
@@ -264,24 +203,6 @@ extension StudioNetworkResultsFile: PiecewiseJSONFile {
         try writer.objectField("results", results, piece: 1)
         try writer.field("revision", revision)
         try writer.field("missesTrending", missesTrending)
-    }
-}
-
-extension StudioNetworkIndexFile: PiecewiseJSONFile {
-    func writeFields(to writer: inout JSONPieceWriter) throws {
-        try writer.field("savedAt", savedAt)
-        try writer.objectField("movies", movies)
-        try writer.objectField("series", series)
-        try writer.listsField("tagged", tagged)
-        try writer.field("revision", revision)
-    }
-}
-
-extension LibraryMovieLookup: PiecewiseJSONFile {
-    func writeFields(to writer: inout JSONPieceWriter) throws {
-        try writer.field("savedAt", savedAt)
-        try writer.arrayField("movies", movies)
-        try writer.objectField("keys", keys)
     }
 }
 
@@ -314,85 +235,58 @@ private struct StudioNetworkIndexPage: Decodable, Sendable {
     let total: Int?
 }
 
-/// Builds one type's library index as its pages arrive.
-private struct StudioNetworkIndexBuilder {
-    /// Keyed by TMDb ID and by title and year, first title wins.
-    private(set) var index: [String: BrowseItem] = [:]
-    /// By the brands the server tags each title with.
-    private(set) var tagged: [String: [BrowseItem]] = [:]
-    /// A title added while reading shifts later pages, so one can arrive
-    /// twice. Each is tagged once.
-    private var taggedIDs = Set<String>()
-
-    mutating func add(_ page: StudioNetworkIndexPage) {
-        for entry in page.items { add(entry) }
-    }
-
-    private mutating func add(_ entry: StudioNetworkIndexedItem) {
-        let item = entry.item
-        var kept = false
-        if let id = entry.tmdbId, !id.isEmpty, index[id] == nil {
-            index[id] = item
-            kept = true
-        }
-        // Servers that leave provider IDs out of lists still match here.
-        if let year = item.year {
-            let key = StudiosNetworksStore.titleKey(item.title, year: year)
-            if index[key] == nil {
-                index[key] = item
-                kept = true
-            }
-        }
-        // A title with neither key, or whose keys an earlier title took
-        // (such as a second copy of a film), is kept for Search, which reads
-        // every title. Nothing looks a title up by this key.
-        if !kept { index["c:" + item.contentId] = item }
-        // Every title is checked for tags, including those the keys above
-        // can't hold.
-        let brands = StudiosNetworksStore.tagMatcher.brandIDs(for: item)
-        if !brands.isEmpty, taggedIDs.insert(item.contentId).inserted {
-            for brand in brands { tagged[brand, default: []].append(item) }
-        }
-    }
-}
-
 extension StudiosNetworksStore {
     /// Library pages read at once after the first page gives the total.
     private nonisolated static let concurrentLibraryPages = 4
     /// 200 per page, the same shape as the app's browse queries.
     private nonisolated static let libraryPageSize = 200
-    /// The most pages read of one type, in each pass.
-    private nonisolated static let maxLibraryPages = 500
+    /// The most pages read of one type, in each pass: a million titles,
+    /// well past any real library, so a server that never says it has no
+    /// more can't keep the read going for ever.
+    private nonisolated static let maxLibraryPages = 5_000
 
-    /// Every library title of one type, keyed by TMDb ID and by title and
-    /// year, and by the brands the server tags it with. Runs off the main
-    /// actor: building the index folds every library title, which would
-    /// stall scrolling during the daily refresh.
-    nonisolated static func libraryIndex(
-        type: String,
+    /// Reads every library title of one type into `library`, a page at a
+    /// time, carrying on from where an earlier read of the same file stopped.
+    /// Each page is written with the progress it brings, so memory holds a
+    /// few pages at most however large the library is.
+    nonisolated static func readLibrary(
+        _ media: StudioLibraryDatabase.Media,
+        into library: StudioLibraryDatabase,
         report: @MainActor (String, Int) -> Void
-    ) async throws -> (index: [String: BrowseItem], tagged: [String: [BrowseItem]]) {
+    ) async throws {
+        let type = media.rawValue
+        // One four-hour allowance for the player across the whole read.
+        let playerDeadline = Date().addingTimeInterval(playerWaitLimit)
         @Sendable func page(_ offset: Int, total: Bool) async throws -> StudioNetworkIndexPage {
             try await VividAPI.shared.catalog(query: [
                 "source": "query", "type": type, "offset": String(offset), "limit": String(libraryPageSize),
                 "sort": "title", "order": "asc", "match": "all", "include_total": total ? "true" : "false",
             ], as: StudioNetworkIndexPage.self)
         }
-        var builder = StudioNetworkIndexBuilder()
-        try Task.checkCancellation()
-        let first = try await page(0, total: true)
-        builder.add(first)
-        var offset = first.items.count
+        func save(_ result: StudioNetworkIndexPage, endingAt offset: Int, more: Bool) throws {
+            try library.add(result.items.map { StudioLibraryDatabase.Entry(item: $0.item, tmdbId: $0.tmdbId) },
+                            media: media, progress: .init(offset: offset, isDone: !more))
+        }
+
+        var offset = library.progress(media)?.offset ?? 0
+        if library.progress(media)?.isDone == true {
+            await report(type, offset)
+            return
+        }
+        try await waitWhilePlayerOpen(until: playerDeadline)
+        let first = try await page(offset, total: true)
+        offset += first.items.count
         var more = first.hasMore == true && !first.items.isEmpty
+        try save(first, endingAt: offset, more: more)
         await report(type, offset)
 
         // With a total and a full first page, the rest load a few at a time
         // and are added in title order. A server that sends smaller pages
         // than asked, or no total, is read one page at a time below.
         if more, first.items.count == libraryPageSize, let total = first.total, total > offset {
-            let offsets = Array(stride(from: offset, to: min(total, libraryPageSize * maxLibraryPages), by: libraryPageSize))
+            let offsets = Array(stride(from: offset, to: min(total, offset + libraryPageSize * maxLibraryPages), by: libraryPageSize))
             for start in stride(from: 0, to: offsets.count, by: concurrentLibraryPages) {
-                try Task.checkCancellation()
+                try await waitWhilePlayerOpen(until: playerDeadline)
                 let batch = Array(offsets[start..<min(start + concurrentLibraryPages, offsets.count)])
                 let pages = try await withThrowingTaskGroup(of: (Int, StudioNetworkIndexPage).self) { group in
                     for pageOffset in batch {
@@ -400,12 +294,15 @@ extension StudiosNetworksStore {
                     }
                     var found: [Int: StudioNetworkIndexPage] = [:]
                     for try await (pageOffset, result) in group { found[pageOffset] = result }
-                    return batch.compactMap { found[$0] }
+                    return batch.compactMap { pageOffset in found[pageOffset].map { (pageOffset, $0) } }
                 }
-                for result in pages { builder.add(result) }
-                guard let lastOffset = batch.last, let last = pages.last else { break }
-                offset = lastOffset + last.items.count
-                more = last.hasMore == true && !last.items.isEmpty
+                for (pageOffset, result) in pages {
+                    let end = pageOffset + result.items.count
+                    let pageHasMore = result.hasMore == true && !result.items.isEmpty
+                    try save(result, endingAt: end, more: pageHasMore)
+                    offset = end
+                    more = pageHasMore
+                }
                 await report(type, offset)
                 if !more { break }
             }
@@ -413,14 +310,31 @@ extension StudiosNetworksStore {
 
         // Titles added while reading, or a server without a total.
         for _ in 0..<maxLibraryPages where more {
-            try Task.checkCancellation()
+            try await waitWhilePlayerOpen(until: playerDeadline)
             let result = try await page(offset, total: false)
-            builder.add(result)
             offset += result.items.count
             more = result.hasMore == true && !result.items.isEmpty
+            try save(result, endingAt: offset, more: more)
             await report(type, offset)
         }
-        return (builder.index, builder.tagged)
+    }
+
+    /// How long a library read or matching waits for the player in all,
+    /// in case the player's closing was never recorded.
+    nonisolated static let playerWaitLimit: TimeInterval = 4 * 60 * 60
+
+    /// Holds the library read and matching while the player is open, so a
+    /// large read never adds to what a film is already using, and carries on
+    /// within a couple of seconds of it closing, or at `deadline` anyway.
+    nonisolated static func waitWhilePlayerOpen(
+        until deadline: Date,
+        every interval: Duration = .seconds(2),
+        playerOpen: () -> Bool = { AppHealthContext.snapshot().playerOpen }
+    ) async throws {
+        try Task.checkCancellation()
+        while playerOpen(), Date() < deadline {
+            try await Task.sleep(for: interval)
+        }
     }
 
     // MARK: TMDb lists

@@ -13,7 +13,9 @@ import Foundation
 ///
 /// Everything a search needs is worked out once in `init`, and a search only
 /// walks flat arrays of scalar values, so it can run on every keystroke over
-/// tens of thousands of titles.
+/// hundreds of thousands of titles. It keeps each title's name and content ID
+/// only, so a large library fits; Search reads its matches' details from the
+/// saved library afterwards.
 struct LibrarySearchIndex: Sendable {
     /// How a title matches the query, best first.
     enum Tier: Int, Comparable, Sendable {
@@ -36,7 +38,8 @@ struct LibrarySearchIndex: Sendable {
 
     /// A title Search found, and how it matched.
     struct Match: Sendable {
-        let item: BrowseItem
+        let contentId: String
+        let title: String
         let tier: Tier
         /// The typo's edits, and 0 for every other tier.
         let distance: Int
@@ -50,9 +53,11 @@ struct LibrarySearchIndex: Sendable {
         }
     }
 
-    /// The items, one per content ID, in the order they were given.
-    private let items: [BrowseItem]
-    /// What ranking needs of each item, at the same index as `items`.
+    /// The content IDs, one per title, in the order they were given.
+    private let ids: [String]
+    /// The titles' names, at the same index as `ids`.
+    private let names: [String]
+    /// What ranking needs of each title, at the same index as `ids`.
     private let titles: [IndexedTitle]
     /// Every form of every title.
     private let forms: [Form]
@@ -63,11 +68,17 @@ struct LibrarySearchIndex: Sendable {
     /// The item types, indexed by `IndexedTitle.type`.
     private let types: [String]
 
-    var count: Int { items.count }
+    var count: Int { ids.count }
 
     init(items: [BrowseItem]) {
+        self.init(titles: items.map {
+            StudioLibraryDatabase.SearchTitle(contentId: $0.contentId, type: $0.type, title: $0.title, year: $0.year)
+        })
+    }
+
+    init(titles all: [StudioLibraryDatabase.SearchTitle]) {
         var seen = Set<String>()
-        let kept = items.filter { seen.insert($0.contentId).inserted }
+        let kept = all.filter { seen.insert($0.contentId).inserted }
 
         // Each title's place in title order, so ranking compares numbers only.
         var titleOrder = [Int](repeating: 0, count: kept.count)
@@ -109,7 +120,8 @@ struct LibrarySearchIndex: Sendable {
             ))
         }
 
-        self.items = kept
+        self.ids = kept.map(\.contentId)
+        self.names = kept.map(\.title)
         self.titles = titles
         self.forms = forms
         self.text = text
@@ -139,7 +151,9 @@ struct LibrarySearchIndex: Sendable {
             }
         }
         hits.sort { $0.rank < $1.rank }
-        return hits.prefix(limit).map { Match(item: items[$0.title], tier: $0.score.tier, distance: $0.score.distance) }
+        return hits.prefix(limit).map {
+            Match(contentId: ids[$0.title], title: names[$0.title], tier: $0.score.tier, distance: $0.score.distance)
+        }
     }
 }
 

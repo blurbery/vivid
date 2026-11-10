@@ -101,6 +101,9 @@ struct TVStudioNetworkPage: View {
     @State private var store = StudiosNetworksStore.shared
     @State private var homeCards = TVHomeCardPreferences.shared
     @State private var uiCustomization = UICustomizationPreferences.shared
+    /// All in Your Library, read from the saved library when the page opens
+    /// and again whenever the brand's list changes.
+    @State private var all: [BrowseItem] = []
 
     var body: some View {
         // The store changes while other brands load or refresh. Only this
@@ -112,12 +115,16 @@ struct TVStudioNetworkPage: View {
             brand: store.brand(brandId),
             logoURL: result.logoURL,
             rows: store.pageRows(for: brandId).map { TVStudioNetworkPageContent.Row(title: $0.title, items: $0.items) },
-            all: result.all,
+            all: all,
             railPosterSize: homeCards.presentation.posterSize,
             gridPosterSize: uiCustomization.cardPresentation.posterSize
         )
         .equatable()
         .task { await store.loadIfNeeded() }
+        .task(id: store.libraryGridKey(for: brandId)) {
+            let titles = await store.libraryTitles(for: brandId)
+            if !Task.isCancelled { all = titles }
+        }
     }
 }
 

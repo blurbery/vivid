@@ -119,6 +119,8 @@ final class SearchViewModel {
         error = nil
 
         var indexMatches: [LibrarySearchIndex.Match] = []
+        /// The matches' details, read from the saved library.
+        var matchedItems: [String: BrowseItem] = [:]
         var startedList = false
         if isReset {
             let index = StudiosNetworksStore.shared.searchIndex()
@@ -127,7 +129,11 @@ final class SearchViewModel {
                 index?.search(text, types: types, limit: Self.indexLimit) ?? []
             }.value
             guard isCurrent(token) else { return }
-            let strong = indexMatches.filter(\.isStrong).map(\.item)
+            for item in await StudiosNetworksStore.shared.libraryItems(indexMatches.map(\.contentId)) {
+                matchedItems[item.contentId] = item
+            }
+            guard isCurrent(token) else { return }
+            let strong = indexMatches.filter(\.isStrong).compactMap { matchedItems[$0.contentId] }
             if !strong.isEmpty {
                 list = SearchResultList()
                 list.append(strong)
@@ -139,7 +145,7 @@ final class SearchViewModel {
                 startedList = true
             }
         }
-        let weaker = indexMatches.filter { !$0.isStrong }.map(\.item)
+        let weaker = indexMatches.filter { !$0.isStrong }.compactMap { matchedItems[$0.contentId] }
         let usesPieces = isReset && indexMatches.isEmpty
         async let pieceItems = Self.pieceResults(
             usesPieces ? SearchMatching.pieces(of: text) : [],
@@ -202,7 +208,9 @@ final class SearchViewModel {
 
         isSearching = false
         if let serverItems, !indexMatches.isEmpty {
-            await refreshArtwork(from: indexMatches, excluding: serverItems, type: type, token: token)
+            let matched = (indexMatches.filter(\.isStrong) + indexMatches.filter { !$0.isStrong })
+                .compactMap { matchedItems[$0.contentId] }
+            await refreshArtwork(from: matched, excluding: serverItems, type: type, token: token)
         }
     }
 
@@ -251,17 +259,15 @@ final class SearchViewModel {
     /// The index can hold signed artwork links that are about to expire.
     /// Asks the server again for a few of those titles and swaps in its cards.
     private func refreshArtwork(
-        from matches: [LibrarySearchIndex.Match],
+        from ordered: [BrowseItem],
         excluding serverItems: [BrowseItem],
         type: String,
         token: Int
     ) async {
         let served = Set(serverItems.map(\.contentId))
         let soon = Date().addingTimeInterval(60)
-        let ordered = matches.filter(\.isStrong) + matches.filter { !$0.isStrong }
         var titles: [String] = []
-        for match in ordered {
-            let item = match.item
+        for item in ordered {
             guard !served.contains(item.contentId), !titles.contains(item.title),
                   let poster = item.posterUrl,
                   let expiry = SiloAPICompatibility.artworkExpiry(poster), expiry < soon else { continue }

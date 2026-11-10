@@ -21,7 +21,7 @@ final class LibrarySearchIndexTests: XCTestCase {
         let index = try index("Superman", "Spidermen", "Notspiderman", "The Amazing Spider-Man", "Spider-Man 2", "Spider-Man")
         let found = index.search("spiderman")
 
-        XCTAssertEqual(found.map(\.item.title), ["Spider-Man", "Spider-Man 2", "The Amazing Spider-Man", "Notspiderman", "Spidermen"])
+        XCTAssertEqual(found.map(\.title), ["Spider-Man", "Spider-Man 2", "The Amazing Spider-Man", "Notspiderman", "Spidermen"])
         XCTAssertEqual(found.map(\.tier), [.exact, .prefix, .wordStart, .contains, .typo])
         XCTAssertEqual(found.map(\.distance), [0, 0, 0, 0, 1])
     }
@@ -30,11 +30,11 @@ final class LibrarySearchIndexTests: XCTestCase {
         let index = try index("X-Men", "Spider-Man")
 
         let men = index.search("men")
-        XCTAssertEqual(men.map(\.item.title), ["X-Men"])
+        XCTAssertEqual(men.map(\.title), ["X-Men"])
         XCTAssertEqual(men.map(\.tier), [.wordStart])
 
         let iderman = index.search("iderman")
-        XCTAssertEqual(iderman.map(\.item.title), ["Spider-Man"])
+        XCTAssertEqual(iderman.map(\.title), ["Spider-Man"])
         XCTAssertEqual(iderman.map(\.tier), [.contains])
     }
 
@@ -42,24 +42,24 @@ final class LibrarySearchIndexTests: XCTestCase {
         let index = try index("Harry Potter and the Chamber of Secrets", "Harry Potter and the Goblet of Fire", "Harry and the Hendersons")
 
         let goblet = index.search("potter goblet")
-        XCTAssertEqual(goblet.map(\.item.title), ["Harry Potter and the Goblet of Fire"])
+        XCTAssertEqual(goblet.map(\.title), ["Harry Potter and the Goblet of Fire"])
         XCTAssertEqual(goblet.map(\.tier), [.allWords])
 
         // `poter` is 5 letters, so it allows a typo; the shorter title comes first.
         let poter = index.search("harry poter")
-        XCTAssertEqual(poter.map(\.item.title), ["Harry Potter and the Goblet of Fire", "Harry Potter and the Chamber of Secrets"])
+        XCTAssertEqual(poter.map(\.title), ["Harry Potter and the Goblet of Fire", "Harry Potter and the Chamber of Secrets"])
         XCTAssertEqual(poter.map(\.tier), [.allWords, .allWords])
     }
 
     func testTyposWithinTheQuerysAllowanceStillMatch() throws {
         let index = try index("Spider-Man", "Interstellar", "The Matrix", "The Matrix Reloaded")
 
-        XCTAssertEqual(index.search("spidrman").map(\.item.title), ["Spider-Man"])
-        XCTAssertEqual(index.search("interstelar").map(\.item.title), ["Interstellar"])
+        XCTAssertEqual(index.search("spidrman").map(\.title), ["Spider-Man"])
+        XCTAssertEqual(index.search("interstelar").map(\.title), ["Interstellar"])
 
         // A swapped pair of letters is one edit.
         let matrix = index.search("teh matrix")
-        XCTAssertEqual(matrix.map(\.item.title), ["The Matrix", "The Matrix Reloaded"])
+        XCTAssertEqual(matrix.map(\.title), ["The Matrix", "The Matrix Reloaded"])
         XCTAssertEqual(matrix.map(\.tier), [.typo, .typo])
         XCTAssertEqual(matrix.map(\.distance), [1, 1])
     }
@@ -70,33 +70,33 @@ final class LibrarySearchIndexTests: XCTestCase {
     }
 
     func testShorterTitlesThenOlderOnesThenTitleOrderComeFirst() throws {
-        XCTAssertEqual(try index("Spider-Man 2", "Spider-Man").search("spider").map(\.item.title), ["Spider-Man", "Spider-Man 2"])
+        XCTAssertEqual(try index("Spider-Man 2", "Spider-Man").search("spider").map(\.title), ["Spider-Man", "Spider-Man 2"])
 
         let dunes = LibrarySearchIndex(items: [
             try item("1", "Dune", year: 2021), try item("2", "Dune"), try item("3", "Dune", year: 1984),
         ])
-        XCTAssertEqual(dunes.search("dune").map(\.item.contentId), ["3", "1", "2"])
+        XCTAssertEqual(dunes.search("dune").map(\.contentId), ["3", "1", "2"])
 
         let spiders = LibrarySearchIndex(items: [try item("1", "Spider-Man", year: 2002), try item("2", "Spider Man", year: 2002)])
-        XCTAssertEqual(spiders.search("spiderman").map(\.item.contentId), ["2", "1"])
+        XCTAssertEqual(spiders.search("spiderman").map(\.contentId), ["2", "1"])
     }
 
     func testAmpersandMatchesAsAndOrLeftOut() throws {
         let index = try index("Fast & Furious", "Law & Order")
 
         for query in ["fast furious", "fast and furious", "Fast & Furious"] {
-            XCTAssertEqual(index.search(query).map(\.item.title), ["Fast & Furious"], query)
+            XCTAssertEqual(index.search(query).map(\.title), ["Fast & Furious"], query)
             XCTAssertEqual(index.search(query).map(\.tier), [.exact], query)
         }
         XCTAssertEqual(index.search("fast & f").map(\.tier), [.prefix])
-        XCTAssertEqual(index.search("law order").map(\.item.title), ["Law & Order"])
+        XCTAssertEqual(index.search("law order").map(\.title), ["Law & Order"])
     }
 
     func testTypesKeepOnlyThoseTypes() throws {
         let index = LibrarySearchIndex(items: [try item("1", "Dune"), try item("2", "Dune", type: "series")])
 
-        XCTAssertEqual(index.search("dune").map(\.item.contentId), ["1", "2"])
-        XCTAssertEqual(index.search("dune", types: ["series"]).map(\.item.contentId), ["2"])
+        XCTAssertEqual(index.search("dune").map(\.contentId), ["1", "2"])
+        XCTAssertEqual(index.search("dune", types: ["series"]).map(\.contentId), ["2"])
         XCTAssertEqual(index.search("dune", types: ["movie", "series"]).count, 2)
         XCTAssertTrue(index.search("dune", types: []).isEmpty)
     }
@@ -104,7 +104,7 @@ final class LibrarySearchIndexTests: XCTestCase {
     func testLimitKeepsTheBestMatches() throws {
         let index = try index("Star Wars", "Star", "Starman", "Stardust", "A Star Is Born")
 
-        XCTAssertEqual(index.search("star", limit: 2).map(\.item.title), ["Star", "Starman"])
+        XCTAssertEqual(index.search("star", limit: 2).map(\.title), ["Star", "Starman"])
         XCTAssertTrue(index.search("star", limit: 0).isEmpty)
     }
 
@@ -112,8 +112,8 @@ final class LibrarySearchIndexTests: XCTestCase {
         let index = LibrarySearchIndex(items: [try item("1", "Dune"), try item("1", "Arrival"), try item("2", "Arrival")])
 
         XCTAssertEqual(index.count, 2)
-        XCTAssertEqual(index.search("dune").map(\.item.contentId), ["1"])
-        XCTAssertEqual(index.search("arrival").map(\.item.contentId), ["2"])
+        XCTAssertEqual(index.search("dune").map(\.contentId), ["1"])
+        XCTAssertEqual(index.search("arrival").map(\.contentId), ["2"])
     }
 
     func testQueriesWithoutLettersOrDigitsFindNothing() throws {
@@ -159,7 +159,7 @@ final class LibrarySearchIndexTests: XCTestCase {
         XCTAssertEqual(index.count, 20_000)
 
         let found = index.search("interstelar")
-        XCTAssertEqual(found.map(\.item.title), ["Interstellar", "Interstellar Wars", "Interstella 5555"])
+        XCTAssertEqual(found.map(\.title), ["Interstellar", "Interstellar Wars", "Interstella 5555"])
         XCTAssertEqual(found.map(\.distance), [1, 1, 2])
     }
 }

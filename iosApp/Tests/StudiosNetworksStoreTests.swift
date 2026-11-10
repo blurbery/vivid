@@ -246,16 +246,17 @@ final class StudiosNetworksStoreTests: XCTestCase {
     func testReplacingArtworkSwapsTitlesByIDAndDropsRemovedOnesFromTheCount() throws {
         var result = StudioNetworkResult()
         result.movies = [try item("a", "A", year: 2020, poster: siloPoster), try item("gone", "Gone", year: 2020, poster: siloPoster)]
-        result.all = result.movies
+        result.allIDs = result.movies.map(\.contentId)
         result.series = [try item("s", "S", year: 2021, type: "series", poster: siloPoster)]
         result.matchCount = 3
         let fresh = [
             try item("a", "A", year: 2020, poster: "https://silo.example.com/api/v2/artwork/a.webp?exp=1791100000&sig=1"),
             try item("s", "S", year: 2021, type: "series", poster: "https://silo.example.com/api/v2/artwork/s.webp?exp=1791100000&sig=2"),
         ]
-        let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(in: ["pixar": result], with: fresh, tagged: [:])["pixar"])
+        let current = Dictionary(uniqueKeysWithValues: fresh.map { ($0.contentId, $0) })
+        let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(in: ["pixar": result], with: current, tagged: [:])["pixar"])
         XCTAssertEqual(refreshed.movies.map(\.contentId), ["a"])
-        XCTAssertEqual(refreshed.all.map(\.contentId), ["a", "s"])
+        XCTAssertEqual(refreshed.allIDs, ["a", "s"])
         XCTAssertEqual(refreshed.movies.first?.posterUrl, fresh[0].posterUrl)
         XCTAssertEqual(refreshed.series.first?.posterUrl, fresh[1].posterUrl)
         XCTAssertEqual(refreshed.matchCount, 2)
@@ -265,13 +266,13 @@ final class StudiosNetworksStoreTests: XCTestCase {
     func testReplacingArtworkAddsTitlesTheServerNowTags() throws {
         var result = StudioNetworkResult()
         result.series = [try item("s", "S", year: 2021, type: "series")]
-        result.all = result.series
+        result.allIDs = result.series.map(\.contentId)
         result.matchCount = 1
-        let added = try item("new", "New", year: 2026, type: "series")
+        let current = Dictionary(uniqueKeysWithValues: result.series.map { ($0.contentId, $0) })
         let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(
-            in: ["netflix": result], with: result.series + [added], tagged: ["netflix": [added]]
+            in: ["netflix": result], with: current, tagged: ["netflix": ["new"]]
         )["netflix"])
-        XCTAssertEqual(refreshed.all.map(\.contentId), ["new", "s"])
+        XCTAssertEqual(refreshed.allIDs, ["new", "s"])
         XCTAssertEqual(refreshed.matchCount, 2)
     }
 
@@ -313,10 +314,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
     }
 
     func testLibraryTitlesPutTaggedFirstAndCountEachOnce() throws {
-        let a = try item("a", "A", year: 2020, type: "series")
-        let b = try item("b", "B", year: 2021)
-        let c = try item("c", "C", year: 2022)
-        XCTAssertEqual(StudiosNetworksStore.libraryTitles(tagged: [a, b], matched: [c, a]).map(\.contentId), ["a", "b", "c"])
+        XCTAssertEqual(StudiosNetworksStore.libraryTitles(tagged: ["a", "b"], matched: ["c", "a"]), ["a", "b", "c"])
     }
 
     func testOnlyNetworksReadTenPagesOfFilms() throws {
