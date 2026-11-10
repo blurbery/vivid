@@ -1277,7 +1277,7 @@ private struct TVHomeSpotlightArtwork: View {
 
     /// The centred card starts 60 points in from the screen edge (the
     /// carousel's margin), so this puts the logo and details on the detail
-    /// pages' left edge and the logo flies straight up when a title opens.
+    /// pages' logo edge and the logo flies straight up when a title opens.
     private static let contentLeadingInset = TVDetailHeroLayout.horizontalInset - 60
 
     var body: some View {
@@ -1344,7 +1344,7 @@ private struct TVHomeSpotlightArtwork: View {
                     }
                     Group {
                         if isEpisode {
-                            Text(([typeLabel] + spotlightMetaParts
+                            Text(([typeLabel] + slide.content.metaParts
                                   + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
                                 .font(.system(size: 23, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.85))
@@ -1414,17 +1414,6 @@ private struct TVHomeSpotlightArtwork: View {
             return String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
         }
         return type.capitalized
-    }
-
-    private var spotlightMetaParts: [String] {
-        var parts = slide.content.metaParts
-        if slide.item.type.lowercased() == "movie",
-           let runtime = slide.content.runtimeText,
-           parts.indices.contains(slide.content.runtimeMetaIndex),
-           parts[slide.content.runtimeMetaIndex] == runtime {
-            parts.remove(at: slide.content.runtimeMetaIndex)
-        }
-        return parts
     }
 
     private func reportReady() {
