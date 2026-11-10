@@ -12,19 +12,26 @@ extension EnvironmentValues {
     @Entry var mobileSelectorsInActionRow = false
 }
 
-/// Sizes of a named action. Actions are larger when they share Play's row
-/// and become bare circles in the iPad hero.
+/// Sizes of a named action: 52-point circles everywhere, captioned except
+/// in the iPad hero, where they're bare circles.
 struct PhoneLabeledActionMetrics {
     let sharesRow: Bool
     var tvStyle: Bool = false
 
     static let rowSpacing: CGFloat = 12
+    /// The gap between actions in the row under Play, which sits centred
+    /// rather than spread across the width.
+    static let stackedRowSpacing: CGFloat = 14
 
-    private var isLarge: Bool { sharesRow || tvStyle }
+    /// Every labelled action's circle, wherever the row sits.
+    static let circleSize: CGFloat = 52
 
-    var circle: CGFloat { isLarge ? 52 : 42 }
-    var iconSize: CGFloat { isLarge ? 21 : 19 }
-    var slotWidth: CGFloat? { isLarge ? circle : nil }
+    var circle: CGFloat { Self.circleSize }
+    var iconSize: CGFloat { 21 }
+    /// Sharing Play's row (the Duo's inner screen) and in the iPad hero, a
+    /// fixed slot the circle's width. Under Play, nil: at least the circle's
+    /// width, and wider for a long caption (`MobileActionRowLayout`).
+    var slotWidth: CGFloat? { sharesRow || tvStyle ? circle : nil }
     var showsCaption: Bool { !tvStyle }
     var minHeight: CGFloat { tvStyle ? circle : 58 }
 }
@@ -37,6 +44,10 @@ struct PhonePrimaryPillButton: View {
     let action: () -> Void
     var fullWidth: Bool = false
     var resumeProgress: ResumePresentation? = nil
+    /// Long-press menu items: Start Over when there's something to resume,
+    /// Shuffle on a series. No menu when both are nil.
+    var startOver: (() -> Void)? = nil
+    var shuffle: (() -> Void)? = nil
 
     @Environment(\.phoneDetailUsesTVStyle) private var usesTVStyle
 
@@ -45,16 +56,36 @@ struct PhonePrimaryPillButton: View {
         title: String,
         action: @escaping () -> Void,
         fullWidth: Bool = false,
-        resumeProgress: ResumePresentation? = nil
+        resumeProgress: ResumePresentation? = nil,
+        startOver: (() -> Void)? = nil,
+        shuffle: (() -> Void)? = nil
     ) {
         self.icon = icon
         self.title = title
         self.action = action
         self.fullWidth = fullWidth
         self.resumeProgress = resumeProgress
+        self.startOver = startOver
+        self.shuffle = shuffle
     }
 
+    /// The menu is always attached, so the button keeps its identity when
+    /// Start Over comes and goes. With no rows, a long press shows nothing.
     var body: some View {
+        button.contextMenu {
+            if let startOver {
+                Button(action: startOver) {
+                    Label("Start Over", systemImage: "backward.end.fill")
+                }
+            }
+            if let shuffle {
+                MobileShuffleMenuButton(action: shuffle)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var button: some View {
         if usesTVStyle {
             Button(action: action) {
                 label
@@ -170,8 +201,8 @@ extension PhoneDetailPrimaryActions where Selectors == EmptyView {
     }
 }
 
-/// Favourite, Watchlist, Watched and the rest, spread across the page with
-/// a rule under them, or side by side when they share Play's row.
+/// Favourite, Watchlist, Watched and the rest, centred under Play with a
+/// rule under them, or side by side when they share Play's row.
 struct PhoneLabeledActionRow<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -189,15 +220,68 @@ struct PhoneLabeledActionRow<Content: View>: View {
             }
         } else {
             VStack(spacing: 12) {
-                HStack(alignment: .top, spacing: sharesRow ? PhoneLabeledActionMetrics.rowSpacing : 0) {
-                    content()
-                }
-                .frame(maxWidth: sharesRow ? nil : .infinity)
-                if !sharesRow {
+                if sharesRow {
+                    HStack(alignment: .top, spacing: PhoneLabeledActionMetrics.rowSpacing) {
+                        content()
+                    }
+                } else {
+                    MobileActionRowLayout(spacing: PhoneLabeledActionMetrics.stackedRowSpacing) {
+                        content()
+                    }
+                    .frame(maxWidth: .infinity)
                     MobileActionRule()
                 }
             }
         }
+    }
+}
+
+/// The actions under Play, centred with even gaps. When they don't fit (a
+/// narrow window, long translated captions) the gaps close to `minSpacing`
+/// first, then each action gets an equal share, never narrower than its
+/// circle, and its caption scales down or truncates.
+struct MobileActionRowLayout: Layout {
+    var spacing: CGFloat
+    var minSpacing: CGFloat = 4
+    var minItemWidth: CGFloat = PhoneLabeledActionMetrics.circleSize
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let height = sizes.map(\.height).max() ?? 0
+        let ideal = sizes.reduce(0) { $0 + $1.width } + spacing * CGFloat(max(subviews.count - 1, 0))
+        return CGSize(width: proposal.width ?? ideal, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let placement = Self.placement(widths: subviews.map { $0.sizeThatFits(.unspecified).width },
+                                       available: bounds.width, spacing: spacing, minSpacing: minSpacing,
+                                       minItemWidth: minItemWidth)
+        var x = bounds.minX + placement.leading
+        for (subview, width) in zip(subviews, placement.widths) {
+            subview.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width + placement.gap
+        }
+    }
+
+    /// Each action's width, the gap between them and the leading inset that
+    /// centres the row.
+    static func placement(widths ideal: [CGFloat], available: CGFloat, spacing: CGFloat,
+                          minSpacing: CGFloat, minItemWidth: CGFloat = PhoneLabeledActionMetrics.circleSize) -> (widths: [CGFloat], gap: CGFloat, leading: CGFloat) {
+        guard !ideal.isEmpty else { return ([], 0, 0) }
+        let gaps = CGFloat(ideal.count - 1)
+        let content = ideal.reduce(0, +)
+        var widths = ideal
+        var gap = spacing
+        if content + gap * gaps > available {
+            gap = gaps > 0 ? max(minSpacing, min(spacing, (available - content) / gaps)) : 0
+        }
+        if content + gap * gaps > available {
+            let share = max(0, (available - gap * gaps) / CGFloat(ideal.count))
+            widths = ideal.map { max(min($0, share), min($0, minItemWidth)) }
+        }
+        let total = widths.reduce(0, +) + gap * gaps
+        return (widths, gap, max(0, (available - total) / 2))
     }
 }
 
@@ -245,7 +329,7 @@ struct MobileNamedAction: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Color.vividOnSurface.opacity(isActive ? 0.92 : 0.60))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .minimumScaleFactor(0.75)
                         .fixedSize(horizontal: sharesRow, vertical: false)
                 }
                 .mobileActionSlot(metrics)
@@ -285,12 +369,25 @@ struct MobileNamedMenu<Items: View>: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Color.vividOnSurface.opacity(0.60))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .fixedSize(horizontal: sharesRow, vertical: false)
                 }
                 .mobileActionSlot(metrics)
             }
         }
         .accessibilityLabel(Text(caption))
+    }
+}
+
+/// Shuffle as a menu row: in Play's long-press menu, and in the iPad hero's
+/// More menu.
+struct MobileShuffleMenuButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Shuffle", systemImage: "shuffle")
+        }
     }
 }
 
@@ -357,8 +454,7 @@ extension View {
 
     fileprivate func mobileActionSlot(_ metrics: PhoneLabeledActionMetrics) -> some View {
         frame(width: metrics.slotWidth)
-            .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil)
-            .frame(minHeight: metrics.minHeight)
+            .frame(minWidth: metrics.slotWidth == nil ? metrics.circle : nil, minHeight: metrics.minHeight)
             .contentShape(Rectangle())
     }
 }

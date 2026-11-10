@@ -206,19 +206,20 @@ struct SeriesDownloadMenuButton: View {
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(Color.vividOnSurface.opacity(opacity))
             .lineLimit(1)
-            .minimumScaleFactor(0.85)
+            .minimumScaleFactor(0.75)
             .fixedSize(horizontal: sharesActionRow, vertical: false)
     }
 
-    /// The slot's width, or the full width without one, at least the row's
-    /// height, with the whole rectangle tappable.
+    /// The slot's width, or without one at least the circle's width (wider
+    /// for a long caption), at least the row's height, with the whole
+    /// rectangle tappable.
     private struct SlotFrame: ViewModifier {
         let metrics: PhoneLabeledActionMetrics
 
         func body(content: Content) -> some View {
             content
                 .frame(width: metrics.slotWidth)
-                .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: metrics.minHeight)
+                .frame(minWidth: metrics.slotWidth == nil ? metrics.circle : nil, minHeight: metrics.minHeight)
                 .contentShape(Rectangle())
         }
     }

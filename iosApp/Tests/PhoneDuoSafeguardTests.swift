@@ -58,12 +58,41 @@ final class PhoneDuoSafeguardTests: XCTestCase {
         XCTAssertFalse(coordinator.isDuoTabletop)
     }
 
-    func testActionMetricsKeepThePhoneSizes() throws {
+    /// The row under Play uses the Duo's larger circles (blurbery's change,
+    /// 10 November 2026). Its slots grow for a long caption; Play's shared
+    /// row keeps fixed slots.
+    func testActionMetricsUseTheLargerCircles() throws {
         try skipOnDuo()
-        let metrics = PhoneLabeledActionMetrics(sharesRow: false)
-        XCTAssertEqual(metrics.circle, 42)
-        XCTAssertEqual(metrics.iconSize, 19)
-        XCTAssertNil(metrics.slotWidth)
+        let stacked = PhoneLabeledActionMetrics(sharesRow: false)
+        XCTAssertEqual(stacked.circle, 52)
+        XCTAssertEqual(stacked.iconSize, 21)
+        XCTAssertNil(stacked.slotWidth)
+        XCTAssertEqual(PhoneLabeledActionMetrics(sharesRow: true).slotWidth, 52)
+    }
+
+    /// Five actions keep 14-point gaps where they fit, close the gaps first
+    /// in a narrow window, and only then shrink the slots, always centred.
+    func testActionRowClosesItsGapsBeforeShrinkingSlots() {
+        let five = Array(repeating: CGFloat(52), count: 5)
+        let roomy = MobileActionRowLayout.placement(widths: five, available: 370, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(roomy.gap, 14)
+        XCTAssertEqual(roomy.widths, five)
+        XCTAssertEqual(roomy.leading, (370 - 316) / 2, accuracy: 0.01)
+
+        let narrow = MobileActionRowLayout.placement(widths: five, available: 288, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(narrow.gap, 7, accuracy: 0.01)
+        XCTAssertEqual(narrow.widths, five)
+
+        // Long captions shrink back towards the circle, never below it.
+        let long: [CGFloat] = [52, 80, 52, 90, 52]
+        let shared = MobileActionRowLayout.placement(widths: long, available: 300, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(shared.gap, 4)
+        XCTAssertLessThanOrEqual(shared.widths.reduce(0, +) + 16, 300)
+        XCTAssertTrue(shared.widths.allSatisfy { $0 >= 52 })
+
+        let tight = MobileActionRowLayout.placement(widths: five, available: 250, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(tight.widths, five, "Never narrower than the circle")
+        XCTAssertEqual(tight.leading, 0, accuracy: 0.01)
     }
 
     /// Play stays above the actions with each detail page's own gap (14
@@ -94,8 +123,8 @@ final class PhoneDuoSafeguardTests: XCTestCase {
         }
     }
 
-    /// The named actions spread across the full width with the rule under
-    /// them, as on every iPhone before the Duo work.
+    /// The row keeps the full width, with its actions centred in it and the
+    /// rule under them.
     func testActionRowKeepsItsFullWidthAndRule() throws {
         try skipOnDuo()
         for sizeClass in [UserInterfaceSizeClass.compact, .regular] {

@@ -23,6 +23,10 @@ struct MobileSeriesPage: View {
 
     @State private var pendingPlay: PendingPlay?
     @State private var resumeEpisode: EpisodeListItem?
+    /// Gathering a shuffle order. A second Shuffle press is ignored until it
+    /// finishes; leaving the page or pressing Play cancels it.
+    @State private var shuffleTask: Task<Void, Never>?
+    @State private var shuffleProblem: EpisodeShuffleProblem?
     @State private var tmdbScore: TMDbRatingResult?
     @State private var similarTitles = MobileSimilarTitles()
     @Environment(AppRouter.self) private var router
@@ -75,6 +79,10 @@ struct MobileSeriesPage: View {
                 if let resumeEpisode { play(resumeEpisode, fromBeginning: true) }
             }
         )
+        .onDisappear {
+            shuffleTask?.cancel()
+            shuffleTask = nil
+        }
         .task(id: session.playbackEpisode(isSeries: true)?.contentId) {
             await session.refreshNextUp(isSeries: true)
         }
@@ -186,7 +194,9 @@ struct MobileSeriesPage: View {
                     title: playTitle,
                     action: playTapped,
                     fullWidth: true,
-                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode)
+                    resumeProgress: MobileDetailControls.resumeProgress(for: nextUpEpisode),
+                    startOver: startOverAction,
+                    shuffle: shuffleSeries
                 )
             } selectors: {
                 if nextUpEpisode != nil {
@@ -201,6 +211,17 @@ struct MobileSeriesPage: View {
             }
         }
         .frame(maxWidth: .infinity)
+        // On the buttons rather than the page, so it never competes with the
+        // page's Continue Watching alert.
+        .alert(
+            shuffleProblem?.title ?? "",
+            isPresented: Binding(get: { shuffleProblem != nil }, set: { if !$0 { shuffleProblem = nil } }),
+            presenting: shuffleProblem
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { problem in
+            Text(verbatim: problem.message)
+        }
     }
 
     @ViewBuilder
@@ -228,6 +249,10 @@ struct MobileSeriesPage: View {
             seriesWatchedButtons
         }
         .mobileMovesToMore()
+        MobileNamedAction(icon: "shuffle", caption: "Shuffle") {
+            shuffleSeries()
+        }
+        .mobileMovesToMore()
         SeriesDownloadMenuButton(
             detail: detail,
             seasons: model.seasons,
@@ -237,6 +262,7 @@ struct MobileSeriesPage: View {
             style: .labeled
         )
         MobileMoreMenu {
+            MobileShuffleMenuButton(action: shuffleSeries)
             MobileFavoriteMenuButton(isFavorite: model.isFavorite) {
                 Task { await model.toggleFavorite() }
             }
@@ -271,7 +297,42 @@ struct MobileSeriesPage: View {
         }
     }
 
+    /// Start Over in Play's long-press menu, when the next episode is part-way.
+    private var startOverAction: (() -> Void)? {
+        guard let episode = nextUpEpisode, episode.userData?.isInProgress == true else { return nil }
+        return { play(episode, fromBeginning: true) }
+    }
+
+    /// Gathers every regular episode in a random order and streams the
+    /// first from its start. The player follows the order through Next Up.
+    /// Always streams: a downloaded copy plays offline, without Next Up.
+    private func shuffleSeries() {
+        guard shuffleTask == nil else { return }
+        let series = detail
+        shuffleTask = Task { @MainActor in
+            defer { if !Task.isCancelled { shuffleTask = nil } }
+            guard let result = await EpisodeShuffleQueue.gather(seriesId: series.contentId, seriesTitle: series.title)
+            else { return }
+            let queue: EpisodeShuffleQueue
+            switch result {
+            case .success(let gathered): queue = gathered
+            case .failure(let problem):
+                shuffleProblem = problem
+                return
+            }
+            guard let first = queue.episodes.first else { return }
+            EpisodeShuffleHandoff.shared.stage(queue)
+            session.stream(
+                MobilePlayRequest(contentId: first.contentId, fileId: nil, audioTrackIndex: nil,
+                                  startFromBeginning: true, resumePosition: nil),
+                router: router
+            )
+        }
+    }
+
     private func playTapped() {
+        shuffleTask?.cancel()
+        shuffleTask = nil
         guard let episode = nextUpEpisode else {
             pendingPlay = PendingPlay(seasonNumber: model.selectedSeason?.seasonNumber)
             return
@@ -288,6 +349,9 @@ struct MobileSeriesPage: View {
     }
 
     private func play(_ episode: EpisodeListItem, fromBeginning: Bool) {
+        // Any play, including Start Over from Play's menu, ends a gather.
+        shuffleTask?.cancel()
+        shuffleTask = nil
         session.playEpisode(
             episode.contentId,
             fromBeginning: fromBeginning,

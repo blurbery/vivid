@@ -20,6 +20,18 @@ extension PlayerViewModel {
         nextUpPromptDismissed = false
         cancelNextUpCountdown()
 
+        // Shuffle already knows what plays next, so there's nothing to look
+        // up, and it doesn't need the episode's own numbers.
+        if shuffleQueue != nil {
+            nextUpEpisode = shuffleSuccessor(of: detail.contentId) ?? shuffleSuccessor(of: lastLoadRequest?.contentId)
+            if showNextUpScreen {
+                startNextUpCountdownIfNeeded()
+            } else {
+                updateNextUpPresentation(for: currentTime)
+            }
+            return
+        }
+
         guard detail.type == "episode",
               let seriesId = detail.seriesId,
               let seasonNumber = detail.seasonNumber,
@@ -377,6 +389,14 @@ extension PlayerViewModel {
         return true
     }
 
+    /// The shuffle's episode after `contentId`, as Next Up shows it. Nil
+    /// without a shuffle or at its end.
+    func shuffleSuccessor(of contentId: String?) -> PlayerNextUpEpisode? {
+        guard let queue = shuffleQueue, let contentId,
+              let episode = queue.episode(after: contentId) else { return nil }
+        return PlayerNextUpEpisode(episode: episode, seriesId: queue.seriesId, seriesTitle: queue.seriesTitle)
+    }
+
     func playNextEpisodeNow() {
         let contentId: String
         switch PlayerNextUpPlaybackAction.resolve(
@@ -405,7 +425,8 @@ extension PlayerViewModel {
             preferredAudioTrackIndex: nil,
             preferredSubtitleTrackIndex: nil,
             preferredSidecarSubtitleTrackId: nil,
-            startFromBeginning: false
+            // A shuffled episode plays from its start, wherever it was left.
+            startFromBeginning: shuffleQueue != nil
         )
         request.preferredQualityOverride = ApplePlaybackQuality.nextEpisodeQualityOverride(
             activeQualityId: activeQualityId

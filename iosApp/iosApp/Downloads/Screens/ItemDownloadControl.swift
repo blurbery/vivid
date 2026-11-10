@@ -109,7 +109,7 @@ struct DownloadActionButton: View {
             Button {
                 showsUnavailable = true
             } label: {
-                labelled(glyph: DownloadScreens.CrossedOutGlyph(size: 19), active: false,
+                labelled(glyph: DownloadScreens.CrossedOutGlyph(size: metrics.iconSize), active: false,
                          caption: String(localized: "Unavailable"), captionColour: .white.opacity(0.6))
             }
             .buttonStyle(.plain)
@@ -218,18 +218,18 @@ struct DownloadActionButton: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(captionColour)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.75)
                     .fixedSize(horizontal: sharesActionRow, vertical: false)
             }
         }
         .frame(width: metrics.slotWidth)
-        .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: metrics.minHeight)
+        .frame(minWidth: metrics.slotWidth == nil ? metrics.circle : nil, minHeight: metrics.minHeight)
         .contentShape(Rectangle())
     }
 
     private func symbol(_ name: String, colour: Color) -> some View {
         Image(systemName: name)
-            .font(.system(size: 19, weight: .regular))
+            .font(.system(size: metrics.iconSize, weight: .regular))
             .foregroundStyle(colour)
             .contentTransition(.symbolEffect(.replace.magic(fallback: .replace)))
     }

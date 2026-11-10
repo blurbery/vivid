@@ -31,6 +31,9 @@ extension PlayerViewModel {
             offlineDownloadId: offlineDownloadId
         )
         request.prefersLastUsedVersion = prefersLastUsedVersion
+        // A shuffle staged for this episode starts here; any other start
+        // ends one.
+        shuffleQueue = EpisodeShuffleHandoff.shared.take(for: contentId)
         viewingSubtitlePrefs = nil
         viewingAudioLanguage = nil
         viewingAudioSeedOrdinal = preferredAudioTrackIndex
@@ -489,10 +492,12 @@ extension PlayerViewModel {
             // `error`: this surface stays recoverable.
             stopAfterRecoverableLoadFailure()
             // Drop the candidate episode so the panel shows its Finished state
-            // with the start error.
+            // with the start error, unless a shuffle offers the one after it.
             cancelNextUpFlow()
             nextUpStartError = message
-            nextUpEpisode = nil
+            // A shuffle offers the episode after the one that failed, so one
+            // unplayable episode doesn't end it. Autoplay stays off.
+            nextUpEpisode = shuffleSuccessor(of: lastLoadRequest?.contentId)
             nextUpAutoplayCancelled = true
             isLoadingNextUpEpisode = false
             showNextUpScreen = true
