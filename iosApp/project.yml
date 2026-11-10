@@ -109,6 +109,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/ImageDataCoalescingTests.swift
+      - path: Tests/StudioLibraryDatabaseTests.swift
       - path: Tests/VividPlaybackStatsProjectionTests.swift
       - path: Tests/VividSubtitleCueCursorTests.swift
       - path: Tests/TVDetailScrollMaterialMaskTests.swift

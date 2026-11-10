@@ -132,7 +132,36 @@ final class StudiosNetworksSavingTests: XCTestCase {
             running, app: "1.1 (2)", process: "300",
             previousExit: AppHealthMonitor.PreviousExit(pid: 200, playerOpen: true), retrying: false, now: now
         )
-        XCTAssertEqual(duringPlayback.record.interrupted, 0, "The library read waits while the player is open")
+        XCTAssertEqual(duringPlayback.record.interrupted, 0, "A close while the player was open isn't counted against the load")
+    }
+
+    // MARK: Waiting for the player
+
+    func testTheLoadWaitsUntilThePlayerCloses() async throws {
+        var checks = 0
+        try await StudiosNetworksStore.waitWhilePlayerOpen(until: Date().addingTimeInterval(60), every: .milliseconds(1)) {
+            checks += 1
+            return checks < 4
+        }
+        XCTAssertEqual(checks, 4, "Waits while the player is open and goes on once it closes")
+    }
+
+    func testTheWaitEndsAtItsDeadlineWhileThePlayerStaysOpen() async throws {
+        var checks = 0
+        try await StudiosNetworksStore.waitWhilePlayerOpen(until: Date().addingTimeInterval(0.05), every: .milliseconds(10)) {
+            checks += 1
+            return true
+        }
+        XCTAssertGreaterThan(checks, 1, "Kept waiting until the deadline")
+    }
+
+    func testTheWaitDoesNotHoldUpALoadWithThePlayerClosed() async throws {
+        var checks = 0
+        try await StudiosNetworksStore.waitWhilePlayerOpen(until: Date().addingTimeInterval(60), every: .seconds(60)) {
+            checks += 1
+            return false
+        }
+        XCTAssertEqual(checks, 1)
     }
 
     func testTwoInARowStopLoadsUntilTryAgainAnUpdateOrADayLater() {

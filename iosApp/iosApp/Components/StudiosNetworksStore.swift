@@ -873,6 +873,14 @@ final class StudiosNetworksStore {
         for url in [scope.libraryURL, scope.buildingLibraryURL].compactMap({ $0 }) { removeDatabase(at: url) }
         if let legacy = scope.cacheURL("results", version: 1) { try? FileManager.default.removeItem(at: carryingURL(legacy)) }
         UserDefaults.standard.removeObject(forKey: scope.loadRecordKey)
+        // The open handle would keep reading the removed file until the next
+        // scope switch, so it goes too.
+        Task { @MainActor in shared.forgetLibrary(scope) }
+    }
+
+    private func forgetLibrary(_ scope: Scope) {
+        if library?.scope == scope { library = nil }
+        if searchIndexCache?.scope == scope { searchIndexCache = nil }
     }
 }
 

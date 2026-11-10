@@ -326,10 +326,14 @@ extension StudiosNetworksStore {
     /// Holds the library read and matching while the player is open, so a
     /// large read never adds to what a film is already using, and carries on
     /// within a couple of seconds of it closing, or at `deadline` anyway.
-    nonisolated static func waitWhilePlayerOpen(until deadline: Date) async throws {
+    nonisolated static func waitWhilePlayerOpen(
+        until deadline: Date,
+        every interval: Duration = .seconds(2),
+        playerOpen: () -> Bool = { AppHealthContext.snapshot().playerOpen }
+    ) async throws {
         try Task.checkCancellation()
-        while AppHealthContext.snapshot().playerOpen, Date() < deadline {
-            try await Task.sleep(for: .seconds(2))
+        while playerOpen(), Date() < deadline {
+            try await Task.sleep(for: interval)
         }
     }
 

@@ -1,5 +1,9 @@
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 final class StudioLibraryDatabaseTests: XCTestCase {
     private var folder: URL!
