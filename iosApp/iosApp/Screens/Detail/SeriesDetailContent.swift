@@ -23,8 +23,10 @@ struct MobileSeriesPage: View {
 
     @State private var pendingPlay: PendingPlay?
     @State private var resumeEpisode: EpisodeListItem?
-    /// Gathering a shuffle order. A second Shuffle press waits for it.
+    /// Gathering a shuffle order. A second Shuffle press is ignored until it
+    /// finishes; leaving the page or pressing Play cancels it.
     @State private var shuffleTask: Task<Void, Never>?
+    @State private var shuffleProblem: EpisodeShuffleProblem?
     @State private var tmdbScore: TMDbRatingResult?
     @State private var similarTitles = MobileSimilarTitles()
     @Environment(AppRouter.self) private var router
@@ -77,6 +79,19 @@ struct MobileSeriesPage: View {
                 if let resumeEpisode { play(resumeEpisode, fromBeginning: true) }
             }
         )
+        .alert(
+            shuffleProblem?.title ?? "",
+            isPresented: Binding(get: { shuffleProblem != nil }, set: { if !$0 { shuffleProblem = nil } }),
+            presenting: shuffleProblem
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { problem in
+            Text(verbatim: problem.message)
+        }
+        .onDisappear {
+            shuffleTask?.cancel()
+            shuffleTask = nil
+        }
         .task(id: session.playbackEpisode(isSeries: true)?.contentId) {
             await session.refreshNextUp(isSeries: true)
         }
@@ -293,10 +308,17 @@ struct MobileSeriesPage: View {
         guard shuffleTask == nil else { return }
         let series = detail
         shuffleTask = Task { @MainActor in
-            defer { shuffleTask = nil }
-            guard let queue = try? await EpisodeShuffleQueue.load(seriesId: series.contentId, seriesTitle: series.title),
-                  let first = queue.episodes.first, !Task.isCancelled,
-                  ConnectionMonitor.shared.isServerReachable else { return }
+            defer { if !Task.isCancelled { shuffleTask = nil } }
+            guard let result = await EpisodeShuffleQueue.gather(seriesId: series.contentId, seriesTitle: series.title)
+            else { return }
+            let queue: EpisodeShuffleQueue
+            switch result {
+            case .success(let gathered): queue = gathered
+            case .failure(let problem):
+                shuffleProblem = problem
+                return
+            }
+            guard let first = queue.episodes.first else { return }
             EpisodeShuffleHandoff.shared.stage(queue)
             session.stream(
                 MobilePlayRequest(contentId: first.contentId, fileId: nil, audioTrackIndex: nil,
@@ -307,6 +329,8 @@ struct MobileSeriesPage: View {
     }
 
     private func playTapped() {
+        shuffleTask?.cancel()
+        shuffleTask = nil
         guard let episode = nextUpEpisode else {
             pendingPlay = PendingPlay(seasonNumber: model.selectedSeason?.seasonNumber)
             return

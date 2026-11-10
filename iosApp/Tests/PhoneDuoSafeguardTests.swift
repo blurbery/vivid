@@ -58,14 +58,35 @@ final class PhoneDuoSafeguardTests: XCTestCase {
         XCTAssertFalse(coordinator.isDuoTabletop)
     }
 
-    /// The row under Play uses the Duo's larger circles in fixed slots
-    /// (blurbery's change, 10 November 2026).
+    /// The row under Play uses the Duo's larger circles (blurbery's change,
+    /// 10 November 2026). Its slots grow for a long caption; Play's shared
+    /// row keeps fixed slots.
     func testActionMetricsUseTheLargerCircles() throws {
         try skipOnDuo()
-        let metrics = PhoneLabeledActionMetrics(sharesRow: false)
-        XCTAssertEqual(metrics.circle, 52)
-        XCTAssertEqual(metrics.iconSize, 21)
-        XCTAssertEqual(metrics.slotWidth, 52)
+        let stacked = PhoneLabeledActionMetrics(sharesRow: false)
+        XCTAssertEqual(stacked.circle, 52)
+        XCTAssertEqual(stacked.iconSize, 21)
+        XCTAssertNil(stacked.slotWidth)
+        XCTAssertEqual(PhoneLabeledActionMetrics(sharesRow: true).slotWidth, 52)
+    }
+
+    /// Five actions keep 14-point gaps where they fit, close the gaps first
+    /// in a narrow window, and only then shrink the slots, always centred.
+    func testActionRowClosesItsGapsBeforeShrinkingSlots() {
+        let five = Array(repeating: CGFloat(52), count: 5)
+        let roomy = MobileActionRowLayout.placement(widths: five, available: 370, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(roomy.gap, 14)
+        XCTAssertEqual(roomy.widths, five)
+        XCTAssertEqual(roomy.leading, (370 - 316) / 2, accuracy: 0.01)
+
+        let narrow = MobileActionRowLayout.placement(widths: five, available: 288, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(narrow.gap, 7, accuracy: 0.01)
+        XCTAssertEqual(narrow.widths, five)
+
+        let tight = MobileActionRowLayout.placement(widths: five, available: 250, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(tight.gap, 4)
+        XCTAssertEqual(tight.widths.reduce(0, +) + 16, 250, accuracy: 0.01)
+        XCTAssertEqual(tight.leading, 0, accuracy: 0.01)
     }
 
     /// Play stays above the actions with each detail page's own gap (14

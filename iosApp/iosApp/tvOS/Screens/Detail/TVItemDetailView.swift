@@ -18,8 +18,10 @@ struct TVItemDetailView: View {
     @State private var nextUp = TVDetailNextUp()
     /// The series page's Play target, pinned apart from browsing.
     @State private var activeEpisodeId: String?
-    /// Gathering a shuffle order. A second Shuffle press waits for it.
+    /// Gathering a shuffle order. A second Shuffle press is ignored until it
+    /// finishes; leaving the page or pressing Play cancels it.
     @State private var shuffleTask: Task<Void, Never>?
+    @State private var shuffleProblem: EpisodeShuffleProblem?
     @State private var pendingCompletion: TVPlaybackStateRefreshEvent?
     @State private var pendingContext: TVSeriesDetailNavigationContextStore.Context?
     @State private var hasLoadedOnce = false
@@ -182,11 +184,26 @@ struct TVItemDetailView: View {
             actions: pageActions,
             selectSeason: { selectSeriesSeason($0) },
             playEpisode: { id, fileId, fromBeginning in
+                shuffleTask?.cancel()
+                shuffleTask = nil
                 activateEpisode(id)
                 playSeriesEpisode(id, fileId: fileId, fromBeginning: fromBeginning)
             },
             shuffle: { shuffleSeries(detail) }
         )
+        .alert(
+            shuffleProblem?.title ?? "",
+            isPresented: Binding(get: { shuffleProblem != nil }, set: { if !$0 { shuffleProblem = nil } }),
+            presenting: shuffleProblem
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { problem in
+            Text(verbatim: problem.message)
+        }
+        .onDisappear {
+            shuffleTask?.cancel()
+            shuffleTask = nil
+        }
         .task(id: target?.contentId) {
             await loadSeriesNextUp(target?.contentId)
         }
@@ -599,9 +616,17 @@ extension TVItemDetailView {
     private func shuffleSeries(_ series: ItemDetail) {
         guard shuffleTask == nil else { return }
         shuffleTask = Task { @MainActor in
-            defer { shuffleTask = nil }
-            guard let queue = try? await EpisodeShuffleQueue.load(seriesId: series.contentId, seriesTitle: series.title),
-                  let first = queue.episodes.first, !Task.isCancelled else { return }
+            defer { if !Task.isCancelled { shuffleTask = nil } }
+            guard let result = await EpisodeShuffleQueue.gather(seriesId: series.contentId, seriesTitle: series.title)
+            else { return }
+            let queue: EpisodeShuffleQueue
+            switch result {
+            case .success(let gathered): queue = gathered
+            case .failure(let problem):
+                shuffleProblem = problem
+                return
+            }
+            guard let first = queue.episodes.first else { return }
             pendingCompletion = nil
             EpisodeShuffleHandoff.shared.stage(queue)
             navigateToPlayer(contentId: first.contentId, fileId: nil, audio: nil, subtitle: nil,

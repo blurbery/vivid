@@ -20,24 +20,22 @@ extension PlayerViewModel {
         nextUpPromptDismissed = false
         cancelNextUpCountdown()
 
-        guard detail.type == "episode",
-              let seriesId = detail.seriesId,
-              let seasonNumber = detail.seasonNumber,
-              let episodeNumber = detail.episodeNumber else {
-            return
-        }
-
-        // Shuffle already knows what plays next, so there's nothing to look up.
-        if let queue = shuffleQueue {
-            nextUpEpisode = queue.episode(after: detail.contentId).map {
-                PlayerNextUpEpisode(episode: $0, seriesId: queue.seriesId,
-                                    seriesTitle: queue.seriesTitle ?? detail.seriesTitle)
-            }
+        // Shuffle already knows what plays next, so there's nothing to look
+        // up, and it doesn't need the episode's own numbers.
+        if shuffleQueue != nil {
+            nextUpEpisode = shuffleSuccessor(of: detail.contentId) ?? shuffleSuccessor(of: lastLoadRequest?.contentId)
             if showNextUpScreen {
                 startNextUpCountdownIfNeeded()
             } else {
                 updateNextUpPresentation(for: currentTime)
             }
+            return
+        }
+
+        guard detail.type == "episode",
+              let seriesId = detail.seriesId,
+              let seasonNumber = detail.seasonNumber,
+              let episodeNumber = detail.episodeNumber else {
             return
         }
 
@@ -389,6 +387,14 @@ extension PlayerViewModel {
         }
         scheduleHideControls()
         return true
+    }
+
+    /// The shuffle's episode after `contentId`, as Next Up shows it. Nil
+    /// without a shuffle or at its end.
+    func shuffleSuccessor(of contentId: String?) -> PlayerNextUpEpisode? {
+        guard let queue = shuffleQueue, let contentId,
+              let episode = queue.episode(after: contentId) else { return nil }
+        return PlayerNextUpEpisode(episode: episode, seriesId: queue.seriesId, seriesTitle: queue.seriesTitle)
     }
 
     func playNextEpisodeNow() {

@@ -105,7 +105,8 @@ struct TVSeriesDetailPage: View {
 
     private func playAction(_ playback: PlaybackInputs) -> TVDetailPlayAction {
         guard let target = playTarget else {
-            return TVDetailPlayAction(title: nil, subtitle: nil, progress: nil, offersStartOver: false, play: {}, startOver: {})
+            return TVDetailPlayAction(title: nil, subtitle: nil, progress: nil, offersStartOver: false, play: {}, startOver: {},
+                                      shuffle: shuffle)
         }
         let season = String(target.seasonNumber)
         let episode = String(target.episodeNumber)
@@ -200,9 +201,7 @@ struct TVSeriesDetailPage: View {
             let file = fileId(for: target.contentId, playback: playback)
             TVDetailMoreMenuRows.startOver { playEpisode(target.contentId, file, true) }
         }
-        if playTarget != nil {
-            TVDetailMoreMenuRows.shuffle(action: shuffle)
-        }
+        TVDetailMoreMenuRows.shuffle(action: shuffle)
         TVDetailMoreMenuRows.favorite(isFavorite: viewModel.isFavorite, action: actions.toggleFavorite)
         if let target = playTarget {
             let played = target.userData?.played ?? false

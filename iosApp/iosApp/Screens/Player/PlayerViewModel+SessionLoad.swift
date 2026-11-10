@@ -495,7 +495,9 @@ extension PlayerViewModel {
             // with the start error.
             cancelNextUpFlow()
             nextUpStartError = message
-            nextUpEpisode = nil
+            // A shuffle offers the episode after the one that failed, so one
+            // unplayable episode doesn't end it. Autoplay stays off.
+            nextUpEpisode = shuffleSuccessor(of: lastLoadRequest?.contentId)
             nextUpAutoplayCancelled = true
             isLoadingNextUpEpisode = false
             showNextUpScreen = true

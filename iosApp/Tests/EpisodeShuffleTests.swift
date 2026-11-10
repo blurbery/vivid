@@ -49,6 +49,7 @@ final class EpisodeShuffleTests: XCTestCase {
             episode("aired", season: 1, number: 3, airDate: "2020-01-01", files: nil),
             episode("unaired", season: 1, number: 4, airDate: "2099-01-01", files: nil),
             episode("unknown", season: 1, number: 5, files: nil),
+            episode("early-file", season: 1, number: 6, airDate: "2099-01-01", files: [file]),
         ]
         let shuffled = try XCTUnwrap(queue(episodes))
         XCTAssertEqual(Set(shuffled.episodes.map(\.contentId)), ["has-file", "aired"])
@@ -100,6 +101,13 @@ final class EpisodeShuffleTests: XCTestCase {
         let result = PlayerViewModel.shuffleSubtitlePrefs(viewing, settings: settings)
         XCTAssertEqual(result.preferredLanguage, "fr")
         XCTAssertEqual(result.fallbackLanguages, ["de", "es", "en"])
+    }
+
+    func testAFreshShuffleAddsEnglishToSettings() {
+        let settings = prefs(language: "de", mode: .auto)
+        let result = PlayerViewModel.shuffleSubtitlePrefs(settings, settings: settings)
+        XCTAssertEqual(result.preferredLanguage, "de")
+        XCTAssertEqual(result.fallbackLanguages, ["en"])
     }
 
     func testOffAndForcedOnlyPicksAreKept() {

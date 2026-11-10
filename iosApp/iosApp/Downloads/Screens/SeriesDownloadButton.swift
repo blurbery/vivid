@@ -218,7 +218,7 @@ struct SeriesDownloadMenuButton: View {
         func body(content: Content) -> some View {
             content
                 .frame(width: metrics.slotWidth)
-                .frame(maxWidth: metrics.slotWidth == nil ? .infinity : nil, minHeight: metrics.minHeight)
+                .frame(minWidth: metrics.slotWidth == nil ? metrics.circle : nil, minHeight: metrics.minHeight)
                 .contentShape(Rectangle())
         }
     }

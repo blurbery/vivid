@@ -37,15 +37,15 @@ struct EpisodeShuffleQueue {
         )
     }
 
-    /// An episode with a file plays. One whose list gives no file
+    /// An episode that hasn't aired yet never plays, even with a file.
+    /// Otherwise one with a file plays, and one whose list gives no file
     /// information plays once it has aired. Emby and Jellyfin list missing
     /// episodes with no files, and those are left out.
     static func isPlayable(_ episode: EpisodeListItem, now: Date) -> Bool {
+        let airDate = episode.airDate.flatMap { airDateParser.date(from: String($0.prefix(10))) }
+        if let airDate, airDate > now { return false }
         if let files = episode.files { return !files.isEmpty }
-        guard let raw = episode.airDate, let date = airDateParser.date(from: String(raw.prefix(10))) else {
-            return false
-        }
-        return date <= now
+        return airDate != nil
     }
 
     private static let airDateParser: ISO8601DateFormatter = {
@@ -55,16 +55,15 @@ struct EpisodeShuffleQueue {
     }()
 
     /// Fetches every regular season's episodes, a few seasons at a time, and
-    /// shuffles them. A season that fails to load is skipped; only when none
-    /// loads does this throw.
+    /// shuffles them. Any season that fails to load fails the whole shuffle,
+    /// so it never quietly leaves a season out.
     static func load(seriesId: String, seriesTitle: String?) async throws -> EpisodeShuffleQueue? {
         let seasons = try await MetadataRequestPool.shared.seasons(seriesId: seriesId).seasons
             .filter { !($0.isSpecials ?? false) && $0.seasonNumber > 0 }
             .map(\.seasonNumber)
         guard !seasons.isEmpty else { return nil }
         var episodes: [EpisodeListItem] = []
-        var loadedAny = false
-        var lastError: Error?
+        var failure: Error?
         for batch in stride(from: 0, to: seasons.count, by: 4).map({ Array(seasons[$0..<min($0 + 4, seasons.count)]) }) {
             try Task.checkCancellation()
             await withTaskGroup(of: Result<[EpisodeListItem], Error>.self) { group in
@@ -82,17 +81,53 @@ struct EpisodeShuffleQueue {
                 for await result in group {
                     switch result {
                     case .success(let list):
-                        loadedAny = true
                         episodes += list
                     case .failure(let error):
-                        lastError = error
+                        failure = error
                     }
                 }
             }
+            if let failure { throw failure }
         }
-        if !loadedAny, let lastError { throw lastError }
         var generator = SystemRandomNumberGenerator()
         return make(seriesId: seriesId, seriesTitle: seriesTitle, episodes: episodes, using: &generator)
+    }
+}
+
+/// Why Shuffle couldn't start, for the alert the detail pages show.
+enum EpisodeShuffleProblem: Error, Equatable {
+    case unreachable
+    case nothingToPlay
+
+    var title: String {
+        switch self {
+        case .unreachable: String(localized: "Can't Reach Server")
+        case .nothingToPlay: String(localized: "Couldn't Start Shuffle")
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .unreachable: String(localized: "Can't reach the server. Check your connection and try again.")
+        case .nothingToPlay: String(localized: "This series has no episodes to play yet.")
+        }
+    }
+}
+
+extension EpisodeShuffleQueue {
+    /// Gathers the order for the detail pages. Nil when the task was
+    /// cancelled (the viewer left the page), so nothing starts late.
+    @MainActor
+    static func gather(seriesId: String, seriesTitle: String?) async -> Result<EpisodeShuffleQueue, EpisodeShuffleProblem>? {
+        guard ConnectionMonitor.shared.isServerReachable else { return .failure(.unreachable) }
+        do {
+            let queue = try await load(seriesId: seriesId, seriesTitle: seriesTitle)
+            guard !Task.isCancelled else { return nil }
+            return queue.map { .success($0) } ?? .failure(.nothingToPlay)
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError) else { return nil }
+            return .failure(.unreachable)
+        }
     }
 }
 
