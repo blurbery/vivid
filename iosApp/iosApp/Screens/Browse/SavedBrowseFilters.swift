@@ -33,11 +33,25 @@ struct BrowsePrefsStore {
               let stem = keyStem(libraryId: libraryId, mediaScope: mediaScope),
               let data = defaults.data(forKey: stem + ".state"),
               let stored = try? JSONDecoder().decode(CatalogFilterState.self, from: data) else { return nil }
-        let state = stored.normalized(for: .active)
-        if state != stored {
+        var loaded = stored
+        let knownSort = Self.hasKnownSort(data)
+        if !knownSort {
+            // The sort decoded as Title, so an order kept for the removed
+            // sort (Rating, say) would open Title Z-A.
+            loaded.order = nil
+        }
+        let state = loaded.normalized(for: .active)
+        if state != stored || !knownSort {
             saveState(state, libraryId: libraryId, mediaScope: mediaScope)
         }
         return state
+    }
+
+    /// Whether the stored sort is one Vivid still offers.
+    private static func hasKnownSort(_ data: Data) -> Bool {
+        struct StoredSort: Decodable { let sort: String? }
+        guard let sort = (try? JSONDecoder().decode(StoredSort.self, from: data))?.sort else { return true }
+        return CatalogSortKey(rawValue: sort) != nil
     }
 
     func saveState(_ state: CatalogFilterState, libraryId: Int?, mediaScope: String? = nil) {
