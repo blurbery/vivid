@@ -83,6 +83,9 @@ extension PlayerViewModel {
         bufferingProgress = nil
         isPlaying = false
         setControlsVisible(true, cause: .playbackEnded)
+        #if os(tvOS)
+        withdrawNowPlayingAtEnd()
+        #else
         nowPlaying.update(
             title: title,
             duration: duration,
@@ -90,6 +93,7 @@ extension PlayerViewModel {
             isPlaying: false,
             playbackRate: settings.playbackSpeed
         )
+        #endif
 
         updatePlaybackCompletion(at: currentTime, endedNaturally: true)
         beginNextUpPostroll(videoEnded: true)

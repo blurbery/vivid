@@ -20,6 +20,10 @@ extension PlayerViewModel {
             return
         }
         #if os(tvOS)
+        // A video withdrawn at its end stays out of Now Playing until
+        // something plays (`restoreNowPlayingAfterEndIfNeeded`), including
+        // through a route change or the next episode's load.
+        guard !nowPlayingWithdrawnAtEnd else { return }
         nowPlaying.nativeMetadataHandler = { [weak engine = vividPlaybackController.engine] title, artwork in
             engine?.updateNativeMetadata(title: title, artwork: artwork)
         }
@@ -79,6 +83,30 @@ extension PlayerViewModel {
         pushNowPlayingSnapshot()
     }
 
+    /// From tvOS 27.2 the system badges a Now Playing item in the top-right
+    /// corner when it stops, so a finished video leaves Now Playing rather
+    /// than staying as a paused item. Playing again brings it back.
+    func withdrawNowPlayingAtEnd() {
+        #if os(tvOS)
+        nowPlaying.detach()
+        // `syncNowPlayingDestination` sets it again when playback resumes.
+        nowPlaying.nativeMetadataHandler = nil
+        nowPlayingWithdrawnAtEnd = true
+        #endif
+    }
+
+    /// Re-publishes Now Playing, with its artwork, once something withdrawn at
+    /// its end plays: the next episode, or Keep Watching. Seeks are blocked
+    /// on the end screen.
+    func restoreNowPlayingAfterEndIfNeeded() {
+        guard nowPlayingWithdrawnAtEnd else { return }
+        nowPlayingWithdrawnAtEnd = false
+        syncNowPlayingDestination()
+        if let contentId = currentWatchDetail?.contentId {
+            pushNowPlayingArtwork(contentId: contentId)
+        }
+    }
+
     func pushNowPlayingSnapshot() {
         guard hasActiveVividSession, !title.isEmpty else { return }
         nowPlaying.update(
@@ -105,7 +133,8 @@ extension PlayerViewModel {
     /// otherwise the item is fetched. Best effort: a failure leaves the
     /// artwork as it was.
     func pushNowPlayingArtwork(contentId: String) {
-        guard !contentId.isEmpty else { return }
+        // While withdrawn the coordinator drops artwork; the restore asks again.
+        guard !contentId.isEmpty, !nowPlayingWithdrawnAtEnd else { return }
         if let hint = Self.nonEmptyURLString(artworkPosterURLHint) ?? Self.nonEmptyURLString(artworkBackdropURLHint),
            let url = URL(string: hint) {
             nowPlaying.setArtworkURL(url)

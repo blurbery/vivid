@@ -16,6 +16,7 @@ extension PlayerViewModel {
             switch state {
             case .playing:
                 isPlaying = true
+                restoreNowPlayingAfterEndIfNeeded()
                 pushNowPlayingSnapshot()
                 // An audio-only load has no picture, so the `.firstFrame`
                 // milestone never comes. Its audio route starting is the same

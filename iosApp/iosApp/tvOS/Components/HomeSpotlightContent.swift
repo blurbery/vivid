@@ -5,10 +5,9 @@ import SwiftUI
 /// The text and artwork a Home spotlight slide shows for one item.
 struct TVMarqueeContent: Equatable {
     let title: String
+    /// An episode's details line: its code, title and runtime. Movies and
+    /// series use the detail pages' heading instead, so theirs is empty.
     let metaParts: [String]
-    /// Where `runtimeText` sits in `metaParts` when it is present.
-    let runtimeMetaIndex: Int
-    let runtimeText: String?
     let contentRatingBadge: String?
     let backdropUrl: String?
     let fallbackArtworkUrl: String?
@@ -25,14 +24,10 @@ struct TVMarqueeContent: Equatable {
                 parts.append(code)
             }
             parts.append(item.title)
-        } else {
-            if let year = item.year, year > 0 { parts.append(String(year)) }
-            if let genre = item.genres?.first(where: { !$0.isEmpty }) { parts.append(genre) }
+            if let runtime = Self.runtimeLabel(runtime: item.runtime, durationSeconds: item.durationSeconds) {
+                parts.append(runtime)
+            }
         }
-        runtimeMetaIndex = parts.count
-        let runtime = Self.runtimeLabel(runtime: item.runtime, durationSeconds: item.durationSeconds)
-        runtimeText = runtime
-        if let runtime { parts.append(runtime) }
         metaParts = parts
 
         title = isEpisode ? (item.seriesTitle ?? item.title) : item.title
