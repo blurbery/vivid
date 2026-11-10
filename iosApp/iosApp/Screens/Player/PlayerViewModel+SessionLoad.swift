@@ -492,7 +492,7 @@ extension PlayerViewModel {
             // `error`: this surface stays recoverable.
             stopAfterRecoverableLoadFailure()
             // Drop the candidate episode so the panel shows its Finished state
-            // with the start error.
+            // with the start error, unless a shuffle offers the one after it.
             cancelNextUpFlow()
             nextUpStartError = message
             // A shuffle offers the episode after the one that failed, so one

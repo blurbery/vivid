@@ -146,11 +146,12 @@ extension PlayerViewModel {
 
     /// Shuffle jumps between seasons, so an episode is more likely to lack
     /// the subtitle language in use, whether picked in the player or set in
-    /// Settings. Rather than turning subtitles off, it falls back to Settings
-    /// > Subtitles' languages, then English. Off stays off, and a forced-only
-    /// pick stays forced-only.
+    /// Settings. When subtitles are on (Always), rather than turning them
+    /// off it falls back to Settings > Subtitles' languages, then English.
+    /// Auto is left alone, so it never puts English subtitles over English
+    /// audio. Off stays off, and a forced-only pick stays forced-only.
     nonisolated static func shuffleSubtitlePrefs(_ viewing: PrefsSnapshot, settings: PrefsSnapshot) -> PrefsSnapshot {
-        guard viewing.mode != .off, let carried = viewing.preferredLanguage, !carried.isEmpty,
+        guard viewing.mode == .always, let carried = viewing.preferredLanguage, !carried.isEmpty,
               !viewing.forcedOnly else { return viewing }
         var languages: [String] = []
         for language in [settings.preferredLanguage].compactMap({ $0 })

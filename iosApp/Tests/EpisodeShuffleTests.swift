@@ -103,11 +103,25 @@ final class EpisodeShuffleTests: XCTestCase {
         XCTAssertEqual(result.fallbackLanguages, ["de", "es", "en"])
     }
 
-    func testAFreshShuffleAddsEnglishToSettings() {
-        let settings = prefs(language: "de", mode: .auto)
+    func testAFreshShuffleAddsEnglishToSettingsWhenSubtitlesAreOn() {
+        let settings = prefs(language: "de", mode: .always)
         let result = PlayerViewModel.shuffleSubtitlePrefs(settings, settings: settings)
         XCTAssertEqual(result.preferredLanguage, "de")
         XCTAssertEqual(result.fallbackLanguages, ["en"])
+    }
+
+    /// Auto shows subtitles only for audio outside the viewer's languages,
+    /// so English as a backup could put English subtitles over English audio.
+    func testAutoIsLeftAlone() {
+        let settings = prefs(language: "de", mode: .auto)
+        XCTAssertEqual(PlayerViewModel.shuffleSubtitlePrefs(settings, settings: settings).fallbackLanguages, [])
+    }
+
+    func testOnlyANetworkFailureReadsAsUnreachable() {
+        XCTAssertEqual(EpisodeShuffleQueue.problem(for: URLError(.notConnectedToInternet)), .unreachable)
+        XCTAssertEqual(EpisodeShuffleQueue.problem(for: HTTPError.network(underlying: URLError(.timedOut))), .unreachable)
+        XCTAssertEqual(EpisodeShuffleQueue.problem(for: HTTPError.http(statusCode: 500, body: nil)), .loadFailed)
+        XCTAssertEqual(EpisodeShuffleQueue.problem(for: HTTPError.invalidResponse), .loadFailed)
     }
 
     func testOffAndForcedOnlyPicksAreKept() {

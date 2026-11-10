@@ -235,10 +235,12 @@ struct PhoneLabeledActionRow<Content: View>: View {
 
 /// The actions under Play, centred with even gaps. When they don't fit (a
 /// narrow window, long translated captions) the gaps close to `minSpacing`
-/// first, then each action gets an equal share and its caption scales down.
+/// first, then each action gets an equal share, never narrower than its
+/// circle, and its caption scales down or truncates.
 struct MobileActionRowLayout: Layout {
     var spacing: CGFloat
     var minSpacing: CGFloat = 4
+    var minItemWidth: CGFloat = 52
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
@@ -249,7 +251,8 @@ struct MobileActionRowLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let placement = Self.placement(widths: subviews.map { $0.sizeThatFits(.unspecified).width },
-                                       available: bounds.width, spacing: spacing, minSpacing: minSpacing)
+                                       available: bounds.width, spacing: spacing, minSpacing: minSpacing,
+                                       minItemWidth: minItemWidth)
         var x = bounds.minX + placement.leading
         for (subview, width) in zip(subviews, placement.widths) {
             subview.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading,
@@ -261,7 +264,7 @@ struct MobileActionRowLayout: Layout {
     /// Each action's width, the gap between them and the leading inset that
     /// centres the row.
     static func placement(widths ideal: [CGFloat], available: CGFloat, spacing: CGFloat,
-                          minSpacing: CGFloat) -> (widths: [CGFloat], gap: CGFloat, leading: CGFloat) {
+                          minSpacing: CGFloat, minItemWidth: CGFloat = 52) -> (widths: [CGFloat], gap: CGFloat, leading: CGFloat) {
         guard !ideal.isEmpty else { return ([], 0, 0) }
         let gaps = CGFloat(ideal.count - 1)
         let content = ideal.reduce(0, +)
@@ -272,7 +275,7 @@ struct MobileActionRowLayout: Layout {
         }
         if content + gap * gaps > available {
             let share = max(0, (available - gap * gaps) / CGFloat(ideal.count))
-            widths = ideal.map { min($0, share) }
+            widths = ideal.map { max(min($0, share), min($0, minItemWidth)) }
         }
         let total = widths.reduce(0, +) + gap * gaps
         return (widths, gap, max(0, (available - total) / 2))
@@ -323,7 +326,7 @@ struct MobileNamedAction: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Color.vividOnSurface.opacity(isActive ? 0.92 : 0.60))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .minimumScaleFactor(0.75)
                         .fixedSize(horizontal: sharesRow, vertical: false)
                 }
                 .mobileActionSlot(metrics)
@@ -363,6 +366,7 @@ struct MobileNamedMenu<Items: View>: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Color.vividOnSurface.opacity(0.60))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .fixedSize(horizontal: sharesRow, vertical: false)
                 }
                 .mobileActionSlot(metrics)

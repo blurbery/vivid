@@ -97,24 +97,34 @@ struct EpisodeShuffleQueue {
 /// Why Shuffle couldn't start, for the alert the detail pages show.
 enum EpisodeShuffleProblem: Error, Equatable {
     case unreachable
+    /// The server answered, but with an error or something Vivid couldn't read.
+    case loadFailed
     case nothingToPlay
 
     var title: String {
         switch self {
         case .unreachable: String(localized: "Can't Reach Server")
-        case .nothingToPlay: String(localized: "Couldn't Start Shuffle")
+        case .loadFailed, .nothingToPlay: String(localized: "Couldn't Start Shuffle")
         }
     }
 
     var message: String {
         switch self {
         case .unreachable: String(localized: "Can't reach the server. Check your connection and try again.")
+        case .loadFailed: String(localized: "Something went wrong while talking to the server.")
         case .nothingToPlay: String(localized: "This series has no episodes to play yet.")
         }
     }
 }
 
 extension EpisodeShuffleQueue {
+    /// Only a failure to reach the server reads as unreachable.
+    static func problem(for error: Error) -> EpisodeShuffleProblem {
+        if case HTTPError.network = error { return .unreachable }
+        if error is URLError { return .unreachable }
+        return .loadFailed
+    }
+
     /// Gathers the order for the detail pages. Nil when the task was
     /// cancelled (the viewer left the page), so nothing starts late.
     @MainActor
@@ -126,7 +136,7 @@ extension EpisodeShuffleQueue {
             return queue.map { .success($0) } ?? .failure(.nothingToPlay)
         } catch {
             guard !Task.isCancelled, !(error is CancellationError) else { return nil }
-            return .failure(.unreachable)
+            return .failure(problem(for: error))
         }
     }
 }

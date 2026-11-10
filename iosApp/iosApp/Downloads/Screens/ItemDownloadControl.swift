@@ -218,7 +218,7 @@ struct DownloadActionButton: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(captionColour)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.75)
                     .fixedSize(horizontal: sharesActionRow, vertical: false)
             }
         }

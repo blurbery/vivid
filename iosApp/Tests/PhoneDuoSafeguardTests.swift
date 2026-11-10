@@ -83,9 +83,15 @@ final class PhoneDuoSafeguardTests: XCTestCase {
         XCTAssertEqual(narrow.gap, 7, accuracy: 0.01)
         XCTAssertEqual(narrow.widths, five)
 
+        // Long captions shrink back towards the circle, never below it.
+        let long: [CGFloat] = [52, 80, 52, 90, 52]
+        let shared = MobileActionRowLayout.placement(widths: long, available: 300, spacing: 14, minSpacing: 4)
+        XCTAssertEqual(shared.gap, 4)
+        XCTAssertLessThanOrEqual(shared.widths.reduce(0, +) + 16, 300)
+        XCTAssertTrue(shared.widths.allSatisfy { $0 >= 52 })
+
         let tight = MobileActionRowLayout.placement(widths: five, available: 250, spacing: 14, minSpacing: 4)
-        XCTAssertEqual(tight.gap, 4)
-        XCTAssertEqual(tight.widths.reduce(0, +) + 16, 250, accuracy: 0.01)
+        XCTAssertEqual(tight.widths, five, "Never narrower than the circle")
         XCTAssertEqual(tight.leading, 0, accuracy: 0.01)
     }
 

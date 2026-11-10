@@ -79,15 +79,6 @@ struct MobileSeriesPage: View {
                 if let resumeEpisode { play(resumeEpisode, fromBeginning: true) }
             }
         )
-        .alert(
-            shuffleProblem?.title ?? "",
-            isPresented: Binding(get: { shuffleProblem != nil }, set: { if !$0 { shuffleProblem = nil } }),
-            presenting: shuffleProblem
-        ) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { problem in
-            Text(verbatim: problem.message)
-        }
         .onDisappear {
             shuffleTask?.cancel()
             shuffleTask = nil
@@ -220,6 +211,17 @@ struct MobileSeriesPage: View {
             }
         }
         .frame(maxWidth: .infinity)
+        // On the buttons rather than the page, so it never competes with the
+        // page's Continue Watching alert.
+        .alert(
+            shuffleProblem?.title ?? "",
+            isPresented: Binding(get: { shuffleProblem != nil }, set: { if !$0 { shuffleProblem = nil } }),
+            presenting: shuffleProblem
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { problem in
+            Text(verbatim: problem.message)
+        }
     }
 
     @ViewBuilder
@@ -347,6 +349,9 @@ struct MobileSeriesPage: View {
     }
 
     private func play(_ episode: EpisodeListItem, fromBeginning: Bool) {
+        // Any play, including Start Over from Play's menu, ends a gather.
+        shuffleTask?.cancel()
+        shuffleTask = nil
         session.playEpisode(
             episode.contentId,
             fromBeginning: fromBeginning,
