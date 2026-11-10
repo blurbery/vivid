@@ -1359,7 +1359,9 @@ private struct TVHomeSpotlightArtwork: View {
                             )
                         }
                     }
-                    .frame(width: logo == nil ? 760 : 600, alignment: .leading)
+                    // The detail heading's height, so the logo sits at the
+                    // same height for every slide, rated or not.
+                    .frame(width: logo == nil ? 760 : 600, height: 36, alignment: .leading)
                     .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
                     if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !overview.isEmpty {

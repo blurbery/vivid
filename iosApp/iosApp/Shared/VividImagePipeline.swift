@@ -535,7 +535,10 @@ final class VividImagePipeline: @unchecked Sendable {
             }
         }
         guard maxX >= minX, maxY >= minY else { return nil }
-        if solidMinX <= maxX { minX = solidMinX }
+        // Only a margin: a logo whose left part is meant to be faint (a
+        // faded word, a ghosted emblem) keeps it.
+        let visibleWidth = maxX - minX + 1
+        if solidMinX <= maxX, solidMinX - minX <= visibleWidth * 15 / 100 { minX = solidMinX }
         if minX == 0, minY == 0, maxX == width - 1, maxY == height - 1 { return nil }
         // The alpha buffer's rows run top to bottom, matching CGImage cropping.
         let rect = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
