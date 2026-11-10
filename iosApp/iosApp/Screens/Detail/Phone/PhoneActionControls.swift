@@ -23,7 +23,10 @@ struct PhoneLabeledActionMetrics {
     /// rather than spread across the width.
     static let stackedRowSpacing: CGFloat = 14
 
-    var circle: CGFloat { 52 }
+    /// Every labelled action's circle, wherever the row sits.
+    static let circleSize: CGFloat = 52
+
+    var circle: CGFloat { Self.circleSize }
     var iconSize: CGFloat { 21 }
     /// Sharing Play's row (the Duo's inner screen) and in the iPad hero, a
     /// fixed slot the circle's width. Under Play, nil: at least the circle's
@@ -240,7 +243,7 @@ struct PhoneLabeledActionRow<Content: View>: View {
 struct MobileActionRowLayout: Layout {
     var spacing: CGFloat
     var minSpacing: CGFloat = 4
-    var minItemWidth: CGFloat = 52
+    var minItemWidth: CGFloat = PhoneLabeledActionMetrics.circleSize
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
