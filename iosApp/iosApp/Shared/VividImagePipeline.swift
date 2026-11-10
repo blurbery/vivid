@@ -518,7 +518,12 @@ final class VividImagePipeline: @unchecked Sendable {
 
         // Faint anti-aliasing and stray specks don't count as the edge.
         let threshold: UInt8 = 12
+        // The left edge is where the logo turns solid, so a soft shadow or
+        // glow baked into the image doesn't push it off the left edge it
+        // lines up with.
+        let leadingThreshold: UInt8 = 128
         var minX = width, minY = height, maxX = -1, maxY = -1
+        var solidMinX = width
         for y in 0..<height {
             let row = y * width
             for x in 0..<width where alpha[row + x] > threshold {
@@ -526,9 +531,11 @@ final class VividImagePipeline: @unchecked Sendable {
                 if x > maxX { maxX = x }
                 if y < minY { minY = y }
                 if y > maxY { maxY = y }
+                if x < solidMinX, alpha[row + x] > leadingThreshold { solidMinX = x }
             }
         }
         guard maxX >= minX, maxY >= minY else { return nil }
+        if solidMinX <= maxX { minX = solidMinX }
         if minX == 0, minY == 0, maxX == width - 1, maxY == height - 1 { return nil }
         // The alpha buffer's rows run top to bottom, matching CGImage cropping.
         let rect = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)

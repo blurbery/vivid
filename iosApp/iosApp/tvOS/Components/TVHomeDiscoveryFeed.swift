@@ -1275,6 +1275,11 @@ private struct TVHomeSpotlightArtwork: View {
         return UIImage(cgImage: image)
     }()
 
+    /// The centred card starts 60 points in from the screen edge (the
+    /// carousel's margin), so this puts the logo and details on the detail
+    /// pages' left edge and the logo flies straight up when a title opens.
+    private static let contentLeadingInset = TVDetailHeroLayout.horizontalInset - 60
+
     var body: some View {
         GeometryReader { geometry in
             let artworkSize = CGSize(
@@ -1337,14 +1342,25 @@ private struct TVHomeSpotlightArtwork: View {
                             .frame(maxWidth: 760, alignment: .leading)
                             .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
-                    Text(([typeLabel] + spotlightMetaParts
-                          + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
-                        .font(.system(size: 23, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .frame(width: logo == nil ? 760 : 600, alignment: .leading)
-                        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
+                    Group {
+                        if isEpisode {
+                            Text(([typeLabel] + spotlightMetaParts
+                                  + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
+                                .font(.system(size: 23, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        } else {
+                            // The same heading as the title's detail page.
+                            TVDetailCompactHeading(
+                                tokens: [typeLabel],
+                                genres: Array((slide.item.genres ?? []).filter { !$0.isEmpty }.prefix(2)),
+                                contentRating: TVHeroMetadata.contentRating(slide.item.contentRating)
+                            )
+                        }
+                    }
+                    .frame(width: logo == nil ? 760 : 600, alignment: .leading)
+                    .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
                     if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !overview.isEmpty {
                         TVSpotlightOverview(text: overview)
@@ -1354,7 +1370,8 @@ private struct TVHomeSpotlightArtwork: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.vertical, 48)
-                .padding(.horizontal, 48)
+                .padding(.leading, Self.contentLeadingInset)
+                .padding(.trailing, 48)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -1384,6 +1401,8 @@ private struct TVHomeSpotlightArtwork: View {
             logo = image
         }
     }
+
+    private var isEpisode: Bool { slide.item.type.lowercased() == "episode" }
 
     /// The item's type in the app's language. Types without a label of
     /// their own show as the server names them.
