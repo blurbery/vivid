@@ -21,7 +21,8 @@ jobs:
   render:
     if: github.repository == 'blurbery/vivid'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Render and publish take under a minute; the jsDelivr refresh can take up to about 5.25.
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -78,7 +79,31 @@ jobs:
           fi
           git commit -q -m "chore: update the sponsors image [skip release]"
           git push -q origin sponsors
-          # The README's click-through link opens the image on jsDelivr, which caches branches for
-          # up to 12 hours. Ask it to refetch; a failed purge only delays the update.
-          curl -fsS --max-time 30 "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@sponsors/sponsors.svg" >/dev/null \
-            || echo "::warning::Couldn't purge the jsDelivr copy of sponsors.svg."
+      - name: Refresh the jsDelivr copy
+        if: steps.render.outputs.skip != 'true'
+        # The README's click-through link opens the image on jsDelivr, which caches branches for
+        # up to 12 hours. A purge straight after the push can refetch the old file, so compare
+        # jsDelivr's copy with the new image and purge again until they match. This also runs
+        # when the image didn't change, so it repairs a copy an earlier run left behind.
+        run: |
+          url="https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@sponsors/sponsors.svg"
+          purge="https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@sponsors/sponsors.svg"
+          current() {
+            curl -fsS --max-time 15 "$url" -o "$RUNNER_TEMP/jsdelivr.svg" \
+              && cmp -s "$RUNNER_TEMP/jsdelivr.svg" "$RUNNER_TEMP/sponsors.svg"
+          }
+          # At most 15 seconds, then five rounds of at most 60, so about 5.25 minutes in all.
+          if current; then
+            echo "jsDelivr serves the current image."
+            exit 0
+          fi
+          for attempt in 1 2 3 4 5; do
+            sleep 20
+            curl -fsS --max-time 15 "$purge" >/dev/null || true
+            sleep 10
+            if current; then
+              echo "jsDelivr serves the current image after $attempt purge(s)."
+              exit 0
+            fi
+          done
+          echo "::warning::jsDelivr still serves an older sponsors.svg; it refreshes on its own within 12 hours."
