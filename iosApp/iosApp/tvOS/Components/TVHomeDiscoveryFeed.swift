@@ -905,6 +905,12 @@ private struct TVHomeSpotlightCarousel: View {
                                 .frame(width: cardWidth, height: 748)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
+                                .overlay(alignment: .bottomTrailing) {
+                                    // On the card itself, so it slides with it.
+                                    if slides.count > 1, !voiceOverEnabled, abs(position - visualPosition) <= 1 {
+                                        cycleProgressPill(at: position).padding(48)
+                                    }
+                                }
                             }
                             .buttonStyle(TVSpotlightButtonStyle(
                                 artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
@@ -1067,6 +1073,19 @@ private struct TVHomeSpotlightCarousel: View {
         }
     }
 
+    /// A small pill in each card's bottom-right corner that fills over the
+    /// slide's six seconds, so it's clear the Spotlight moves on by itself.
+    /// The card before the current one leaves full and the one after it
+    /// arrives empty.
+    private func cycleProgressPill(at position: Int) -> some View {
+        TVSpotlightCyclePill(
+            isCurrent: position == visualPosition,
+            restsFull: position < visualPosition,
+            elapsed: cycleElapsed,
+            resumedAt: cycleResumedAt
+        )
+    }
+
     /// Opens a card. Rotation stops at once, and a slide already on its way
     /// to the next card snaps back to the pressed one without animation, so
     /// the zoom leaves from and returns to the card that was chosen.
@@ -1145,6 +1164,62 @@ private struct TVHomeSpotlightCarousel: View {
 }
 
 /// Registers a Spotlight card as the zoom source for the page it opens.
+/// The Spotlight's countdown pill. One linear animation runs each stretch
+/// of the wait, so nothing is recomputed per frame and the carousel isn't
+/// invalidated while it fills.
+private struct TVSpotlightCyclePill: View {
+    let isCurrent: Bool
+    let restsFull: Bool
+    /// Time already counted before the current stretch.
+    let elapsed: TimeInterval
+    /// When the current stretch started; nil while rotation is paused.
+    let resumedAt: Date?
+
+    @State private var progress: Double = 0
+    @State private var run = 0
+
+    private static let width: CGFloat = 80
+    private static let cycle: TimeInterval = 6
+
+    var body: some View {
+        Capsule()
+            .fill(Color.white.opacity(0.22))
+            .overlay {
+                // Moved, not resized, so the fill is a plain transform.
+                Capsule()
+                    .fill(Color.white.opacity(0.9))
+                    .offset(x: -Self.width * (1 - progress))
+            }
+            .clipShape(Capsule())
+            .frame(width: Self.width, height: 6)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: isCurrent, initial: true) { sync() }
+            .onChange(of: restsFull) { sync() }
+            .onChange(of: elapsed) { sync() }
+            .onChange(of: resumedAt) { sync() }
+    }
+
+    /// Jumps to where the wait stands now, then runs the rest of it.
+    private func sync() {
+        run += 1
+        let token = run
+        let counted = isCurrent
+            ? elapsed + (resumedAt.map { max(0, Date().timeIntervalSince($0)) } ?? 0)
+            : (restsFull ? Self.cycle : 0)
+        let current = min(1, max(0, counted / Self.cycle))
+        var snap = Transaction(animation: nil)
+        snap.disablesAnimations = true
+        withTransaction(snap) { progress = current }
+        guard isCurrent, resumedAt != nil, current < 1 else { return }
+        // In its own update, so it animates from the snapped value.
+        DispatchQueue.main.async {
+            guard token == run else { return }
+            withAnimation(.linear(duration: Self.cycle * (1 - current))) { progress = 1 }
+        }
+    }
+}
+
 private struct TVSpotlightZoomSource: ViewModifier {
     let id: String
     @Environment(\.tvSpotlightZoomSpace) private var namespace
