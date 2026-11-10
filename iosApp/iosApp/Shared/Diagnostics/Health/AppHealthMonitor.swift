@@ -13,6 +13,7 @@ enum AppHealthMonitor {
         var armed = false
         var debuggerAttached = false
         var bootTime = 0
+        var previousExit: PreviousExit?
         var armedAt: Date?
         var hangInProgressMs: Int?
         // Reports recorded this session, against their caps.
@@ -100,6 +101,8 @@ enum AppHealthMonitor {
             marker: previous, backgroundContext: backgroundContext, crash: crash,
             bootTime: bootTime, recentEvents: previousEvents
         ) {
+            let exit = PreviousExit(pid: previous?.pid, playerOpen: previous?.context.playerOpen ?? false)
+            state.withLock { $0.previousExit = exit }
             add(report)
             DiagTrace.breadcrumb(
                 .essential,
@@ -114,6 +117,23 @@ enum AppHealthMonitor {
         #if os(iOS)
         MetricKitReportSubscriber.install()
         #endif
+    }
+
+    /// A previous session that crashed or was closed while open.
+    struct PreviousExit: Equatable, Sendable {
+        /// Its process ID, from the exit marker. nil for a crash in the
+        /// background, which leaves no marker.
+        let pid: Int32?
+        /// Whether the player was open when it ended.
+        let playerOpen: Bool
+    }
+
+    /// The previous session, as found at launch, when it crashed or was
+    /// closed while open. nil when it ended normally, including routine
+    /// closes in the background. Lets work that was running then avoid
+    /// starting the same way again.
+    static var previousExit: PreviousExit? {
+        state.withLock { $0.previousExit }
     }
 
     /// Reads and removes what the previous process saved. Earlier builds kept

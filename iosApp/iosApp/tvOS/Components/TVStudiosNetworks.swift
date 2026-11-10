@@ -350,7 +350,7 @@ struct TVStudiosNetworksSettingsView: View {
                     }
                     TVSettingsFooter(StudiosNetworksStore.firstLoadNotice)
                 case .failed:
-                    Button("Try Again") { Task { await store.loadIfNeeded() } }
+                    Button("Try Again") { Task { await store.loadIfNeeded(retrying: true) } }
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                 case .needsAccount:
                     EmptyView()

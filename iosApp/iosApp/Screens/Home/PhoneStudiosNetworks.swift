@@ -226,7 +226,7 @@ struct PhoneStudiosNetworksSettingsView: View {
                 }
             case .failed:
                 Section {
-                    Button("Try Again") { Task { await store.loadIfNeeded() } }
+                    Button("Try Again") { Task { await store.loadIfNeeded(retrying: true) } }
                         .frame(maxWidth: .infinity)
                 }
             case .needsAccount:
