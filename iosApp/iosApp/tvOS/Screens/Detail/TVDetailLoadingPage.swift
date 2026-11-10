@@ -267,10 +267,9 @@ struct TVDetailLoadingPage: View {
         let overview = seed?.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !overview.isEmpty {
             Text(verbatim: overview)
-                .font(.system(size: 26))
+                .font(.system(size: 22))
                 .foregroundStyle(Color.white.opacity(0.72))
-                .lineSpacing(5)
-                .lineLimit(3)
+                .lineLimit(4)
                 .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .topLeading)
         } else {
             VStack(alignment: .leading, spacing: 13) {
