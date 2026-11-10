@@ -182,7 +182,7 @@ struct TVDetailLoadingPage: View {
             .frame(height: 36, alignment: .leading)
             .padding(.top, 10)
             .padding(.leading, inset)
-            loadingSynopsis
+            loadingSynopsis(lines: 4)
                 .frame(height: 140, alignment: .topLeading)
                 .padding(.top, 12)
                 .padding(.leading, inset)
@@ -196,7 +196,7 @@ struct TVDetailLoadingPage: View {
                 .frame(width: 650, height: 160, alignment: .bottomLeading)
             loadingMetadata
                 .frame(height: 36, alignment: .leading)
-            loadingSynopsis
+            loadingSynopsis(lines: 3)
                 .frame(width: TVDetailHeroLayout.editorialWidth, height: 112, alignment: .topLeading)
                 .clipped()
         }
@@ -262,15 +262,17 @@ struct TVDetailLoadingPage: View {
         return parts
     }
 
+    /// The seeded overview at the loaded page's size and line count: four
+    /// lines on movie and series pages, three on the older layout, which
+    /// shows Read more under them once loaded.
     @ViewBuilder
-    private var loadingSynopsis: some View {
+    private func loadingSynopsis(lines: Int) -> some View {
         let overview = seed?.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !overview.isEmpty {
             Text(verbatim: overview)
-                .font(.system(size: 26))
+                .font(.system(size: 22))
                 .foregroundStyle(Color.white.opacity(0.72))
-                .lineSpacing(5)
-                .lineLimit(3)
+                .lineLimit(lines)
                 .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .topLeading)
         } else {
             VStack(alignment: .leading, spacing: 13) {

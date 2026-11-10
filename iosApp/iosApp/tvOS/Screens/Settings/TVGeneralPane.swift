@@ -11,6 +11,7 @@ extension TVSettingsView {
         @State private var reopenLanguage: VividAppLanguage = .system
         @State private var showsReopen = false
         @AppStorage(VividAppTheme.storageKey) private var theme: VividAppTheme = .graphite
+        @AppStorage(TVSpotlightGradientSetting.storageKey) private var spotlightGradient = TVSpotlightGradientSetting.defaultValue
         @State private var preferences = UICustomizationPreferences.shared
         @State private var sections = HomeSectionPreferences.shared
         @State private var studios = StudiosNetworksStore.shared
@@ -52,14 +53,20 @@ extension TVSettingsView {
                 TVSettingsFooter("A new choice takes effect after you close Vivid in the app switcher and open it again.")
                 TVSettingsSectionHeader("THEMES")
                 TVSettingsGroup {
-                    OptionMenu(title: "Theme", value: theme.title,
+                    OptionMenu(title: "Theme", detail: "Sets the background across Vivid.", value: theme.title,
                                options: VividAppTheme.allCases.map { MenuOption(id: $0.rawValue, label: $0.title) },
                                selection: theme.rawValue) { id in
                         if let choice = VividAppTheme(rawValue: id) { theme = choice }
                     }
                     .focused(focus, equals: .theme)
+                    OptionMenu(title: "Spotlight Gradient", detail: "Colours Home’s background to match the Spotlight.",
+                               value: String(localized: spotlightGradient ? "On" : "Off"),
+                               options: [MenuOption(id: "on", label: String(localized: "On")),
+                                         MenuOption(id: "off", label: String(localized: "Off"))],
+                               selection: spotlightGradient ? "on" : "off", symbol: "chevron.right") { id in
+                        spotlightGradient = id == "on"
+                    }
                 }
-                TVSettingsFooter("Graphite uses the charcoal background, Black uses solid black, and Native removes Vivid’s background and uses the system appearance.")
                 homeScreenGroup
                 if preferences.capabilityState != .checking, let message = preferences.capabilityMessage {
                     TVSettingsSectionHeader("SERVER SUPPORT")

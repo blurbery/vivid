@@ -632,6 +632,9 @@ extension TVSettingsView {
         let value: String
         let options: [MenuOption]
         let selection: String
+        /// The symbol after the value. Rows that sit with page rows can
+        /// use the same chevron as them.
+        var symbol = "chevron.up.chevron.down"
         let choose: (String) -> Void
 
         var body: some View {
@@ -654,8 +657,8 @@ extension TVSettingsView {
                         .opacity(0.68)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.tvSettings(16, weight: .semibold))
+                    Image(systemName: symbol)
+                        .font(.tvSettings(symbol == "chevron.right" ? 18 : 16, weight: .semibold))
                         .opacity(0.55)
                 }
             }

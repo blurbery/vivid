@@ -26,6 +26,7 @@ struct TVHomeDiscoveryFeed: View {
     @State private var spotlightEnterRequest = 0
     @State private var rowFocusOwnership = TVHomeFocusOwnership()
     @State private var rowFocusMemory = TVHomeRowFocusMemory()
+    @State private var spotlightAmbience = TVHomeSpotlightAmbience()
     @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
     @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
@@ -54,7 +55,10 @@ struct TVHomeDiscoveryFeed: View {
                             slides: slides,
                             enterRequest: spotlightEnterRequest,
                             initialPosition: rowFocusMemory.spotlightPosition,
-                            onPositionChange: { rowFocusMemory.spotlightPosition = $0 },
+                            onPositionChange: {
+                                rowFocusMemory.spotlightPosition = $0
+                                spotlightAmbience.position = $0
+                            },
                             onFocusChange: { focused in
                                 rowFocusMemory.spotlightFocused = focused
                                 if focused {
@@ -151,6 +155,17 @@ struct TVHomeDiscoveryFeed: View {
                 .environment(\.tvHomeStableRows, true)
                 .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 96 : 91))
                 .padding(.bottom, 80)
+                // Part of the scrolling content, so it leaves with the
+                // spotlight and has faded out by the first rows.
+                .background(alignment: .top) {
+                    if !slides.isEmpty {
+                        TVHomeSpotlightGlow(
+                            ambience: spotlightAmbience,
+                            slides: slides,
+                            initialPosition: rowFocusMemory.spotlightPosition
+                        )
+                    }
+                }
             }
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
             .onChange(of: focusRequest, initial: true) { _, request in
@@ -739,6 +754,158 @@ private final class TVHomeArtworkWarmup {
     }
 }
 
+/// Settings > General > Spotlight Gradient, on Apple TV only.
+enum TVSpotlightGradientSetting {
+    static let storageKey = "vivid.tv.spotlightGradient"
+    static let defaultValue = true
+}
+
+/// The carousel's position, for the glow behind Home. Only the glow
+/// observes it, so a slide change doesn't invalidate the feed.
+@Observable
+private final class TVHomeSpotlightAmbience {
+    var position: Int?
+}
+
+/// An opaque backdrop in the current slide's colour behind the top of Home:
+/// brightest at the top right, darkest at the bottom left. It covers the
+/// first screen and fades out below it, so it ends without an edge. A new slide's colour fades in over the old one;
+/// only opacity animates.
+private struct TVHomeSpotlightGlow: View {
+    let ambience: TVHomeSpotlightAmbience
+    let slides: [TVHomeSpotlightSlide]
+    /// Where the carousel starts, until it reports a position.
+    let initialPosition: Int
+
+    @State private var front: Color?
+    @State private var back: Color?
+    @State private var frontOpacity: Double = 0
+    @State private var run = 0
+    @AppStorage(TVSpotlightGradientSetting.storageKey) private var isEnabled = TVSpotlightGradientSetting.defaultValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Solid for the whole first screen, then fading out below it.
+    private static let height: CGFloat = 1620
+    private static let solidHeight: CGFloat = 1100
+
+    var body: some View {
+        ZStack {
+            if isEnabled {
+                if let back { backdrop(back) }
+                if let front { backdrop(front).opacity(frontOpacity) }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.height)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: isEnabled ? artworkURL : nil) {
+            // Off: the theme shows as before and no colour is looked up.
+            guard isEnabled else {
+                front = nil
+                back = nil
+                return
+            }
+            // A slide with no artwork has no colour of its own; don't leave
+            // the last slide's showing.
+            guard let string = artworkURL, let url = URL(string: string) else {
+                hide()
+                return
+            }
+            let cached = TVHomeMetadataCache.shared.cachedSpotlightTint(for: url)
+            let prepared: Color?
+            if let cached { prepared = cached } else {
+                prepared = await TVHomeMetadataCache.shared.preparedSpotlightTint(for: url)
+            }
+            guard !Task.isCancelled else { return }
+            if let tint = prepared { show(tint) } else { hide() }
+        }
+    }
+
+    /// The artwork the current slide shows. Worked out here from the live
+    /// slides, so it follows a reload that changes the slide in place and an
+    /// episode's series background arriving after the slide first appears.
+    private var artworkURL: String? {
+        guard !slides.isEmpty else { return nil }
+        let position = ambience.position ?? initialPosition
+        let slide = slides[((position % slides.count) + slides.count) % slides.count]
+        return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
+    }
+
+    /// The first screen is the plain gradient. Only the strip below it,
+    /// off screen until Home scrolls, is masked to fade out; both pieces
+    /// are windows onto the same gradient, so they meet without a seam.
+    private func backdrop(_ tint: Color) -> some View {
+        VStack(spacing: 0) {
+            wash(tint)
+                .frame(height: Self.height)
+                .frame(height: Self.solidHeight, alignment: .top)
+                .clipped()
+            wash(tint)
+                .frame(height: Self.height)
+                .frame(height: Self.height - Self.solidHeight, alignment: .bottom)
+                .clipped()
+                .mask { LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom) }
+        }
+    }
+
+    /// Opaque shades of the slide's own hue, so the theme behind doesn't
+    /// show through: near black at the bottom left, lit at the top right.
+    private func wash(_ tint: Color) -> some View {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(tint).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let rich = min(1, saturation * 1.25)
+        func shade(_ value: CGFloat) -> Color {
+            Color(hue: hue, saturation: rich, brightness: value)
+        }
+        return LinearGradient(
+            stops: [
+                .init(color: shade(0.02), location: 0),
+                .init(color: shade(0.07), location: 0.55),
+                .init(color: shade(0.26), location: 1)
+            ],
+            startPoint: .bottomLeading, endPoint: .topTrailing
+        )
+    }
+
+    /// Fades the backdrop out to the theme.
+    private func hide() {
+        guard front != nil || back != nil else { return }
+        run += 1
+        let token = run
+        var snap = Transaction(animation: nil)
+        snap.disablesAnimations = true
+        withTransaction(snap) { back = nil }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 1.6)) {
+            frontOpacity = 0
+        } completion: {
+            if token == run { front = nil }
+        }
+    }
+
+    /// The colour on show drops behind and the new one fades in over it.
+    private func show(_ tint: Color) {
+        run += 1
+        let token = run
+        var snap = Transaction(animation: nil)
+        snap.disablesAnimations = true
+        withTransaction(snap) {
+            if let front, frontOpacity > 0.5 { back = front }
+            front = tint
+            frontOpacity = 0
+        }
+        DispatchQueue.main.async {
+            guard token == run else { return }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 1.6)) {
+                frontOpacity = 1
+            } completion: {
+                // The colour underneath is fully covered now; stop drawing it.
+                if token == run { back = nil }
+            }
+        }
+    }
+}
+
 /// Remember card selection without invalidating the entire feed for every
 /// horizontal focus move. Each row already observes its own focused card.
 private final class TVHomeRowFocusMemory {
@@ -759,6 +926,13 @@ private struct TVHomeSpotlightCarousel: View {
     private var focus: FocusState<Int?>.Binding { $focusedPosition }
     let onPositionChange: (Int) -> Void
     let onSelect: (TVHomeSpotlightSlide, Int) -> Void
+
+    /// The space either side of the centred card.
+    private static let sideMargin: CGFloat = 60
+    /// The gap between cards. As wide as the side margin, so the cards
+    /// either side of the centred one rest just off screen and only show
+    /// while the carousel slides.
+    private static let cardSpacing: CGFloat = sideMargin
 
     @State private var visualPosition = 0
     @State private var scrollPosition = ScrollPosition(id: 0, anchor: .center)
@@ -873,9 +1047,9 @@ private struct TVHomeSpotlightCarousel: View {
     var body: some View {
         VStack(spacing: 22) {
             GeometryReader { geometry in
-                let cardWidth = max(1, geometry.size.width - 120)
+                let cardWidth = max(1, geometry.size.width - Self.sideMargin * 2)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 22) {
+                    HStack(spacing: Self.cardSpacing) {
                         ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
                             Button { selectCard(slide, at: position) } label: {
@@ -898,6 +1072,12 @@ private struct TVHomeSpotlightCarousel: View {
                                 .frame(width: cardWidth, height: 748)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
+                                .overlay(alignment: .bottomTrailing) {
+                                    // On the card itself, so it slides with it.
+                                    if slides.count > 1, !voiceOverEnabled, abs(position - visualPosition) <= 1 {
+                                        cycleProgressPill(at: position).padding(48)
+                                    }
+                                }
                             }
                             .buttonStyle(TVSpotlightButtonStyle(
                                 artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
@@ -920,7 +1100,7 @@ private struct TVHomeSpotlightCarousel: View {
                     }
                     .scrollTargetLayout()
                 }
-                .contentMargins(.horizontal, 60, for: .scrollContent)
+                .contentMargins(.horizontal, Self.sideMargin, for: .scrollContent)
                 .scrollTargetBehavior(.viewAligned)
                 .defaultScrollAnchor(.center, for: .initialOffset)
                 .scrollPosition($scrollPosition)
@@ -928,7 +1108,7 @@ private struct TVHomeSpotlightCarousel: View {
                     $0.contentOffset.x + $0.contentInsets.leading
                 } action: { _, offset in
                     scrollGeometry.offset = offset
-                    scrollGeometry.cardStride = cardWidth + 22
+                    scrollGeometry.cardStride = cardWidth + Self.cardSpacing
                     if focus.wrappedValue == visualPosition {
                         updatePositionWindow(around: visualPosition)
                     }
@@ -953,7 +1133,7 @@ private struct TVHomeSpotlightCarousel: View {
                         alignmentAttempted = true
                         diagnostics?.event("spotlight.align", values: [Double(scrollGeometry.offset), Double(target)])
                         let residual = abs(scrollGeometry.offset - target)
-                        var transaction = Transaction(animation: reduceMotion || residual < scrollGeometry.cardStride - 22
+                        var transaction = Transaction(animation: reduceMotion || residual < scrollGeometry.cardStride - Self.cardSpacing
                             ? nil : .easeOut(duration: 0.12))
                         transaction.disablesAnimations = transaction.animation == nil
                         withTransaction(transaction) {
@@ -1060,6 +1240,20 @@ private struct TVHomeSpotlightCarousel: View {
         }
     }
 
+    /// A small pill in each card's bottom-right corner that fills over the
+    /// slide's six seconds, so it's clear the Spotlight moves on by itself.
+    /// Cards before the current one show it full and cards after it show
+    /// it empty, so moving forward the old card leaves full and the new one
+    /// arrives empty.
+    private func cycleProgressPill(at position: Int) -> some View {
+        TVSpotlightCyclePill(
+            isCurrent: position == visualPosition,
+            restsFull: position < visualPosition,
+            elapsed: cycleElapsed,
+            resumedAt: cycleResumedAt
+        )
+    }
+
     /// Opens a card. Rotation stops at once, and a slide already on its way
     /// to the next card snaps back to the pressed one without animation, so
     /// the zoom leaves from and returns to the card that was chosen.
@@ -1134,6 +1328,62 @@ private struct TVHomeSpotlightCarousel: View {
             scrollPosition.scrollTo(id: position, anchor: .center)
         }
 
+    }
+}
+
+/// The Spotlight's countdown pill. One linear animation runs each stretch
+/// of the wait, so nothing is recomputed per frame and the carousel isn't
+/// invalidated while it fills.
+private struct TVSpotlightCyclePill: View {
+    let isCurrent: Bool
+    let restsFull: Bool
+    /// Time already counted before the current stretch.
+    let elapsed: TimeInterval
+    /// When the current stretch started; nil while rotation is paused.
+    let resumedAt: Date?
+
+    @State private var progress: Double = 0
+    @State private var run = 0
+
+    private static let width: CGFloat = 80
+    private static let cycle: TimeInterval = 6
+
+    var body: some View {
+        Capsule()
+            .fill(Color.white.opacity(0.22))
+            .overlay {
+                // Moved, not resized, so the fill is a plain transform.
+                Capsule()
+                    .fill(Color.white.opacity(0.9))
+                    .offset(x: -Self.width * (1 - progress))
+            }
+            .clipShape(Capsule())
+            .frame(width: Self.width, height: 6)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: isCurrent, initial: true) { sync() }
+            .onChange(of: restsFull) { sync() }
+            .onChange(of: elapsed) { sync() }
+            .onChange(of: resumedAt) { sync() }
+    }
+
+    /// Jumps to where the wait stands now, then runs the rest of it.
+    private func sync() {
+        run += 1
+        let token = run
+        let counted = isCurrent
+            ? elapsed + (resumedAt.map { max(0, Date().timeIntervalSince($0)) } ?? 0)
+            : (restsFull ? Self.cycle : 0)
+        let current = min(1, max(0, counted / Self.cycle))
+        var snap = Transaction(animation: nil)
+        snap.disablesAnimations = true
+        withTransaction(snap) { progress = current }
+        guard isCurrent, resumedAt != nil, current < 1 else { return }
+        // In its own update, so it animates from the snapped value.
+        DispatchQueue.main.async {
+            guard token == run else { return }
+            withAnimation(.linear(duration: Self.cycle * (1 - current))) { progress = 1 }
+        }
     }
 }
 

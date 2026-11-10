@@ -42,11 +42,12 @@ struct TVDetailSynopsisButton: View {
             showsFullText = true
         } label: {
             VStack(alignment: .leading, spacing: 8) {
+                // The Spotlight's overview size, so the slot holds a line
+                // more of the description than it did at 26 points.
                 Text(verbatim: overview)
-                    .font(.system(size: 26))
+                    .font(.system(size: 22))
                     .foregroundStyle(Color.white.opacity(0.92))
-                    .lineSpacing(4)
-                    .lineLimit(isCompact ? 3 : 2)
+                    .lineLimit(isCompact ? 4 : 3)
                     .fixedSize(horizontal: false, vertical: true)
                 if !isCompact {
                     Text("Read more")
