@@ -1318,7 +1318,7 @@ private struct TVHomeSpotlightArtwork: View {
                             .init(color: .clear, location: 1)
                         ], startPoint: .leading, endPoint: .trailing)
                     }
-                VStack(alignment: .center, spacing: 18) {
+                VStack(alignment: .leading, spacing: 18) {
                     if let logo {
                         Image(uiImage: logo)
                             .resizable().interpolation(.high).scaledToFit()
@@ -1327,14 +1327,14 @@ private struct TVHomeSpotlightArtwork: View {
                                                                       image: logo, frame: frame)
                             }
                             .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == zoomSourceID ? 0 : 1)
-                            .frame(width: 600, height: 200, alignment: .bottom)
+                            .frame(width: 600, height: 200, alignment: .bottomLeading)
                             .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     } else {
                         Text(slide.content.title)
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 760, alignment: .center)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: 760, alignment: .leading)
                             .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
                     Text(([typeLabel] + spotlightMetaParts
@@ -1343,7 +1343,7 @@ private struct TVHomeSpotlightArtwork: View {
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                        .frame(width: logo == nil ? 760 : 600, alignment: .center)
+                        .frame(width: logo == nil ? 760 : 600, alignment: .leading)
                         .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
                     if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !overview.isEmpty {
