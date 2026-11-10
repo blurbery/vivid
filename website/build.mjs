@@ -57,7 +57,7 @@ const markerLink = text => `<a href="#text-${text.id}">${escape(manifest.marker.
 const mediaCredits = JSON.parse(await readFile(join(root, 'media-credits.json'), 'utf8'));
 let body = '<h1>Open Source Licences</h1>\n    <p>Vivid is built with the open source software below. Its notices and licence texts are the same ones the app shows in Settings > About > Open Source Licences, and it ends with credits for the images on this website and in the App Store listing. Each build records the source commit it was made from in Settings > About, and Vivid’s complete source, build instructions and third-party notices are on <a href="https://github.com/blurbery/vivid" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>\n';
 const label = entry => escape([[entry.name, entry.version].filter(Boolean).join(' '), entry.licence].filter(Boolean).join(' · '));
-body += `    <p>${manifest.entries.map(entry => `<a href="#${entry.id}">${label(entry)}</a>`).join('<br>')}<br>${manifest.texts.map(text => `<a href="#text-${text.id}">${escape(text.title)}</a>`).join('<br>')}<br><a href="#website-images">Images on this website</a>${mediaCredits.app_store ? '<br><a href="#app-store-images">App Store screenshots</a>' : ''}</p>\n`;
+body += `    <p>${manifest.entries.map(entry => `<a href="#${entry.id}">${label(entry)}</a>`).join('<br>')}<br>${manifest.texts.map(text => `<a href="#text-${text.id}">${escape(text.title)}</a>`).join('<br>')}<br><a href="#website-images">Images on this website and in the App Store</a>${mediaCredits.app_store ? '<br><a href="#app-store-images">iPad App Store screenshots</a>' : ''}</p>\n`;
 for (const entry of manifest.entries) {
   const shared = entry.text ? texts.get(entry.text) : undefined;
   if (entry.text && !shared) throw new Error(`Unknown licence text: ${entry.text}`);
@@ -76,15 +76,15 @@ for (const entry of manifest.entries) {
 for (const text of manifest.texts) {
   body += `    <h2 id="text-${text.id}">${escape(text.title)}</h2><pre>${escape(await licenceFile(text.file))}</pre>\n`;
 }
-// The website's app captures show a demo library of commercial films and
+// The website's app captures, and the iPhone and Apple TV App Store
+// screenshots made from them, show a demo library of commercial films and
 // series, named here with a notice that their artwork belongs to its owners.
-// The App Store screenshots still use Blender Foundation open-movie artwork,
-// credited after them as its Creative Commons licences require, until the
-// new App Store set ships.
-body += `    <h2 id="website-images">Images on this website</h2><p>${escape(mediaCredits.intro)}</p>\n`;
+// The iPad App Store screenshots still use Blender Foundation open-movie
+// artwork, credited after them as its Creative Commons licences require.
+body += `    <h2 id="website-images">Images on this website and in the App Store</h2><p>${escape(mediaCredits.intro)}</p>\n`;
 body += `    <p>${mediaCredits.titles.map(title => `${escape(title.title)} (${escape(String(title.year))}, ${escape(title.kind.toLowerCase())})`).join('<br>')}</p>\n`;
 if (mediaCredits.app_store) {
-  body += `    <h2 id="app-store-images">App Store screenshots</h2><p>${escape(mediaCredits.app_store.intro)}</p>\n`;
+  body += `    <h2 id="app-store-images">iPad App Store screenshots</h2><p>${escape(mediaCredits.app_store.intro)}</p>\n`;
   body += `    <p>${mediaCredits.app_store.images.map(image => `${escape(image.title)}: ${escape(image.attribution)}. <a href="${escape(image.source)}" target="_blank" rel="noopener noreferrer">Source</a>, <a href="${escape(image.licence_url)}" target="_blank" rel="noopener noreferrer">${escape(image.licence)}</a>`).join('<br>')}</p>\n`;
 }
 const template = await readFile(join(publicDir, 'support.html'), 'utf8');
