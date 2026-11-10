@@ -6,9 +6,9 @@
 //   node scripts/sponsors/render-sponsors.mjs --fixture sponsors.json --out sponsors.svg
 //
 // Only public sponsorships are shown. Active sponsors on a monthly tier of $25 or more are
-// Gold sponsors, shown with their name; other active sponsors, including one-time sponsors,
-// are Silver sponsors with a smaller avatar, and sponsors whose sponsorship has ended are
-// listed as past sponsors. Avatars are embedded as
+// Gold sponsors, with a large avatar and their name; other active sponsors, including one-time
+// sponsors, are Silver sponsors, with a smaller avatar and their name; and sponsors whose
+// sponsorship has ended are listed as past sponsors, avatar only. Avatars are embedded as
 // data URIs because GitHub won't load external images inside an SVG.
 
 import { readFile, writeFile } from 'node:fs/promises';
@@ -23,12 +23,15 @@ const DISPLAY_NAMES = {
 };
 
 const WIDTH = 800;
-const FONT = "Geist, -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif";
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif";
+const PROFILE = 'https://github.com/';
 
+// Laid out like sponsorkit's images: a transparent background and mid-grey text, so it reads
+// on GitHub's light and dark themes, with a centred title and a row of round avatars per tier.
 const TIERS = [
-  { key: 'gold', title: 'Gold sponsors', avatar: 120, gap: 48, slot: 168, names: true, metal: 'gold' },
-  { key: 'silver', title: 'Silver sponsors', avatar: 64, gap: 20, slot: 64, names: false, metal: 'silver' },
-  { key: 'past', title: 'Past sponsors', avatar: 40, gap: 12, slot: 40, names: false, muted: true, metal: 'silver' },
+  { key: 'gold', title: 'Gold Sponsors', avatar: 90, slot: 120, gap: 10, names: true, nameMax: 16, ring: 'gold' },
+  { key: 'silver', title: 'Silver Sponsors', avatar: 60, slot: 90, gap: 10, names: true, nameMax: 13, ring: 'silver' },
+  { key: 'past', title: 'Past Sponsors', avatar: 35, slot: 35, gap: 3, names: false, muted: true },
 ];
 
 function parseArgs(argv) {
@@ -41,15 +44,19 @@ function parseArgs(argv) {
   return args;
 }
 
-const QUERY = `query($login: String!, $cursor: String) {
+// Fine-grained tokens can't read tiers at all, so SPONSORS_TOKEN must be a classic token.
+// isActive, createdAt and privacyLevel need the read:user scope, so the script asks for active
+// and all sponsorships separately and relies on includePrivate: false and the CREATED_AT order
+// instead. isOneTimePayment needs read:user too, but it's the only way to tell a one-time payment
+// made against a monthly tier, so the script asks for it and only drops it when the token lacks
+// read:user (then such a payment can't be told apart and counts by its tier).
+const query = (withPayment) => `query($login: String!, $cursor: String, $activeOnly: Boolean!) {
   user(login: $login) {
-    sponsorshipsAsMaintainer(first: 100, after: $cursor, activeOnly: false, includePrivate: false) {
+    sponsorshipsAsMaintainer(first: 100, after: $cursor, activeOnly: $activeOnly, includePrivate: false,
+      orderBy: { field: CREATED_AT, direction: ASC }) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        isActive
-        isOneTimePayment
-        privacyLevel
-        createdAt
+        ${withPayment ? 'isOneTimePayment' : ''}
         tier { monthlyPriceInDollars isOneTime }
         sponsorEntity {
           __typename
@@ -61,18 +68,52 @@ const QUERY = `query($login: String!, $cursor: String) {
   }
 }`;
 
+class MissingScopeError extends Error {}
+
+async function fetchBoth(token, withPayment) {
+  const active = await fetchPage(token, true, withPayment);
+  const all = await fetchPage(token, false, withPayment);
+  return { active, all };
+}
+
 async function fetchSponsorships(token) {
+  let result;
+  try {
+    result = await fetchBoth(token, true);
+  } catch (error) {
+    if (!(error instanceof MissingScopeError)) throw error;
+    console.warn('::warning::SPONSORS_TOKEN has no read:user scope, so one-time payments made against a monthly tier count by their tier.');
+    result = await fetchBoth(token, false);
+  }
+  const { active, all } = result;
+  const activeLogins = new Set(active.map((n) => n.sponsorEntity?.login?.toLowerCase()));
+  return [
+    ...active.map((n) => ({ ...n, isActive: true })),
+    ...all
+      .filter((n) => !activeLogins.has(n.sponsorEntity?.login?.toLowerCase()))
+      .map((n) => ({ ...n, isActive: false })),
+  ];
+}
+
+async function fetchPage(token, activeOnly, withPayment) {
   const nodes = [];
   let cursor = null;
   do {
     const response = await fetch('https://api.github.com/graphql', {
       method: 'POST',
       headers: { authorization: `bearer ${token}`, 'content-type': 'application/json', 'user-agent': 'vivid-sponsors' },
-      body: JSON.stringify({ query: QUERY, variables: { login: MAINTAINER, cursor } }),
+      body: JSON.stringify({ query: query(withPayment), variables: { login: MAINTAINER, cursor, activeOnly } }),
     });
     const body = await response.json();
     if (!response.ok || body.errors) {
-      throw new Error(`GitHub GraphQL request failed: ${JSON.stringify(body.errors || body.message || response.status)}`);
+      const detail = JSON.stringify(body.errors || body.message || response.status);
+      if (withPayment && body.errors?.length && body.errors.every((e) => e.type === 'INSUFFICIENT_SCOPES')) {
+        throw new MissingScopeError(detail);
+      }
+      const hint = detail.includes('Resource not accessible by personal access token')
+        ? " SPONSORS_TOKEN looks like a fine-grained token, which can't read sponsor tiers. Use a classic token."
+        : '';
+      throw new Error(`GitHub GraphQL request failed: ${detail}${hint}`);
     }
     const page = body.data.user.sponsorshipsAsMaintainer;
     nodes.push(...page.nodes);
@@ -85,8 +126,8 @@ export function groupSponsors(nodes) {
   const groups = { gold: [], silver: [], past: [] };
   const seen = new Set();
   const usable = nodes.filter((n) => n.sponsorEntity && n.sponsorEntity.login && n.privacyLevel !== 'PRIVATE');
-  // Longest-standing sponsors first.
-  usable.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  // Longest-standing sponsors first. Live data already comes in that order; fixtures may set createdAt.
+  usable.sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
 
   // A sponsor with more than one active sponsorship is placed by their highest monthly tier.
   // One-time payments count as Silver whatever their size.
@@ -138,18 +179,18 @@ function layoutRows(count, slot, gap) {
 export function renderSvg(groups, avatars) {
   const parts = [];
   const defs = [];
-  let y = 56;
+  let y = 0;
   let clip = 0;
   const sections = TIERS.filter((tier) => groups[tier.key].length > 0);
 
-  sections.forEach((tier, index) => {
-    if (index > 0) y += 44;
-    parts.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" font-family="${FONT}" font-size="14" font-weight="600" letter-spacing="4.5" fill="url(#${tier.metal}Text)">${escapeXml(tier.title.toUpperCase())}</text>`);
-    y += 30;
+  sections.forEach((tier) => {
+    y += 40;
+    parts.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" class="tier-title">${escapeXml(tier.title)}</text>`);
+    y += 25;
 
     const people = groups[tier.key];
     const rows = layoutRows(people.length, tier.slot, tier.gap);
-    const rowHeight = tier.avatar + (tier.names ? 62 : 0);
+    const rowHeight = tier.avatar + (tier.names ? 28 : 0);
     let i = 0;
     rows.forEach((inRow, rowIndex) => {
       const rowWidth = inRow * tier.slot + (inRow - 1) * tier.gap;
@@ -160,20 +201,19 @@ export function renderSvg(groups, avatars) {
         const r = tier.avatar / 2;
         const cx = x + tier.slot / 2;
         const cy = top + r;
-        const id = `a${clip++}`;
-        defs.push(`<clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>`);
+        const id = `c${clip++}`;
         const label = displayName(person);
-        parts.push(`<g${tier.muted ? ' opacity="0.72" filter="url(#muted)"' : ''}>`
+        defs.push(`<clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>`);
+        let item = `<a href="${PROFILE}${encodeURIComponent(person.login)}" class="sponsor-link" target="_blank">`
           + `<title>${escapeXml(label)}</title>`
-          + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#252525"/>`
-          + `<image href="${avatars.get(person.login)}" x="${cx - r}" y="${cy - r}" width="${tier.avatar}" height="${tier.avatar}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/>`
-          + `<circle cx="${cx}" cy="${cy}" r="${r + (tier.names ? 3 : 1.5)}" fill="none" stroke="url(#${tier.metal}Ring)" stroke-width="${tier.names ? 2.5 : 1.5}"/>`
-          + '</g>');
+          + `<g${tier.muted ? ' opacity="0.6" filter="url(#muted)"' : ''}>`
+          + `<image x="${cx - r}" y="${cy - r}" width="${tier.avatar}" height="${tier.avatar}" href="${avatars.get(person.login)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/>`
+          + (tier.ring ? `<circle cx="${cx}" cy="${cy}" r="${r + 1.5}" fill="none" stroke="url(#${tier.ring}Ring)" stroke-width="2"/>` : '')
+          + '</g>';
         if (tier.names) {
-          const name = truncate(displayName(person), 20);
-          parts.push(`<text x="${cx}" y="${cy + r + 34}" text-anchor="middle" font-family="${FONT}" font-size="18" font-weight="600" fill="#f5f5f7">${escapeXml(name)}</text>`);
-          parts.push(`<text x="${cx}" y="${cy + r + 55}" text-anchor="middle" font-family="${FONT}" font-size="13" fill="#a1a1a8">@${escapeXml(truncate(person.login, 22))}</text>`);
+          item += `<text x="${cx}" y="${cy + r + 20}" text-anchor="middle" class="sponsor-name">${escapeXml(truncate(label, tier.nameMax))}</text>`;
         }
+        parts.push(`${item}</a>`);
         x += tier.slot + tier.gap;
       }
     });
@@ -181,25 +221,27 @@ export function renderSvg(groups, avatars) {
   });
 
   if (sections.length === 0) {
-    parts.push(`<text x="${WIDTH / 2}" y="${y + 8}" text-anchor="middle" font-family="${FONT}" font-size="14" font-weight="600" letter-spacing="4.5" fill="url(#silverText)">SPONSORS</text>`);
-    parts.push(`<text x="${WIDTH / 2}" y="${y + 44}" text-anchor="middle" font-family="${FONT}" font-size="16" fill="#a1a1a8">Be the first to sponsor Vivid.</text>`);
-    y += 52;
+    y += 40;
+    parts.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" class="tier-title">Sponsors</text>`);
+    y += 35;
+    parts.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle">Be the first to sponsor Vivid.</text>`);
   }
 
-  const height = Math.round(y + 52);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-label="Vivid's sponsors">
+  const height = Math.round(y + 25);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}">
+<title>Vivid's sponsors</title>
+<!-- Generated by scripts/sponsors/render-sponsors.mjs in blurbery/vivid -->
+<style>
+text { font-family: ${FONT}; font-size: 14px; font-weight: 300; fill: #777777; }
+.tier-title { font-size: 20px; font-weight: 500; }
+.sponsor-link { cursor: pointer; }
+</style>
 <defs>
-<linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#191919"/><stop offset="1" stop-color="#101010"/></linearGradient>
-<radialGradient id="glow" cx="0.5" cy="0" r="0.75"><stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
-<linearGradient id="silverText" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8e7e8"/><stop offset="1" stop-color="#9a9a9a"/></linearGradient>
-<linearGradient id="goldText" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6e3a8"/><stop offset="1" stop-color="#c9a04e"/></linearGradient>
 <linearGradient id="goldRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e3a8"/><stop offset="0.5" stop-color="#d4af5f"/><stop offset="1" stop-color="#8a6a2c"/></linearGradient>
 <linearGradient id="silverRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e8e7e8"/><stop offset="0.5" stop-color="#9a9a9a"/><stop offset="1" stop-color="#6c6b6b"/></linearGradient>
-<filter id="muted"><feColorMatrix type="saturate" values="0.25"/></filter>
+<filter id="muted"><feColorMatrix type="saturate" values="0.2"/></filter>
 ${defs.join('\n')}
 </defs>
-<rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="20" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.09"/>
-<rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="20" fill="url(#glow)"/>
 ${parts.join('\n')}
 </svg>
 `;
