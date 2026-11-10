@@ -20,6 +20,10 @@ extension PlayerViewModel {
             return
         }
         #if os(tvOS)
+        // A video withdrawn at its end stays out of Now Playing until
+        // something plays (`restoreNowPlayingAfterEndIfNeeded`), including
+        // through a route change or the next episode's load.
+        guard !nowPlayingWithdrawnAtEnd else { return }
         nowPlaying.nativeMetadataHandler = { [weak engine = vividPlaybackController.engine] title, artwork in
             engine?.updateNativeMetadata(title: title, artwork: artwork)
         }
@@ -77,6 +81,27 @@ extension PlayerViewModel {
         guard now.timeIntervalSince(lastNowPlayingPush) > 2.0 else { return }
         lastNowPlayingPush = now
         pushNowPlayingSnapshot()
+    }
+
+    /// From tvOS 27.2 the system badges a Now Playing item in the top-right
+    /// corner when it stops, so a finished video leaves Now Playing rather
+    /// than staying as a paused item. Playing again brings it back.
+    func withdrawNowPlayingAtEnd() {
+        #if os(tvOS)
+        nowPlaying.detach()
+        nowPlayingWithdrawnAtEnd = true
+        #endif
+    }
+
+    /// Re-publishes Now Playing, with its artwork, once a video withdrawn at
+    /// its end plays again (Keep Watching, or a seek back from the end).
+    func restoreNowPlayingAfterEndIfNeeded() {
+        guard nowPlayingWithdrawnAtEnd else { return }
+        nowPlayingWithdrawnAtEnd = false
+        syncNowPlayingDestination()
+        if let contentId = currentWatchDetail?.contentId {
+            pushNowPlayingArtwork(contentId: contentId)
+        }
     }
 
     func pushNowPlayingSnapshot() {
