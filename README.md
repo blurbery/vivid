@@ -100,23 +100,11 @@ If you'd like to support Vivid's development, you can sponsor me on [GitHub Spon
 
 ## Sponsors
 
-A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery). Your support keeps development going.
+A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery). Your support keeps development going. Gold sponsors ($25 or more a month) are shown with their name, Silver sponsors (any other active sponsorship, including one-time) with their avatar, and past sponsors in a smaller row underneath.
 
-<table width="100%">
-  <thead>
-    <tr><th align="left" colspan="2">Featured sponsor</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle"><a href="https://github.com/xrandallx1"><img src="https://avatars.githubusercontent.com/u/255303889?s=192&amp;v=4" width="96" height="96" alt="Randall's GitHub avatar"></a></td>
-      <td width="10000" valign="middle">
-        <strong><a href="https://github.com/xrandallx1">Randall</a></strong> · <a href="https://github.com/xrandallx1">@xrandallx1</a><br>
-        <img src="https://img.shields.io/badge/featured%20sponsor-%2425%20a%20month-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Featured sponsor, $25 a month"><br>
-        Thank you, Randall, for backing Vivid every month. It genuinely helps me keep building it.
-      </td>
-    </tr>
-  </tbody>
-</table>
+<p align="center">
+  <a href="https://github.com/sponsors/blurbery"><img src="https://raw.githubusercontent.com/blurbery/vivid/sponsors/sponsors.svg" width="800" alt="Vivid's sponsors on GitHub Sponsors"></a>
+</p>
 
 <p align="center">
   <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/become%20a%20sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Become a sponsor on GitHub"></a>
