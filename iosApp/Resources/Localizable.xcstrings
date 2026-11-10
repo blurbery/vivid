@@ -47444,7 +47444,7 @@
       }
     },
     "Rating" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -76624,9 +76624,6 @@
           }
         }
       }
-    },
-    "★ %@" : {
-      "extractionState" : "manual"
     },
     "✓ Off" : {
       "extractionState" : "manual",

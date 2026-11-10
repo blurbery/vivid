@@ -83,10 +83,6 @@ struct StudioNetworkLibraryFilter: Equatable {
             return sorted(kept) { $0.releaseDate.map { String($0.prefix(10)) } ?? $0.year.map { String($0) } }
         case .year:
             return sorted(kept, by: \.year)
-        case .ratingImdb:
-            // The TMDb rating stands in where there's no IMDb one. On Emby
-            // and Jellyfin it's the community rating.
-            return sorted(kept) { $0.ratingImdb ?? $0.ratingTmdb }
         case .runtime:
             return sorted(kept, by: \.runtime)
         case .resolution:

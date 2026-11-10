@@ -214,7 +214,7 @@ enum SiloAPICompatibility {
     }
 
     private static let booleanFields: Set<String> = ["watched", "favorited", "in_watchlist", "in_progress", "hdr", "dolby_vision"]
-    private static let numericFields: Set<String> = ["year", "rating_imdb", "bitrate"]
+    private static let numericFields: Set<String> = ["year", "bitrate"]
 
     /// The server compares some rule values as Booleans or numbers.
     private static func typedRule(_ rule: [String: Any]) -> [String: Any] {

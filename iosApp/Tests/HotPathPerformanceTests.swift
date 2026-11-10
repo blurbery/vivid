@@ -75,7 +75,7 @@ final class HotPathPerformanceTests: XCTestCase {
                 "content_id": "item-\(index)", "type": index % 3 == 0 ? "series" : "movie",
                 "title": "Synthetic Title \(index)", "year": 1990 + index % 35,
                 "genres": ["Drama", "Comedy"], "content_rating": "PG-13", "status": "available",
-                "rating_imdb": 7.1, "rating_tmdb": 6.8, "rating_rt_critic": 81, "runtime": 95 + index % 40,
+                "rating_tmdb": 6.8, "rating_rt_critic": 81, "runtime": 95 + index % 40,
                 "original_language": "en", "studios": ["Example Studio"],
                 "overview": String(repeating: "Synthetic overview text. ", count: 6),
                 "poster_url": "/api/v1/images/poster/\(index)", "poster_thumbhash": "3OcRJYB4d3h/iIeHeEh3eIhw+j2w",

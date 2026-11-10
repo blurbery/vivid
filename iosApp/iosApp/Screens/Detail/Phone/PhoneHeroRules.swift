@@ -89,9 +89,6 @@ enum MobileHeroRules {
                 tokens.append(String(localized: "\(runtime) min"))
             }
         }
-        if let rating = imdbRating(detail) {
-            tokens.append(rating)
-        }
         return tokens
     }
 
@@ -103,16 +100,7 @@ enum MobileHeroRules {
         if let seasons = detail.seasonCount, seasons > 0 {
             tokens.append(String(localized: "\(seasons) Seasons"))
         }
-        if let rating = imdbRating(detail) {
-            tokens.append(rating)
-        }
         return tokens
-    }
-
-    private static func imdbRating(_ detail: ItemDetail) -> String? {
-        guard let rating = detail.ratingImdb else { return nil }
-        let value = rating.formatted(.number.precision(.fractionLength(1)))
-        return String(localized: "★ \(value)")
     }
 
     /// The facts, then each genre or label from the source tokens that isn't

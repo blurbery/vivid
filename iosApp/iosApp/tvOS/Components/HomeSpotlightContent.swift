@@ -33,9 +33,6 @@ struct TVMarqueeContent: Equatable {
         let runtime = Self.runtimeLabel(runtime: item.runtime, durationSeconds: item.durationSeconds)
         runtimeText = runtime
         if let runtime { parts.append(runtime) }
-        if !isEpisode, let rating = item.ratingImdb {
-            parts.append(rating.formatted(.number.precision(.fractionLength(1))))
-        }
         metaParts = parts
 
         title = isEpisode ? (item.seriesTitle ?? item.title) : item.title

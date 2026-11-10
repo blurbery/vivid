@@ -98,7 +98,8 @@ final class TVLibrarySimilarityStore {
         filters.networks = Set(source.networks ?? [])
         filters.matchAll = false
         guard !filters.genres.isEmpty || !filters.studios.isEmpty || !filters.networks.isEmpty else { return [] }
-        filters.sort = .ratingImdb
+        // Ranking happens here; the sort only sets which pages are sampled.
+        filters.sort = .addedAt
         let mediaType: BrowseMediaType = source.type == "movie" ? .movie : .series
 
         let firstQuery = CatalogQueryBuilder.build(filters, libraryId: nil,

@@ -67,12 +67,12 @@ struct ItemVideo { let kind: String; let site: String; let siteKey: String; let 
 struct SimilarPosterItem: Equatable { let contentId: String; init(contentId: String) { self.contentId = contentId }; init(detail: ItemDetail) { contentId = detail.contentId }; init(item: BrowseItem) { contentId = item.contentId } }
 struct BrowseItem { let contentId: String; var type = "movie"; var title = "Title"; var genres: [String]? = ["Drama"]; var studios: [String]? = nil; var networks: [String]? = nil; var year: Int? = 2020 }
 struct CatalogResponse { let items: [BrowseItem]; var total: Int? = 1000; var hasMore: Bool? = true; var snapshot: String? = nil }
-enum CatalogSortKey { case title, ratingImdb }
+enum CatalogSortKey { case title, addedAt }
 struct CatalogFilterState { var sort = CatalogSortKey.title; var genres = Set<String>(); var studios = Set<String>(); var networks = Set<String>(); var matchAll = true }
 enum BrowseMediaType: String { case movie, series }
 enum CatalogQueryBuilder {
     static func build(_ state: CatalogFilterState, libraryId: Int?, mediaType: BrowseMediaType, offset: Int, limit: Int, snapshot: String?, includeTotal: Bool) -> [String: String] {
-        precondition(!state.matchAll && state.genres.contains("Drama") && state.sort == .ratingImdb)
+        precondition(!state.matchAll && state.genres.contains("Drama") && state.sort == .addedAt)
         precondition(libraryId == nil && limit == 100 && includeTotal == (offset == 0))
         return ["type": mediaType.rawValue, "offset": String(offset), "limit": String(limit)]
     }
