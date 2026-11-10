@@ -100,10 +100,10 @@ If you'd like to support Vivid's development, you can sponsor me on [GitHub Spon
 
 ## Sponsors
 
-A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery). Your support keeps development going. Gold sponsors ($25 or more a month) are shown with their name, Silver sponsors (any other active sponsorship, including one-time) with their avatar, and past sponsors in a smaller row underneath.
+A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery). Your support keeps development going. Gold sponsors ($25 or more a month) get the biggest spot, Silver sponsors (any other active sponsorship, including one-time) the next row, and past sponsors a smaller row underneath. Click the image to open it, then click a sponsor to visit their profile.
 
 <p align="center">
-  <a href="https://github.com/sponsors/blurbery"><img src="https://raw.githubusercontent.com/blurbery/vivid/sponsors/sponsors.svg" width="800" alt="Vivid's sponsors on GitHub Sponsors"></a>
+  <a href="https://cdn.jsdelivr.net/gh/blurbery/vivid@sponsors/sponsors.svg"><img src="https://raw.githubusercontent.com/blurbery/vivid/sponsors/sponsors.svg" width="800" alt="Vivid's sponsors"></a>
 </p>
 
 <p align="center">

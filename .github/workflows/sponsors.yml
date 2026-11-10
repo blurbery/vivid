@@ -78,3 +78,7 @@ jobs:
           fi
           git commit -q -m "chore: update the sponsors image [skip release]"
           git push -q origin sponsors
+          # The README's click-through link opens the image on jsDelivr, which caches branches for
+          # up to 12 hours. Ask it to refetch; a failed purge only delays the update.
+          curl -fsS --max-time 30 "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@sponsors/sponsors.svg" >/dev/null \
+            || echo "::warning::Couldn't purge the jsDelivr copy of sponsors.svg."
