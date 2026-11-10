@@ -178,6 +178,12 @@ struct TVHomeDiscoveryFeed: View {
                 else if studiosNetworksOpenedDetail { enterStudiosNetworks() }
                 else if collectionsOpenedDetail { enterCollections() }
             }
+            .onChange(of: slides.map(\.id)) {
+                // The slide at the current position can change without the
+                // position moving (a reload, edited rows, another profile),
+                // so the backdrop takes its colour from the new slide.
+                spotlightAmbience.artworkURL = spotlightArtworkURL(at: rowFocusMemory.spotlightPosition)
+            }
             .onChange(of: slides.isEmpty) { _, empty in
                 if empty && rowFocusMemory.spotlightFocused { enterStudiosNetworks() }
             }
@@ -1216,7 +1222,8 @@ private struct TVHomeSpotlightCarousel: View {
 
     /// A small pill in each card's bottom-right corner that fills over the
     /// slide's six seconds, so it's clear the Spotlight moves on by itself.
-    /// The card before the current one leaves full and the one after it
+    /// Cards before the current one show it full and cards after it show
+    /// it empty, so moving forward the old card leaves full and the new one
     /// arrives empty.
     private func cycleProgressPill(at position: Int) -> some View {
         TVSpotlightCyclePill(
@@ -1304,7 +1311,6 @@ private struct TVHomeSpotlightCarousel: View {
     }
 }
 
-/// Registers a Spotlight card as the zoom source for the page it opens.
 /// The Spotlight's countdown pill. One linear animation runs each stretch
 /// of the wait, so nothing is recomputed per frame and the carousel isn't
 /// invalidated while it fills.
@@ -1361,6 +1367,7 @@ private struct TVSpotlightCyclePill: View {
     }
 }
 
+/// Registers a Spotlight card as the zoom source for the page it opens.
 private struct TVSpotlightZoomSource: ViewModifier {
     let id: String
     @Environment(\.tvSpotlightZoomSpace) private var namespace
