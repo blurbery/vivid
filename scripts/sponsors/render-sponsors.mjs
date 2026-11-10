@@ -2,7 +2,7 @@
 // Renders the README sponsors image (sponsors.svg) from blurbery's GitHub Sponsors.
 //
 // Usage:
-//   SPONSORS_TOKEN=<classic token, no scopes needed> node scripts/sponsors/render-sponsors.mjs --out sponsors.svg
+//   SPONSORS_TOKEN=<classic token with read:user> node scripts/sponsors/render-sponsors.mjs --out sponsors.svg
 //   node scripts/sponsors/render-sponsors.mjs --fixture sponsors.json --out sponsors.svg
 //
 // Only public sponsorships are shown. Active sponsors on a monthly tier of $25 or more are
@@ -44,16 +44,19 @@ function parseArgs(argv) {
   return args;
 }
 
-// Only fields a classic token can read without the read:user scope. isActive, createdAt,
-// privacyLevel and isOneTimePayment need read:user, so the script asks for active and all
-// sponsorships separately and relies on includePrivate: false and the CREATED_AT order instead.
 // Fine-grained tokens can't read tiers at all, so SPONSORS_TOKEN must be a classic token.
-const QUERY = `query($login: String!, $cursor: String, $activeOnly: Boolean!) {
+// isActive, createdAt and privacyLevel need the read:user scope, so the script asks for active
+// and all sponsorships separately and relies on includePrivate: false and the CREATED_AT order
+// instead. isOneTimePayment needs read:user too, but it's the only way to tell a one-time payment
+// made against a monthly tier, so the script asks for it and only drops it when the token lacks
+// read:user (then such a payment can't be told apart and counts by its tier).
+const query = (withPayment) => `query($login: String!, $cursor: String, $activeOnly: Boolean!) {
   user(login: $login) {
     sponsorshipsAsMaintainer(first: 100, after: $cursor, activeOnly: $activeOnly, includePrivate: false,
       orderBy: { field: CREATED_AT, direction: ASC }) {
       pageInfo { hasNextPage endCursor }
       nodes {
+        ${withPayment ? 'isOneTimePayment' : ''}
         tier { monthlyPriceInDollars isOneTime }
         sponsorEntity {
           __typename
@@ -65,9 +68,20 @@ const QUERY = `query($login: String!, $cursor: String, $activeOnly: Boolean!) {
   }
 }`;
 
+class MissingScopeError extends Error {}
+
 async function fetchSponsorships(token) {
-  const active = await fetchPage(token, true);
-  const all = await fetchPage(token, false);
+  let withPayment = true;
+  let active;
+  try {
+    active = await fetchPage(token, true, withPayment);
+  } catch (error) {
+    if (!(error instanceof MissingScopeError)) throw error;
+    console.warn('::warning::SPONSORS_TOKEN has no read:user scope, so one-time payments made against a monthly tier count by their tier.');
+    withPayment = false;
+    active = await fetchPage(token, true, withPayment);
+  }
+  const all = await fetchPage(token, false, withPayment);
   const activeLogins = new Set(active.map((n) => n.sponsorEntity?.login?.toLowerCase()));
   return [
     ...active.map((n) => ({ ...n, isActive: true })),
@@ -77,18 +91,21 @@ async function fetchSponsorships(token) {
   ];
 }
 
-async function fetchPage(token, activeOnly) {
+async function fetchPage(token, activeOnly, withPayment) {
   const nodes = [];
   let cursor = null;
   do {
     const response = await fetch('https://api.github.com/graphql', {
       method: 'POST',
       headers: { authorization: `bearer ${token}`, 'content-type': 'application/json', 'user-agent': 'vivid-sponsors' },
-      body: JSON.stringify({ query: QUERY, variables: { login: MAINTAINER, cursor, activeOnly } }),
+      body: JSON.stringify({ query: query(withPayment), variables: { login: MAINTAINER, cursor, activeOnly } }),
     });
     const body = await response.json();
     if (!response.ok || body.errors) {
       const detail = JSON.stringify(body.errors || body.message || response.status);
+      if (withPayment && body.errors?.length && body.errors.every((e) => e.type === 'INSUFFICIENT_SCOPES')) {
+        throw new MissingScopeError(detail);
+      }
       const hint = detail.includes('Resource not accessible by personal access token')
         ? " SPONSORS_TOKEN looks like a fine-grained token, which can't read sponsor tiers. Use a classic token."
         : '';
@@ -232,7 +249,7 @@ async function main() {
     nodes = JSON.parse(await readFile(args.fixture, 'utf8'));
   } else {
     const token = process.env.SPONSORS_TOKEN;
-    if (!token) throw new Error('Set SPONSORS_TOKEN to a classic GitHub token (no scopes needed).');
+    if (!token) throw new Error('Set SPONSORS_TOKEN to a classic GitHub token with the read:user scope.');
     nodes = await fetchSponsorships(token);
   }
   const groups = groupSponsors(nodes);
