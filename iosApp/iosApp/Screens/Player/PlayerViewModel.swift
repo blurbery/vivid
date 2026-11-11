@@ -276,7 +276,15 @@ class PlayerViewModel {
     enum NextUpPresentationSource {
         case automatic
         case hud
+        /// Opened as the credits began. Counts down on a timer, not by the
+        /// time left in the episode.
+        case credits
     }
+    /// The item whose credits the viewer went back to watch, so Next Up
+    /// stays away until the episode ends, the viewer asks for it again, or
+    /// they seek back before the credits. Kept by item, so reloading the
+    /// same episode (a quality change, a retry) doesn't bring Next Up back.
+    @ObservationIgnored var nextUpCreditsDismissedContentId: String?
     var nextUpPresentationSource: NextUpPresentationSource = .automatic
 
     // MARK: Metadata and HUD
@@ -327,7 +335,15 @@ class PlayerViewModel {
     }
 
     private func refreshSkipWindow() {
-        let window = PlayerSkipWindow(time: currentTime, recap: recapRange, intro: introRange, credits: creditsRange)
+        #if os(tvOS)
+        // Next Up takes the place of Skip Credits when the credits open it.
+        let skippableCredits = creditsNextUpRange == nil ? creditsRange : nil
+        #else
+        // On iPhone and iPad Skip Credits stays, as the way back to Next Up
+        // after returning to the episode.
+        let skippableCredits = creditsRange
+        #endif
+        let window = PlayerSkipWindow(time: currentTime, recap: recapRange, intro: introRange, credits: skippableCredits)
         if window != skipWindow { skipWindow = window }
     }
 

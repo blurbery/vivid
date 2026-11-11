@@ -607,7 +607,8 @@ struct PlayerView: View {
     }
 
     /// Menu steps back one layer per press: a seek session, then the HUD,
-    /// then the transport bar, then out of the player, the way Infuse and the
+    /// then Next Up again if it was left to watch the credits, then the
+    /// transport bar, then out of the player, the way Infuse and the
     /// Apple TV app behave. On Next Up it leaves the player straight away;
     /// going back to the episode is the mini player's job.
     private func handleMenuPress() {
@@ -625,6 +626,11 @@ struct PlayerView: View {
             // rather than leave the player. A load that really is stuck can
             // still be left: the first Menu closes the HUD, the next exits.
             player.closeHUD()
+            return
+        }
+        // After going back to the episode to watch the credits, Menu brings
+        // Next Up back; Menu there leaves the player.
+        if player.reopenNextUpForCredits() {
             return
         }
         // Loading, or paused (Menu leaves instead of hiding the controls over

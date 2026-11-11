@@ -240,6 +240,22 @@ extension PlayerViewModel {
             updateNextUpCountdownForActivePlayback(at: movieTime)
             return
         }
+        if let credits = creditsNextUpRange {
+            if movieTime >= credits.start {
+                // Watching the credits full screen keeps Next Up away until
+                // the episode ends.
+                guard !nextUpCreditsDismissed else { return }
+                // Past the marker's end (it may stop a few seconds short of
+                // the file's), the prompt before the end takes over.
+                if movieTime < credits.end {
+                    beginNextUpPostroll(videoEnded: false, source: .credits)
+                    return
+                }
+            } else {
+                // A seek back before the credits lets them open Next Up again.
+                nextUpCreditsDismissed = false
+            }
+        }
         let inPromptWindow = canShowNextUpScreen && PlayerNextUpCompletionPolicy.isInPromptWindow(
             currentTime: movieTime,
             duration: duration,
@@ -253,6 +269,61 @@ extension PlayerViewModel {
         }
         guard !nextUpPromptDismissed else { return }
         beginNextUpPostroll(videoEnded: false, source: .automatic)
+    }
+
+    /// The credits that open Next Up when playback reaches them: those of an
+    /// episode with another one after it, running to the end of the file.
+    /// Nil without a marker, where the prompt before the end still applies.
+    var creditsNextUpRange: TimeRange? {
+        guard settings.introDBEnabled else { return nil }
+        return CreditsNextUpPolicy.range(
+            credits: creditsRange,
+            duration: duration,
+            hasNextEpisode: nextUpEpisode != nil
+        )
+    }
+
+    /// Whether the viewer went back to the current item to watch its credits.
+    var nextUpCreditsDismissed: Bool {
+        get {
+            guard let dismissed = nextUpCreditsDismissedContentId else { return false }
+            return dismissed == currentWatchDetail?.contentId
+        }
+        set { nextUpCreditsDismissedContentId = newValue ? currentWatchDetail?.contentId : nil }
+    }
+
+    /// Whether Next Up was left to watch the credits and can come back.
+    var canReopenNextUpForCredits: Bool {
+        nextUpCreditsDismissed && canOpenNextUpForCredits
+    }
+
+    private var canOpenNextUpForCredits: Bool {
+        guard !showNextUpScreen, !isNextUpTransitioning, error == nil, !isLoading,
+              !hasReachedEndOfFile,
+              let credits = creditsNextUpRange else { return false }
+        return currentTime >= credits.start
+    }
+
+    /// Brings Next Up back after the viewer returned to the episode to watch
+    /// the credits. Returns false when there's nothing to bring back.
+    @discardableResult
+    func reopenNextUpForCredits() -> Bool {
+        guard canReopenNextUpForCredits else { return false }
+        return openNextUpForCredits()
+    }
+
+    /// Opens Next Up over the playing credits. Returns false when these
+    /// credits don't open Next Up.
+    @discardableResult
+    func openNextUpForCredits() -> Bool {
+        guard canOpenNextUpForCredits else { return false }
+        nextUpCreditsDismissed = false
+        // The count runs on a timer, so it mustn't run over a paused frame.
+        if !isPlaying {
+            vividPlaybackController.play()
+        }
+        beginNextUpPostroll(videoEnded: false, source: .credits)
+        return true
     }
 
     func showNextUpNow() {
@@ -301,7 +372,9 @@ extension PlayerViewModel {
               !nextUpAutoplayCancelled else {
             return
         }
-        guard nextUpScreenVideoEnded else {
+        // Opened by the credits, the count runs on a timer while they play,
+        // as it does once the video has ended.
+        guard nextUpScreenVideoEnded || nextUpPresentationSource == .credits else {
             updateNextUpCountdownForActivePlayback(at: currentTime)
             return
         }
@@ -309,15 +382,16 @@ extension PlayerViewModel {
         nextUpCountdownTotalSeconds = Self.nextUpCountdownDefaultSeconds
         nextUpCountdownSeconds = Self.nextUpCountdownDefaultSeconds
         nextUpCountdownTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            var remaining = Self.nextUpCountdownDefaultSeconds
+            // The model is only held between sleeps, so the count can't keep
+            // a closed player alive now that it also runs during credits.
+            var remaining = PlayerViewModel.nextUpCountdownDefaultSeconds
             while remaining > 0 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !Task.isCancelled, !self.isDisposed else { return }
+                guard let self, !Task.isCancelled, !self.isDisposed else { return }
                 remaining -= 1
                 self.nextUpCountdownSeconds = remaining
             }
-            guard !Task.isCancelled, !self.isDisposed else { return }
+            guard let self, !Task.isCancelled, !self.isDisposed else { return }
             self.playNextEpisodeNow()
         }
     }
@@ -332,6 +406,7 @@ extension PlayerViewModel {
               showNextUpScreen,
               !isNextUpTransitioning,
               !nextUpScreenVideoEnded,
+              nextUpPresentationSource != .credits,
               settings.autoPlayNextEpisode,
               nextUpEpisode != nil,
               !nextUpAutoplayCancelled,
@@ -407,6 +482,11 @@ extension PlayerViewModel {
         guard hasActiveVividSession, !isNextUpTransitioning else { return false }
 
         let shouldResumeAfterEnd = nextUpScreenVideoEnded || hasReachedEndOfFile
+        // Only a return during the credits counts: leaving a prompt opened
+        // before them still lets the credits open Next Up.
+        if let credits = creditsNextUpRange, currentTime >= credits.start {
+            nextUpCreditsDismissed = true
+        }
         nextUpAutoplayCancelled = true
         nextUpPromptDismissed = true
         showNextUpScreen = false
