@@ -194,7 +194,10 @@ struct PlayerView: View {
                 PlaybackFailurePanel(error: error, onRetry: player.retry, onBack: closePlayer)
             } else {
                 #if os(iOS)
-                if player.showNextUpScreen { earlyCloseButton }
+                // Next Up has its own X beside Play Now. This one only covers
+                // the wait for the next episode's first picture, when neither
+                // Next Up nor the controls are on screen.
+                if player.showNextUpScreen, player.isNextUpTransitioning { earlyCloseButton }
                 #endif
                 if !player.showNextUpScreen {
                     playbackControls
