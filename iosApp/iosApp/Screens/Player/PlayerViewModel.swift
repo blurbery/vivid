@@ -280,10 +280,11 @@ class PlayerViewModel {
         /// time left in the episode.
         case credits
     }
-    /// Set when the viewer goes back to the episode during credits that
-    /// would open Next Up, so it stays away until the episode ends, the
-    /// viewer asks for it again, or they seek back before the credits.
-    @ObservationIgnored var nextUpCreditsDismissed = false
+    /// The item whose credits the viewer went back to watch, so Next Up
+    /// stays away until the episode ends, the viewer asks for it again, or
+    /// they seek back before the credits. Kept by item, so reloading the
+    /// same episode (a quality change, a retry) doesn't bring Next Up back.
+    @ObservationIgnored var nextUpCreditsDismissedContentId: String?
     var nextUpPresentationSource: NextUpPresentationSource = .automatic
 
     // MARK: Metadata and HUD

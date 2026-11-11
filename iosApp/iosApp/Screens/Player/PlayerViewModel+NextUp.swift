@@ -18,7 +18,6 @@ extension PlayerViewModel {
         isLoadingNextUpEpisode = false
         nextUpAutoplayCancelled = false
         nextUpPromptDismissed = false
-        nextUpCreditsDismissed = false
         cancelNextUpCountdown()
         loadNextUpTitleArtwork(for: detail)
 
@@ -244,12 +243,14 @@ extension PlayerViewModel {
                 // Watching the credits full screen keeps Next Up away until
                 // the episode ends.
                 guard !nextUpCreditsDismissed else { return }
-                beginNextUpPostroll(videoEnded: false, source: .credits)
-                return
-            }
-            // A seek back before the credits lets them open Next Up again,
-            // unless the prompt just before them was dismissed.
-            if !nextUpPromptDismissed {
+                // Past the marker's end (it may stop a few seconds short of
+                // the file's), the prompt before the end takes over.
+                if movieTime < credits.end {
+                    beginNextUpPostroll(videoEnded: false, source: .credits)
+                    return
+                }
+            } else {
+                // A seek back before the credits lets them open Next Up again.
                 nextUpCreditsDismissed = false
             }
         }
@@ -280,6 +281,15 @@ extension PlayerViewModel {
         )
     }
 
+    /// Whether the viewer went back to the current item to watch its credits.
+    var nextUpCreditsDismissed: Bool {
+        get {
+            guard let dismissed = nextUpCreditsDismissedContentId else { return false }
+            return dismissed == currentWatchDetail?.contentId
+        }
+        set { nextUpCreditsDismissedContentId = newValue ? currentWatchDetail?.contentId : nil }
+    }
+
     /// Whether Next Up was left to watch the credits and can come back.
     var canReopenNextUpForCredits: Bool {
         nextUpCreditsDismissed && canOpenNextUpForCredits
@@ -306,6 +316,10 @@ extension PlayerViewModel {
     func openNextUpForCredits() -> Bool {
         guard canOpenNextUpForCredits else { return false }
         nextUpCreditsDismissed = false
+        // The count runs on a timer, so it mustn't run over a paused frame.
+        if !isPlaying {
+            vividPlaybackController.play()
+        }
         beginNextUpPostroll(videoEnded: false, source: .credits)
         return true
     }
@@ -457,7 +471,9 @@ extension PlayerViewModel {
         guard hasActiveVividSession, !isNextUpTransitioning else { return false }
 
         let shouldResumeAfterEnd = nextUpScreenVideoEnded || hasReachedEndOfFile
-        if creditsNextUpRange != nil {
+        // Only a return during the credits counts: leaving a prompt opened
+        // before them still lets the credits open Next Up.
+        if let credits = creditsNextUpRange, currentTime >= credits.start {
             nextUpCreditsDismissed = true
         }
         nextUpAutoplayCancelled = true

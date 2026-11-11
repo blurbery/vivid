@@ -401,6 +401,9 @@ struct TVPlayerControls: View {
                     DispatchQueue.main.async { focusedShortcut = .options }
                 },
                 onMenuWhileIdle: {
+                    // After going back to watch the credits, Menu brings
+                    // Next Up back, even with the transport showing.
+                    if viewModel.reopenNextUpForCredits() { return }
                     // Paused, Menu leaves the player rather than hiding the
                     // transport over a still frame.
                     if viewModel.isPlaying {

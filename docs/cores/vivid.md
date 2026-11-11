@@ -23,7 +23,7 @@ The same controls should behave consistently when the server supplies the requir
 
 ## Intro and credits skipping belongs to Vivid
 
-The **Intro & Credit Skipper** toggle in Playback settings controls selected-file markers and public IntroDB/TheIntroDB lookups on iOS and tvOS. It defaults on and preserves an explicitly saved Off choice. Separate automatic-skip preferences control automatic skipping; valid markers also supply manual Skip Intro, Skip Recap and Skip Credits prompts. On iOS, prompts stay hidden during loading and buffering.
+The **Intro & Credit Skipper** toggle in Playback settings controls selected-file markers and public IntroDB/TheIntroDB lookups on iOS and tvOS. It defaults on and preserves an explicitly saved Off choice. Separate automatic-skip preferences control automatic skipping; valid markers also supply manual Skip Intro, Skip Recap and Skip Credits prompts. Credits that open Next Up are the exception; see [Playback](../playback/README.md). On iOS, prompts stay hidden during loading and buffering.
 
 Valid markers for the selected file take priority. TheIntroDB fills missing ranges, then IntroDB can fill missing intro, credits or recap ranges. Item-level markers from another edition and realtime server marker updates do not override this selection. IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb. Both use the season and episode number. Requests run without media-server credentials or API keys and do not delay playback. Public lookups cover episodes; online movies can still use their selected-file markers. Offline playback does not load these skip markers.
 
