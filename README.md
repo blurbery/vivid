@@ -9,12 +9,13 @@
   <img src="https://img.shields.io/badge/Apple-iOS%20%C2%B7%20tvOS-3B82F6?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Apple: iOS and tvOS">
   <img src="https://img.shields.io/badge/Swift-SwiftUI-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Built with Swift and SwiftUI">
   <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=release&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
-  <img src="https://img.shields.io/badge/status-in%20development-D29922?style=flat-square" alt="In development">
+  <a href="https://apps.apple.com/app/id6809770754"><img src="https://img.shields.io/badge/App%20Store-free-3B82F6?style=flat-square&amp;logo=appstore&amp;logoColor=white" alt="Free on the App Store"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-GPLv3-3B82F6?style=flat-square" alt="Licence: GPLv3 with Apple distribution permission"></a>
   <a href="https://discord.gg/3jcxk3vJ4X"><img src="https://img.shields.io/badge/discord-join-8B5CF6?style=flat-square&amp;logo=discord&amp;logoColor=white" alt="Join the Vivid Discord"></a>
   <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Sponsor blurbery on GitHub"></a>
 </p>
 <p align="center">
+  <a href="https://apps.apple.com/app/id6809770754">App Store</a> ·
   <a href="CONTRIBUTING.md#local-setup">Build</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="https://github.com/blurbery/vivid/releases">Releases</a> ·
@@ -30,7 +31,7 @@
 I’m building Vivid as an open-source media app for iPhone, iPad and Apple TV. Connect your own media server and browse and watch your library across your Apple devices.
 
 > [!NOTE]
-> Vivid 1.0 is on the [App Store](https://apps.apple.com/app/id6809770754) for iPhone and iPad, free, and the Apple TV version follows once Apple approves it. Vivid is still in active development: the source is public, and beta builds are offered through the [TestFlight link](https://testflight.apple.com/join/Ycb8t685), subject to available places and device eligibility.
+> Vivid is free on the [App Store](https://apps.apple.com/app/id6809770754) for iPhone, iPad and Apple TV. It's still in active development and the source is public. TestFlight beta builds are now only available to [GitHub Sponsors](https://github.com/sponsors/blurbery).
 
 ## Server support
 
@@ -96,7 +97,7 @@ App changes released from `main` get a semantic version. Documentation-only and 
 
 Join the [Vivid Discord](https://discord.gg/3jcxk3vJ4X) to get help, share feedback and follow the project. Feel free to invite anyone who might enjoy Vivid.
 
-If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery). Testing the app, reporting issues and spreading the word helps a lot too.
+If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery). Sponsors also get access to TestFlight beta builds. Testing the app, reporting issues and spreading the word helps a lot too.
 
 ## Sponsors
 
