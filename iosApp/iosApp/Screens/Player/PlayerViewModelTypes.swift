@@ -79,6 +79,17 @@ struct PlayerNextUpEpisode: Identifiable, Hashable {
     }
 }
 
+/// The logo and background of the series or movie being played, shown on
+/// Next Up.
+struct PlayerNextUpTitleArtwork: Hashable {
+    /// The series for an episode, otherwise the movie itself.
+    let titleId: String
+    let title: String
+    let logoUrl: String?
+    let backdropUrl: String?
+    let backdropThumbhash: String?
+}
+
 /// An item in the player's On Deck row.
 struct PlayerOnDeckItem: Identifiable, Hashable {
     let sectionItem: SectionItem

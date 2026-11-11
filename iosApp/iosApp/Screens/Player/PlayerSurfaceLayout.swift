@@ -8,6 +8,8 @@ struct PlayerPreviewBoundsKey: PreferenceKey {
         var bounds: Anchor<CGRect>?
         var viewport: Anchor<CGRect>?
         var actions: Anchor<CGRect>?
+        /// Whether the preview slot holds focus on Apple TV.
+        var isFocused = false
     }
 
     static var defaultValue: Value { Value() }
@@ -17,6 +19,7 @@ struct PlayerPreviewBoundsKey: PreferenceKey {
         value.bounds = next.bounds ?? value.bounds
         value.viewport = next.viewport ?? value.viewport
         value.actions = next.actions ?? value.actions
+        value.isFocused = value.isFocused || next.isFocused
     }
 }
 
@@ -40,16 +43,35 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                     let showsPreview = isPreview && !isTransitioning
                     let frame = showsPreview ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
                     let viewport = showsPreview ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
+                    let showsFocusRing = showsPreview && geometry.isFocused
+                    // The mini player's shadow, cast by a plain shape under the
+                    // video. A shadow on the video itself has to be worked
+                    // out again for every frame the video presents.
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.black)
+                        .frame(width: frame.width, height: frame.height)
+                        .shadow(color: .black.opacity(0.65), radius: 40, y: 20)
+                        .position(x: frame.midX, y: frame.midY)
+                        .mask {
+                            Rectangle()
+                                .frame(width: viewport.width, height: viewport.height)
+                                .position(x: viewport.midX, y: viewport.midY)
+                        }
+                        .opacity(showsPreview ? 1 : 0)
+                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsPreview)
                     // One structural identity in both modes. Only geometry changes;
                     // expansion must not load, seek, bind a second host, or resume.
                     surface()
                         .frame(width: frame.width, height: frame.height)
                         .clipShape(RoundedRectangle(cornerRadius: showsPreview ? 8 : 0))
                         .overlay {
+                            // The hairline around the mini player, or the
+                            // white ring while the remote has it focused.
                             RoundedRectangle(cornerRadius: showsPreview ? 8 : 0)
-                                .stroke(.white.opacity(showsPreview ? 0.16 : 0), lineWidth: 1)
+                                .stroke(.white.opacity(showsFocusRing ? 1 : (showsPreview ? 0.3 : 0)),
+                                        lineWidth: showsFocusRing ? 5 : 1.5)
+                                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: showsFocusRing)
                         }
-                        .shadow(color: .black.opacity(showsPreview ? 0.55 : 0), radius: showsPreview ? 34 : 0, y: showsPreview ? 18 : 0)
                         .position(x: frame.midX, y: frame.midY)
                         // Respect the original ScrollView's clipping even though
                         // the video itself is a persistent sibling of that view.

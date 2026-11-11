@@ -19,6 +19,7 @@ extension PlayerViewModel {
         nextUpAutoplayCancelled = false
         nextUpPromptDismissed = false
         cancelNextUpCountdown()
+        loadNextUpTitleArtwork(for: detail)
 
         // Shuffle already knows what plays next, so there's nothing to look
         // up, and it doesn't need the episode's own numbers.
@@ -71,6 +72,34 @@ extension PlayerViewModel {
                     self.cancelNextUpCountdown()
                 }
             }
+        }
+    }
+
+    /// Fetches the logo and background of the episode's series, or of the
+    /// movie. The next episode of the same series keeps what is already
+    /// loaded. A failure (offline playback, for one) leaves the title as text
+    /// over the fallback artwork.
+    func loadNextUpTitleArtwork(for detail: WatchDetail) {
+        let titleId = Self.nonEmpty(detail.type == "episode" ? detail.seriesId : detail.contentId)
+        guard nextUpTitleArtwork == nil || nextUpTitleArtwork?.titleId != titleId else { return }
+        nextUpArtworkTask?.cancel()
+        nextUpArtworkTask = nil
+        nextUpTitleArtwork = nil
+        guard let titleId else { return }
+
+        nextUpArtworkTask = Task { @MainActor [weak self] in
+            // Through the pool, so a request already in flight for the same
+            // title is shared.
+            guard let item = try? await MetadataRequestPool.shared.itemDetail(contentId: titleId) else { return }
+            guard let self, !Task.isCancelled, !self.isDisposed else { return }
+            self.nextUpTitleArtwork = PlayerNextUpTitleArtwork(
+                titleId: titleId,
+                title: item.title,
+                logoUrl: Self.nonEmpty(item.logoUrl),
+                backdropUrl: Self.nonEmpty(item.backdropUrl),
+                backdropThumbhash: item.backdropThumbhash
+            )
+            self.nextUpArtworkTask = nil
         }
     }
 
@@ -315,16 +344,24 @@ extension PlayerViewModel {
         let remaining = max(0, duration - movieTime)
         let openedFromHUD = nextUpPresentationSource == .hud
         let hudThreshold = Self.nextUpHUDCountdownThresholdSeconds
+        // This runs on every time report. Each value is only written when it
+        // changes, so the Next Up screen isn't redrawn on every report.
         if openedFromHUD, remaining >= hudThreshold {
-            nextUpCountdownSeconds = nil
-            nextUpCountdownTotalSeconds = Int(hudThreshold)
+            setNextUpCountdown(seconds: nil, total: Int(hudThreshold))
             return
         }
-        nextUpCountdownTotalSeconds = openedFromHUD ? Int(hudThreshold) : max(1, settings.nextUpPromptSeconds)
-        nextUpCountdownSeconds = max(0, Int(ceil(remaining)))
+        setNextUpCountdown(
+            seconds: max(0, Int(ceil(remaining))),
+            total: openedFromHUD ? Int(hudThreshold) : max(1, settings.nextUpPromptSeconds)
+        )
         if remaining <= 0.35 {
             playNextEpisodeNow()
         }
+    }
+
+    private func setNextUpCountdown(seconds: Int?, total: Int) {
+        if nextUpCountdownTotalSeconds != total { nextUpCountdownTotalSeconds = total }
+        if nextUpCountdownSeconds != seconds { nextUpCountdownSeconds = seconds }
     }
 
     func cancelNextUpCountdown() {
@@ -339,6 +376,8 @@ extension PlayerViewModel {
         nextUpLookupTask = nil
         nextUpOnDeckTask?.cancel()
         nextUpOnDeckTask = nil
+        nextUpArtworkTask?.cancel()
+        nextUpArtworkTask = nil
         cancelNextUpCountdown()
     }
 

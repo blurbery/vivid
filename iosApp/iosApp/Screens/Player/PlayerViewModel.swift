@@ -260,6 +260,8 @@ class PlayerViewModel {
     /// episode in it starts from the beginning.
     var shuffleQueue: EpisodeShuffleQueue?
     var nextUpOnDeckItems: [PlayerOnDeckItem] = []
+    /// Nil until the catalogue answers, and when it has no artwork to give.
+    var nextUpTitleArtwork: PlayerNextUpTitleArtwork?
     var isLoadingNextUpEpisode = false
     var isLoadingNextUpOnDeck = false
     var nextUpLookupError: String?
@@ -549,6 +551,7 @@ class PlayerViewModel {
     var authenticationReloadGeneration: UInt64?
     var nextUpLookupTask: Task<Void, Never>?
     var nextUpOnDeckTask: Task<Void, Never>?
+    var nextUpArtworkTask: Task<Void, Never>?
     var nextUpCountdownTask: Task<Void, Never>?
     /// Debounces skip taps on the trailing edge: each tap moves the preview
     /// and restarts this timer, and the seek runs once after
@@ -958,6 +961,7 @@ class PlayerViewModel {
         removeSystemObservers()
         nextUpLookupTask?.cancel()
         nextUpOnDeckTask?.cancel()
+        nextUpArtworkTask?.cancel()
         nextUpCountdownTask?.cancel()
         autoSkipIntroCountdownTask?.cancel()
         autoSkipIntroCountdownTask = nil

@@ -12,9 +12,13 @@ struct TVDetailLogoTitle<Fallback: View>: View {
     /// Crops the logo's transparent margins, so its visible edge lines up
     /// with the layout.
     var trimsTransparentEdges = false
+    /// Decodes the logo no larger than the box it's drawn in, rather than
+    /// at its source size.
+    var decodesToFit = false
     @ViewBuilder let fallback: () -> Fallback
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
 
     private var url: URL? {
         let trimmed = logoUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -30,6 +34,13 @@ struct TVDetailLogoTitle<Fallback: View>: View {
     private func request(for url: URL) -> VividImageRequest {
         var request = VividImageRequest(url: url)
         request.trimsTransparentEdges = trimsTransparentEdges
+        if decodesToFit {
+            request.thumbnail = .init(
+                size: CGSize(width: maxWidth * displayScale, height: maxHeight * displayScale),
+                unit: .pixels,
+                contentMode: .aspectFit
+            )
+        }
         return request
     }
 
