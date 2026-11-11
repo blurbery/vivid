@@ -382,15 +382,16 @@ extension PlayerViewModel {
         nextUpCountdownTotalSeconds = Self.nextUpCountdownDefaultSeconds
         nextUpCountdownSeconds = Self.nextUpCountdownDefaultSeconds
         nextUpCountdownTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            var remaining = Self.nextUpCountdownDefaultSeconds
+            // The model is only held between sleeps, so the count can't keep
+            // a closed player alive now that it also runs during credits.
+            var remaining = PlayerViewModel.nextUpCountdownDefaultSeconds
             while remaining > 0 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !Task.isCancelled, !self.isDisposed else { return }
+                guard let self, !Task.isCancelled, !self.isDisposed else { return }
                 remaining -= 1
                 self.nextUpCountdownSeconds = remaining
             }
-            guard !Task.isCancelled, !self.isDisposed else { return }
+            guard let self, !Task.isCancelled, !self.isDisposed else { return }
             self.playNextEpisodeNow()
         }
     }
