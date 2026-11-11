@@ -921,7 +921,12 @@ struct PlayerNextUpScreen: View {
     /// The backdrop is decoded this small and blurred once by the image
     /// pipeline, then drawn under a flat dark layer. Nothing blurs per frame
     /// while the mini player's video keeps playing above it.
+    #if os(tvOS)
     private static let backdropDecodeSize = CGSize(width: 480, height: 270)
+    #else
+    // Sizes are multiplied by the screen scale, which is 3 on an iPhone.
+    private static let backdropDecodeSize = CGSize(width: 240, height: 135)
+    #endif
     private static let backdropSoftening: Float = 0.02
 
     var body: some View {
@@ -1252,7 +1257,8 @@ struct PlayerNextUpScreen: View {
                 label: name,
                 maxWidth: 560,
                 maxHeight: 130,
-                alignment: .leading
+                alignment: .leading,
+                decodesToFit: true
             ) {
                 Text(verbatim: name)
                     .font(.system(size: 34, weight: .bold))

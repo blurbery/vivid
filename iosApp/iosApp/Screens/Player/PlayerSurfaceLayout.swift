@@ -44,6 +44,21 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                     let frame = showsPreview ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
                     let viewport = showsPreview ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
                     let showsFocusRing = showsPreview && geometry.isFocused
+                    // The mini player's shadow, cast by a plain shape under the
+                    // video. A shadow on the video itself has to be worked
+                    // out again for every frame the video presents.
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.black)
+                        .frame(width: frame.width, height: frame.height)
+                        .shadow(color: .black.opacity(0.65), radius: 40, y: 20)
+                        .position(x: frame.midX, y: frame.midY)
+                        .mask {
+                            Rectangle()
+                                .frame(width: viewport.width, height: viewport.height)
+                                .position(x: viewport.midX, y: viewport.midY)
+                        }
+                        .opacity(showsPreview ? 1 : 0)
+                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsPreview)
                     // One structural identity in both modes. Only geometry changes;
                     // expansion must not load, seek, bind a second host, or resume.
                     surface()
@@ -57,9 +72,6 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                                         lineWidth: showsFocusRing ? 5 : 1.5)
                                 .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: showsFocusRing)
                         }
-                        // A bright edge and a deep shadow lift the mini
-                        // player off the artwork behind it.
-                        .shadow(color: .black.opacity(showsPreview ? 0.65 : 0), radius: showsPreview ? 40 : 0, y: showsPreview ? 20 : 0)
                         .position(x: frame.midX, y: frame.midY)
                         // Respect the original ScrollView's clipping even though
                         // the video itself is a persistent sibling of that view.
