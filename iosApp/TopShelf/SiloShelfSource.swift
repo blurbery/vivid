@@ -39,14 +39,13 @@ struct SiloShelfSource: Sendable {
 
         let reply = try await get(.homeSections, query: imageQuery)
         let home = try reply.decoded(SiloHomePayload.self)
-        guard !home.isUnreadable else { throw ShelfFailure.badResponse }
+        let isResume: (String) -> Bool = { $0 == "continue_watching" || $0 == "in_progress" }
+        let isUpNext: (String) -> Bool = { $0.contains("next") }
+        guard !home.isUnreadable(where: { isResume($0) || isUpNext($0) }) else { throw ShelfFailure.badResponse }
         func entries(where matches: (String) -> Bool) -> [ShelfEntry] {
             home.sections.filter { matches($0.kind) }.flatMap(\.items).map { entry(from: $0, relativeTo: reply.url) }
         }
-        var feed = ShelfFeed(
-            resume: entries { $0 == "continue_watching" || $0 == "in_progress" },
-            upNext: entries { $0.contains("next") }
-        )
+        var feed = ShelfFeed(resume: entries(where: isResume), upNext: entries(where: isUpNext))
 
         let series = Set((feed.resume + feed.upNext).filter { $0.kind == .episode }.compactMap(\.seriesID))
         let posters = await seriesPosters(for: series, imageQuery: imageQuery)
