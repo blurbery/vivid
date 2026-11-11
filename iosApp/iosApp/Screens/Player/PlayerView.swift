@@ -178,7 +178,7 @@ struct PlayerView: View {
                 .onTapGesture(perform: revealControlsBeforeLoad)
                 #endif
             if showsNextUpScreen {
-                PlayerNextUpScreen(viewModel: player, onBack: leaveNextUp)
+                PlayerNextUpScreen(viewModel: player, onClose: closePlayer)
             }
         }
     }
@@ -413,12 +413,6 @@ struct PlayerView: View {
         onPlaybackStarted?()
     }
 
-    private func leaveNextUp() {
-        if !player.keepWatchingCurrentEpisode() {
-            closePlayer()
-        }
-    }
-
     private func closePlayer() {
         #if os(iOS)
         orientation.refreshInterfaceOrientation()
@@ -609,16 +603,13 @@ struct PlayerView: View {
         }
     }
 
-    /// Menu steps back one layer per press: Next Up, then a seek session,
-    /// then the HUD, then the transport bar, then out of the player, the way
-    /// Infuse and the Apple TV app behave.
+    /// Menu steps back one layer per press: a seek session, then the HUD,
+    /// then the transport bar, then out of the player, the way Infuse and the
+    /// Apple TV app behave. On Next Up it leaves the player straight away;
+    /// going back to the episode is the mini player's job.
     private func handleMenuPress() {
-        if player.isNextUpTransitioning {
+        if player.isNextUpTransitioning || player.showNextUpScreen {
             closePlayer()
-            return
-        }
-        if player.showNextUpScreen {
-            leaveNextUp()
             return
         }
         if player.isHoldSeeking {
@@ -874,21 +865,26 @@ private struct PlaybackFailureButtonStyle: ButtonStyle {
 // MARK: - Next Up
 
 /// The Next Up screen at the end of an episode. The persistent player
-/// surface shrinks into the preview slot this screen marks out.
+/// surface shrinks into the preview slot this screen marks out, and that
+/// slot is the way back to the episode: a tap on iPhone and iPad, Select on
+/// Apple TV.
 struct PlayerNextUpScreen: View {
     let viewModel: PlayerViewModel
     private var player: PlayerViewModel { viewModel }
-    let onBack: () -> Void
+    /// Leaves the player.
+    let onClose: () -> Void
 
     #if os(tvOS)
     private enum Focus: Hashable {
         case playNow
-        case keepWatching
-        case back
+        case close
+        case preview
         case autoPlay
     }
 
     @FocusState private var focus: Focus?
+    @State private var playNowPressed = false
+    @State private var closePressed = false
     @State private var initialFocusRequested = false
     @Namespace private var defaultFocusNamespace
     private static let captionSize: CGFloat = 19
@@ -900,15 +896,35 @@ struct PlayerNextUpScreen: View {
     private var hasNextEpisode: Bool { nextEpisode != nil }
     private var isFindingEpisode: Bool { player.isLoadingNextUpEpisode }
     private var videoEnded: Bool { player.nextUpScreenVideoEnded }
+    private var isMovie: Bool { player.currentWatchDetail.map { $0.type != "episode" } ?? false }
+
+    /// The series name for an episode, or the movie's title: the logo's
+    /// label, and what shows when there's no logo.
+    private var titleName: String? {
+        let detail = player.currentWatchDetail
+        let name = isMovie
+            ? detail?.title ?? player.nextUpTitleArtwork?.title
+            : nextEpisode?.seriesTitle ?? detail?.seriesTitle ?? player.nextUpTitleArtwork?.title
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return name
+    }
+
+    /// The backdrop is decoded this small and blurred once by the image
+    /// pipeline, then drawn under a flat dark layer. Nothing blurs per frame
+    /// while the mini player's video keeps playing above it.
+    private static let backdropDecodeSize = CGSize(width: 480, height: 270)
+    private static let backdropSoftening: Float = 0.02
 
     var body: some View {
         let change = Animation.easeInOut(duration: 0.2)
         return GeometryReader { proxy in
             ZStack {
-                Color.black.ignoresSafeArea()
+                // Clear, so the artwork behind the screen shows through.
+                Color.clear.ignoresSafeArea()
                     #if os(iOS)
                     // A tap on the background shows or hides the rotation
-                    // buttons without catching Play Now, Back or Auto Play.
+                    // buttons without catching Play Now, Close or Auto Play.
+                    .contentShape(Rectangle())
                     .onTapGesture { player.toggleControls(cause: .nextUpTap) }
                     #endif
                 #if os(tvOS)
@@ -936,6 +952,7 @@ struct PlayerNextUpScreen: View {
         .animation(change, value: player.nextUpCountdownSeconds)
         .animation(change, value: player.nextUpEpisode)
         .animation(change, value: player.nextUpCarouselItems)
+        .animation(change, value: player.nextUpTitleArtwork)
         #if os(tvOS)
         .onAppear(perform: focusFirstActionOnce)
         .onChange(of: player.nextUpEpisode?.contentId) { _, _ in
@@ -944,30 +961,70 @@ struct PlayerNextUpScreen: View {
         #endif
     }
 
-    /// The transparent slot the shrunken player surface is drawn into.
+    /// The transparent slot the shrunken player surface is drawn into. It's
+    /// a button, so the mini player itself is Keep Watching. The surface is
+    /// drawn above it without taking touches or focus, so it reports its
+    /// focus with its bounds and the surface draws the ring.
     private var previewSlot: some View {
-        Color.clear
-            .aspectRatio(16 / 9, contentMode: .fit)
-            .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(bounds: $0) }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var backdrop: some View {
-        if let artwork = backdropArtwork {
-            AsyncImageView(url: artwork.url, thumbhash: artwork.thumbhash)
-                .scaledToFill()
-                .blur(radius: 44)
-                .scaleEffect(1.12)
-                .opacity(0.18)
-                .overlay(Color.black.opacity(0.78))
-                .ignoresSafeArea()
+        Button {
+            player.keepWatchingCurrentEpisode()
+        } label: {
+            Color.clear.aspectRatio(16 / 9, contentMode: .fit)
+        }
+        .buttonStyle(NextUpPreviewButtonStyle())
+        .disabled(player.isNextUpTransitioning)
+        .accessibilityLabel("Keep Watching")
+        .accessibilityIdentifier("next-up-preview")
+        #if os(tvOS)
+        .focused($focus, equals: .preview)
+        .prefersDefaultFocus(!hasNextEpisode && !videoEnded, in: defaultFocusNamespace)
+        .onMoveCommand { direction in
+            // The actions sit below and to the left of the mini player, out
+            // of the focus engine's straight-line reach.
+            if direction == .down || direction == .left {
+                focus = actionFocus
+            }
+        }
+        #endif
+        .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) {
+            .init(bounds: $0, isFocused: previewIsFocused)
         }
     }
 
-    /// The next episode's still, or else the first On Deck item's artwork.
+    private var previewIsFocused: Bool {
+        #if os(tvOS)
+        focus == .preview
+        #else
+        false
+        #endif
+    }
+
+    private var backdrop: some View {
+        ZStack {
+            Color.black
+            if let artwork = backdropArtwork {
+                AsyncImageView(
+                    url: artwork.url,
+                    thumbhash: artwork.thumbhash,
+                    targetSize: Self.backdropDecodeSize,
+                    placeholderStyle: .clear,
+                    softening: Self.backdropSoftening
+                )
+                .scaledToFill()
+                .overlay(Color.black.opacity(0.52))
+                .transition(.opacity)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+
+    /// The series or movie background, else the next episode's still, else
+    /// the first On Deck item's artwork.
     private var backdropArtwork: (url: String, thumbhash: String?)? {
+        if let backdrop = player.nextUpTitleArtwork?.backdropUrl {
+            return (backdrop, player.nextUpTitleArtwork?.backdropThumbhash)
+        }
         if let still = nextEpisode?.stillUrl {
             return (still, nextEpisode?.stillThumbhash)
         }
@@ -988,7 +1045,7 @@ struct PlayerNextUpScreen: View {
         .onMoveCommand { direction in
             // Nothing sits below the toggle on Apple TV.
             if direction == .up {
-                focus = preferredFocus
+                focus = actionFocus
             }
         }
         #endif
@@ -1011,27 +1068,31 @@ struct PlayerNextUpScreen: View {
         VStack(alignment: .leading, spacing: 10) {
             // On short landscape screens every action has to stay clear of
             // the space kept for the rotation buttons, so there's no eyebrow.
-            if let episode = nextEpisode {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let series = episode.seriesTitle { Text(series).font(.system(size: 22, weight: .bold)) }
+            VStack(alignment: .leading, spacing: 8) {
+                mobileTitleLogo(compact: compact)
+                if let episode = nextEpisode {
                     Text("\(episode.episodeLabel) · \(episode.title)")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(2)
-                }.foregroundStyle(.white)
-            } else if isFindingEpisode {
-                Text("Finding the next episode")
-                    .font(.callout)
-                    .foregroundStyle(.white)
-            } else {
-                Text(player.nextUpScreenVideoEnded ? "End of playback" : "Almost finished")
-                    .font(.headline)
-                    .foregroundStyle(.white)
+                }
+            }
+            // A movie shows its logo and nothing else.
+            if nextEpisode == nil, !isMovie {
+                if isFindingEpisode {
+                    Text("Finding the next episode")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                } else {
+                    Text(player.nextUpScreenVideoEnded ? "End of playback" : "Almost finished")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                }
             }
             mobileActions
             if hasNextEpisode {
                 autoPlayToggle
-            } else if !isFindingEpisode {
+            } else if !isFindingEpisode, !isMovie {
                 Text(finishedMessage)
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.62))
@@ -1041,37 +1102,60 @@ struct PlayerNextUpScreen: View {
         .multilineTextAlignment(.leading)
     }
 
+    /// The series or movie logo, or its name when there's no logo.
+    @ViewBuilder
+    private func mobileTitleLogo(compact: Bool) -> some View {
+        if let name = titleName {
+            if let logoUrl = player.nextUpTitleArtwork?.logoUrl {
+                CachedAsyncImage(url: logoUrl, contentMode: .fit, alignment: .bottomLeading, placeholderStyle: .clear)
+                    .frame(maxWidth: 240)
+                    .frame(height: compact ? 44 : 64)
+                    .accessibilityLabel(Text(verbatim: name))
+            } else {
+                Text(verbatim: name)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+            }
+        }
+    }
+
     private var mobileActions: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 if hasNextEpisode {
-                    Button { player.playNextEpisodeNow() } label: {
-                        Label("Play Now", systemImage: "play.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.black)
-                            .frame(width: 160, height: 44)
-                            .background(.white, in: Capsule())
+                    // The Apple TV detail pages' glass Play pill.
+                    Button {
+                        player.playNextEpisodeNow()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 17, weight: .bold))
+                            Text("Play Now")
+                                .font(.system(size: 17, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 26)
+                        .frame(height: 52)
+                        .vividPrimaryGlass(in: Capsule())
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .disabled(player.isNextUpTransitioning)
                     .accessibilityIdentifier("next-up-play-now")
                 }
                 countdown
-            }
-            HStack(spacing: 10) {
-                if !videoEnded {
-                    Button { player.keepWatchingCurrentEpisode() } label: {
-                        Text("Keep Watching").frame(width: 160)
-                    }
-                    .buttonStyle(MobilePlayerGlassButtonStyle())
-                    .disabled(player.isNextUpTransitioning)
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
                 }
-                Button(action: onBack) {
-                    Label("Back", systemImage: "chevron.left").frame(width: 84)
-                }.buttonStyle(MobilePlayerGlassButtonStyle())
+                .buttonStyle(MobilePlayerGlassButtonStyle())
+                .accessibilityLabel("Close Player")
+                .accessibilityIdentifier("next-up-close")
             }
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white)
         }
     }
     #endif
@@ -1104,13 +1188,17 @@ struct PlayerNextUpScreen: View {
             VStack(alignment: .leading, spacing: 32) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 22) {
-                        Text(eyebrowText)
-                            .font(.system(size: 18, weight: .semibold))
-                            .textCase(.uppercase)
-                            .foregroundStyle(.white.opacity(0.52))
+                        // A movie shows its logo and nothing else.
+                        if !isMovie {
+                            Text(eyebrowText)
+                                .font(.system(size: 18, weight: .semibold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(.white.opacity(0.52))
+                        }
+                        tvTitleLogo
                         if let episode = nextEpisode {
                             episodeDetails(episode)
-                        } else if !isFindingEpisode {
+                        } else if !isFindingEpisode, !isMovie {
                             Text("End of playback")
                                 .font(.system(size: 40, weight: .bold))
                             Text(finishedMessage)
@@ -1145,15 +1233,27 @@ struct PlayerNextUpScreen: View {
         }
     }
 
-    private func episodeDetails(_ episode: PlayerNextUpEpisode) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let seriesTitle = episode.seriesTitle, !seriesTitle.isEmpty {
-                Text(seriesTitle)
+    /// The series or movie logo, or its name when there's no logo.
+    @ViewBuilder
+    private var tvTitleLogo: some View {
+        if let name = titleName {
+            TVDetailLogoTitle(
+                logoUrl: player.nextUpTitleArtwork?.logoUrl,
+                label: name,
+                maxWidth: 560,
+                maxHeight: 130,
+                alignment: .leading
+            ) {
+                Text(verbatim: name)
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
             }
+        }
+    }
 
+    private func episodeDetails(_ episode: PlayerNextUpEpisode) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Text(episode.episodeLabel)
                     .foregroundStyle(.white.opacity(0.62))
@@ -1194,75 +1294,77 @@ struct PlayerNextUpScreen: View {
     }
 
     private var tvActions: some View {
+        // The spacing leaves room for the primary pill's focus growth and
+        // outline so the countdown never runs into it.
         HStack(alignment: .center, spacing: 24) {
-            // Leaves room for the primary pill's focus growth and outline so
-            // the countdown never runs into it.
-            HStack(spacing: 24) {
-                if hasNextEpisode {
-                    Button(action: { player.playNextEpisodeNow() }) {
-                        tvPillLabel("Play Now", icon: "play.fill", iconSize: 32, iconWeight: .bold, titleSize: 30, spacing: 18, width: 220)
+            if hasNextEpisode {
+                // The detail pages' glass Play pill, kept wide. Its bright
+                // rim shows focus.
+                TVDetailExpandingButton(
+                    systemImage: "play.fill",
+                    isExpanded: true,
+                    isFocused: focus == .playNow,
+                    isPressed: playNowPressed,
+                    isEnabled: !player.isNextUpTransitioning
+                ) {
+                    Text("Play Now")
+                } control: {
+                    Button {
+                        player.playNextEpisodeNow()
+                    } label: {
+                        TVDetailCircleHitArea()
                     }
-                    .buttonStyle(TVPillButtonStyle(kind: .primary, stabilizesFocusMotion: true, fixedWidth: 280))
+                    .buttonStyle(TVDetailInvisibleControlStyle { playNowPressed = $0 })
+                    .focusEffectDisabled()
                     .disabled(player.isNextUpTransitioning)
                     .focused($focus, equals: .playNow)
                     .prefersDefaultFocus(true, in: defaultFocusNamespace)
+                    .accessibilityLabel("Play Now")
                 }
-                countdown
             }
+            countdown
 
-            HStack(spacing: 20) {
-                if !videoEnded {
-                    Button(action: { player.keepWatchingCurrentEpisode() }) {
-                        tvPillLabel("Keep Watching", icon: "rectangle.inset.filled", iconSize: 25, titleSize: 26, width: 250)
-                    }
-                    .buttonStyle(TVPillButtonStyle(kind: .secondary, stabilizesFocusMotion: true))
-                    .disabled(player.isNextUpTransitioning)
-                    .focused($focus, equals: .keepWatching)
-                    .prefersDefaultFocus(!hasNextEpisode, in: defaultFocusNamespace)
+            // The same glass circle as the detail pages' other actions.
+            TVDetailCircleButton(
+                title: "Close Player",
+                systemImage: "xmark",
+                isFocused: focus == .close,
+                isPressed: closePressed
+            ) {
+                Button(action: onClose) {
+                    TVDetailCircleHitArea()
                 }
-
-                Button(action: onBack) {
-                    tvPillLabel("Back", icon: "chevron.left", iconSize: 26, titleSize: 26, width: 120)
-                }
-                .buttonStyle(TVPillButtonStyle(kind: .secondary, stabilizesFocusMotion: true))
-                .focused($focus, equals: .back)
+                .buttonStyle(TVDetailInvisibleControlStyle { closePressed = $0 })
+                .focusEffectDisabled()
+                .focused($focus, equals: .close)
                 .prefersDefaultFocus(!hasNextEpisode && videoEnded, in: defaultFocusNamespace)
+                .accessibilityLabel("Close Player")
             }
-            .onMoveCommand { direction in
-                // Down from the actions goes to the auto-play toggle, which
-                // only exists with a next episode.
-                if direction == .down, hasNextEpisode {
-                    focus = .autoPlay
-                }
+        }
+        .onMoveCommand { direction in
+            switch direction {
+            case .up:
+                // The mini player is above and to the right.
+                focus = .preview
+            case .down where hasNextEpisode:
+                // The auto-play toggle only exists with a next episode.
+                focus = .autoPlay
+            default:
+                break
             }
         }
     }
 
-    private func tvPillLabel(
-        _ title: LocalizedStringKey,
-        icon: String,
-        iconSize: CGFloat,
-        iconWeight: Font.Weight = .semibold,
-        titleSize: CGFloat,
-        spacing: CGFloat = 16,
-        width: CGFloat
-    ) -> some View {
-        HStack(spacing: spacing) {
-            Image(systemName: icon)
-                .font(.system(size: iconSize, weight: iconWeight))
-            Text(title)
-                .font(.system(size: titleSize, weight: .semibold))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-        }
-        .frame(width: width)
-    }
-
-    /// Play Now when there's a next episode, else Keep Watching while the
-    /// video is still going, else Back.
+    /// Play Now when there's a next episode, else the mini player while the
+    /// video is still going, else Close.
     private var preferredFocus: Focus {
         if hasNextEpisode { return .playNow }
-        return videoEnded ? .back : .keepWatching
+        return videoEnded ? .close : .preview
+    }
+
+    /// Where focus lands in the action row when it arrives from elsewhere.
+    private var actionFocus: Focus {
+        hasNextEpisode ? .playNow : .close
     }
 
     /// Moves focus to the preferred action the first time there's something
@@ -1276,6 +1378,18 @@ struct PlayerNextUpScreen: View {
         }
     }
     #endif
+}
+
+/// The mini player's button draws nothing: the video is drawn above it, and
+/// so is its focus ring.
+private struct NextUpPreviewButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            #if os(tvOS)
+            .focusEffectDisabled()
+            #endif
+    }
 }
 
 private struct AutoPlayToggleButtonStyle: ButtonStyle {

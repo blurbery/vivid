@@ -19,6 +19,7 @@ extension PlayerViewModel {
         nextUpAutoplayCancelled = false
         nextUpPromptDismissed = false
         cancelNextUpCountdown()
+        loadNextUpTitleArtwork(for: detail)
 
         // Shuffle already knows what plays next, so there's nothing to look
         // up, and it doesn't need the episode's own numbers.
@@ -71,6 +72,32 @@ extension PlayerViewModel {
                     self.cancelNextUpCountdown()
                 }
             }
+        }
+    }
+
+    /// Fetches the logo and background of the episode's series, or of the
+    /// movie. The next episode of the same series keeps what is already
+    /// loaded. A failure (offline playback, for one) leaves the title as text
+    /// over the fallback artwork.
+    func loadNextUpTitleArtwork(for detail: WatchDetail) {
+        let titleId = Self.nonEmpty(detail.type == "episode" ? detail.seriesId : detail.contentId)
+        guard nextUpTitleArtwork == nil || nextUpTitleArtwork?.titleId != titleId else { return }
+        nextUpArtworkTask?.cancel()
+        nextUpArtworkTask = nil
+        nextUpTitleArtwork = nil
+        guard let titleId else { return }
+
+        nextUpArtworkTask = Task { @MainActor [weak self] in
+            guard let item = try? await VividAPI.shared.itemDetail(contentId: titleId) else { return }
+            guard let self, !Task.isCancelled, !self.isDisposed else { return }
+            self.nextUpTitleArtwork = PlayerNextUpTitleArtwork(
+                titleId: titleId,
+                title: item.title,
+                logoUrl: Self.nonEmpty(item.logoUrl),
+                backdropUrl: Self.nonEmpty(item.backdropUrl),
+                backdropThumbhash: item.backdropThumbhash
+            )
+            self.nextUpArtworkTask = nil
         }
     }
 
@@ -339,6 +366,8 @@ extension PlayerViewModel {
         nextUpLookupTask = nil
         nextUpOnDeckTask?.cancel()
         nextUpOnDeckTask = nil
+        nextUpArtworkTask?.cancel()
+        nextUpArtworkTask = nil
         cancelNextUpCountdown()
     }
 
