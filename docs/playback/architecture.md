@@ -62,7 +62,8 @@ eight seconds of the known duration. Earlier endings and missing timing use the
 current item's existing recovery/error path. Playback errors never become
 successful completion merely because they occur near the end. Intentional
 credits skips to the duration still complete normally, except on credits
-that open Next Up (an episode with another one after it): there Skip Credits
+that open Next Up (an episode with another one after it whose credits marker
+runs to the end of the file; [Playback](README.md) has the conditions): there Skip Credits
 opens Next Up and playback continues, and automatic skipping leaves them
 alone. Recovery and buffering
 must not advance the automatic Next Up presentation. Pausing, scrubbing, seeking,
