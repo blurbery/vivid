@@ -88,7 +88,9 @@ extension PlayerViewModel {
         guard let titleId else { return }
 
         nextUpArtworkTask = Task { @MainActor [weak self] in
-            guard let item = try? await VividAPI.shared.itemDetail(contentId: titleId) else { return }
+            // Through the pool, so a request already in flight for the same
+            // title is shared.
+            guard let item = try? await MetadataRequestPool.shared.itemDetail(contentId: titleId) else { return }
             guard let self, !Task.isCancelled, !self.isDisposed else { return }
             self.nextUpTitleArtwork = PlayerNextUpTitleArtwork(
                 titleId: titleId,
@@ -342,16 +344,24 @@ extension PlayerViewModel {
         let remaining = max(0, duration - movieTime)
         let openedFromHUD = nextUpPresentationSource == .hud
         let hudThreshold = Self.nextUpHUDCountdownThresholdSeconds
+        // This runs on every time report. Each value is only written when it
+        // changes, so the Next Up screen isn't redrawn on every report.
         if openedFromHUD, remaining >= hudThreshold {
-            nextUpCountdownSeconds = nil
-            nextUpCountdownTotalSeconds = Int(hudThreshold)
+            setNextUpCountdown(seconds: nil, total: Int(hudThreshold))
             return
         }
-        nextUpCountdownTotalSeconds = openedFromHUD ? Int(hudThreshold) : max(1, settings.nextUpPromptSeconds)
-        nextUpCountdownSeconds = max(0, Int(ceil(remaining)))
+        setNextUpCountdown(
+            seconds: max(0, Int(ceil(remaining))),
+            total: openedFromHUD ? Int(hudThreshold) : max(1, settings.nextUpPromptSeconds)
+        )
         if remaining <= 0.35 {
             playNextEpisodeNow()
         }
+    }
+
+    private func setNextUpCountdown(seconds: Int?, total: Int) {
+        if nextUpCountdownTotalSeconds != total { nextUpCountdownTotalSeconds = total }
+        if nextUpCountdownSeconds != seconds { nextUpCountdownSeconds = seconds }
     }
 
     func cancelNextUpCountdown() {
