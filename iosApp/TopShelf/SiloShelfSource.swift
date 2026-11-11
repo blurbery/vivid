@@ -39,6 +39,7 @@ struct SiloShelfSource: Sendable {
 
         let reply = try await get(.homeSections, query: imageQuery)
         let home = try reply.decoded(SiloHomePayload.self)
+        guard !home.isUnreadable else { throw ShelfFailure.badResponse }
         func entries(where matches: (String) -> Bool) -> [ShelfEntry] {
             home.sections.filter { matches($0.kind) }.flatMap(\.items).map { entry(from: $0, relativeTo: reply.url) }
         }

@@ -61,8 +61,11 @@ enum ShelfOutcome: Equatable {
             switch failure.code {
             case .cancelled: return "cancelled"
             case .timedOut: return "timeout"
-            case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost:
+            case .notConnectedToInternet, .networkConnectionLost:
                 return "offline"
+            // The Apple TV is online but the server can't be found or reached.
+            case .cannotFindHost, .cannotConnectToHost:
+                return "unreachable"
             case .badURL, .unsupportedURL: return "bad-address"
             default: return "network"
             }

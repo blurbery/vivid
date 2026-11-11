@@ -8,6 +8,8 @@ struct SiloHomePayload: Decodable {
     struct Section: Decodable {
         let kind: String
         let items: [Item]
+        /// Items that were sent but couldn't be read.
+        let droppedItems: Int
 
         private enum CodingKeys: String, CodingKey {
             case kind = "section_type"
@@ -17,7 +19,9 @@ struct SiloHomePayload: Decodable {
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             kind = try container.decode(String.self, forKey: .kind)
-            items = try container.decodeIfPresent([Lenient<Item>].self, forKey: .items)?.compactMap(\.value) ?? []
+            let sent = try container.decodeIfPresent([Lenient<Item>].self, forKey: .items) ?? []
+            items = sent.compactMap(\.value)
+            droppedItems = sent.count - items.count
         }
     }
 
@@ -62,12 +66,25 @@ struct SiloHomePayload: Decodable {
     }
 
     let sections: [Section]
+    /// Sections that were sent but couldn't be read.
+    let droppedSections: Int
+
+    /// True when the server sent rows but not one item could be read, which
+    /// means its reply has changed shape. Reported as a failure rather than
+    /// as an empty shelf, so the status shows it.
+    var isUnreadable: Bool {
+        let kept = sections.reduce(0) { $0 + $1.items.count }
+        let dropped = droppedSections + sections.reduce(0) { $0 + $1.droppedItems }
+        return kept == 0 && dropped > 0
+    }
 
     private enum CodingKeys: String, CodingKey { case sections }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        sections = try container.decodeIfPresent([Lenient<Section>].self, forKey: .sections)?.compactMap(\.value) ?? []
+        let sent = try container.decodeIfPresent([Lenient<Section>].self, forKey: .sections) ?? []
+        sections = sent.compactMap(\.value)
+        droppedSections = sent.count - sections.count
     }
 }
 
