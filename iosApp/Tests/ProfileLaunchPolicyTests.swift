@@ -183,85 +183,201 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         XCTAssertFalse(shouldPresentProfileSelectionAfterRecovery(isLoggedIn: false, activeProfileID: nil))
     }
 
-    func testTopShelfRespectsProfileSelectionPolicyAndMatchingCurrentUserIdentity() {
-        var state = ProfileLaunchState(rememberedByServerID: [serverID: pinFreeProfile])
-        func allowed(storedToken: Bool, now: Date = .now) -> Bool {
-            TopShelfProfilePolicy.allowsPersonalizedContent(
-                state: state, serverID: serverID, activeProfileID: "profile-a", accountEpoch: accountEpoch,
-                hasStoredProfileToken: storedToken, now: now)
+    // MARK: Top Shelf
+
+    /// Saved-profile rows the way the app stores them, with keys the Top
+    /// Shelf rules don't read.
+    private func savedProfilesData(_ rows: [[String: Any]]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: rows.map { $0.merging(["displayName": "Someone"]) { row, _ in row } })
+    }
+
+    private func savedProfileRefusal(
+        _ rows: [[String: Any]], active: String? = "one", server: String = "server-a", storedPINs: Set<String> = []
+    ) throws -> TopShelfAccess.Refusal? {
+        TopShelfAccess.savedProfileRefusal(
+            accountsData: try savedProfilesData(rows), activeAccountID: active, serverID: server,
+            hasStoredPIN: storedPINs.contains
+        )
+    }
+
+    private func launchRefusal(
+        _ state: ProfileLaunchState, profileID: String? = "profile-a", accountEpoch: String? = "account-a",
+        now: TimeInterval = 0
+    ) -> TopShelfAccess.Refusal? {
+        TopShelfAccess.launchRefusal(
+            state: state, serverID: serverID, profileID: profileID, accountEpoch: accountEpoch, now: date(now)
+        )
+    }
+
+    private func viewingProfilesData(
+        epoch: String = "account-a", ids: [String] = ["profile-a", "profile-b"], locked: [String] = ["profile-b"],
+        server: String = "server-a"
+    ) throws -> Data {
+        let record = TopShelfAccess.ViewingProfiles(accountEpoch: epoch, profileIDs: ids, lockedProfileIDs: locked)
+        return try JSONEncoder().encode([server: record])
+    }
+
+    func testTopShelfShowsTheActiveSavedProfileAmongSeveral() throws {
+        let rows: [[String: Any]] = [
+            ["id": "one", "serverID": "server-a", "requiresLogin": false],
+            ["id": "two", "serverID": "server-a", "requiresLogin": true],
+            ["id": "three", "serverID": "server-b", "requiresLogin": false, "pinEnabled": true],
+        ]
+        // The other rows being signed out or locked doesn't hide the active one.
+        XCTAssertNil(try savedProfileRefusal(rows, storedPINs: ["three"]))
+        XCTAssertNil(try savedProfileRefusal([["id": "one", "serverID": "server-a", "requiresLogin": false, "pinEnabled": false]]))
+    }
+
+    func testTopShelfRefusesAMissingSignedOutOrLockedSavedProfile() throws {
+        let open: [String: Any] = ["id": "one", "serverID": "server-a", "requiresLogin": false]
+        XCTAssertEqual(try savedProfileRefusal([open], active: nil), .savedProfileMissing)
+        XCTAssertEqual(try savedProfileRefusal([open], active: "gone"), .savedProfileMissing)
+        XCTAssertEqual(try savedProfileRefusal([open], server: "server-b"), .savedProfileMissing)
+        for data in [nil, Data("invalid".utf8)] {
+            XCTAssertEqual(
+                TopShelfAccess.savedProfileRefusal(accountsData: data, activeAccountID: "one", serverID: "server-a") { _ in false },
+                .savedProfileMissing
+            )
         }
-        state.behavior = .automatic
-        XCTAssertTrue(allowed(storedToken: false))
+
+        let signedOut: [String: Any] = ["id": "one", "serverID": "server-a", "requiresLogin": true, "pinEnabled": true]
+        XCTAssertEqual(try savedProfileRefusal([signedOut]), .savedProfileSignedOut)
+
+        let flagged: [String: Any] = ["id": "one", "serverID": "server-a", "requiresLogin": false, "pinEnabled": true]
+        XCTAssertEqual(try savedProfileRefusal([flagged]), .savedProfileLocked)
+        // A row saved before the flag existed still has its PIN in the Keychain.
+        XCTAssertEqual(try savedProfileRefusal([open], storedPINs: ["one"]), .savedProfileLocked)
+    }
+
+    func testTopShelfFollowsTheLaunchRules() {
+        let remembered = ProfileLaunchState(rememberedByServerID: [serverID: pinFreeProfile])
+        XCTAssertNil(launchRefusal(remembered))
+
+        var state = remembered
         state.behavior = .askEveryLaunch
-        XCTAssertFalse(allowed(storedToken: true))
-        state.behavior = .automatic
-        state.selectionRequiredServerIDs.insert(serverID)
-        XCTAssertFalse(allowed(storedToken: true))
+        XCTAssertEqual(launchRefusal(state), .launchAsks)
+
+        state = remembered
         state.behavior = .afterOneHour
-        state.selectionRequiredServerIDs.remove(serverID)
-        state.backgroundedAt = date(3_000)
-        XCTAssertTrue(allowed(storedToken: false, now: date(3_000 + 3_599)))
-        XCTAssertFalse(allowed(storedToken: false, now: date(3_000 + 3_600)))
+        state.backgroundedAt = date(0)
+        XCTAssertNil(launchRefusal(state, now: 3_599))
+        XCTAssertEqual(launchRefusal(state, now: 3_600), .awayLock)
+
+        state = remembered
+        state.selectionRequiredServerIDs = [serverID]
+        XCTAssertEqual(launchRefusal(state), .choicePending)
+
+        XCTAssertEqual(launchRefusal(ProfileLaunchState()), .profileNotRemembered)
+        XCTAssertEqual(launchRefusal(remembered, profileID: nil), .profileNotRemembered)
+        XCTAssertEqual(launchRefusal(remembered, profileID: ""), .profileNotRemembered)
+        XCTAssertEqual(launchRefusal(remembered, profileID: "profile-b"), .profileChanged)
+        XCTAssertEqual(launchRefusal(remembered, accountEpoch: nil), .accountChanged)
+        XCTAssertEqual(launchRefusal(remembered, accountEpoch: "account-b"), .accountChanged)
     }
 
-    func testTopShelfOnlyShowsTheSoleUnlockedSavedAccount() throws {
-        let row: [String: Any] = ["id": "saved", "serverID": "server", "requiresLogin": false]
-        func allowed(_ rows: [[String: Any]], active: String = "saved", server: String = "server", hasPIN: Bool = false) throws -> Bool {
-            TopShelfProfilePolicy.allowsSavedAccountContent(
-                accountsData: try JSONSerialization.data(withJSONObject: rows),
-                activeAccountID: active, serverID: server, hasStoredPIN: { _ in hasPIN })
+    func testTopShelfNeverShowsAProfileChosenWithAPIN() {
+        let state = ProfileLaunchState(rememberedByServerID: [serverID: pinProtectedProfile])
+        // The stored proof is enough for the app to reopen the profile.
+        XCTAssertEqual(
+            state.resolution(for: serverID, accountEpoch: accountEpoch, hasStoredProfileToken: true),
+            .restore(pinProtectedProfile)
+        )
+        XCTAssertEqual(launchRefusal(state), .viewingProfileLocked)
+    }
+
+    func testTopShelfChecksTheViewingProfileAgainstTheSavedList() throws {
+        func refusal(
+            _ data: Data?, server: String = "server-a", profile: String = "profile-a", epoch: String? = "account-a"
+        ) -> TopShelfAccess.Refusal? {
+            TopShelfAccess.viewingProfileRefusal(recordsData: data, serverID: server, profileID: profile, accountEpoch: epoch)
         }
-        var second = row
-        second["id"] = "second"
-        var pinned = row
-        pinned["pinEnabled"] = true
-        var signedOut = row
-        signedOut["requiresLogin"] = true
-        XCTAssertTrue(try allowed([row]))
-        XCTAssertFalse(try allowed([]))
-        XCTAssertFalse(try allowed([row, second]))
-        XCTAssertFalse(try allowed([row], active: "other"))
-        XCTAssertFalse(try allowed([row], server: "other"))
-        XCTAssertFalse(try allowed([row], hasPIN: true))
-        XCTAssertFalse(try allowed([pinned]))
-        XCTAssertFalse(try allowed([signedOut]))
-        for data in [nil, Data("invalid".utf8)] as [Data?] {
-            XCTAssertFalse(TopShelfProfilePolicy.allowsSavedAccountContent(
-                accountsData: data, activeAccountID: "saved", serverID: "server", hasStoredPIN: { _ in false }))
+        let saved = try viewingProfilesData()
+
+        // A second, locked profile on the account doesn't hide the open one.
+        XCTAssertNil(refusal(saved))
+        XCTAssertEqual(refusal(saved, profile: "profile-b"), .viewingProfileLocked)
+
+        XCTAssertEqual(refusal(nil), .viewingProfilesUnknown)
+        XCTAssertEqual(refusal(Data("invalid".utf8)), .viewingProfilesUnknown)
+        XCTAssertEqual(refusal(saved, server: "server-b"), .viewingProfilesUnknown)
+        XCTAssertEqual(refusal(saved, profile: "profile-c"), .viewingProfilesUnknown)
+        XCTAssertEqual(refusal(saved, epoch: nil), .viewingProfilesUnknown)
+        XCTAssertEqual(refusal(saved, epoch: "account-b"), .viewingProfilesUnknown)
+    }
+
+    func testTopShelfSkipsViewingProfilesOnNativeServers() {
+        XCTAssertTrue(TopShelfAccess.isNativeServer("emby:server"))
+        XCTAssertTrue(TopShelfAccess.isNativeServer("jellyfin:server"))
+        XCTAssertFalse(TopShelfAccess.isNativeServer("server-a"))
+        for server in ["emby:server", "jellyfin:server"] {
+            XCTAssertNil(TopShelfAccess.viewingProfileRefusal(
+                recordsData: nil, serverID: server, profileID: "user", accountEpoch: nil
+            ))
         }
     }
 
-    func testTopShelfOnlyPersonalisesASiloAccountWithOneViewingProfile() throws {
-        let suite = try ThrowawaySuite(prefix: "ProfileLaunchPolicyTests.viewingProfiles")
+    func testTopShelfDecisionReportsTheFirstRuleThatFails() throws {
+        let open = TopShelfAccess.Snapshot(
+            serverID: serverID,
+            activeProfileID: "profile-a",
+            activeSavedAccountID: "one",
+            accountEpoch: accountEpoch,
+            savedAccountsData: try savedProfilesData([["id": "one", "serverID": serverID, "requiresLogin": false]]),
+            viewingProfilesData: try viewingProfilesData(),
+            launchState: ProfileLaunchState(rememberedByServerID: [serverID: pinFreeProfile])
+        )
+        func refusal(storedPIN: Bool = false, _ change: (inout TopShelfAccess.Snapshot) -> Void = { _ in }) -> TopShelfAccess.Refusal? {
+            var snapshot = open
+            change(&snapshot)
+            return TopShelfAccess.refusal(for: snapshot, hasStoredPIN: { _ in storedPIN }, now: date(0))
+        }
+
+        XCTAssertNil(refusal())
+        XCTAssertEqual(refusal { $0.serverID = nil }, .noActiveServer)
+        XCTAssertEqual(refusal { $0.activeSavedAccountID = nil }, .savedProfileMissing)
+        XCTAssertEqual(refusal(storedPIN: true), .savedProfileLocked)
+        XCTAssertEqual(refusal { $0.launchState.behavior = .askEveryLaunch }, .launchAsks)
+        XCTAssertEqual(refusal { $0.activeProfileID = nil }, .profileNotRemembered)
+        XCTAssertEqual(refusal { $0.viewingProfilesData = nil }, .viewingProfilesUnknown)
+        // The saved profile is checked before anything about the launch.
+        XCTAssertEqual(
+            refusal {
+                $0.savedAccountsData = nil
+                $0.launchState.behavior = .askEveryLaunch
+            },
+            .savedProfileMissing
+        )
+    }
+
+    func testRecordingViewingProfilesReportsChangesAndDropsTheLegacyCount() throws {
+        let suite = try ThrowawaySuite(prefix: "TopShelfViewingProfilesTests")
         defer { suite.remove() }
-        func allowed(_ server: String = "server-a", epoch: String? = "account-a") -> Bool {
-            TopShelfProfilePolicy.allowsViewingProfileCount(
-                countsData: suite.defaults.data(forKey: SharedStorage.viewingProfileCountsKey), serverID: server, accountEpoch: epoch)
-        }
-        XCTAssertFalse(allowed())
-        XCTAssertTrue(allowed("emby:server"))
-        XCTAssertTrue(allowed("jellyfin:server", epoch: nil))
-        XCTAssertTrue(TopShelfProfileCounts.record(1, serverID: "server-a", accountEpoch: "account-a", defaults: suite.defaults))
-        XCTAssertTrue(allowed())
-        XCTAssertFalse(allowed(epoch: "account-b"))
-        XCTAssertFalse(allowed(epoch: nil))
-        XCTAssertFalse(allowed("server-b"))
-        XCTAssertFalse(TopShelfProfileCounts.record(1, serverID: "server-a", accountEpoch: "account-a", defaults: suite.defaults))
-        XCTAssertTrue(TopShelfProfileCounts.record(2, serverID: "server-a", accountEpoch: "account-a", defaults: suite.defaults))
-        XCTAssertFalse(allowed())
-        suite.suite.set(Data("invalid".utf8), forKey: SharedStorage.viewingProfileCountsKey)
-        XCTAssertFalse(allowed())
-    }
+        suite.suite.set(Data("{}".utf8), forKey: SharedStorage.legacyViewingProfileCountsKey)
 
-    func testTopShelfRequiresCurrentUserProofForProtectedProfile() {
-        let state = ProfileLaunchState(behavior: .automatic, rememberedByServerID: [serverID: pinProtectedProfile])
-        func allowed(storedToken: Bool) -> Bool {
-            TopShelfProfilePolicy.allowsPersonalizedContent(
-                state: state, serverID: serverID, activeProfileID: "profile-a", accountEpoch: accountEpoch,
-                hasStoredProfileToken: storedToken)
-        }
-        XCTAssertFalse(allowed(storedToken: false))
-        XCTAssertTrue(allowed(storedToken: true))
+        let first = TopShelfAccess.ViewingProfiles(accountEpoch: "account-a", profileIDs: ["profile-a"], lockedProfileIDs: [])
+        XCTAssertTrue(TopShelfViewingProfiles.record(first, serverID: "server-a", defaults: suite.defaults))
+        XCTAssertNil(suite.suite.object(forKey: SharedStorage.legacyViewingProfileCountsKey))
+        XCTAssertFalse(TopShelfViewingProfiles.record(first, serverID: "server-a", defaults: suite.defaults))
+
+        let locked = TopShelfAccess.ViewingProfiles(
+            accountEpoch: "account-a", profileIDs: ["profile-a", "profile-b"], lockedProfileIDs: ["profile-b"]
+        )
+        XCTAssertTrue(TopShelfViewingProfiles.record(locked, serverID: "server-a", defaults: suite.defaults))
+        // Another server's list is kept beside it.
+        XCTAssertTrue(TopShelfViewingProfiles.record(first, serverID: "server-b", defaults: suite.defaults))
+
+        let stored = suite.defaults.data(forKey: SharedStorage.topShelfViewingProfilesKey)
+        XCTAssertEqual(
+            TopShelfAccess.viewingProfileRefusal(recordsData: stored, serverID: "server-a", profileID: "profile-b", accountEpoch: "account-a"),
+            .viewingProfileLocked
+        )
+        XCTAssertNil(TopShelfAccess.viewingProfileRefusal(
+            recordsData: stored, serverID: "server-b", profileID: "profile-a", accountEpoch: "account-a"
+        ))
+
+        // A value that can't be read is replaced rather than kept.
+        suite.suite.set(Data("invalid".utf8), forKey: SharedStorage.topShelfViewingProfilesKey)
+        XCTAssertTrue(TopShelfViewingProfiles.record(first, serverID: "server-a", defaults: suite.defaults))
     }
 
     func testCredentialAudienceClassification() {

@@ -35,7 +35,9 @@ enum SharedStorage {
     static let profileLaunchStateKey = "profileLaunchState.v1"
     static let savedAccountsKey = "vivid.accounts.v1"
     static let activeSavedAccountKey = "vivid.activeAccount.v1"
-    static let viewingProfileCountsKey = "vivid.viewingProfileCounts.v1"
+    static let topShelfViewingProfilesKey = "vivid.topShelf.viewingProfiles.v1"
+    /// Earlier builds kept a count here. It is only named to delete it.
+    static let legacyViewingProfileCountsKey = "vivid.viewingProfileCounts.v1"
     static let topShelfLastStatusKey = "topShelf.lastStatus"
     static let topShelfLastRunAtKey = "topShelf.lastRunAt"
     static let appLanguageKey = "vivid.appLanguage.v1"
