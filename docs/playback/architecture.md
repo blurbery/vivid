@@ -61,7 +61,10 @@ item completed. A terminal event needs finite, positive source timing within
 eight seconds of the known duration. Earlier endings and missing timing use the
 current item's existing recovery/error path. Playback errors never become
 successful completion merely because they occur near the end. Intentional
-credits skips to the duration still complete normally. Recovery and buffering
+credits skips to the duration still complete normally, except on credits
+that open Next Up (an episode with another one after it): there Skip Credits
+opens Next Up and playback continues, and automatic skipping leaves them
+alone. Recovery and buffering
 must not advance the automatic Next Up presentation. Pausing, scrubbing, seeking,
 quality changes and terminal errors also suspend automatic advancement. An EOF
 property is confirmed after 250 ms so a queued engine error can cancel it;
