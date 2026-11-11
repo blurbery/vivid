@@ -114,7 +114,10 @@ struct TVSeriesEpisodeShelf: View {
             }
             .padding(4)
             .vividGlass(in: Capsule(), tint: .black.opacity(0.26))
-            .animation(reduceMotion ? nil : TVDetailActionRowLayout.resize, value: openSectionIndex)
+            // Opening another section swaps the pills in one step, with no
+            // animation. Animated, the old section's pills were removed only
+            // when it ended, and that took focus off the pill just landed
+            // on, sending it back to Specials or down to the episodes.
         }
         .scrollClipDisabled()
         .focusSection()
