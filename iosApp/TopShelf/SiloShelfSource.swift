@@ -42,15 +42,15 @@ struct SiloShelfSource: Sendable {
         func entries(where matches: (String) -> Bool) -> [ShelfEntry] {
             home.sections.filter { matches($0.kind) }.flatMap(\.items).map { entry(from: $0, relativeTo: reply.url) }
         }
-        var feed = ShelfFeed.newestFirst(
+        var feed = ShelfFeed(
             resume: entries { $0 == "continue_watching" || $0 == "in_progress" },
             upNext: entries { $0.contains("next") }
         )
 
         let series = Set((feed.resume + feed.upNext).filter { $0.kind == .episode }.compactMap(\.seriesID))
-        let artwork = await seriesArtwork(for: series, imageQuery: imageQuery)
-        feed.resume = feed.resume.map { $0.withPoster(from: artwork) }
-        feed.upNext = feed.upNext.map { $0.withPoster(from: artwork) }
+        let posters = await seriesPosters(for: series, imageQuery: imageQuery)
+        feed.resume = feed.resume.map { $0.withSeriesPoster(from: posters) }
+        feed.upNext = feed.upNext.map { $0.withSeriesPoster(from: posters) }
         return feed
     }
 
@@ -70,52 +70,32 @@ struct SiloShelfSource: Sendable {
             season: item.seasonNumber,
             episode: item.episodeNumber,
             progress: ShelfEntry.progress(positionSeconds: item.positionSeconds, durationSeconds: item.durationSeconds),
-            lastWatched: item.progressUpdatedAt,
             poster: Self.artworkURL(item.posterURL, relativeTo: url)
         )
     }
 
     // MARK: - Episode artwork
 
-    /// The posters that can stand in for an episode's own image, which is a
-    /// 16:9 still and would look wrong in a poster tile.
-    fileprivate struct SeriesArtwork: Sendable {
-        var seasons: [Int: URL] = [:]
-        var series: URL?
-    }
-
-    /// One lookup per series, all at once. A series whose lookup fails is
-    /// left out, and its episodes fall back to their own image.
-    private func seriesArtwork(
-        for seriesIDs: Set<String>,
-        imageQuery: [String: String]
-    ) async -> [String: SeriesArtwork] {
-        await withTaskGroup(of: (String, SeriesArtwork?).self) { group in
+    /// Each series' main poster, one lookup per series, all at once. An
+    /// episode's own image is a 16:9 still that would look wrong in a poster
+    /// tile. A series whose lookup fails is left out, and its episodes keep
+    /// their own image.
+    private func seriesPosters(for seriesIDs: Set<String>, imageQuery: [String: String]) async -> [String: URL] {
+        await withTaskGroup(of: (String, URL?).self) { group in
             for id in seriesIDs {
-                group.addTask { (id, try? await artwork(forSeries: id, imageQuery: imageQuery)) }
+                group.addTask {
+                    guard let reply = try? await get(.item(id), query: imageQuery),
+                          let payload = try? reply.decoded(SiloItemPayload.self)
+                    else { return (id, nil) }
+                    return (id, Self.artworkURL(payload.posterURL, relativeTo: reply.url))
+                }
             }
-            var found: [String: SeriesArtwork] = [:]
-            for await (id, artwork) in group { found[id] = artwork }
+            var found: [String: URL] = [:]
+            for await (id, poster) in group {
+                if let poster { found[id] = poster }
+            }
             return found
         }
-    }
-
-    private func artwork(forSeries id: String, imageQuery: [String: String]) async throws -> SeriesArtwork {
-        var artwork = SeriesArtwork()
-        if let reply = try? await get(.seasons(ofSeries: id), query: imageQuery),
-           let payload = try? reply.decoded(SiloSeasonsPayload.self) {
-            for season in payload.seasons {
-                guard let number = season.number, artwork.seasons[number] == nil,
-                      let poster = Self.artworkURL(season.posterURL, relativeTo: reply.url)
-                else { continue }
-                artwork.seasons[number] = poster
-            }
-        }
-        // The series poster is only fetched when no season has one.
-        guard artwork.seasons.isEmpty else { return artwork }
-        let reply = try await get(.item(id), query: imageQuery)
-        artwork.series = Self.artworkURL(try reply.decoded(SiloItemPayload.self).posterURL, relativeTo: reply.url)
-        return artwork
     }
 
     /// A server-relative path is resolved against the server it came from;
@@ -187,12 +167,12 @@ private extension SiloTransport.Reply {
 }
 
 private extension ShelfEntry {
-    /// An episode takes its season's poster, then its series' poster, and
-    /// keeps its own image only when neither is known. Films are untouched.
-    func withPoster(from artwork: [String: SiloShelfSource.SeriesArtwork]) -> ShelfEntry {
-        guard kind == .episode, let seriesID, let known = artwork[seriesID] else { return self }
+    /// An episode shows its series' main poster when it's known. Films and
+    /// anything else keep their own.
+    func withSeriesPoster(from posters: [String: URL]) -> ShelfEntry {
+        guard kind == .episode, let seriesID, let poster = posters[seriesID] else { return self }
         var entry = self
-        entry.poster = season.flatMap { known.seasons[$0] } ?? known.series ?? poster
+        entry.poster = poster
         return entry
     }
 }

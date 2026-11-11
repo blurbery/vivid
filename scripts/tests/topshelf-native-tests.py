@@ -113,7 +113,7 @@ final class Requests: @unchecked Sendable {
             let entry = feed.resume[0]
             assert(entry.id == "episode-version" && entry.kind == .episode && entry.title == "Episode")
             assert(entry.seriesID == "series" && entry.seriesTitle == "Show" && entry.season == 2 && entry.episode == 3)
-            assert(entry.progress == 0.25 && entry.lastWatched == nil)
+            assert(entry.progress == 0.25)
             assert(feed.upNext[0] == entry)
             let artwork = URLComponents(url:entry.poster!, resolvingAgainstBaseURL:false)!
             assert(artwork.path.hasSuffix("/Items/series/Images/Primary"))
@@ -138,7 +138,7 @@ final class Requests: @unchecked Sendable {
         do { _ = try await jellyfin.fetchHomeSections(); fatalError("Unauthorised response accepted") }
         catch TopShelfNativeClient.Failure.status(let code) { assert(code == 401) }
         assert(!failedRequests.snapshot().contains { $0.contains("/Users/") })
-        // A film keeps its own poster, and both rows come back newest first with unwatched entries last.
+        // A film keeps its own poster, and rows keep the server's order, including entries never played.
         func film(_ id: String, watched: String?) -> [String:Any] {
             var data: [String:Any] = ["PlaybackPositionTicks":30_000_000_000]
             if let watched { data["LastPlayedDate"] = watched }
@@ -147,14 +147,14 @@ final class Requests: @unchecked Sendable {
         Stub.handler = { _ in (200,["Items":[film("never",watched:nil), film("older",watched:"2026-01-01T00:00:00Z"),
             film("newer",watched:"2026-02-01T00:00:00Z"), film("never-too",watched:nil), ["Id":"trailer", "Type":"Trailer", "Name":"Trailer"]]]) }
         let films = try await jellyfin.fetchHomeSections().resume
-        assert(films.map(\.id) == ["newer", "older", "never", "never-too", "trailer"])
-        assert(films[0].kind == .movie && films[0].progress == 1 && films[4].kind == .other && films[4].progress == nil)
-        assert(films[0].poster!.path.hasSuffix("/Items/newer/Images/Primary") && films[0].poster!.query!.contains("tag=own"))
+        assert(films.map(\.id) == ["never", "older", "newer", "never-too", "trailer"])
+        assert(films[2].kind == .movie && films[2].progress == 1 && films[4].kind == .other && films[4].progress == nil)
+        assert(films[2].poster!.path.hasSuffix("/Items/newer/Images/Primary") && films[2].poster!.query!.contains("tag=own"))
         assert(ShelfEntry.progress(positionSeconds:10, durationSeconds:0) == nil && ShelfEntry.progress(positionSeconds:nil, durationSeconds:10) == nil)
         let emby = TopShelfNativeClient(provider:.emby,serverURL:"https://media.example.test/base/emby/",userID:"one",token:"secret")
         let embyURL = try emby.url("/Shows/NextUp",query:[:])
         assert(embyURL.path == "/base/emby/Shows/NextUp")
-        print("PASS Jellyfin legacy fallback, empty rows, no auth fallback, newest-first order, Emby base path")
+        print("PASS Jellyfin legacy fallback, empty rows, no auth fallback, server order, Emby base path")
     }
 }
 '''

@@ -12,10 +12,6 @@ struct SiloRoute: Equatable, Sendable {
     static let homeSections = SiloRoute(fixed: "home/sections")
     static let refresh = SiloRoute(fixed: "auth/refresh")
 
-    static func seasons(ofSeries id: String) throws -> SiloRoute {
-        try SiloRoute(before: "catalog/series/", id: id, after: "/seasons")
-    }
-
     static func item(_ id: String) throws -> SiloRoute {
         try SiloRoute(before: "catalog/items/", id: id, after: "")
     }

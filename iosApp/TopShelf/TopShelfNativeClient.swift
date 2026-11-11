@@ -48,7 +48,7 @@ struct TopShelfNativeClient {
         }
         async let resume = entries(resumeRoute.path, query: resumeRoute.query, fallback: resumeRoute.fallback)
         async let next = entries("/Shows/NextUp", query: nextUpQuery)
-        return try await ShelfFeed.newestFirst(resume: resume, upNext: next)
+        return try await ShelfFeed(resume: resume, upNext: next)
     }
 
     /// Fetches one row. A 404 retries once at `fallback` with the same query.
@@ -119,7 +119,6 @@ struct TopShelfNativeClient {
                 positionSeconds: seconds(fromTicks: userData["PlaybackPositionTicks"]),
                 durationSeconds: seconds(fromTicks: raw["RunTimeTicks"])
             ),
-            lastWatched: userData["LastPlayedDate"] as? String,
             poster: poster
         )
     }

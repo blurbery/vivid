@@ -31,7 +31,6 @@ struct SiloHomePayload: Decodable {
         let episodeNumber: Int?
         let positionSeconds: Double?
         let durationSeconds: Double?
-        let progressUpdatedAt: String?
         let posterURL: String?
 
         private enum CodingKeys: String, CodingKey {
@@ -43,7 +42,6 @@ struct SiloHomePayload: Decodable {
             case episodeNumber = "episode_number"
             case positionSeconds = "position_seconds"
             case durationSeconds = "duration_seconds"
-            case progressUpdatedAt = "progress_updated_at"
             case posterURL = "poster_url"
         }
 
@@ -59,7 +57,6 @@ struct SiloHomePayload: Decodable {
             episodeNumber = container.optional(Int.self, .episodeNumber)
             positionSeconds = container.optional(Double.self, .positionSeconds)
             durationSeconds = container.optional(Double.self, .durationSeconds)
-            progressUpdatedAt = container.optional(String.self, .progressUpdatedAt)
             posterURL = container.optional(String.self, .posterURL)
         }
     }
@@ -71,34 +68,6 @@ struct SiloHomePayload: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sections = try container.decodeIfPresent([Lenient<Section>].self, forKey: .sections)?.compactMap(\.value) ?? []
-    }
-}
-
-/// A series' seasons, of which only the numbers and posters are wanted.
-struct SiloSeasonsPayload: Decodable {
-    struct Season: Decodable {
-        let number: Int?
-        let posterURL: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case number = "season_number"
-            case posterURL = "poster_url"
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            number = container.optional(Int.self, .number)
-            posterURL = container.optional(String.self, .posterURL)
-        }
-    }
-
-    let seasons: [Season]
-
-    private enum CodingKeys: String, CodingKey { case seasons }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        seasons = try container.decodeIfPresent([Lenient<Season>].self, forKey: .seasons)?.compactMap(\.value) ?? []
     }
 }
 
