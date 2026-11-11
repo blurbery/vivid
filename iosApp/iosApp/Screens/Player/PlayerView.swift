@@ -1408,10 +1408,11 @@ private struct NextUpMobileTitleLogo: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             if loadedLogoUrl != logoUrl {
+                // Two lines fit the portrait slot; the landscape one takes one.
                 Text(verbatim: name)
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.white)
-                    .lineLimit(1)
+                    .lineLimit(height >= 60 ? 2 : 1)
             }
             CachedAsyncImage(
                 url: logoUrl,
