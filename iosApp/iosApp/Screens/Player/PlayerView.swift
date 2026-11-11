@@ -967,7 +967,11 @@ struct PlayerNextUpScreen: View {
     /// focus with its bounds and the surface draws the ring.
     private var previewSlot: some View {
         Button {
-            player.keepWatchingCurrentEpisode()
+            // With nothing left to go back to (an autoplay failure can
+            // dispose the old playback), the player closes instead.
+            if !player.keepWatchingCurrentEpisode() {
+                onClose()
+            }
         } label: {
             Color.clear.aspectRatio(16 / 9, contentMode: .fit)
         }
@@ -1107,10 +1111,7 @@ struct PlayerNextUpScreen: View {
     private func mobileTitleLogo(compact: Bool) -> some View {
         if let name = titleName {
             if let logoUrl = player.nextUpTitleArtwork?.logoUrl {
-                CachedAsyncImage(url: logoUrl, contentMode: .fit, alignment: .bottomLeading, placeholderStyle: .clear)
-                    .frame(maxWidth: 240)
-                    .frame(height: compact ? 44 : 64)
-                    .accessibilityLabel(Text(verbatim: name))
+                NextUpMobileTitleLogo(logoUrl: logoUrl, name: name, height: compact ? 44 : 64)
             } else {
                 Text(verbatim: name)
                     .font(.system(size: 22, weight: .bold))
@@ -1391,6 +1392,39 @@ private struct NextUpPreviewButtonStyle: ButtonStyle {
             #endif
     }
 }
+
+#if os(iOS)
+/// The title logo on iPhone and iPad. The name shows until the logo has
+/// drawn, so a logo that never loads still leaves a title.
+private struct NextUpMobileTitleLogo: View {
+    let logoUrl: String
+    let name: String
+    let height: CGFloat
+    @State private var loadedLogoUrl: String?
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if loadedLogoUrl != logoUrl {
+                Text(verbatim: name)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            CachedAsyncImage(
+                url: logoUrl,
+                contentMode: .fit,
+                alignment: .bottomLeading,
+                placeholderStyle: .clear,
+                onImageLoaded: { loadedLogoUrl = logoUrl }
+            )
+        }
+        .frame(maxWidth: 240, alignment: .bottomLeading)
+        .frame(height: height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: name))
+    }
+}
+#endif
 
 private struct AutoPlayToggleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

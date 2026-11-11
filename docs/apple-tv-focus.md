@@ -65,8 +65,9 @@ waiting for release. Arrows and Menu continue through the native responder chain
 Next Up has four focus targets: Play Now, the round X, the auto-play toggle
 and the mini player. The mini player sits above and to the right of the
 actions, outside the focus engine's straight-line search, so the action row
-sends Up to it and it sends Down or Left back to the row; those are the only
-moves the screen intercepts. The player surface is drawn above the slot and
+sends Up to it and it sends Down or Left back to the row. With a next
+episode, the row also sends Down to the auto-play toggle and the toggle sends
+Up back to the row. Those are the only moves the screen intercepts. The player surface is drawn above the slot and
 takes no focus, so the slot's button reports its focus through
 `PlayerPreviewBoundsKey` and `PlayerSurfaceLayout` draws the white ring. Menu
 on Next Up closes the player.
