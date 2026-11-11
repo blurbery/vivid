@@ -46,6 +46,9 @@ extension PlayerViewModel {
     func skipCredits() {
         PlaybackTrialTrace.controlEvent("skip_credits_action", fields: "has_range=\(creditsRange != nil) loading=\(isLoading)")
         guard let creditsRange else { return }
+        // Credits that hand over to Next Up open it and play on in the mini
+        // player, rather than ending the episode on a paused frame.
+        if openNextUpForCredits() { return }
         if let key = currentCreditsSkipKey(for: creditsRange) {
             autoSkippedCreditsKey = key
         }

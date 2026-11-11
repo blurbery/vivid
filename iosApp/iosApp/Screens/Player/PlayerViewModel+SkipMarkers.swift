@@ -213,6 +213,9 @@ extension PlayerViewModel {
     // MARK: - Automatic credits skip
 
     func autoSkipCreditsIfNeeded(at time: Double) {
+        // Next Up opens over these credits and counts down to the next
+        // episode, which is the skip.
+        guard creditsNextUpRange == nil else { return }
         let key = creditsRange.flatMap(currentCreditsSkipKey(for:))
         guard let target = CreditsAutoSkipPolicy.target(
             enabled: settings.introDBEnabled && settings.autoSkipCredits,

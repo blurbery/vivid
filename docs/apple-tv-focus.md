@@ -68,7 +68,9 @@ actions, outside the focus engine's straight-line search, so the action row
 sends Up to it and it sends Down or Left back to the row. With a next
 episode, the row also sends Down to the auto-play toggle and the toggle sends
 Up back to the row. Those are the only moves the screen intercepts. Select on the mini player
-returns to the episode, or closes the player when no playback is left. The player surface is drawn above the slot and
+returns to the episode, or closes the player when no playback is left. If
+that left Next Up during the credits that opened it, Menu brings Next Up
+back before it leaves the player. The player surface is drawn above the slot and
 takes no focus, so the slot's button reports its focus through
 `PlayerPreviewBoundsKey` and `PlayerSurfaceLayout` draws the white ring. Menu
 on Next Up closes the player.

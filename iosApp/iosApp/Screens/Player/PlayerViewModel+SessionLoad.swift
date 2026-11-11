@@ -723,6 +723,7 @@ extension PlayerViewModel {
         nextUpPresentationSource = .automatic
         nextUpAutoplayCancelled = false
         nextUpPromptDismissed = false
+        nextUpCreditsDismissed = false
         audioTracks = []
         subtitleTracks = []
         chapters = []

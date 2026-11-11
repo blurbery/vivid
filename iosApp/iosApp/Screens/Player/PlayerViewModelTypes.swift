@@ -40,6 +40,30 @@ enum CreditsAutoSkipPolicy {
     }
 }
 
+/// Whether an episode's credits hand over to Next Up instead of offering
+/// Skip Credits.
+///
+/// Only credits that run to the end of the file qualify: a marker that stops
+/// earlier has a scene after it, which Skip Credits jumps to. A marker that
+/// starts in the first half of the file is taken to be wrong.
+enum CreditsNextUpPolicy {
+    /// Credits ending this close to the end of the file run to the end.
+    static let endToleranceSeconds: Double = 10
+
+    static func range(credits: TimeRange?, duration: Double, hasNextEpisode: Bool) -> TimeRange? {
+        guard hasNextEpisode,
+              let credits,
+              duration.isFinite, duration > 0,
+              credits.start.isFinite, credits.end.isFinite,
+              credits.end > credits.start,
+              credits.end >= duration - endToleranceSeconds,
+              credits.start >= duration / 2 else {
+            return nil
+        }
+        return credits
+    }
+}
+
 /// The episode Next Up offers after the current one.
 struct PlayerNextUpEpisode: Identifiable, Hashable {
     let contentId: String
