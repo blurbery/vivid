@@ -24,6 +24,11 @@ enum SharedStorage {
     static func refreshTokenAccount(for serverID: String) -> String { serverAccount(serverID, "refreshToken") }
     static func profileTokenAccount(for serverID: String) -> String { serverAccount(serverID, "profileToken") }
     static func accountEpochAccount(for serverID: String) -> String { serverAccount(serverID, "accountEpoch") }
+    /// The Emby or Jellyfin user the stored access token belongs to.
+    static func nativeUserIDAccount(for serverID: String) -> String { "vivid.nativeUserID." + serverID }
+    /// A saved profile's PIN record. The Top Shelf treats any item here as a
+    /// PIN, so the app and the extension must name it the same way.
+    static func savedProfilePINAccount(for accountID: String) -> String { "vivid.account." + accountID + ".pin.v1" }
 
     private static func serverAccount(_ serverID: String, _ name: String) -> String {
         "com.blurbery.vivid." + serverID + "." + name

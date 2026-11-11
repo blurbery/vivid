@@ -61,7 +61,7 @@ struct ShelfStorage: @unchecked Sendable {
         return TopShelfAccess.refusal(for: viewer.access, hasStoredPIN: { accountID in
             // A Keychain that can't answer might be hiding a PIN, so a failed
             // read counts as one.
-            (try? pins.getChecked("vivid.account.\(accountID).pin.v1") != nil) ?? true
+            (try? pins.getChecked(SharedStorage.savedProfilePINAccount(for: accountID)) != nil) ?? true
         }, now: now)
     }
 
@@ -81,7 +81,7 @@ struct ShelfStorage: @unchecked Sendable {
 
     /// The Emby or Jellyfin user the stored access token belongs to.
     func nativeUserID(for serverID: String) -> String? {
-        filled(accountKeychain.get("vivid.nativeUserID.\(serverID)"))
+        filled(accountKeychain.get(SharedStorage.nativeUserIDAccount(for: serverID)))
     }
 
     // MARK: - Diagnostics

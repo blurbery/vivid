@@ -95,6 +95,9 @@ struct SiloTransport: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         prepare(&request)
 
+        // Checked before the discovery probe as well, which can itself go to
+        // the server, and again after it because it takes time.
+        guard stillAllowed() else { throw ShelfFailure.viewerChanged }
         let usesV2 = try await SiloAPIDiscovery.shared.usesV2(for: url, session: session)
         if usesV2 { request = try SiloAPICompatibility.request(request) }
 

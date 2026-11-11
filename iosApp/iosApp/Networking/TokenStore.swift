@@ -96,7 +96,7 @@ actor TokenStore {
     }
 
     private static func nativeUserIDKey(for serverId: String) -> String {
-        "vivid.nativeUserID." + serverId
+        SharedStorage.nativeUserIDAccount(for: serverId)
     }
 
     // MARK: State

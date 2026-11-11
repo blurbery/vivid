@@ -28,7 +28,7 @@ struct ShelfLoad {
             if TopShelfAccess.isNativeServer(serverID) {
                 feed = try await nativeFeed(serverID: serverID, profileID: profileID, serverURL: viewer.serverURL)
             } else {
-                feed = try await siloFeed(serverID: serverID, profileID: profileID, serverURL: viewer.serverURL)
+                feed = try await siloFeed(serverID: serverID, profileID: profileID, viewer: viewer)
             }
             // Fetching takes seconds. If anyone switched profile, signed out
             // or locked up in that time, these rows belong to someone else.
@@ -58,8 +58,8 @@ struct ShelfLoad {
         return try await client.fetchHomeSections()
     }
 
-    private func siloFeed(serverID: String, profileID: String, serverURL: String?) async throws -> ShelfFeed {
-        guard let token = storage.accessToken(for: serverID), let serverURL else {
+    private func siloFeed(serverID: String, profileID: String, viewer: ShelfViewer) async throws -> ShelfFeed {
+        guard let token = storage.accessToken(for: serverID), let serverURL = viewer.serverURL else {
             throw ShelfFailure.signedOut
         }
         let source = SiloShelfSource(
@@ -69,7 +69,12 @@ struct ShelfLoad {
             profileToken: storage.profileToken(for: serverID),
             // Only read if the server turns the access token down.
             refreshToken: { [storage] in storage.refreshToken(for: serverID) },
-            stillAllowed: { [storage, now] in storage.refusal(for: storage.viewer(), now: now()) == nil }
+            // Another allowed viewer is still someone else: their switch
+            // stops this viewer's requests, not just the final result.
+            stillAllowed: { [storage, now] in
+                let latest = storage.viewer()
+                return latest.isSameViewer(as: viewer) && storage.refusal(for: latest, now: now()) == nil
+            }
         )
         return try await source.fetchFeed()
     }

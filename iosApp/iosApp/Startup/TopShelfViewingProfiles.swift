@@ -33,7 +33,10 @@ enum TopShelfViewingProfiles {
         guard let requestIdentity, await tokens.refreshAccountIdentity() == requestIdentity else { return }
         let serverID = requestIdentity.serverId
         guard !TopShelfAccess.isNativeServer(serverID),
-              let epoch = await tokens.getOrCreateAccountEpoch(for: serverID)
+              let epoch = await tokens.getOrCreateAccountEpoch(for: serverID),
+              // A sign-in on the same server while the epoch was read would
+              // tie this list to the new account's epoch.
+              await tokens.refreshAccountIdentity() == requestIdentity
         else { return }
         let viewingProfiles = TopShelfAccess.ViewingProfiles(
             accountEpoch: epoch,
