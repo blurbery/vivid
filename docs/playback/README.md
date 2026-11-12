@@ -8,33 +8,103 @@
 
 ---
 
-Apple TV, iPhone and iPad use **Lucid Engine**. Vivid provides the controls, queues and server integration. See the [Lucid Engine guide](../cores/player-engine.md) for output behaviour and device verification.
+Apple TV, iPhone and iPad use **Lucid Engine**.
+Vivid provides the controls, queues and server integration.
+See the [Lucid Engine guide](../cores/player-engine.md) for output behaviour and device verification.
 
-Read the [playback architecture](architecture.md) for current responsibilities and validation boundaries. The [player bridge specification](player-bridge-spec.md) describes, by behaviour, Vivid's Swift bridge between Lucid Engine's adapter and libmpv. The [Lucid Engine patch specification](lucid-engine-patch-spec.md) does the same for Vivid's engine patches, and the [Lucid Engine architecture](../cores/lucid-engine-architecture.md) guide shows how the two fit together.
+Read the [playback architecture](architecture.md) for current responsibilities and validation boundaries.
+The [player bridge specification](player-bridge-spec.md) describes, by behaviour, Vivid's Swift bridge between Lucid Engine's adapter and libmpv.
+The [Lucid Engine patch specification](lucid-engine-patch-spec.md) does the same for Vivid's engine patches, and the [Lucid Engine architecture](../cores/lucid-engine-architecture.md) guide shows how the two fit together.
 
 ## Apple TV controls
 
-Vivid supplies the player UI for every playback path. On Apple TV, the bar uses a slim timeline, with a subtitle shortcut beside a round sliders control above its right end. The sliders control opens a compact panel with Home-style tabs for Info, Stats, Video, Audio and Chapters when applicable. Chapters scroll vertically with remote focus. The subtitle shortcut opens a glass selection menu, with embedded tracks, Off and a native OpenSubtitles submenu; subtitle options include the opened media’s tracks and, when connected in Plugins, manual OpenSubtitles search and temporary SRT downloads. Embedded bitmap subtitles such as PGS end the previous display set when its replacement begins, preventing successive dialogue images from stacking. The time row includes remaining media time; the remote retains play/pause and seeking. The controls remain Vivid’s SwiftUI UI. Lucid Engine presents video in the existing persistent surface; Vivid’s dots provide loading presentation. Picture readiness comes from the active sample-buffer display layer.
+Vivid supplies the player UI for every playback path.
+On Apple TV, the bar uses a slim timeline, with a subtitle shortcut beside a round sliders control above its right end.
+The sliders control opens a compact panel with Home-style tabs for Info, Stats, Video, Audio and Chapters when applicable.
+Chapters scroll vertically with remote focus.
+The subtitle shortcut opens a glass selection menu, with embedded tracks, Off and a native OpenSubtitles submenu; subtitle options include the opened media’s tracks and, when connected in Plugins, manual OpenSubtitles search and temporary SRT downloads.
+Embedded bitmap subtitles such as PGS end the previous display set when its replacement begins, preventing successive dialogue images from stacking.
+The time row includes remaining media time; the remote retains play/pause and seeking.
+The controls remain Vivid’s SwiftUI UI.
+Lucid Engine presents video in the existing persistent surface; Vivid’s dots provide loading presentation.
+Picture readiness comes from the active sample-buffer display layer.
 
-When an episode with another one after it has a credits marker that runs to the end of the file (ending within 10 seconds of it, and starting in the second half), Next Up opens as the credits begin instead of a Skip Credits prompt, whatever the Show Next Up setting says: the credits play on in the preview, a short countdown starts the next episode when Auto-play is on, and Play Now is the skip. Returning to the episode from the preview during the credits keeps Next Up away until the episode ends or the viewer seeks back before the credits; Menu on the Apple TV remote brings it back (and closes the player from there), and on iPhone and iPad the Skip Credits button does. Automatic credit skipping doesn't act on these credits. Everything else is unchanged: credits that stop earlier, and the credits of movies and last episodes, keep Skip Credits and automatic skipping, and an episode with no marker has no Skip Credits and shows Next Up before the end as the Show Next Up setting says. Near the end of an episode, Next Up places the continuing 960 × 540-point player preview at the top right and Play Now with a round X along the bottom left. Play Now is the detail pages' glass Play pill at its fixed width, and the autoplay countdown remains beside it when active. The preview is the Keep Watching control: on Apple TV, moving up from the actions focuses it with a white ring and Select returns to the episode full screen (replaying the last ten seconds if it had ended), or closes the player when there is no playback left to return to. The X closes the player, and so does Menu on the remote. The logo of the series (or of the movie, when a movie reaches Next Up) replaces the name, and its dimmed, softened background sits behind the screen. Without a logo, or until it has loaded, the name shows as text, and when the catalogue lists no background, or can't be reached, Next Up falls back to the next episode's still, then On Deck artwork, then black (a listed background that then fails to download stays black); see [App design](../app-design.md). Before EOF the countdown follows remaining media time, except when the credits opened Next Up, where it is the fixed ten-second count. The tvOS On Deck shelf is removed. Loading and next-episode transitions use four staggered white bouncing dots at screen centre; Reduce Motion keeps them still.
+When an episode with another one after it has a credits marker that runs to the end of the file (ending within 10 seconds of it, and starting in the second half), Next Up opens as the credits begin instead of a Skip Credits prompt, whatever the Show Next Up setting says: the credits play on in the preview, a short countdown starts the next episode when Auto-play is on, and Play Now is the skip.
+Returning to the episode from the preview during the credits keeps Next Up away until the episode ends or the viewer seeks back before the credits; Menu on the Apple TV remote brings it back (and closes the player from there), and on iPhone and iPad the Skip Credits button does.
+Automatic credit skipping doesn't act on these credits.
+Everything else is unchanged: credits that stop earlier, and the credits of movies and last episodes, keep Skip Credits and automatic skipping, and an episode with no marker has no Skip Credits and shows Next Up before the end as the Show Next Up setting says.
+Near the end of an episode, Next Up places the continuing 960 × 540-point player preview at the top right and Play Now with a round X along the bottom left.
+Play Now is the detail pages' glass Play pill at its fixed width, and the autoplay countdown remains beside it when active.
+The preview is the Keep Watching control: on Apple TV, moving up from the actions focuses it with a white ring and Select returns to the episode full screen (replaying the last ten seconds if it had ended), or closes the player when there is no playback left to return to.
+The X closes the player, and so does Menu on the remote.
+The logo of the series (or of the movie, when a movie reaches Next Up) replaces the name, and its dimmed, softened background sits behind the screen.
+Without a logo, or until it has loaded, the name shows as text, and when the catalogue lists no background, or can't be reached, Next Up falls back to the next episode's still, then On Deck artwork, then black (a listed background that then fails to download stays black); see [App design](../app-design.md).
+Before EOF the countdown follows remaining media time, except when the credits opened Next Up, where it is the fixed ten-second count.
+The tvOS On Deck shelf is removed.
+Loading and next-episode transitions use four staggered white bouncing dots at screen centre; Reduce Motion keeps them still.
 
-While a video plays, Apple TV publishes it to Now Playing, so it shows on a connected iPhone and in Control Centre. When the video ends, the player withdraws it from Now Playing instead of leaving a paused, finished item, because tvOS 27.2 has been seen showing a Now Playing badge in the top-right corner when playback stops. It comes back as soon as playback starts again: the next episode, or Keep Watching.
+While a video plays, Apple TV publishes it to Now Playing, so it shows on a connected iPhone and in Control Centre.
+When the video ends, the player withdraws it from Now Playing instead of leaving a paused, finished item, because tvOS 27.2 has been seen showing a Now Playing badge in the top-right corner when playback stops.
+It comes back as soon as playback starts again: the next episode, or Keep Watching.
 
 ## Shuffle
 
-Shuffle, on a series page's Play long-press menu and in its More menu (a button before Download on iPhone and the Duo), plays every episode of the regular seasons in a random order, each from its start. Specials are left out, and so are episodes that are missing or haven't aired yet, even with a file. If any season fails to load, Shuffle doesn't start, rather than quietly leaving that season out. It always streams from the server, since downloaded copies play without Next Up. The player follows the order through the usual Next Up prompt and countdown, so audio, subtitles and quality carry on as they do between episodes: the audio language picked in this viewing, then Settings > Audio Language, then English; and quality as autoplay handles it, where Original or a lower fallback quality carries over and otherwise each episode uses Settings' quality. When subtitles are on (picked in the player, or Settings set to Always) and an episode lacks their language, Shuffle falls back to Settings > Subtitles' languages and then English rather than turning them off. Auto is left as it is, so it never adds English subtitles over English audio. Subtitles that were off stay off. If the server can't be reached, answers with an error, or there's nothing to play, an alert says so; leaving the page while the order is gathered cancels it. An episode that fails to start is skipped: Next Up offers the one after it. Starting anything else ends the shuffle. The series' own Play target keeps to the series order, moving on only when the episode it points at is finished.
+Shuffle, on a series page's Play long-press menu and in its More menu (a button before Download on iPhone and the Duo), plays every episode of the regular seasons in a random order, each from its start.
+Specials are left out, and so are episodes that are missing or haven't aired yet, even with a file.
+If any season fails to load, Shuffle doesn't start, rather than quietly leaving that season out.
+It always streams from the server, since downloaded copies play without Next Up.
+The player follows the order through the usual Next Up prompt and countdown, so audio, subtitles and quality carry on as they do between episodes: the audio language picked in this viewing, then Settings > Audio Language, then English; and quality as autoplay handles it, where Original or a lower fallback quality carries over and otherwise each episode uses Settings' quality.
+When subtitles are on (picked in the player, or Settings set to Always) and an episode lacks their language, Shuffle falls back to Settings > Subtitles' languages and then English rather than turning them off.
+Auto is left as it is, so it never adds English subtitles over English audio.
+Subtitles that were off stay off.
+If the server can't be reached, answers with an error, or there's nothing to play, an alert says so; leaving the page while the order is gathered cancels it.
+An episode that fails to start is skipped: Next Up offers the one after it.
+Starting anything else ends the shuffle.
+The series' own Play target keeps to the series order, moving on only when the episode it points at is finished.
 
 ## iPhone and iPad controls
 
-Mobile playback retains Vivid’s controls, remaining time and pause indicator. While playing, controls dismiss after five seconds without interaction. Holding a control suspends dismissal and releasing it restarts the five seconds. A tap on the dimmed background hides the controls, except within 1.5 seconds of them appearing: then it restarts the five seconds, so a finger that just misses a centre button, or a quick second tap, doesn't hide them before play or pause can be reached. Paused playback keeps controls visible until the viewer dismisses them. Four separate round glass buttons open scrollable anchored Quality, Audio, Subtitles and Chapters popovers. Quality shows the selected mode and compact one-line descriptions; choosing another mode uses the existing quality-change path and preserves position. The host stays mounted during buffering and reloads, and open popovers pin the controls. Chapters show names and start times; selection seeks and closes the popover, with no timeline chapter ticks. Audio and Subtitles select available tracks directly, including Off and supported secondary subtitles. With OpenSubtitles connected in Plugins, the subtitle picker also offers manual title/language search and temporary subtitle downloads. Translation is not offered. Rotate, Lock, PiP and AirPlay remain separate round buttons. PiP stays in place but disabled while preparing. Loading uses four staggered white dots. There is no mobile Info pill.
+Mobile playback retains Vivid’s controls, remaining time and pause indicator.
+While playing, controls dismiss after five seconds without interaction.
+Holding a control suspends dismissal and releasing it restarts the five seconds.
+A tap on the dimmed background hides the controls, except within 1.5 seconds of them appearing: then it restarts the five seconds, so a finger that just misses a centre button, or a quick second tap, doesn't hide them before play or pause can be reached.
+Paused playback keeps controls visible until the viewer dismisses them.
+Four separate round glass buttons open scrollable anchored Quality, Audio, Subtitles and Chapters popovers.
+Quality shows the selected mode and compact one-line descriptions; choosing another mode uses the existing quality-change path and preserves position.
+The host stays mounted during buffering and reloads, and open popovers pin the controls.
+Chapters show names and start times; selection seeks and closes the popover, with no timeline chapter ticks.
+Audio and Subtitles select available tracks directly, including Off and supported secondary subtitles.
+With OpenSubtitles connected in Plugins, the subtitle picker also offers manual title/language search and temporary subtitle downloads.
+Translation is not offered.
+Rotate, Lock, PiP and AirPlay remain separate round buttons.
+PiP stays in place but disabled while preparing.
+Loading uses four staggered white dots.
+There is no mobile Info pill.
 
-Tap the picture to reveal vertical brightness and volume controls on the left and right. Drag either capsule up to increase its level or down to decrease it; percentages show the current levels. These controls support VoiceOver adjustments and stay visible during a drag. Brightness adjusts the player's screen and restores its previous level on exit unless it was changed elsewhere. If brightness changes externally, the next player adjustment uses that newer level as its restore point. Volume adjusts the system output through Apple's native volume control and follows the physical volume buttons and Control Centre. Audio outputs without volume control disable the slider. System-volume changes require a physical device; Simulator cannot verify them. The existing hidden-controls gestures, transport buttons and timeline retain their behaviour.
+Tap the picture to reveal vertical brightness and volume controls on the left and right.
+Drag either capsule up to increase its level or down to decrease it; percentages show the current levels.
+These controls support VoiceOver adjustments and stay visible during a drag.
+Brightness adjusts the player's screen and restores its previous level on exit unless it was changed elsewhere.
+If brightness changes externally, the next player adjustment uses that newer level as its restore point.
+Volume adjusts the system output through Apple's native volume control and follows the physical volume buttons and Control Centre.
+Audio outputs without volume control disable the slider.
+System-volume changes require a physical device; Simulator cannot verify them.
+The existing hidden-controls gestures, transport buttons and timeline retain their behaviour.
 
-On the iPhone Duo, folding the inner screen like a laptop while it's in portrait moves the video, with its subtitles, above the crease without reloading playback, and puts a control deck below it that stays up. The deck is built from rounded squares: a full-height close tile; an info card with the poster (an episode shows its series poster), the show and episode line, the title and as much of the synopsis as fits in whole sentences; PiP over AirPlay, dimmed while unavailable; large back 10, play/pause and forward 10 tiles; the timeline; and Quality, Audio, Subtitles and Chapters as four equal tiles. Taps and gestures on the video, the loading dots and the skip buttons stay above the crease. The player holds portrait while half folded, and the rotate and lock buttons hide. The deck was checked in the iPhone Duo simulator; see [iPhone Duo](../app-design.md#iphone-duo).
+On the iPhone Duo, folding the inner screen like a laptop while it's in portrait moves the video, with its subtitles, above the crease without reloading playback, and puts a control deck below it that stays up.
+The deck is built from rounded squares: a full-height close tile; an info card with the poster (an episode shows its series poster), the show and episode line, the title and as much of the synopsis as fits in whole sentences; PiP over AirPlay, dimmed while unavailable; large back 10, play/pause and forward 10 tiles; the timeline; and Quality, Audio, Subtitles and Chapters as four equal tiles.
+Taps and gestures on the video, the loading dots and the skip buttons stay above the crease.
+The player holds portrait while half folded, and the rotate and lock buttons hide.
+The deck was checked in the iPhone Duo simulator; see [iPhone Duo](../app-design.md#iphone-duo).
 
-The capsule layout, brightness gesture feedback and control visibility were checked in the iPhone simulator. Physical brightness, system-volume synchronisation, output-route changes, VoiceOver and iPad layout still need device verification.
+The capsule layout, brightness gesture feedback and control visibility were checked in the iPhone simulator.
+Physical brightness, system-volume synchronisation, output-route changes, VoiceOver and iPad layout still need device verification.
 
-Player unlock uses the phone’s physical orientation when a reliable sensor reading is available. Mobile Next Up places the continuing preview at the top right and episode information and actions at the bottom left. Play Now is a glass capsule matching the Apple TV detail pages' Play pill, with the autoplay countdown and a round X that closes the player beside it. Tapping the preview returns to the episode full screen, replaying the last ten seconds if it had ended, or closes the player when there is no playback left to return to. Preview sizing reserves room for the actions.
+Player unlock uses the phone’s physical orientation when a reliable sensor reading is available.
+Mobile Next Up places the continuing preview at the top right and episode information and actions at the bottom left.
+Play Now is a glass capsule matching the Apple TV detail pages' Play pill, with the autoplay countdown and a round X that closes the player beside it.
+Tapping the preview returns to the episode full screen, replaying the last ten seconds if it had ended, or closes the player when there is no playback left to return to.
+Preview sizing reserves room for the actions.
 
 ## Quality controls
 
@@ -48,65 +118,187 @@ Settings and the in-player controls offer five choices when the source supports 
 | 1080p (10 Mbps) | Resolution/bitrate ceilings; one buffering fallback to a 4 Mbps ceiling. |
 | 720p (4 Mbps) | Resolution/bitrate ceilings; one buffering fallback to a 1.5 Mbps ceiling. |
 
-The captions are compact single lines inside the open controls, such as “If buffering: up to 20 Mbps.” The closed Settings Quality row shows only the selection. These are ceilings, not promised output bitrates or forced encoding targets; the provider may choose a lower bitrate or resolution. On Apple TV HD, Emby and Jellyfin also apply the device's decode limits to every choice, including Auto and Original, so 4K, HEVC and other video outside them is transcoded rather than played as the original file (see the [Emby](../cores/emby.md#playback-and-settings) and [Jellyfin](../cores/jellyfin.md#playback-and-limits) guides). This is pause-and-reload recovery, not seamless adaptive streaming.
+The captions are compact single lines inside the open controls, such as “If buffering: up to 20 Mbps.”
+The closed Settings Quality row shows only the selection.
+These are ceilings, not promised output bitrates or forced encoding targets; the provider may choose a lower bitrate or resolution.
+On Apple TV HD, Emby and Jellyfin also apply the device's decode limits to every choice, including Auto and Original, so 4K, HEVC and other video outside them is transcoded rather than played as the original file (see the [Emby](../cores/emby.md#playback-and-settings) and [Jellyfin](../cores/jellyfin.md#playback-and-limits) guides).
+This is pause-and-reload recovery, not seamless adaptive streaming.
 
-The three capped modes are opt-in and local to the device/profile. After eight continuous seconds of eligible buffering with less than one second buffered ahead, a mode can request its lower ceiling once. Playback must already have started, and the active quality must match that mode. Startup, pause, seeking, scrubbing, offline/audio-only playback, errors, an in-flight quality replan and the last ten seconds of a known-duration item are excluded. Recovery or an ineligible phase cancels the timer. Source, position and selected tracks use the existing session/recovery path; the lower temporary ceiling does not overwrite the saved maximum. Original, Auto and older saved presets are not silently enrolled, and failed or rejected changes cannot trigger an unrelated fallback.
+The three capped modes are opt-in and local to the device/profile.
+After eight continuous seconds of eligible buffering with less than one second buffered ahead, a mode can request its lower ceiling once.
+Playback must already have started, and the active quality must match that mode.
+Startup, pause, seeking, scrubbing, offline/audio-only playback, errors, an in-flight quality replan and the last ten seconds of a known-duration item are excluded.
+Recovery or an ineligible phase cancels the timer.
+Source, position and selected tracks use the existing session/recovery path; the lower temporary ceiling does not overwrite the saved maximum.
+Original, Auto and older saved presets are not silently enrolled, and failed or rejected changes cannot trigger an unrelated fallback.
 
-The next episode only inherits Original or a capped mode (including a buffering fallback). On Auto or another Settings quality it resolves its quality afresh, exactly as pressing Play on it would, so Auto plays each episode's best version (4K or 1080p) directly instead of being pinned to the previous episode's resolution and transcoded down to it. On Apple TV HD, Emby and Jellyfin still transcode a version beyond the device's decode limits, such as 4K, so Auto doesn't play it directly there.
+The next episode only inherits Original or a capped mode (including a buffering fallback).
+On Auto or another Settings quality it resolves its quality afresh, exactly as pressing Play on it would, so Auto plays each episode's best version (4K or 1080p) directly instead of being pinned to the previous episode's resolution and transcoded down to it.
+On Apple TV HD, Emby and Jellyfin still transcode a version beyond the device's decode limits, such as 4K, so Auto doesn't play it directly there.
 
-When playback carries its quality into another load (the next episode, a retry, a seek reload or a renewed or recovered session), it also repeats the bitrate ceiling that playback actually ran with. The ceiling is never re-derived from the carried quality's name, which previously turned an uncapped 1080p preference into a 10 Mbps ceiling (and Auto on a 720p file into 2 Mbps) and made the server transcode files it had been sending untouched. A new in-player choice still sets its own ceiling, and an offline item hands the next episode the saved Settings ceiling.
+When playback carries its quality into another load (the next episode, a retry, a seek reload or a renewed or recovered session), it also repeats the bitrate ceiling that playback actually ran with.
+The ceiling is never re-derived from the carried quality's name, which previously turned an uncapped 1080p preference into a 10 Mbps ceiling (and Auto on a 720p file into 2 Mbps) and made the server transcode files it had been sending untouched.
+A new in-player choice still sets its own ceiling, and an offline item hands the next episode the saved Settings ceiling.
 
-Playback preferences remain local per device/profile. Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer; on Apple TV it also reads at most 60 seconds ahead. Settings shows Automatic buffering and omits the unused lossless-audio toggle. AC-3 and E-AC-3 use compressed output at normal speed; other formats use decoded PCM. Receiver output requires device verification. Settings > Playback > Audio holds Audio Language, Volume Boost (125%, 150%, 175% or 200% of the standard level) and Enhanced Dialogue, which lowers music and effects so voices stand out. While either enhancement is on, AC-3 and E-AC-3 are decoded at every speed, so Dolby Atmos plays as surround sound; see [Volume Boost and Enhanced Dialogue](../cores/player-engine.md#volume-boost-and-enhanced-dialogue). The Intro & Credit Skipper toggle controls marker loading, with separate automatic intro/credit skip switches. Hide Episode Spoilers, off by default, blurs the preview and scrambles the description of episodes after the viewer’s current position, keeping the episode title readable, in the series, season and episode page lists on iPhone, iPad and Apple TV, for Silo, Emby and Jellyfin alike. The position is the episode in progress, otherwise the first unwatched episode of the season the viewer is up to; watched, in-progress and current episodes stay readable, Specials are never covered, and opening a covered episode shows its page as normal. The softened preview is the still decoded at 64 by 36 points (multiplied by the screen scale) and blurred once in the image pipeline, then cached like any other decoded image, so no blur filter runs per frame and the full-size decode is skipped; if the blur cannot be produced the card shows its placeholder rather than the sharp still. Home rows, search, the player and Top Shelf are unchanged.
+Playback preferences remain local per device/profile.
+Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer; on Apple TV it also reads at most 60 seconds ahead.
+Settings shows Automatic buffering and omits the unused lossless-audio toggle.
+AC-3 and E-AC-3 use compressed output at normal speed; other formats use decoded PCM.
+Receiver output requires device verification.
+Settings > Playback > Audio holds Audio Language, Volume Boost (125%, 150%, 175% or 200% of the standard level) and Enhanced Dialogue, which lowers music and effects so voices stand out.
+While either enhancement is on, AC-3 and E-AC-3 are decoded at every speed, so Dolby Atmos plays as surround sound; see [Volume Boost and Enhanced Dialogue](../cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+The Intro & Credit Skipper toggle controls marker loading, with separate automatic intro/credit skip switches.
+Hide Episode Spoilers, off by default, blurs the preview and scrambles the description of episodes after the viewer’s current position, keeping the episode title readable, in the series, season and episode page lists on iPhone, iPad and Apple TV, for Silo, Emby and Jellyfin alike.
+The position is the episode in progress, otherwise the first unwatched episode of the season the viewer is up to; watched, in-progress and current episodes stay readable, Specials are never covered, and opening a covered episode shows its page as normal.
+The softened preview is the still decoded at 64 by 36 points (multiplied by the screen scale) and blurred once in the image pipeline, then cached like any other decoded image, so no blur filter runs per frame and the full-size decode is skipped; if the blur cannot be produced the card shows its placeholder rather than the sharp still.
+Home rows, search, the player and Top Shelf are unchanged.
 
 ## Direct-stream recovery
 
-Lucid Engine owns media transport on both platforms. Vivid handles credential
-renewal through its bounded reload boundary, preserving the current position.
+Lucid Engine owns media transport on both platforms.
+Vivid handles credential renewal through its bounded reload boundary, preserving the current position.
 
 ## Audio selection and startup
 
-Before loading, Vivid uses track metadata already supplied by the provider to prefer a compatible audio track in the chosen language. AAC, AC-3, E-AC-3, MP3, ALAC, FLAC and PCM are eligible; commentary-labelled alternatives are excluded. An unavailable preferred audio language falls back to English, then the file default when English is absent. An explicit manual choice wins. If no compatible same-language alternative exists, the original choice remains available to the decoder fallback. This is a selection policy, not a guarantee that every codec/profile will play.
+Before loading, Vivid uses track metadata already supplied by the provider to prefer a compatible audio track in the chosen language.
+AAC, AC-3, E-AC-3, MP3, ALAC, FLAC and PCM are eligible; commentary-labelled alternatives are excluded.
+An unavailable preferred audio language falls back to English, then the file default when English is absent.
+An explicit manual choice wins.
+If no compatible same-language alternative exists, the original choice remains available to the decoder fallback.
+This is a selection policy, not a guarantee that every codec/profile will play.
 
-Settings > Playback > Audio Language is where that automatic choice starts, on Silo, Emby and Jellyfin alike; only a pick made earlier in the same viewing comes before it, as described below. No server's remembered audio track is used, and audio picks aren't saved to the server, so a title starts with the same audio on every server. Before anything is picked, the detail page's Audio control shows the track playback will start, worked out by the same rule: a default TrueHD English track with an E-AC-3 English one beside it shows as E-AC-3, because that's what plays, and the subtitle preview beside it is worked out against that track. Its Auto row reads "Use your Playback audio preference" on iPhone, iPad and Apple TV. Apple TV's playback readout still describes the file's default track, as described in [Apple TV detail pages](../apple-tv-browsing.md#detail-pages). Choosing an audio track, on the detail page before playing or in the player, applies to that viewing: next episodes that play on start in the same language when they have it, and follow Settings when they don't, while a title started afresh follows Settings again. On iPhone and iPad the detail page's pick clears when the player closes, as its subtitle pick does; Apple TV keeps both while the page is cached. A track switched to in the player stays through quality changes, Silo replans, session renewals and Retry. A transcode that carries only the track it was asked for keeps that track through those reloads rather than falling back to the file's first. A downloaded file starts with the audio the same rule picks from the tracks it carries, not the track the server had chosen when it was downloaded. Emby and Jellyfin progress reports name the audio and subtitle tracks playing, not the ones the session started with. On a transcode, which carries only the audio it was asked for, the audio and any embedded subtitle stay as the session asked; a server subtitle file is still named. Volume Boost and Enhanced Dialogue apply to whichever track plays.
+Settings > Playback > Audio Language is where that automatic choice starts, on Silo, Emby and Jellyfin alike; only a pick made earlier in the same viewing comes before it, as described below.
+No server's remembered audio track is used, and audio picks aren't saved to the server, so a title starts with the same audio on every server.
+Before anything is picked, the detail page's Audio control shows the track playback will start, worked out by the same rule: a default TrueHD English track with an E-AC-3 English one beside it shows as E-AC-3, because that's what plays, and the subtitle preview beside it is worked out against that track.
+Its Auto row reads "Use your Playback audio preference" on iPhone, iPad and Apple TV.
+Apple TV's playback readout still describes the file's default track, as described in [Apple TV detail pages](../apple-tv-browsing.md#detail-pages).
+Choosing an audio track, on the detail page before playing or in the player, applies to that viewing: next episodes that play on start in the same language when they have it, and follow Settings when they don't, while a title started afresh follows Settings again.
+On iPhone and iPad the detail page's pick clears when the player closes, as its subtitle pick does; Apple TV keeps both while the page is cached.
+A track switched to in the player stays through quality changes, Silo replans, session renewals and Retry.
+A transcode that carries only the track it was asked for keeps that track through those reloads rather than falling back to the file's first.
+A downloaded file starts with the audio the same rule picks from the tracks it carries, not the track the server had chosen when it was downloaded.
+Emby and Jellyfin progress reports name the audio and subtitle tracks playing, not the ones the session started with.
+On a transcode, which carries only the audio it was asked for, the audio and any embedded subtitle stay as the session asked; a server subtitle file is still named.
+Volume Boost and Enhanced Dialogue apply to whichever track plays.
 
-Silo original-file and offline audio ordinals resolve to actual stream IDs inside the normal demux open, before decoder creation. Emby and Jellyfin map the selected ordinal to their native stream index during PlaybackInfo negotiation. Selecting an alternate track adds no separate media probe and does not wait for the read-ahead target to fill. Direct-file switching uses discovered tracks; packaged server routes depend on their negotiated track inventory. Lucid applies available embedded-track changes locally; quality changes negotiate a new server plan while retaining the playback position.
+Silo original-file and offline audio ordinals resolve to actual stream IDs inside the normal demux open, before decoder creation.
+Emby and Jellyfin map the selected ordinal to their native stream index during PlaybackInfo negotiation.
+Selecting an alternate track adds no separate media probe and does not wait for the read-ahead target to fill.
+Direct-file switching uses discovered tracks; packaged server routes depend on their negotiated track inventory.
+Lucid applies available embedded-track changes locally; quality changes negotiate a new server plan while retaining the playback position.
 
-Audio selection uses Lucid’s discovered track inventory and this device's Audio Language setting for the server and profile. See [audio support](../cores/player-engine.md#audio-support) for output behaviour and the limits of the current device checks.
+Audio selection uses Lucid’s discovered track inventory and this device's Audio Language setting for the server and profile.
+See [audio support](../cores/player-engine.md#audio-support) for output behaviour and the limits of the current device checks.
 
 ## Downloads and resume updates
 
-On iPhone and iPad, detail download actions show a live ring while the item is registering or transferring and settle into the completed state when the transfer finishes. The Downloads page uses glass storage and progress cards, shows transferred bytes and speed, and keeps the main series poster for episode, season and whole-series work. Artwork can arrive as a relative path or a same-server absolute URL; another origin is rejected rather than sent through the authenticated server client. Each download also saves the text subtitle files the server lists for it (SRT, VTT, ASS and SSA files stored beside the media on Silo, Emby and Jellyfin, plus subtitles downloaded to a Silo server), up to 10 MiB each, and offline playback offers them beside the file's embedded tracks. Embedded tracks are already in an original file, so they aren't fetched separately. A subtitle file that can't be fetched never fails the download. Completed downloads from before this change, including ones the server has since revoked, fetch their files once, the next time the app opens with the server reachable. Emby and Jellyfin subtitle files keep the server's stream index, so a track has the same ID offline as when streaming. Downloads, their artwork and subtitle files remain local to that device and do not sync through the iCloud account vault.
+On iPhone and iPad, detail download actions show a live ring while the item is registering or transferring and settle into the completed state when the transfer finishes.
+The Downloads page uses glass storage and progress cards, shows transferred bytes and speed, and keeps the main series poster for episode, season and whole-series work.
+Artwork can arrive as a relative path or a same-server absolute URL; another origin is rejected rather than sent through the authenticated server client.
+Each download also saves the text subtitle files the server lists for it (SRT, VTT, ASS and SSA files stored beside the media on Silo, Emby and Jellyfin, plus subtitles downloaded to a Silo server), up to 10 MiB each, and offline playback offers them beside the file's embedded tracks.
+Embedded tracks are already in an original file, so they aren't fetched separately.
+A subtitle file that can't be fetched never fails the download.
+Completed downloads from before this change, including ones the server has since revoked, fetch their files once, the next time the app opens with the server reachable.
+Emby and Jellyfin subtitle files keep the server's stream index, so a track has the same ID offline as when streaming.
+Downloads, their artwork and subtitle files remain local to that device and do not sync through the iCloud account vault.
 
-Vivid reports the real playback position from the first frame and leaves partial resume rules to each server, as Silo, Emby and Jellyfin's own apps do. Each server decides how far in a position must be before it keeps a resume point. Completion is separate: 90%, a valid credits marker or verified natural end can mark even short content watched. See [reporting and completion](architecture.md#downloads-and-external-playback) for provider and offline behaviour.
+Vivid reports the real playback position from the first frame and leaves partial resume rules to each server, as Silo, Emby and Jellyfin's own apps do.
+Each server decides how far in a position must be before it keeps a resume point.
+Completion is separate: 90%, a valid credits marker or verified natural end can mark even short content watched.
+See [reporting and completion](architecture.md#downloads-and-external-playback) for provider and offline behaviour.
 
-When playback that has reached its first frame (or, for audio-only playback, started playing) closes, Vivid sends the final resume position before the remaining session teardown. Home and open detail state refresh as soon as that progress write completes, on mobile and Apple TV. The media server still owns the saved watch state and determines when Continue Watching advances or disappears.
+When playback that has reached its first frame (or, for audio-only playback, started playing) closes, Vivid sends the final resume position before the remaining session teardown.
+Home and open detail state refresh as soon as that progress write completes, on mobile and Apple TV.
+The media server still owns the saved watch state and determines when Continue Watching advances or disappears.
 
 ## Source entry points
 
 - [VividPlaybackController](../../iosApp/iosApp/Screens/Player/VividPlaybackController.swift): video engine ownership, loads, transport and events.
-- [PlaybackSessionBridge](../../iosApp/iosApp/Screens/Player/PlaybackSessionBridge.swift): server playback sessions (start, progress, replans and stop) for Silo, Emby and Jellyfin. What it hands the player is in [PlaybackSessionModels](../../iosApp/iosApp/Screens/Player/PlaybackSessionModels.swift); the Silo capability check and the cancellation shield for `/api/v1/playback/start` are in [PlaybackV3CapabilityGate](../../iosApp/iosApp/Screens/Player/PlaybackV3CapabilityGate.swift) and [PlaybackCancellationShield](../../iosApp/iosApp/Screens/Player/PlaybackCancellationShield.swift).
+- [PlaybackSessionBridge](../../iosApp/iosApp/Screens/Player/PlaybackSessionBridge.swift): server playback sessions (start, progress, replans and stop) for Silo, Emby and Jellyfin.
+  What it hands the player is in [PlaybackSessionModels](../../iosApp/iosApp/Screens/Player/PlaybackSessionModels.swift); the Silo capability check and the cancellation shield for `/api/v1/playback/start` are in [PlaybackV3CapabilityGate](../../iosApp/iosApp/Screens/Player/PlaybackV3CapabilityGate.swift) and [PlaybackCancellationShield](../../iosApp/iosApp/Screens/Player/PlaybackCancellationShield.swift).
 - [VividLoadSpec](../../iosApp/iosApp/Screens/Player/VividLoadSpec.swift): prepared online/offline source inputs.
 - [PlaybackTimelineMapper](../../iosApp/iosApp/Screens/Player/ProtocolV3/PlaybackTimelineMapper.swift): server, source and presentation clocks.
-- [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): app-facing playback state. Its behaviour is grouped by area in the `PlayerViewModel+<Area>.swift` extensions beside it, such as `+SessionLoad`, `+Recovery`, `+TrackSelection` and `+NextUp`.
+- [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): app-facing playback state.
+  Its behaviour is grouped by area in the `PlayerViewModel+<Area>.swift` extensions beside it, such as `+SessionLoad`, `+Recovery`, `+TrackSelection` and `+NextUp`.
 
-Silo uses its existing playback protocol. The [Emby core](../cores/emby.md) and [Jellyfin core](../cores/jellyfin.md) each map their own authentication, PlaybackInfo and session reports into Vivid’s shared player on mobile and Apple TV. Jellyfin does not use Emby’s adapter or Silo Protocol V3. The media engine and shared controls retain their existing behaviour; provider-specific features and verification limits are listed in each core guide.
+Silo uses its existing playback protocol.
+The [Emby core](../cores/emby.md) and [Jellyfin core](../cores/jellyfin.md) each map their own authentication, PlaybackInfo and session reports into Vivid’s shared player on mobile and Apple TV.
+Jellyfin does not use Emby’s adapter or Silo Protocol V3.
+The media engine and shared controls retain their existing behaviour; provider-specific features and verification limits are listed in each core guide.
 
-A successful compile does not verify format support, HDR, surround audio, PiP, AirPlay or hardware-specific behaviour. Record those results against the actual build and device.
+A successful compile does not verify format support, HDR, surround audio, PiP, AirPlay or hardware-specific behaviour.
+Record those results against the actual build and device.
 
-The Apple TV round sliders control uses a fixed custom focus treatment above the timeline. A small pause symbol appears below the timeline’s left edge while paused, beside elapsed time; remaining watch time stays on the right. The playhead is a horizontal oval with a thicker centre. Next-up artwork is a background layer constrained to the viewport so it cannot push Play Now or the countdown below the screen.
+The Apple TV round sliders control uses a fixed custom focus treatment above the timeline.
+A small pause symbol appears below the timeline’s left edge while paused, beside elapsed time; remaining watch time stays on the right.
+The playhead is a horizontal oval with a thicker centre.
+Next-up artwork is a background layer constrained to the viewport so it cannot push Play Now or the countdown below the screen.
 
-Select the timeline and swipe left or right to preview the target time. Apple TV shows no thumbnail overlay and starts no thumbnail extraction workers. Repeated swipes move farther through the item; Select confirms and Back cancels. Directional button seeking remains available. Circular clockwise/counterclockwise seeking has been removed so it does not compete with horizontal swipes. `scripts/ci/check-tv-remote-wheel.sh` checks the swipe deadzone and distance, the button steps and the hold-to-seek speed ladder; it keeps its old name from the circular seeking it used to test.
+Select the timeline and swipe left or right to preview the target time.
+Apple TV shows no thumbnail overlay and starts no thumbnail extraction workers.
+Repeated swipes move farther through the item; Select confirms and Back cancels.
+Directional button seeking remains available.
+Circular clockwise/counterclockwise seeking has been removed so it does not compete with horizontal swipes.
+`scripts/ci/check-tv-remote-wheel.sh` checks the swipe deadzone and distance, the button steps and the hold-to-seek speed ladder; it keeps its old name from the circular seeking it used to test.
 
-Apple TV requests the source frame rate and dynamic range through Apple’s display manager. Enable Match Frame Rate and Match Dynamic Range in the Apple TV system settings to allow the TV to switch modes. Closing playback releases Vivid’s preferred display criteria. The first start keeps a small decoded buffer ready; it does not wait for the full read-ahead target.
+Apple TV requests the source frame rate and dynamic range through Apple’s display manager.
+Enable Match Frame Rate and Match Dynamic Range in the Apple TV system settings to allow the TV to switch modes.
+Closing playback releases Vivid’s preferred display criteria.
+The first start keeps a small decoded buffer ready; it does not wait for the full read-ahead target.
 
 ### Vivid-owned intro, recap and credits markers
 
-Playback > Intro & Credit Skipper is enabled by default and preserves an explicitly saved Off choice. Valid selected-file intro/credits markers appear first. TheIntroDB fills missing ranges; IntroDB fills remaining intro, credits or recap ranges. Separate automatic-skip settings control automatic skipping, and valid ranges supply manual prompts, except for credits that open Next Up (see above), which get neither an automatic skip nor, on Apple TV, a Skip Credits prompt. On iOS, prompts stay hidden while playback is loading or buffering.
+Playback > Intro & Credit Skipper is enabled by default and preserves an explicitly saved Off choice.
+Valid selected-file intro/credits markers appear first.
+TheIntroDB fills missing ranges; IntroDB fills remaining intro, credits or recap ranges.
+Separate automatic-skip settings control automatic skipping, and valid ranges supply manual prompts, except for credits that open Next Up (see above), which get neither an automatic skip nor, on Apple TV, a Skip Credits prompt.
+On iOS, prompts stay hidden while playback is loading or buffering.
 
-TheIntroDB requests prefer the series TMDb ID and fall back to IMDb; IntroDB requests use the series IMDb ID and episode numbering. Neither receives media-server credentials or API keys. Each provider has a bounded one-hour cache. Errors preserve markers already available, and requests are cancelled or ignored when the item, file or session changes. Movies can use selected-file markers, but public lookups are episode-only. Offline playback does not load skip markers. See [marker timing](architecture.md#introdb-marker-timing) for duration handling and exact precedence.
+TheIntroDB requests prefer the series TMDb ID and fall back to IMDb; IntroDB requests use the series IMDb ID and episode numbering.
+Neither receives media-server credentials or API keys.
+Each provider has a bounded one-hour cache.
+Errors preserve markers already available, and requests are cancelled or ignored when the item, file or session changes.
+Movies can use selected-file markers, but public lookups are episode-only.
+Offline playback does not load skip markers.
+See [marker timing](architecture.md#introdb-marker-timing) for duration handling and exact precedence.
 
-Run `bash scripts/ci/check-introdb-client.sh` for the focused request and range checks. Earlier IntroDB playback was verified on Silo-backed Apple TV. TheIntroDB-first lookups through its v4 API, recaps and wider provider/device coverage still need verification on device.
+Run `bash scripts/ci/check-introdb-client.sh` for the focused request and range checks.
+Earlier IntroDB playback was verified on Silo-backed Apple TV.
+TheIntroDB-first lookups through its v4 API, recaps and wider provider/device coverage still need verification on device.
 
-Both subtitle menus use the same embedded-track inventory and ordering. In the player and the detail menus, Silo, Emby and Jellyfin sessions also list the server's text subtitle files beside the embedded tracks, and an OpenSubtitles file chosen for a title comes back when that title plays again. The detail menus list that file, ticked, as "OpenSubtitles · file name" for as long as it's remembered, and choosing it keeps it. On Silo that includes the subtitles the server stores for the file (downloaded, uploaded or made by Silo's AI), which Auto can pick and the detail page's Auto preview counts too, and one Silo finishes making during playback joins the player's menu straight away. Settings → Subtitles owns subtitle language, behaviour and appearance; the menus omit settings shortcuts. With Auto, the full subtitles in the chosen language play when the audio is in another language, or when its language can't be told. When the audio is already in that language, only that language's forced track plays (if Show Forced Subtitles is on), so subtitles appear just for foreign dialogue and signs. A track counts as forced when the file flags it as forced, when the server marks its subtitle file as forced, or when its name says Forced. With Show Forced Subtitles off, a forced track is never picked automatically, even when it's the language's only track. Always plays the full track in the chosen language. Off means no subtitles, forced ones included. A Backup Language under Language is used when full subtitles would play but the title has none in your language, so an Arabic viewer with an English backup gets English subtitles on an English film without Arabic ones. Its full track also beats a signs-only forced track in your language. The backup never counts as your language for Auto's audio check: with Auto and audio already in your language, only that language's forced track plays, as before. It isn't used when Language is None, and does nothing with Off. Choosing the backup's language as Language clears the backup. Missing automatic subtitle-language matches, in both languages, turn subtitles off. Switching audio runs Auto again, so English audio keeps the forced track and Japanese audio gets the full one. With Use Device Settings on, the device's caption display mode, languages and style take over, and Vivid reads them again each time it comes back to the foreground and when playback starts. As in Apple's own players, Automatic shows subtitles in the device's language when the audio is in another language (and only that language's forced track when it isn't), Forced Only shows the forced track in the audio's language (or by the caption languages when the audio's language can't be told), and Always On uses the caption languages. Always with Language set to None still shows subtitles: in the device's language when the file has them, otherwise the file's default track, otherwise its best full track, and a signs-only forced track only when the file has nothing else. These subtitle settings are the only input on Silo, Emby and Jellyfin alike: no server's own remembered subtitle mode or track is used, so a title behaves the same on every server. Before anything is picked, the detail page's Subtitles control shows what playback will choose, worked out by the player's own rules with the audio the player will start: for example "Auto: English (Forced)" or "Auto: Off" with Auto, the track with Always, and "Off" with Off. The control shows for every file, including one without subtitles, where it reads "Auto: Off" (or "Off") and still offers OpenSubtitles search. On every device, Show Forced Subtitles is greyed out while Behaviour is Off. With Use Device Settings on, the subtitle style comes from Accessibility, including the caption font chosen there (Apple's default system caption font uses Vivid's sans-serif), and the Apple TV player's Appearance dialog keeps its style rows greyed out until Use Device Settings is turned off. Choosing an embedded track, a server subtitle file or Off, in the player or on the detail page before playing, applies to that viewing, including next episodes that play on, and leaves the Subtitles settings unchanged. An OpenSubtitles file stays with its own title. When Emby or Jellyfin transcodes, the title's PGS, VobSub and DVB subtitles are listed too, after the text ones. The server draws the chosen one into the picture, so choosing or leaving one reloads playback at the same point, and Auto leaves them alone while the server is known to be only repackaging the video. Plain-text appearance and delay reach the native renderer and downloaded-text overlay, which draw the same appearance at the same size and place, while authored ASS and bitmap styles remain intact, and a subtitle the server draws in takes neither.
+Both subtitle menus use the same embedded-track inventory and ordering.
+In the player and the detail menus, Silo, Emby and Jellyfin sessions also list the server's text subtitle files beside the embedded tracks, and an OpenSubtitles file chosen for a title comes back when that title plays again.
+The detail menus list that file, ticked, as "OpenSubtitles · file name" for as long as it's remembered, and choosing it keeps it.
+On Silo that includes the subtitles the server stores for the file (downloaded, uploaded or made by Silo's AI), which Auto can pick and the detail page's Auto preview counts too, and one Silo finishes making during playback joins the player's menu straight away.
+Settings → Subtitles owns subtitle language, behaviour and appearance; the menus omit settings shortcuts.
+With Auto, the full subtitles in the chosen language play when the audio is in another language, or when its language can't be told.
+When the audio is already in that language, only that language's forced track plays (if Show Forced Subtitles is on), so subtitles appear just for foreign dialogue and signs.
+A track counts as forced when the file flags it as forced, when the server marks its subtitle file as forced, or when its name says Forced.
+With Show Forced Subtitles off, a forced track is never picked automatically, even when it's the language's only track.
+Always plays the full track in the chosen language.
+Off means no subtitles, forced ones included.
+A Backup Language under Language is used when full subtitles would play but the title has none in your language, so an Arabic viewer with an English backup gets English subtitles on an English film without Arabic ones.
+Its full track also beats a signs-only forced track in your language.
+The backup never counts as your language for Auto's audio check: with Auto and audio already in your language, only that language's forced track plays, as before.
+It isn't used when Language is None, and does nothing with Off.
+Choosing the backup's language as Language clears the backup.
+Missing automatic subtitle-language matches, in both languages, turn subtitles off.
+Switching audio runs Auto again, so English audio keeps the forced track and Japanese audio gets the full one.
+With Use Device Settings on, the device's caption display mode, languages and style take over, and Vivid reads them again each time it comes back to the foreground and when playback starts.
+As in Apple's own players, Automatic shows subtitles in the device's language when the audio is in another language (and only that language's forced track when it isn't), Forced Only shows the forced track in the audio's language (or by the caption languages when the audio's language can't be told), and Always On uses the caption languages.
+Always with Language set to None still shows subtitles: in the device's language when the file has them, otherwise the file's default track, otherwise its best full track, and a signs-only forced track only when the file has nothing else.
+These subtitle settings are the only input on Silo, Emby and Jellyfin alike: no server's own remembered subtitle mode or track is used, so a title behaves the same on every server.
+Before anything is picked, the detail page's Subtitles control shows what playback will choose, worked out by the player's own rules with the audio the player will start: for example "Auto: English (Forced)" or "Auto: Off" with Auto, the track with Always, and "Off" with Off.
+The control shows for every file, including one without subtitles, where it reads "Auto: Off" (or "Off") and still offers OpenSubtitles search.
+On every device, Show Forced Subtitles is greyed out while Behaviour is Off.
+With Use Device Settings on, the subtitle style comes from Accessibility, including the caption font chosen there (Apple's default system caption font uses Vivid's sans-serif), and the Apple TV player's Appearance dialog keeps its style rows greyed out until Use Device Settings is turned off.
+Choosing an embedded track, a server subtitle file or Off, in the player or on the detail page before playing, applies to that viewing, including next episodes that play on, and leaves the Subtitles settings unchanged.
+An OpenSubtitles file stays with its own title.
+When Emby or Jellyfin transcodes, the title's PGS, VobSub and DVB subtitles are listed too, after the text ones.
+The server draws the chosen one into the picture, so choosing or leaving one reloads playback at the same point, and Auto leaves them alone while the server is known to be only repackaging the video.
+Plain-text appearance and delay reach the native renderer and downloaded-text overlay, which draw the same appearance at the same size and place, while authored ASS and bitmap styles remain intact, and a subtitle the server draws in takes neither.
 
-Intro, recap and credits buttons use Liquid Glass and retain their clearance above the controls. On Apple TV the focused skip button has a visible highlight, and Up or Down from the standalone prompt reveals the transport controls. Skip prompts are hidden while the settings HUD is open. On iOS they also remain hidden during loading and buffering.
+Intro, recap and credits buttons use Liquid Glass and retain their clearance above the controls.
+On Apple TV the focused skip button has a visible highlight, and Up or Down from the standalone prompt reveals the transport controls.
+Skip prompts are hidden while the settings HUD is open.
+On iOS they also remain hidden during loading and buffering.

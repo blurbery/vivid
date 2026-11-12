@@ -8,13 +8,20 @@
 
 ---
 
-The app name is **Vivid**. Use the GitHub username **blurbery** as the public maintainer identity in documentation, contribution rules and approval requests. Do not add personal names, separate nicknames or private contact details. The logo remains a symbol without text.
+The app name is **Vivid**.
+Use the GitHub username **blurbery** as the public maintainer identity in documentation, contribution rules and approval requests.
+Do not add personal names, separate nicknames or private contact details.
+The logo remains a symbol without text.
 
-Vivid's symbol is a silver V built from two broad pieces with softened angular corners and a diagonal gap. The mark contains no wordmark.
+Vivid's symbol is a silver V built from two broad pieces with softened angular corners and a diagonal gap.
+The mark contains no wordmark.
 
 ## Main logo
 
-The transparent silver mark is Vivid’s main logo. It uses the owner-approved two-piece shape with straight edges, smoothly joined rounded corners and a restrained silver gradient. Use it on both light and dark backgrounds, without adding a background box. The root README, documentation headers and website logos use this finish in both light and dark themes.
+The transparent silver mark is Vivid’s main logo.
+It uses the owner-approved two-piece shape with straight edges, smoothly joined rounded corners and a restrained silver gradient.
+Use it on both light and dark backgrounds, without adding a background box.
+The root README, documentation headers and website logos use this finish in both light and dark themes.
 
 <table width="100%">
   <thead>
@@ -27,17 +34,49 @@ The transparent silver mark is Vivid’s main logo. It uses the owner-approved t
   </tbody>
 </table>
 
-The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on the existing 1254 × 1254 canvas. A [transparent PDF master](vivid-mark-silver.pdf) is also available. The SVG uses two smooth paths and continuous gradients, with no embedded bitmap or tessellated shading patches. Documentation headers and static website logos use PNG exports of the same artwork. The website animation uses SVG pieces; the native apps use vector PDF pieces. Separate light- and dark-theme marks are not needed.
+The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on the existing 1254 × 1254 canvas.
+A [transparent PDF master](vivid-mark-silver.pdf) is also available.
+The SVG uses two smooth paths and continuous gradients, with no embedded bitmap or tessellated shading patches.
+Documentation headers and static website logos use PNG exports of the same artwork.
+The website animation uses SVG pieces; the native apps use vector PDF pieces.
+Separate light- and dark-theme marks are not needed.
 
-The [iOS app master](vivid-app-icon.svg), [matching small-size master](vivid-app-icon-small.svg), and Apple TV [foreground](vivid-tv-foreground.svg) and [background](vivid-tv-background.svg) are the sources for runtime icons. The rounded [presentation SVG](vivid-presentation.svg) and [presentation PDF](vivid-presentation.pdf) are design previews only. Never place the presentation tile inside an app icon or an in-app logo: that creates an extra inset border and recessed appearance.
+The [iOS app master](vivid-app-icon.svg), [matching small-size master](vivid-app-icon-small.svg), and Apple TV [foreground](vivid-tv-foreground.svg) and [background](vivid-tv-background.svg) are the sources for runtime icons.
+The rounded [presentation SVG](vivid-presentation.svg) and [presentation PDF](vivid-presentation.pdf) are design previews only.
+Never place the presentation tile inside an app icon or an in-app logo: that creates an extra inset border and recessed appearance.
 
-The website homepage tells Vivid's story with real app captures. It opens on Vivid running on Apple TV, moves through Spotlight, Home, a detail page and episodes as you scroll, then hands over to iPhone. The captures come from a local-only capture build of `main` that runs offline on a demo Silo library of current films and series with their TMDb artwork, led by Dune: Part Two in Spotlight, then The Penguin, Jurassic World Rebirth, The Boys and Verity, with no studio or network logos, photos of real people or private details. They live in `website/public/media` as WebP stills and short H.264 clips, and every title shown is listed under Images on this website and in the App Store on the [licences page](https://vividapp.co/licences#website-images), with the note that the artwork belongs to its owners. Each story's background glow is that capture shrunk to a few pixels, then blurred by the page (or, on phones, in the image itself), so it takes on the colours of the artwork on screen. The same build makes the iPhone and Apple TV App Store screenshots, and is never pushed or shipped; the iPad set still uses the Blender open-film images. The simulators record Spotlight at only 15 to 30 fps, so its transition was slowed four times in the capture build, recorded, then played back at real speed, which gives the clips true 60 fps motion. The scroll-driven zoom and rise run as CSS scroll-driven animations where Safari and Chrome support them, with the script as the fallback, and phones load glow images with the blur baked in instead of blurring them live. On screens wider than a phone, a story's TV starts lower only when its heading would otherwise be covered, such as a large headline in a short window; screens with room keep the designed start. Reduced Motion stops the clips, swaps the scroll-driven zoom and rise for a single cut between each story's start and end layouts, and lets the Spotlight banner rows be scrolled by hand instead of drifting. The support, privacy, brand, licences and source code pages share the homepage's dark theme through the same stylesheet. The Get Vivid section at the bottom of the homepage uses the approved Glide entrance: two SVG pieces slide into their exact final positions once, then remain still. Reduced Motion and image-load failures retain the static logo. iOS and Apple TV use the same Glide timing with vector PDF pieces. The website, iOS and tvOS reveals do not add a white brightness wash, and the logo stays assembled once it lands. The homepage has no TestFlight link; the Get Vivid section names the supported devices. Static website logos no longer invert or recolour the artwork. The Safari touch icon uses the approved full-square iOS artwork, rendered directly from the vector at 1024 × 1024 with an opaque background. Website favicons use the same opaque, full-square artwork, with charcoal reaching every edge and no baked-in rounded corners or border. The SVG stays sharp at any size, with a 512 px PNG and 16, 32, 48, 64, 128 and 256 px ICO fallbacks. Every page links the SVG and PNG favicons and Apple touch icon. The website build gives changed icons new content-hashed paths and retains standard root URLs for browser fallback requests. It also links every page's stylesheet, script and media with a content version, so a changed file always gets a new URL. Existing browser caches may take time to refresh.
+The website homepage tells Vivid's story with real app captures.
+It opens on Vivid running on Apple TV, moves through Spotlight, Home, a detail page and episodes as you scroll, then hands over to iPhone.
+The captures come from a local-only capture build of `main` that runs offline on a demo Silo library of current films and series with their TMDb artwork, led by Dune: Part Two in Spotlight, then The Penguin, Jurassic World Rebirth, The Boys and Verity, with no studio or network logos, photos of real people or private details.
+They live in `website/public/media` as WebP stills and short H.264 clips, and every title shown is listed under Images on this website and in the App Store on the [licences page](https://vividapp.co/licences#website-images), with the note that the artwork belongs to its owners.
+Each story's background glow is that capture shrunk to a few pixels, then blurred by the page (or, on phones, in the image itself), so it takes on the colours of the artwork on screen.
+The same build makes the iPhone and Apple TV App Store screenshots, and is never pushed or shipped; the iPad set still uses the Blender open-film images.
+The simulators record Spotlight at only 15 to 30 fps, so its transition was slowed four times in the capture build, recorded, then played back at real speed, which gives the clips true 60 fps motion.
+The scroll-driven zoom and rise run as CSS scroll-driven animations where Safari and Chrome support them, with the script as the fallback, and phones load glow images with the blur baked in instead of blurring them live.
+On screens wider than a phone, a story's TV starts lower only when its heading would otherwise be covered, such as a large headline in a short window; screens with room keep the designed start.
+Reduced Motion stops the clips, swaps the scroll-driven zoom and rise for a single cut between each story's start and end layouts, and lets the Spotlight banner rows be scrolled by hand instead of drifting.
+The support, privacy, brand, licences and source code pages share the homepage's dark theme through the same stylesheet.
+The Get Vivid section at the bottom of the homepage uses the approved Glide entrance: two SVG pieces slide into their exact final positions once, then remain still.
+Reduced Motion and image-load failures retain the static logo. iOS and Apple TV use the same Glide timing with vector PDF pieces.
+The website, iOS and tvOS reveals do not add a white brightness wash, and the logo stays assembled once it lands.
+The homepage has no TestFlight link; the Get Vivid section names the supported devices.
+Static website logos no longer invert or recolour the artwork.
+The Safari touch icon uses the approved full-square iOS artwork, rendered directly from the vector at 1024 × 1024 with an opaque background.
+Website favicons use the same opaque, full-square artwork, with charcoal reaching every edge and no baked-in rounded corners or border.
+The SVG stays sharp at any size, with a 512 px PNG and 16, 32, 48, 64, 128 and 256 px ICO fallbacks.
+Every page links the SVG and PNG favicons and Apple touch icon.
+The website build gives changed icons new content-hashed paths and retains standard root URLs for browser fallback requests.
+It also links every page's stylesheet, script and media with a content version, so a changed file always gets a new URL.
+Existing browser caches may take time to refresh.
 
-Preserve the aspect ratio and the clear space already included in the square canvas. Do not add text inside the symbol, stretch it or add shadows. The silver logo does not need a theme switch.
+Preserve the aspect ratio and the clear space already included in the square canvas.
+Do not add text inside the symbol, stretch it or add shadows.
+The silver logo does not need a theme switch.
 
 ## iOS and Apple TV app icons
 
-Both app targets already include the silver V as their app icon. The source assets below are the ones selected by `ASSETCATALOG_COMPILER_APPICON_NAME` in the [iOS](../../iosApp/project-ios.yml) and [tvOS](../../iosApp/project.yml) XcodeGen specs: `AppIcon` for Vivid on iPhone and iPad, and `TVAppIcon` for VividTV.
+Both app targets already include the silver V as their app icon.
+The source assets below are the ones selected by `ASSETCATALOG_COMPILER_APPICON_NAME` in the [iOS](../../iosApp/project-ios.yml) and [tvOS](../../iosApp/project.yml) XcodeGen specs: `AppIcon` for Vivid on iPhone and iPad, and `TVAppIcon` for VividTV.
 
 <table width="100%">
   <thead><tr><th align="left">iPhone and iPad</th><th align="left" width="10000">Apple TV</th></tr></thead>
@@ -47,9 +86,17 @@ Both app targets already include the silver V as their app icon. The source asse
   </tr></tbody>
 </table>
 
-The iOS icon uses opaque, full-square PNGs exported from the vector at the catalogue sizes, including 1024 × 1024. Its background reaches every edge. There is no nested rounded tile, decorative outer rim or extra padding; iOS applies the outer corner mask. The mark placement and diagonal gap match the approved app-size preview. The background fades vertically from charcoal (`#252525`) through `#191919` to near-black (`#101010`), without a baked-in border.
+The iOS icon uses opaque, full-square PNGs exported from the vector at the catalogue sizes, including 1024 × 1024.
+Its background reaches every edge.
+There is no nested rounded tile, decorative outer rim or extra padding; iOS applies the outer corner mask.
+The mark placement and diagonal gap match the approved app-size preview.
+The background fades vertically from charcoal (`#252525`) through `#191919` to near-black (`#101010`), without a baked-in border.
 
-Apple TV uses the approved landscape composition with a full-width dark background and a separate transparent silver foreground. The existing layer order remains foreground first. Both layers fill their canvases; clear space around the foreground mark allows parallax without adding an inset background panel. Exports are generated directly from the vector, with supersampling for smaller sizes. Apple supplies the final corner masks, focus and parallax effects.
+Apple TV uses the approved landscape composition with a full-width dark background and a separate transparent silver foreground.
+The existing layer order remains foreground first.
+Both layers fill their canvases; clear space around the foreground mark allows parallax without adding an inset background panel.
+Exports are generated directly from the vector, with supersampling for smaller sizes.
+Apple supplies the final corner masks, focus and parallax effects.
 
 <table width="100%">
   <thead><tr><th align="left">Use</th><th align="left" width="10000">Source assets</th><th align="left">Pixels</th></tr></thead>
@@ -61,22 +108,53 @@ Apple TV uses the approved landscape composition with a full-width dark backgrou
   </tbody>
 </table>
 
-The tvOS foreground uses the approved landscape placement over the same charcoal-to-near-black treatment. Both Home Screen resolutions and the App Store layer use the same vector placement. Top Shelf exports centre the same proportional mark on their wider canvases.
+The tvOS foreground uses the approved landscape placement over the same charcoal-to-near-black treatment.
+Both Home Screen resolutions and the App Store layer use the same vector placement.
+Top Shelf exports centre the same proportional mark on their wider canvases.
 
-These source catalogues supply app icons in new builds. Installing a new build is required to see them; updating these assets does not publish an App Store build. Website favicons and the Safari touch icon reuse the approved iOS artwork; documentation marks retain the transparent silver logo.
+These source catalogues supply app icons in new builds.
+Installing a new build is required to see them; updating these assets does not publish an App Store build.
+Website favicons and the Safari touch icon reuse the approved iOS artwork; documentation marks retain the transparent silver logo.
 
-iOS and Apple TV setup and login use the preserved-vector `VividMarkSilver` PDF through `VividLogoView`. Startup and full-screen loading use `VividGlideLogo`: two vector pieces glide into place over 1.2 seconds with a 0.144-second stagger, then remain assembled. Reduce Motion, unavailable pieces and interrupted entrances settle on the static logo. `VividStartupView` still waits for both the logo and content readiness. The [shared startup handoff](../app-design.md#settings-and-startup) fades the completed logo out before revealing the destination. Profile interaction and accessibility remain gated until both fades finish. The static fallback uses the same available canvas size as the animated logo. Top Shelf uses the same two-piece mark and charcoal background. Home and other root tab pages intentionally omit a separate top-left logo.
+iOS and Apple TV setup and login use the preserved-vector `VividMarkSilver` PDF through `VividLogoView`.
+Startup and full-screen loading use `VividGlideLogo`: two vector pieces glide into place over 1.2 seconds with a 0.144-second stagger, then remain assembled.
+Reduce Motion, unavailable pieces and interrupted entrances settle on the static logo.
+`VividStartupView` still waits for both the logo and content readiness.
+The [shared startup handoff](../app-design.md#settings-and-startup) fades the completed logo out before revealing the destination.
+Profile interaction and accessibility remain gated until both fades finish.
+The static fallback uses the same available canvas size as the animated logo.
+Top Shelf uses the same two-piece mark and charcoal background.
+Home and other root tab pages intentionally omit a separate top-left logo.
 
-The earlier asset checks below apply to the artwork revision and do not verify every later startup change. Physical-device presentation and focus/parallax for this artwork still require verification. The updated catalogue, including the three preserved-vector logo PDFs, passed `actool` compilation for iOS 18.0 and tvOS 18.0. The shared logo and Glide views passed focused Swift type-checking against both SDKs. Sandbox warnings prevented Simulator service access, so these checks do not establish simulator or device appearance. Image checks cover file references, expected dimensions, opaque app icons, transparent marks and full-width backgrounds without an inset tile. The website asset build passed. Startup animation rendering and physical-device appearance remain unverified.
+The earlier asset checks below apply to the artwork revision and do not verify every later startup change.
+Physical-device presentation and focus/parallax for this artwork still require verification.
+The updated catalogue, including the three preserved-vector logo PDFs, passed `actool` compilation for iOS 18.0 and tvOS 18.0.
+The shared logo and Glide views passed focused Swift type-checking against both SDKs.
+Sandbox warnings prevented Simulator service access, so these checks do not establish simulator or device appearance.
+Image checks cover file references, expected dimensions, opaque app icons, transparent marks and full-width backgrounds without an inset tile.
+The website asset build passed.
+Startup animation rendering and physical-device appearance remain unverified.
 
-Provider selection uses the Silo, Emby and Jellyfin logos to identify the supported server types. Vivid keeps its own app icon, startup artwork and branding. All three provider cards open native setup on mobile and Apple TV; Jellyfin uses the same server/login panel with its own authentication core. App Store submission remains a separate integration step.
+Provider selection uses the Silo, Emby and Jellyfin logos to identify the supported server types.
+Vivid keeps its own app icon, startup artwork and branding.
+All three provider cards open native setup on mobile and Apple TV; Jellyfin uses the same server/login panel with its own authentication core.
+App Store submission remains a separate integration step.
 
 ## Asset provenance
 
-On 20 September 2026, blurbery selected and approved the two-piece silver V, including its proportions, spacing and charcoal background, and requested replacing the old logos throughout the repository. The concept was developed with AI image generation, then reconstructed as vector paths and refined to remove traced edge irregularities. Full-square runtime icons preserve the approved placement; rounded presentation tiles are previews only. The SVG masters are the source for raster exports at each required size, with supersampling for smaller images. On-device icon rendering, startup animation and tvOS focus/parallax still need verification.
+On 20 September 2026, blurbery selected and approved the two-piece silver V, including its proportions, spacing and charcoal background, and requested replacing the old logos throughout the repository.
+The concept was developed with AI image generation, then reconstructed as vector paths and refined to remove traced edge irregularities.
+Full-square runtime icons preserve the approved placement; rounded presentation tiles are previews only.
+The SVG masters are the source for raster exports at each required size, with supersampling for smaller images.
+On-device icon rendering, startup animation and tvOS focus/parallax still need verification.
 
-Use Vivid's name and logo for the app. Server names identify supported connections. Preserve existing code licences, copyright and dependency notices when updating branding.
+Use Vivid's name and logo for the app.
+Server names identify supported connections.
+Preserve existing code licences, copyright and dependency notices when updating branding.
 
 ## Brand policy
 
-Vivid™ and the two-piece V logo are trademarks claimed by blurbery. Forks and other projects must use their own name and artwork unless blurbery gives prior, explicit written consent. This includes the silver mark, animated logo and app icons. See [Vivid’s brand and trademark policy](../../TRADEMARK.md).
+Vivid™ and the two-piece V logo are trademarks claimed by blurbery.
+Forks and other projects must use their own name and artwork unless blurbery gives prior, explicit written consent.
+This includes the silver mark, animated logo and app icons.
+See [Vivid’s brand and trademark policy](../../TRADEMARK.md).

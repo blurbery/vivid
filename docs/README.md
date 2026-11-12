@@ -8,7 +8,8 @@
 
 ---
 
-Guides for building Vivid, connecting media servers and maintaining the app on Apple devices. The [mobile layout guide](app-design.md#iphone-and-ipad-layout) covers the current iPhone/iPad navigation, spotlight, saved lists, settings and validation limits.
+Guides for building Vivid, connecting media servers and maintaining the app on Apple devices.
+The [mobile layout guide](app-design.md#iphone-and-ipad-layout) covers the current iPhone/iPad navigation, spotlight, saved lists, settings and validation limits.
 
 <table width="100%">
   <thead>
@@ -35,11 +36,15 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
   </tbody>
 </table>
 
-Use [App Design](app-design.md) for shared appearance and startup, [Server Connections](server-connections.md#home-refresh) for account and Home refresh behaviour, and [Apple TV Focus](apple-tv-focus.md#apple-tv-home-sections-and-background-work) for Home loading and focus boundaries. Other guides summarise or link to these details. Dated validation records apply to their stated revisions; current implementation descriptions do not extend that device coverage.
+Use [App Design](app-design.md) for shared appearance and startup, [Server Connections](server-connections.md#home-refresh) for account and Home refresh behaviour, and [Apple TV Focus](apple-tv-focus.md#apple-tv-home-sections-and-background-work) for Home loading and focus boundaries.
+Other guides summarise or link to these details.
+Dated validation records apply to their stated revisions; current implementation descriptions do not extend that device coverage.
 
 ## Cores
 
-Vivid is the shared player core. Each server has a separate server core that supplies its connection, data and playback sources. Lucid Engine provides iOS and tvOS playback; the server cores are responsibility boundaries within the app, not separate provider packages.
+Vivid is the shared player core.
+Each server has a separate server core that supplies its connection, data and playback sources.
+Lucid Engine provides iOS and tvOS playback; the server cores are responsibility boundaries within the app, not separate provider packages.
 
 | Core | Documentation |
 | --- | --- |
@@ -54,7 +59,11 @@ Vivid is the shared player core. Each server has a separate server core that sup
 | [Jellyfin server core](cores/jellyfin.md) | Native connection and current verification limits |
 
 > [!NOTE]
-> Silo, Emby and Jellyfin have separate native server cores on iPhone, iPad and Apple TV. Their guides distinguish implemented features, passed automated checks and remaining device-verification gaps. Use the source and resolved package revisions to check what a build implements.
+> Silo, Emby and Jellyfin have separate native server cores on iPhone, iPad and Apple TV.
+> Their guides distinguish implemented features, passed automated checks and remaining device-verification gaps.
+> Use the source and resolved package revisions to check what a build implements.
 
 > [!IMPORTANT]
-> Keep documentation accurate as behaviour changes. Documentation edits do not require separate approval; visual design and publishing remain owner-controlled. See the [documentation policy](../CONTRIBUTING.md#documentation).
+> Keep documentation accurate as behaviour changes.
+> Documentation edits do not require separate approval; visual design and publishing remain owner-controlled.
+> See the [documentation policy](../CONTRIBUTING.md#documentation).

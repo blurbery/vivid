@@ -2,113 +2,271 @@
 
 ## Apple playback
 
-Lucid Engine powers iPhone, iPad and Apple TV playback. Both app targets use the same pinned Lucid Engine package, [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (product `LucidEngine`), and Vivid-owned `VividMPVPlayer` adapter. Vivid owns controls, queues, server negotiation, progress reporting, settings and presentation; Lucid owns media transport, demuxing, decoding, timing and embedded tracks. The obsolete standalone playback package has been removed.
+Lucid Engine powers iPhone, iPad and Apple TV playback.
+Both app targets use the same pinned Lucid Engine package, [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (product `LucidEngine`), and Vivid-owned `VividMPVPlayer` adapter.
+Vivid owns controls, queues, server negotiation, progress reporting, settings and presentation; Lucid owns media transport, demuxing, decoding, timing and embedded tracks.
+The obsolete standalone playback package has been removed.
 
-Generate the Xcode project from `iosApp/project-ios.yml` for iOS or `iosApp/project.yml` for tvOS with XcodeGen. Keep their package graphs separate. Source ownership and dependency provenance are recorded in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
+Generate the Xcode project from `iosApp/project-ios.yml` for iOS or `iosApp/project.yml` for tvOS with XcodeGen.
+Keep their package graphs separate.
+Source ownership and dependency provenance are recorded in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
 
 ## Video and presentation
 
-Lucid renders into Vivid’s persistent player surface. Changing controls, opening menus or presenting Next Up does not create a second player. Apple TV requests frame rate and dynamic range through Apple’s display manager, respecting Match Content. The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation path remains platform-specific.
+Lucid renders into Vivid’s persistent player surface.
+Changing controls, opening menus or presenting Next Up does not create a second player.
+Apple TV requests frame rate and dynamic range through Apple’s display manager, respecting Match Content.
+The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation path remains platform-specific.
 
-On Apple TV, the visible player disables the app's idle timer while Vivid is active, including during paused playback. Leaving the player or making the app inactive restores normal screen saver behaviour. Returning to the active player disables the timer again without changing the playback state.
+On Apple TV, the visible player disables the app's idle timer while Vivid is active, including during paused playback.
+Leaving the player or making the app inactive restores normal screen saver behaviour.
+Returning to the active player disables the timer again without changing the playback state.
 
-Apple TV starts content matching as soon as mpv supplies a complete decoded
-video-output snapshot and measured cadence, without waiting for audio startup.
-If that information is unavailable, the first playback-ready snapshot remains
-the fallback. Playback continues through the switch; Vivid adds no HDMI startup
-pause. The TV's physical blackout can cover advancing playback. Final decoded
-criteria are still reconciled at playback readiness, and stale snapshots cannot
-change the display after a source ends. A separate commit lock serialises the
-early and cached writes with source transitions without holding the property-cache lock. Consecutive episodes retain the existing
-display-criteria reuse. Apple TV testing confirmed the earlier switch; other
-display routes and extended episode chaining remain unverified.
+Apple TV starts content matching as soon as mpv supplies a complete decoded video-output snapshot and measured cadence, without waiting for audio startup.
+If that information is unavailable, the first playback-ready snapshot remains the fallback.
+Playback continues through the switch; Vivid adds no HDMI startup pause.
+The TV's physical blackout can cover advancing playback.
+Final decoded criteria are still reconciled at playback readiness, and stale snapshots cannot change the display after a source ends.
+A separate commit lock serialises the early and cached writes with source transitions without holding the property-cache lock.
+Consecutive episodes retain the existing display-criteria reuse.
+Apple TV testing confirmed the earlier switch; other display routes and extended episode chaining remain unverified.
 
-The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences. Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read. Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available. Apple TV scrubbing does not start thumbnail extraction.
+The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences.
+Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read.
+Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available.
+Apple TV scrubbing does not start thumbnail extraction.
 
 ## Player bridge
 
-Vivid's own Swift bridge connects `VividMPVPlayer` to libmpv. It was written from the [player bridge specification](../playback/player-bridge-spec.md), and it is the only bridge the app uses. `VividPlayerCoreBase` and `VividPlayerCore` own the mpv context, event loop, requests and ordered delivery. The video surface, Match Content and EDR, external displays and lifecycle observation are separate components beside them in `iosApp/iosApp/Playback/MPV/`. Console lines from the bridge start with `[VividPlayerCore]`.
+Vivid's own Swift bridge connects `VividMPVPlayer` to libmpv.
+It was written from the [player bridge specification](../playback/player-bridge-spec.md), and it is the only bridge the app uses.
+`VividPlayerCoreBase` and `VividPlayerCore` own the mpv context, event loop, requests and ordered delivery.
+The video surface, Match Content and EDR, external displays and lifecycle observation are separate components beside them in `iosApp/iosApp/Playback/MPV/`.
+Console lines from the bridge start with `[VividPlayerCore]`.
 
-With this bridge and Lucid Engine 0.1.0, the complete iOS simulator suite (as a normal and as an optimised build) and the Apple TV simulator suite pass in CI, and both apps build for devices. Playback on physical devices has not been tested with them yet: the device tests of the bridge specification's section 16.3 and of the patch specification's sections 9.5, 12.7 and 13.7 remain to be run.
+With this bridge and Lucid Engine 0.1.0, the complete iOS simulator suite (as a normal and as an optimised build) and the Apple TV simulator suite pass in CI, and both apps build for devices.
+Playback on physical devices has not been tested with them yet: the device tests of the bridge specification's section 16.3 and of the patch specification's sections 9.5, 12.7 and 13.7 remain to be run.
 
 ## Audio support
 
-At normal speed, AC-3 and E-AC-3 use compressed output through the Apple AVPlayer resource loader, unless Volume Boost or Enhanced Dialogue is on. Other formats use decoded PCM through sample-buffer audio. Lucid owns scheduling; Vivid adds no second audio clock, fixed synchronisation offset or local HLS producer. Non-unit playback speed switches to PCM before applying the tempo change and restores compressed output on return to 1x. On AC-3 and E-AC-3 tracks each switch first seeks in place, so Lucid drops the audio already queued for the old output. Otherwise it plays that queue out, several seconds over AirPlay, with the picture held, then shows the picture without sound until it catches up. While Volume Boost or Enhanced Dialogue is on, AC-3 and E-AC-3 are decoded at every speed, so a speed change switches nothing and seeks nothing; see [Volume Boost and Enhanced Dialogue](#volume-boost-and-enhanced-dialogue).
+At normal speed, AC-3 and E-AC-3 use compressed output through the Apple AVPlayer resource loader, unless Volume Boost or Enhanced Dialogue is on.
+Other formats use decoded PCM through sample-buffer audio.
+Lucid owns scheduling; Vivid adds no second audio clock, fixed synchronisation offset or local HLS producer.
+Non-unit playback speed switches to PCM before applying the tempo change and restores compressed output on return to 1x.
+On AC-3 and E-AC-3 tracks each switch first seeks in place, so Lucid drops the audio already queued for the old output.
+Otherwise it plays that queue out, several seconds over AirPlay, with the picture held, then shows the picture without sound until it catches up.
+While Volume Boost or Enhanced Dialogue is on, AC-3 and E-AC-3 are decoded at every speed, so a speed change switches nothing and seeks nothing; see [Volume Boost and Enhanced Dialogue](#volume-boost-and-enhanced-dialogue).
 
-When tvOS playback starts with AirPlay selected, the PCM layout list permits 7.1, 5.1 and stereo, choosing the closest source layout instead of forcing stereo or upmixing. DTS remains locally decoded; Vivid does not request DTS-to-AAC server conversion. Other outputs retain `auto-safe`. Apple’s output API may negotiate a different layout, so an eight-channel player request does not prove eight-channel HomePod delivery.
+When tvOS playback starts with AirPlay selected, the PCM layout list permits 7.1, 5.1 and stereo, choosing the closest source layout instead of forcing stereo or upmixing.
+DTS remains locally decoded; Vivid does not request DTS-to-AAC server conversion.
+Other outputs retain `auto-safe`.
+Apple’s output API may negotiate a different layout, so an eight-channel player request does not prove eight-channel HomePod delivery.
 
-Vivid's audio output in Lucid Engine enables a four-second PCM read-ahead limit for tvOS AirPlay. Refills wait when the renderer has at least one second queued and input cannot satisfy a complete read. A serial-queue timer drives bounded refills and is cancelled on pause, stop and teardown. On the first start after a seek/reset, the driver replaces the bounded PCM renderer and synchroniser, preserving volume and mute and rejecting delayed notifications from the old renderer. Explicit renderer failures request an audio reload. Ordinary pause/resume and EOF retain their sink. HDMI, iOS and compressed AC-3/E-AC-3 retain their existing output policy.
+Vivid's audio output in Lucid Engine enables a four-second PCM read-ahead limit for tvOS AirPlay.
+Refills wait when the renderer has at least one second queued and input cannot satisfy a complete read.
+A serial-queue timer drives bounded refills and is cancelled on pause, stop and teardown.
+On the first start after a seek/reset, the driver replaces the bounded PCM renderer and synchroniser, preserving volume and mute and rejecting delayed notifications from the old renderer.
+Explicit renderer failures request an audio reload.
+Ordinary pause/resume and EOF retain their sink.
+HDMI, iOS and compressed AC-3/E-AC-3 retain their existing output policy.
 
-Compressed AC-3/E-AC-3 output over AirPlay has its own startup handling. When a new item starts on an AirPlay route, AVPlayer's clock stays at zero after play is requested. Trial traces on Apple TV 4K with HomePod speakers (2.0 s reported output latency) showed it still parked after four seconds. It engaged about 0.85 s after the driver's existing seek-to-start recovery, which runs two seconds after the rate is applied. Because no audio was pulled while the clock was parked, mpv previously ran video about 2.4 s ahead of the audio until the lead next drained. This happened at 0:00 and when resuming part-way through. Mid-play seeks engaged in about 0.5 s and pause/resume in about 0.6 s, with no seek. On an AirPlay route, Vivid now enables `ao-avfoundation-compressed-anchor-start`. While the applied rate has not moved the clock, the driver makes a small read every 100 ms, capped at four seconds beyond the startup lead. mpv's audio clock therefore stays on the parked playhead, and video holds its first frame until audio starts. The option is off by default, so HDMI and the PCM path are unchanged. The driver also accepts `ao-avfoundation-compressed-start-grace` (default two seconds) for the recovery deadline. A longer grace only delayed the start, because the recovery is what starts AirPlay's clock, so Vivid sets it to one second on AirPlay routes. On Apple TV 4K that cut a resumed AC-3 start from 2.9 s to 1.9 s to engage. Mid-play seeks and resumes engage in about 0.6 s, inside the shorter grace. Debug traces record when the clock engaged, whether the seek fired and how many anchor reads ran. A title's first start on AirPlay never engages without that recovery, so the driver also accepts `ao-avfoundation-compressed-first-start-grace`, which applies only until the first start engages. Vivid sets it to 0.25 s on AirPlay routes, and the recovery then runs once the item is ready. Later seeks and resumes keep the one-second grace. The driver's `ao-avfoundation-compressed-buffer` sets how much audio mpv queues for this sink before playback starts (two seconds by default). On AirPlay routes Vivid uses 1.25 s, because on a resume the extra audio can take over a second to arrive while the stream ramps up, and the picture holds until it does. Exactly one second was too little: the driver's next read could come up short of its one-second priming reserve, and mpv rebuffered straight after starting. Resuming from pause has the same parking on a smaller scale: AirPlay left the clock on the paused playhead for about 0.7 s while mpv's clock and the picture ran on, and the picture then froze for about half a second to let the sound catch up. With `ao-avfoundation-compressed-anchor-resume`, which Vivid enables on AirPlay routes, the driver keeps re-anchoring mpv to the paused playhead with the same small reads until the clock moves, for at most two seconds. On Apple TV 4K the clock moved 0.61 s after each of three resumes, the picture held until then, and picture and sound stayed within 0.03 s of their pre-pause offset with no freeze. On Apple TV 4K resuming a 4K Dolby Vision MKV with AC-3 audio, the clock engaged 0.8 to 1.3 s after play instead of 1.6 to 2.9 s, and the picture-to-playback wait fell from up to 1.5 s to under 0.5 s, with no rebuffering.
+Compressed AC-3/E-AC-3 output over AirPlay has its own startup handling.
+When a new item starts on an AirPlay route, AVPlayer's clock stays at zero after play is requested.
+Trial traces on Apple TV 4K with HomePod speakers (2.0 s reported output latency) showed it still parked after four seconds.
+It engaged about 0.85 s after the driver's existing seek-to-start recovery, which runs two seconds after the rate is applied.
+Because no audio was pulled while the clock was parked, mpv previously ran video about 2.4 s ahead of the audio until the lead next drained.
+This happened at 0:00 and when resuming part-way through.
+Mid-play seeks engaged in about 0.5 s and pause/resume in about 0.6 s, with no seek.
+On an AirPlay route, Vivid now enables `ao-avfoundation-compressed-anchor-start`.
+While the applied rate has not moved the clock, the driver makes a small read every 100 ms, capped at four seconds beyond the startup lead. mpv's audio clock therefore stays on the parked playhead, and video holds its first frame until audio starts.
+The option is off by default, so HDMI and the PCM path are unchanged.
+The driver also accepts `ao-avfoundation-compressed-start-grace` (default two seconds) for the recovery deadline.
+A longer grace only delayed the start, because the recovery is what starts AirPlay's clock, so Vivid sets it to one second on AirPlay routes.
+On Apple TV 4K that cut a resumed AC-3 start from 2.9 s to 1.9 s to engage.
+Mid-play seeks and resumes engage in about 0.6 s, inside the shorter grace.
+Debug traces record when the clock engaged, whether the seek fired and how many anchor reads ran.
+A title's first start on AirPlay never engages without that recovery, so the driver also accepts `ao-avfoundation-compressed-first-start-grace`, which applies only until the first start engages.
+Vivid sets it to 0.25 s on AirPlay routes, and the recovery then runs once the item is ready.
+Later seeks and resumes keep the one-second grace.
+The driver's `ao-avfoundation-compressed-buffer` sets how much audio mpv queues for this sink before playback starts (two seconds by default).
+On AirPlay routes Vivid uses 1.25 s, because on a resume the extra audio can take over a second to arrive while the stream ramps up, and the picture holds until it does.
+Exactly one second was too little: the driver's next read could come up short of its one-second priming reserve, and mpv rebuffered straight after starting.
+Resuming from pause has the same parking on a smaller scale: AirPlay left the clock on the paused playhead for about 0.7 s while mpv's clock and the picture ran on, and the picture then froze for about half a second to let the sound catch up.
+With `ao-avfoundation-compressed-anchor-resume`, which Vivid enables on AirPlay routes, the driver keeps re-anchoring mpv to the paused playhead with the same small reads until the clock moves, for at most two seconds.
+On Apple TV 4K the clock moved 0.61 s after each of three resumes, the picture held until then, and picture and sound stayed within 0.03 s of their pre-pause offset with no freeze.
+On Apple TV 4K resuming a 4K Dolby Vision MKV with AC-3 audio, the clock engaged 0.8 to 1.3 s after play instead of 1.6 to 2.9 s, and the picture-to-playback wait fell from up to 1.5 s to under 0.5 s, with no rebuffering.
 
-Incoming packets cannot keep postponing the first compressed-audio seek-to-start recovery while the audio clock is stopped; slow-source extensions before the PCM fallback apply only after that recovery. The audio output also defers an opportunistic read when its input cannot satisfy the request and enough audio is already queued, so prefetch is not reported as an output underrun that pauses the whole player. Reads resume as input arrives or the queue drains, preserving real starvation and end-of-file handling. The engine's audio output host vectors cover these decisions. With the previous package's patched driver, blurbery confirmed in the local 0.14.3 (30) Apple TV build that the prefetch change removed the pause after the switch.
+Incoming packets cannot keep postponing the first compressed-audio seek-to-start recovery while the audio clock is stopped; slow-source extensions before the PCM fallback apply only after that recovery.
+The audio output also defers an opportunistic read when its input cannot satisfy the request and enough audio is already queued, so prefetch is not reported as an output underrun that pauses the whole player.
+Reads resume as input arrives or the queue drains, preserving real starvation and end-of-file handling.
+The engine's audio output host vectors cover these decisions.
+With the previous package's patched driver, blurbery confirmed in the local 0.14.3 (30) Apple TV build that the prefetch change removed the pause after the switch.
 
-These options need an engine with Vivid's audio output, which Lucid Engine includes ([Builds](#builds)). The device results in this section were measured with the previous engine package and Vivid's earlier audio patch: the tvOS native workflow run `35690129461` and signed debug build passed for `c1a6aca`, and on Apple TV 4K (3rd generation), tvOS 27.0, using HomePod gen 2 speakers, blurbery confirmed seeking with audio in sync after earlier candidates had reproduced buffering and seek failures. This is user-reported device validation of that earlier build; device results with Lucid Engine are not recorded here yet, and long sessions, other routes and a full provider matrix remain unverified. The [earlier observations](https://github.com/blurbery/vivid/blob/39a8f097ac3804a2fc503a9f0377e24f295afb15/docs/cores/player-engine.md#audio-support) remain available in source history.
+These options need an engine with Vivid's audio output, which Lucid Engine includes ([Builds](#builds)).
+The device results in this section were measured with the previous engine package and Vivid's earlier audio patch: the tvOS native workflow run `35690129461` and signed debug build passed for `c1a6aca`, and on Apple TV 4K (3rd generation), tvOS 27.0, using HomePod gen 2 speakers, blurbery confirmed seeking with audio in sync after earlier candidates had reproduced buffering and seek failures.
+This is user-reported device validation of that earlier build; device results with Lucid Engine are not recorded here yet, and long sessions, other routes and a full provider matrix remain unverified.
+The [earlier observations](https://github.com/blurbery/vivid/blob/39a8f097ac3804a2fc503a9f0377e24f295afb15/docs/cores/player-engine.md#audio-support) remain available in source history.
 
-Vivid owns the shared audio session across episode changes. Its native driver uses `ao-avfoundation-manage-audio-session=no`, leaving activation and final deactivation to the app. Final deactivation uses one shared teardown group to wait for retired native players from every player instance to finish and checks a per-load ownership token, so delayed cleanup cannot release a newer session. This prevents an old player's asynchronous teardown, or a failed output probe, from deactivating a replacement player's session. The app also avoids reapplying an unchanged playback category, mode and route-sharing policy. Native channel negotiation remains enabled; standalone driver users retain session management by default.
+Vivid owns the shared audio session across episode changes.
+Its native driver uses `ao-avfoundation-manage-audio-session=no`, leaving activation and final deactivation to the app.
+Final deactivation uses one shared teardown group to wait for retired native players from every player instance to finish and checks a per-load ownership token, so delayed cleanup cannot release a newer session.
+This prevents an old player's asynchronous teardown, or a failed output probe, from deactivating a replacement player's session.
+The app also avoids reapplying an unchanged playback category, mode and route-sharing policy.
+Native channel negotiation remains enabled; standalone driver users retain session management by default.
 
-The ownership race is confirmed in code and covered by a shared-session test double. HomePod startup timing and long episode sequences still require physical-device validation; this change does not remove AirPlay's own buffering or prove the cause of every silent-audio report.
+The ownership race is confirmed in code and covered by a shared-session test double.
+HomePod startup timing and long episode sequences still require physical-device validation; this change does not remove AirPlay's own buffering or prove the cause of every silent-audio report.
 
-An explicit audio choice wins. Automatic selection prefers the requested language, then English, then the file default when English is unavailable. Provider ordinals and discovered source stream IDs remain distinct. Track switches use the media inventory; server-packaged streams depend on their negotiated inventory.
+An explicit audio choice wins.
+Automatic selection prefers the requested language, then English, then the file default when English is unavailable.
+Provider ordinals and discovered source stream IDs remain distinct.
+Track switches use the media inventory; server-packaged streams depend on their negotiated inventory.
 
-Stats retain the selected source codec, bitrate and channel description, with the output format shown separately. The compressed carrier’s two channels are not labelled as stereo. An Atmos badge requires Apple’s reported Dolby Atmos rendering mode; an E-AC-3 source alone does not establish Atmos output.
+Stats retain the selected source codec, bitrate and channel description, with the output format shown separately.
+The compressed carrier’s two channels are not labelled as stereo.
+An Atmos badge requires Apple’s reported Dolby Atmos rendering mode; an E-AC-3 source alone does not establish Atmos output.
 
 ### Volume Boost and Enhanced Dialogue
 
-Settings > Playback has an Audio section on iPhone, iPad and Apple TV. It holds Audio Language (moved there from Streaming on iOS and from the Playback group on tvOS), Volume Boost with its Boost Level, and Enhanced Dialogue. Volume Boost and Enhanced Dialogue are off by default. Boost Level offers 125%, 150%, 175% and 200% of the standard level, starts at 150%, keeps its value while Volume Boost is off and is disabled until it is turned on. All three are saved locally for each server, profile and device, like the other playback preferences, and never sync. Reset Playback Settings on iOS turns both off and restores 150%. Lucid reads them when it loads a title, so a change applies from the next video, episode or reload rather than to playback already running.
+Settings > Playback has an Audio section on iPhone, iPad and Apple TV.
+It holds Audio Language (moved there from Streaming on iOS and from the Playback group on tvOS), Volume Boost with its Boost Level, and Enhanced Dialogue.
+Volume Boost and Enhanced Dialogue are off by default.
+Boost Level offers 125%, 150%, 175% and 200% of the standard level, starts at 150%, keeps its value while Volume Boost is off and is disabled until it is turned on.
+All three are saved locally for each server, profile and device, like the other playback preferences, and never sync.
+Reset Playback Settings on iOS turns both off and restores 150%.
+Lucid reads them when it loads a title, so a change applies from the next video, episode or reload rather than to playback already running.
 
-- **Volume Boost** sets mpv's `volume-gain` to 20·log10(level/100): +1.94, +3.52, +4.86 and +6.02 dB, so 200% doubles the signal level. mpv's `volume` property is not used for this, because its scale is cubic (`volume=200` is eight times the level). The gain is mpv's software gain on decoded audio, applied after any filter, and it combines with the player's existing 0 to 1 volume and mute. Lucid Engine's FFmpeg build includes no limiter or compressor, so a boosted peak above full scale clips; the loudest moments can distort at higher levels, which the Settings footer says.
-- **Enhanced Dialogue** sets `af` to a single FFmpeg `firequalizer`, which handles any channel layout and never adds gain. With a front centre channel (3.0 and up), the centre keeps its level and every other channel, LFE included, drops 6 dB. Without one (mono, stereo, quad and the rest), the 1.5 to 4 kHz speech band keeps its level, bass below 120 Hz drops 8 dB and the rest drops 2 to 3 dB. It runs before mpv mixes down to the route, so iPhone speakers and headphones also hear the louder centre of a 5.1 or 7.1 track. Zero-phase mode moves timestamps back by the filter's 10 ms delay, keeping audio in sync, and mpv rebuilds the filter for the new layout when the audio track changes.
-- **Passthrough.** mpv's gain and filters cannot change a bitstream, so while either one is on `audio-spdif` stays empty at every speed. AC-3 and E-AC-3 are then decoded to PCM like every other format: E-AC-3 with Dolby Atmos plays its 5.1 or 7.1 bed without height objects, and a receiver shows multichannel PCM. A speed change then writes `audio-spdif` empty in both directions and skips the seek in place, because the output is never swapped. With both off, Lucid's options are exactly as before.
+- **Volume Boost** sets mpv's `volume-gain` to 20·log10(level/100): +1.94, +3.52, +4.86 and +6.02 dB, so 200% doubles the signal level. mpv's `volume` property is not used for this, because its scale is cubic (`volume=200` is eight times the level).
+  The gain is mpv's software gain on decoded audio, applied after any filter, and it combines with the player's existing 0 to 1 volume and mute.
+  Lucid Engine's FFmpeg build includes no limiter or compressor, so a boosted peak above full scale clips; the loudest moments can distort at higher levels, which the Settings footer says.
+- **Enhanced Dialogue** sets `af` to a single FFmpeg `firequalizer`, which handles any channel layout and never adds gain.
+  With a front centre channel (3.0 and up), the centre keeps its level and every other channel, LFE included, drops 6 dB.
+  Without one (mono, stereo, quad and the rest), the 1.5 to 4 kHz speech band keeps its level, bass below 120 Hz drops 8 dB and the rest drops 2 to 3 dB.
+  It runs before mpv mixes down to the route, so iPhone speakers and headphones also hear the louder centre of a 5.1 or 7.1 track.
+  Zero-phase mode moves timestamps back by the filter's 10 ms delay, keeping audio in sync, and mpv rebuilds the filter for the new layout when the audio track changes.
+- **Passthrough.** mpv's gain and filters cannot change a bitstream, so while either one is on `audio-spdif` stays empty at every speed.
+  AC-3 and E-AC-3 are then decoded to PCM like every other format: E-AC-3 with Dolby Atmos plays its 5.1 or 7.1 bed without height objects, and a receiver shows multichannel PCM.
+  A speed change then writes `audio-spdif` empty in both directions and skips the seek in place, because the output is never swapped.
+  With both off, Lucid's options are exactly as before.
 
-Measured on a Mac with mpv 0.41.0 (Lucid's mpv version) and Homebrew's FFmpeg 9.0.2, whose `firequalizer` differs from Lucid's FFmpeg 8.0.1 only by an extra input check: with the exact `af` string Vivid builds, 1 kHz, 3 kHz and 60 Hz tones on every channel came out with the front centre unchanged (within 0.03 dB) and the other channels 6.0 dB lower in 5.1(side) and 7.1, and at −2, 0 and −8 dB in stereo and mono. `volume-gain` raised the level by exactly the four values above. Switching between stereo, 5.1 and mono tracks during playback and seeking kept the filter running, with no "Disabling filter" error, and the filter added roughly 0.2% of one Mac core on 96 kHz 7.1. `LucidAudioEnhancementTests` repeats the measurement through Lucid itself: it decodes generated tones with the adapter's options to mpv's PCM file output and checks each channel's level and that no filter was disabled. It passes in the iPhone and Apple TV simulators, and CI runs it on both. Listening tests on Apple devices, receiver output and AirPlay have not been recorded yet.
+Measured on a Mac with mpv 0.41.0 (Lucid's mpv version) and Homebrew's FFmpeg 9.0.2, whose `firequalizer` differs from Lucid's FFmpeg 8.0.1 only by an extra input check: with the exact `af` string Vivid builds, 1 kHz, 3 kHz and 60 Hz tones on every channel came out with the front centre unchanged (within 0.03 dB) and the other channels 6.0 dB lower in 5.1(side) and 7.1, and at −2, 0 and −8 dB in stereo and mono.
+`volume-gain` raised the level by exactly the four values above.
+Switching between stereo, 5.1 and mono tracks during playback and seeking kept the filter running, with no "Disabling filter" error, and the filter added roughly 0.2% of one Mac core on 96 kHz 7.1.
+`LucidAudioEnhancementTests` repeats the measurement through Lucid itself: it decodes generated tones with the adapter's options to mpv's PCM file output and checks each channel's level and that no filter was disabled.
+It passes in the iPhone and Apple TV simulators, and CI runs it on both.
+Listening tests on Apple devices, receiver output and AirPlay have not been recorded yet.
 
 ## Buffering and quality
 
-Lucid uses a 256 MiB forward demux packet limit and a 16 MiB back buffer. On Apple TV it also reads at most 60 seconds ahead (`cache-secs`), because a long play on a fast link otherwise fills the whole 256 MiB, a large share of Apple TV's memory. These are limits, not startup fill requirements. A resume or reload starts on the keyframe at or before the requested position rather than exactly on it, so playback can begin up to one keyframe interval earlier, usually under a second. An exact start first downloads and decodes everything from that keyframe to the position, about 5 MB for a 4K remux, before the first picture; on Apple TV 4K resuming a 4K Dolby Vision MKV, the first picture needed 0.7 MB instead. Seeks during playback stay exact, because Vivid asks for exact positions and the default precision returns after the first picture. Settings shows Automatic buffering and omits the unused lossless-audio toggle.
+Lucid uses a 256 MiB forward demux packet limit and a 16 MiB back buffer.
+On Apple TV it also reads at most 60 seconds ahead (`cache-secs`), because a long play on a fast link otherwise fills the whole 256 MiB, a large share of Apple TV's memory.
+These are limits, not startup fill requirements.
+A resume or reload starts on the keyframe at or before the requested position rather than exactly on it, so playback can begin up to one keyframe interval earlier, usually under a second.
+An exact start first downloads and decodes everything from that keyframe to the position, about 5 MB for a 4K remux, before the first picture; on Apple TV 4K resuming a 4K Dolby Vision MKV, the first picture needed 0.7 MB instead.
+Seeks during playback stay exact, because Vivid asks for exact positions and the default precision returns after the first picture.
+Settings shows Automatic buffering and omits the unused lossless-audio toggle.
 
-Silo direct-play streams over HTTPS are read by Vivid rather than Lucid's own HTTP reader. Lucid opens a `vividstream://` source through libmpv's stream callbacks, and Vivid serves it with ranged requests that always carry the current login. A token refreshed by progress reporting reaches the live stream without a reload, an expired token is refreshed and the read resumes at the same byte, and a dropped connection reconnects at the first byte not yet received. `If-Range` and size checks refuse a file that changed mid-stream rather than splicing two versions. Vivid holds at most 64 MiB ahead of Lucid: at that point it ends the request and continues with a new ranged request from the next byte once Lucid has read the buffer down to 16 MiB. It used to suspend the request instead, but URLSession kept delivering a fast transfer after `suspend()`, so on a fast link one stream could take in gigabytes and the system closed the app for low memory. Stopping the player cancels every read straight away, including one still connecting. libmpv can still cancel a stream for a moment after closing it, so each stream's handle is a number Vivid never reuses rather than the reader's address, and that late cancel finds nothing instead of a released reader. Plain HTTP servers, Emby, Jellyfin, server HLS and downloads keep Lucid's own reader. If a stream still ends early, the same-route reopen remains as a fallback. Setting the `vivid.experiment.managedStreamReader` user default to false returns these streams to Lucid's reader.
+Silo direct-play streams over HTTPS are read by Vivid rather than Lucid's own HTTP reader.
+Lucid opens a `vividstream://` source through libmpv's stream callbacks, and Vivid serves it with ranged requests that always carry the current login.
+A token refreshed by progress reporting reaches the live stream without a reload, an expired token is refreshed and the read resumes at the same byte, and a dropped connection reconnects at the first byte not yet received.
+`If-Range` and size checks refuse a file that changed mid-stream rather than splicing two versions.
+Vivid holds at most 64 MiB ahead of Lucid: at that point it ends the request and continues with a new ranged request from the next byte once Lucid has read the buffer down to 16 MiB.
+It used to suspend the request instead, but URLSession kept delivering a fast transfer after `suspend()`, so on a fast link one stream could take in gigabytes and the system closed the app for low memory.
+Stopping the player cancels every read straight away, including one still connecting. libmpv can still cancel a stream for a moment after closing it, so each stream's handle is a number Vivid never reuses rather than the reader's address, and that late cancel finds nothing instead of a released reader.
+Plain HTTP servers, Emby, Jellyfin, server HLS and downloads keep Lucid's own reader.
+If a stream still ends early, the same-route reopen remains as a fallback.
+Setting the `vivid.experiment.managedStreamReader` user default to false returns these streams to Lucid's reader.
 
-Automated tests cover reconnects, credential refresh, seeking, cancellation, changed files and redirects against a scripted origin. User-reported device validation: blurbery played 4K Dolby Vision episodes and films (E-AC-3 Atmos and TrueHD Atmos, up to a 79 GB remux) and 1080p episodes through Next Up on Apple TV 4K (3rd generation), mostly with a five-minute access token. Across repeated token expiries, a long pause and skips well after the opening token had expired, the Silo logs showed every stream request accepted with no credential refusals. Silo request logs from 2 and 3 October 2026 add H.264 sources with E-AC-3, AAC and DTS audio on Apple TV 4K (3rd generation) with tvOS 27.0, including a DTS film played for about an hour, and a short HEVC Dolby Vision (profile 8) play with DTS audio on iPhone 16 Pro Max with iOS 27.0. Every stream request was accepted. The logs confirm delivery, not the audio output itself, and the iPhone play did not run long enough for a token to expire. E-AC-3 passthrough over AirPlay, a plain-HTTP Silo server, iPad hardware and CPU or frame-time cost were not tested separately. If one of them misbehaves, the user default above returns Silo streams to Lucid's reader.
+Automated tests cover reconnects, credential refresh, seeking, cancellation, changed files and redirects against a scripted origin.
+User-reported device validation: blurbery played 4K Dolby Vision episodes and films (E-AC-3 Atmos and TrueHD Atmos, up to a 79 GB remux) and 1080p episodes through Next Up on Apple TV 4K (3rd generation), mostly with a five-minute access token.
+Across repeated token expiries, a long pause and skips well after the opening token had expired, the Silo logs showed every stream request accepted with no credential refusals.
+Silo request logs from 2 and 3 October 2026 add H.264 sources with E-AC-3, AAC and DTS audio on Apple TV 4K (3rd generation) with tvOS 27.0, including a DTS film played for about an hour, and a short HEVC Dolby Vision (profile 8) play with DTS audio on iPhone 16 Pro Max with iOS 27.0.
+Every stream request was accepted.
+The logs confirm delivery, not the audio output itself, and the iPhone play did not run long enough for a token to expire.
+E-AC-3 passthrough over AirPlay, a plain-HTTP Silo server, iPad hardware and CPU or frame-time cost were not tested separately.
+If one of them misbehaves, the user default above returns Silo streams to Lucid's reader.
 
-When the playback plan names an audio track, usually the one the device can play or pass through, Vivid selects it in mpv's `on_preloaded` hook. That runs after the file's tracks are known but before mpv makes its own default pick or runs the initial seek. Without a planned track, mpv's language preference still decides. It used to switch tracks after the file loaded. mpv had already started the resume seek on its default track by then, so the switch triggered mpv's refresh seek, which starts one second before the playback position, and the first seek was discarded. On Apple TV 4K (3rd generation) with tvOS 27, resuming a 4K Dolby Vision MKV over a long-distance connection in Debug builds of `ec84691` with and without this change, the time from the file loading to playback starting fell from between 5.3 and 5.8 s to between 2.0 and 3.6 s. The same selection still runs after the file loads, where mpv already has that track.
+When the playback plan names an audio track, usually the one the device can play or pass through, Vivid selects it in mpv's `on_preloaded` hook.
+That runs after the file's tracks are known but before mpv makes its own default pick or runs the initial seek.
+Without a planned track, mpv's language preference still decides.
+It used to switch tracks after the file loaded. mpv had already started the resume seek on its default track by then, so the switch triggered mpv's refresh seek, which starts one second before the playback position, and the first seek was discarded.
+On Apple TV 4K (3rd generation) with tvOS 27, resuming a 4K Dolby Vision MKV over a long-distance connection in Debug builds of `ec84691` with and without this change, the time from the file loading to playback starting fell from between 5.3 and 5.8 s to between 2.0 and 3.6 s. The same selection still runs after the file loads, where mpv already has that track.
 
-Quality preferences remain device/profile-local. Vivid sends the selected resolution and bitrate limits to the server, then loads the returned original or transcoded stream through Lucid. Quality changes preserve position and track choices through the existing session boundary. Offline playback uses the downloaded file. See [quality and playback settings](../playback/README.md) for the bounded buffering-fallback modes.
+Quality preferences remain device/profile-local.
+Vivid sends the selected resolution and bitrate limits to the server, then loads the returned original or transcoded stream through Lucid.
+Quality changes preserve position and track choices through the existing session boundary.
+Offline playback uses the downloaded file.
+See [quality and playback settings](../playback/README.md) for the bounded buffering-fallback modes.
 
 ## Subtitles and chapters
 
-Chapters and embedded subtitles come from Lucid’s actual media inventory. With Emby and Jellyfin, the player also mounts the server's text subtitle files as external tracks, and on a transcode offers the file's bitmap tracks for the server to draw into the video; Silo's external files are offered the same way and fetched when chosen. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
+Chapters and embedded subtitles come from Lucid’s actual media inventory.
+With Emby and Jellyfin, the player also mounts the server's text subtitle files as external tracks, and on a transcode offers the file's bitmap tracks for the server to draw into the video; Silo's external files are offered the same way and fetched when chosen.
+The detail and in-player Subtitles menus share track labels, ordering and selection identities.
+The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
 
-Settings → Subtitles owns subtitle language, behaviour and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to embedded text tracks, which libass draws, and to downloaded text files, which Vivid's overlay draws, and the two look the same: libass is set up from the overlay's sizes, so the text has the same size, place, wrap width, box, outline and edges. Rounded corners, the soft drop shadow and Apple's SF font stay overlay-only ([what libass can't draw](lucid-engine-architecture.md#subtitles)). Authored ASS and bitmap styles remain intact. Device checks of full external ASS styling remain outstanding.
+Settings → Subtitles owns subtitle language, behaviour and appearance.
+Automatic selection turns subtitles off when the requested language is absent.
+Plain-text styling and delay apply to embedded text tracks, which libass draws, and to downloaded text files, which Vivid's overlay draws, and the two look the same: libass is set up from the overlay's sizes, so the text has the same size, place, wrap width, box, outline and edges.
+Rounded corners, the soft drop shadow and Apple's SF font stay overlay-only ([what libass can't draw](lucid-engine-architecture.md#subtitles)).
+Authored ASS and bitmap styles remain intact.
+Device checks of full external ASS styling remain outstanding.
 
-Downloaded ASS sidecars retain their authored text and render through Lucid using temporary local files, removed when the load ends. Plain-text sidecars continue to use the app overlay, which keeps their bold, italic, underline, strike-through and colour tags and `{\an8}` placement, stacks overlapping lines as libass does, and stays inside the fitted picture with Zoom on. On iPhone and iPad they are also handed to Lucid, unselected, and drawn by it while Picture in Picture runs, so they show there too. Full external ASS visual verification on devices remains outstanding. Detail selectors distinguish automatic preference, explicit Off, embedded choices and staged downloads.
+Downloaded ASS sidecars retain their authored text and render through Lucid using temporary local files, removed when the load ends.
+Plain-text sidecars continue to use the app overlay, which keeps their bold, italic, underline, strike-through and colour tags and `{\an8}` placement, stacks overlapping lines as libass does, and stays inside the fitted picture with Zoom on.
+On iPhone and iPad they are also handed to Lucid, unselected, and drawn by it while Picture in Picture runs, so they show there too.
+Full external ASS visual verification on devices remains outstanding.
+Detail selectors distinguish automatic preference, explicit Off, embedded choices and staged downloads.
 
-OpenSubtitles is optional. On tvOS, search is a native submenu beside embedded tracks. User-selected downloads are context-checked and retained across replacement loads of the same item, and the chosen file is remembered on the device so resuming the item restores it. See [track and subtitle ownership](../playback/architecture.md#tracks-subtitles-and-previews) for limits and cleanup.
+OpenSubtitles is optional.
+On tvOS, search is a native submenu beside embedded tracks.
+User-selected downloads are context-checked and retained across replacement loads of the same item, and the chosen file is remembered on the device so resuming the item restores it.
+See [track and subtitle ownership](../playback/architecture.md#tracks-subtitles-and-previews) for limits and cleanup.
 
 ## Builds
 
-Both platform specs pin [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) at `53ebeac793f251df987a8d80b997e7fe8064d1b7`, the commit of its release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0), and link its `LucidEngine` product. Vivid's own pipeline in [`engine/`](../../engine) built every library in that release from upstream source with Vivid's patches (the one prebuilt part is the Rust standard library inside libdovi, from the Rust project's pinned `rust-std` archives), at `fcb6782` in run 38458337996: libmpv (mpv 0.41.0), FFmpeg 8.0.1, libass 0.17.5, dav1d, libdovi and the font, colour, Vulkan, disc and text-encoding libraries they use. mpv and FFmpeg are LGPL-2.1-or-later as built. mpv in release `0.1.0` still has its C plugin loader, which the app never uses: both mpv contexts set `config=no` and `load-scripts=no`, so no plugin or script is looked for. The pipeline now builds mpv with `-Dcplugins=disabled`, so with Lua and JavaScript already off mpv has no plugin or script loader and no script options (libbluray and libplacebo can still `dlopen` their own optional system libraries, none of which ship in the app); this takes effect from the next engine release, which hasn't been published, and the app already accepts that such an engine has no `load-scripts` option. The [third-party notices](../../THIRD_PARTY_NOTICES.md) list every library, its version, its patches and their licences.
+Both platform specs pin [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) at `53ebeac793f251df987a8d80b997e7fe8064d1b7`, the commit of its release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0), and link its `LucidEngine` product.
+Vivid's own pipeline in [`engine/`](../../engine) built every library in that release from upstream source with Vivid's patches (the one prebuilt part is the Rust standard library inside libdovi, from the Rust project's pinned `rust-std` archives), at `fcb6782` in run 38458337996: libmpv (mpv 0.41.0), FFmpeg 8.0.1, libass 0.17.5, dav1d, libdovi and the font, colour, Vulkan, disc and text-encoding libraries they use. mpv and FFmpeg are LGPL-2.1-or-later as built. mpv in release `0.1.0` still has its C plugin loader, which the app never uses: both mpv contexts set `config=no` and `load-scripts=no`, so no plugin or script is looked for.
+The pipeline now builds mpv with `-Dcplugins=disabled`, so with Lua and JavaScript already off mpv has no plugin or script loader and no script options (libbluray and libplacebo can still `dlopen` their own optional system libraries, none of which ship in the app); this takes effect from the next engine release, which hasn't been published, and the app already accepts that such an engine has no `load-scripts` option.
+The [third-party notices](../../THIRD_PARTY_NOTICES.md) list every library, its version, its patches and their licences.
 
-The [Lucid Engine build guide](lucid-engine-build.md) describes the pipeline, which checks every build against the recorded [build facts](lucid-engine-build-facts.md) and [library build facts](lucid-engine-libs-build-facts.md). Vivid's own engine patches follow the [patch specification](../playback/lucid-engine-patch-spec.md). The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs the pipeline and its host tests when `engine/` or the workflow changes, on pushes to `main` and the engine's `experiment/lucid-engine-*` branches and on pull requests; it starts on every pull request, and also builds one that can't be compared with its base commit. It publishes nothing: a package release is prepared by hand from one green run with [`engine/publish_package.py`](../../engine/publish_package.py) (see [Publishing the package](lucid-engine-build.md#publishing-the-package)), and the app then moves its pin in both platform specs and `Package.resolved`. The [Lucid Engine architecture](lucid-engine-architecture.md) guide shows how the bridge and the engine fit together.
+The [Lucid Engine build guide](lucid-engine-build.md) describes the pipeline, which checks every build against the recorded [build facts](lucid-engine-build-facts.md) and [library build facts](lucid-engine-libs-build-facts.md).
+Vivid's own engine patches follow the [patch specification](../playback/lucid-engine-patch-spec.md).
+The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs the pipeline and its host tests when `engine/` or the workflow changes, on pushes to `main` and the engine's `experiment/lucid-engine-*` branches and on pull requests; it starts on every pull request, and also builds one that can't be compared with its base commit.
+It publishes nothing: a package release is prepared by hand from one green run with [`engine/publish_package.py`](../../engine/publish_package.py) (see [Publishing the package](lucid-engine-build.md#publishing-the-package)), and the app then moves its pin in both platform specs and `Package.resolved`.
+The [Lucid Engine architecture](lucid-engine-architecture.md) guide shows how the bridge and the engine fit together.
 
-Vivid's AVFoundation audio and video outputs are among those engine patches, so the package as resolved is the engine that device builds ship; no extra step replaces a library before archiving. An engine without Vivid's audio output rejects Vivid's driver options: the console shows `MPV error: option not found` lines and playback continues without the options' effects. The previous engine package needed a separately rebuilt libmpv with Vivid's audio patch for those options; that patch, its workflow and the script that installed it have been removed. Publishing or changing the engine pin requires separate authorisation.
+Vivid's AVFoundation audio and video outputs are among those engine patches, so the package as resolved is the engine that device builds ship; no extra step replaces a library before archiving.
+An engine without Vivid's audio output rejects Vivid's driver options: the console shows `MPV error: option not found` lines and playback continues without the options' effects.
+The previous engine package needed a separately rebuilt libmpv with Vivid's audio patch for those options; that patch, its workflow and the script that installed it have been removed.
+Publishing or changing the engine pin requires separate authorisation.
 
-Pull requests that change the app, `scripts/xcode/`, the scripts the [player regression workflow](../../.github/workflows/player-regression.yml) runs or the workflow itself, or that can't be compared with their base commit, build and test it there: the full iOS simulator suite, plus the tvOS suite unless every changed app file is iOS-only (docs and other files outside the app don't count, apart from `scripts/xcode/` and the workflow itself; a pull request that can't be compared always runs it). After a merge to `main` that changes those files, it runs the iOS suite again with the Release optimiser. `PlaybackTrialTrace` records active playback diagnostics; it is not an alternative engine. Its bounded on-device file recording requires `VIVID_P8_TRIAL`, enabled by the committed tvOS Debug configuration and absent from the default Release configuration. Custom build flags must be checked on the actual archive.
+Pull requests that change the app, `scripts/xcode/`, the scripts the [player regression workflow](../../.github/workflows/player-regression.yml) runs or the workflow itself, or that can't be compared with their base commit, build and test it there: the full iOS simulator suite, plus the tvOS suite unless every changed app file is iOS-only (docs and other files outside the app don't count, apart from `scripts/xcode/` and the workflow itself; a pull request that can't be compared always runs it).
+After a merge to `main` that changes those files, it runs the iOS suite again with the Release optimiser.
+`PlaybackTrialTrace` records active playback diagnostics; it is not an alternative engine.
+Its bounded on-device file recording requires `VIVID_P8_TRIAL`, enabled by the committed tvOS Debug configuration and absent from the default Release configuration.
+Custom build flags must be checked on the actual archive.
 
-Source headers are passed as a typed string list. `PlaybackTrialTrace` retains allowlisted timing and numeric audio/cache diagnostics; raw media-core messages and source URLs are excluded. The optional tvOS debug diagnostic records to `Library/Caches/MPVTrial.log`. The trial also records display-switch start/end notifications, numeric audio transport transitions and cache snapshots when buffering changes. Source-transition commit-lock wait and held durations are measured with a monotonic clock on the mpv event thread, before main-queue delivery. Switch notifications describe tvOS state, not a direct measurement of the television panel. Its internal diagnostic names do not select a different engine.
+Source headers are passed as a typed string list.
+`PlaybackTrialTrace` retains allowlisted timing and numeric audio/cache diagnostics; raw media-core messages and source URLs are excluded.
+The optional tvOS debug diagnostic records to `Library/Caches/MPVTrial.log`.
+The trial also records display-switch start/end notifications, numeric audio transport transitions and cache snapshots when buffering changes.
+Source-transition commit-lock wait and held durations are measured with a monotonic clock on the mpv event thread, before main-queue delivery.
+Switch notifications describe tvOS state, not a direct measurement of the television panel.
+Its internal diagnostic names do not select a different engine.
 
 ## Verification
 
-On 16 September 2026, with the previous engine package and Vivid's earlier audio patch, both signed device builds passed and were installed on iPhone and Apple TV, and the linked binaries contained that patch's recovery marker. Twenty-six focused tests passed against the production language-selection logic. blurbery confirmed the installed playback and subtitle changes worked.
+On 16 September 2026, with the previous engine package and Vivid's earlier audio patch, both signed device builds passed and were installed on iPhone and Apple TV, and the linked binaries contained that patch's recovery marker.
+Twenty-six focused tests passed against the production language-selection logic. blurbery confirmed the installed playback and subtitle changes worked.
 
-Earlier Apple TV checks covered seeking, synchronised playback and Dolby Vision with selected film and episode samples. These observations do not certify Atmos output, every codec or source, physical iPad behaviour, every PiP/AirPlay route or full external ASS styling. A successful build is separate from a device playback check.
+Earlier Apple TV checks covered seeking, synchronised playback and Dolby Vision with selected film and episode samples.
+These observations do not certify Atmos output, every codec or source, physical iPad behaviour, every PiP/AirPlay route or full external ASS styling.
+A successful build is separate from a device playback check.
 
-On Apple TV, detail-screen subtitle discovery starts when the subtitle selector
-receives focus for that file, rather than whenever a detail screen appears.
+On Apple TV, detail-screen subtitle discovery starts when the subtitle selector receives focus for that file, rather than whenever a detail screen appears.
 If the file changes while that selector retains focus, its subtitle list refreshes.
-Ordinary Play therefore avoids opening a second server session and demuxer just
-to populate an unused subtitle menu. Actual playback still records its embedded
-tracks in the existing inventory cache. Device test builds can enable
-`VIVID_P8_TRIAL` to record bounded startup, buffering and skip-activation traces.
-The 256 KiB rolling trace retains recent events across title changes within the
-app run, including native Select receipt, skip actions and seek completion.
+Ordinary Play therefore avoids opening a second server session and demuxer just to populate an unused subtitle menu.
+Actual playback still records its embedded tracks in the existing inventory cache.
+Device test builds can enable `VIVID_P8_TRIAL` to record bounded startup, buffering and skip-activation traces.
+The 256 KiB rolling trace retains recent events across title changes within the app run, including native Select receipt, skip actions and seek completion.

@@ -28,10 +28,13 @@
 
 ---
 
-I’m building Vivid as an open-source media app for iPhone, iPad and Apple TV. Connect your own media server and browse and watch your library across your Apple devices.
+I’m building Vivid as an open-source media app for iPhone, iPad and Apple TV.
+Connect your own media server and browse and watch your library across your Apple devices.
 
 > [!NOTE]
-> Vivid is free on the [App Store](https://apps.apple.com/app/id6809770754) for iPhone, iPad and Apple TV. It's still in active development and the source is public. TestFlight beta builds are now only available to [GitHub Sponsors](https://github.com/sponsors/blurbery).
+> Vivid is free on the [App Store](https://apps.apple.com/app/id6809770754) for iPhone, iPad and Apple TV.
+> It's still in active development and the source is public.
+> TestFlight beta builds are now only available to [GitHub Sponsors](https://github.com/sponsors/blurbery).
 
 ## Server support
 
@@ -48,19 +51,37 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList and Simkl sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. Simkl sign-ins stay on each device rather than syncing through iCloud. It does not import either service’s existing watched history or replace server resume positions.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles.
+Deleting a saved account records that deletion so an older device cannot add it back.
+Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server.
+Optional MDBList and Simkl sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions.
+Simkl sign-ins stay on each device rather than syncing through iCloud.
+It does not import either service’s existing watched history or replace server resume positions.
 
 ## Apple TV
 
-I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and a short press of the Siri button anywhere in the app searches by voice. TV cards share consistent title and year captions. Detail pages include TMDb trailers and ratings, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
+I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs.
+Search uses seven posters across the available width, and a short press of the Siri button anywhere in the app searches by voice.
+TV cards share consistent title and year captions.
+Detail pages include TMDb trailers and ratings, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume.
+The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
 
 ## iPhone and iPad
 
-The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections, and Calendar shows upcoming episodes of your shows and what's coming soon. Search and Settings are full-screen pages with slide-up/down transitions, portrait on iPhone and rotatable on iPad and the iPhone Duo's inner screen. Movie, series and actor details open full-screen on iPhone and iPad, staying above Search during playback. iPhone details use interactive zoom transitions, with X to close and Back from actor pages. Movie and series pages show aligned video/file and audio information. The player offers five quality choices with a one-time lower-bitrate reload for the capped modes. On iPhone Duo, Vivid uses both screens, the side status bar and the half-folded position; see [iPhone Duo](docs/app-design.md#iphone-duo). The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
+The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching.
+For You combines Watchlist, Favourites and Collections, and Calendar shows upcoming episodes of your shows and what's coming soon.
+Search and Settings are full-screen pages with slide-up/down transitions, portrait on iPhone and rotatable on iPad and the iPhone Duo's inner screen.
+Movie, series and actor details open full-screen on iPhone and iPad, staying above Search during playback. iPhone details use interactive zoom transitions, with X to close and Back from actor pages.
+Movie and series pages show aligned video/file and audio information.
+The player offers five quality choices with a one-time lower-bitrate reload for the capped modes.
+On iPhone Duo, Vivid uses both screens, the side status bar and the half-folded position; see [iPhone Duo](docs/app-design.md#iphone-duo).
+The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
 
 ## Playback
 
-Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
+Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**.
+Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips.
+See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
 ## Languages
 
@@ -80,28 +101,46 @@ Vivid is available in six languages on iPhone, iPad and Apple TV.
   </tbody>
 </table>
 
-Vivid follows your device's language, or you can pick one for Vivid in Settings > General > Language. Top Shelf, TMDb collection names and the Calendar's Trending list follow your choice too, while titles and descriptions from your server stay in its metadata language. The translations were made with AI help and haven't been reviewed by native speakers yet, so corrections are very welcome. The [localisation guide](docs/localisation.md) covers how Vivid picks its language and how to add one.
+Vivid follows your device's language, or you can pick one for Vivid in Settings > General > Language.
+Top Shelf, TMDb collection names and the Calendar's Trending list follow your choice too, while titles and descriptions from your server stay in its metadata language.
+The translations were made with AI help and haven't been reviewed by native speakers yet, so corrections are very welcome.
+The [localisation guide](docs/localisation.md) covers how Vivid picks its language and how to add one.
 
 ## Plugins
 
-TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up. Optional plugins add more on top of your server, using your own free keys. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. Simkl does the same with your Simkl account, keeping your watchlist in step with Simkl's Plan to Watch. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
+TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up.
+Optional plugins add more on top of your server, using your own free keys.
+MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways.
+Simkl does the same with your Simkl account, keeping your watchlist in step with Simkl's Plan to Watch.
+OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch.
+The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
 
 > [!IMPORTANT]
-> Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.
+> Yes, I use AI to help develop Vivid.
+> I design the app and all of its development, and use AI to assist me.
 
 ## Updates
 
-App changes released from `main` get a semantic version. Documentation-only and housekeeping updates do not create releases. Release titles are just the version number, with dot points underneath saying what changed. The full rules are in the [release docs](docs/release/versioning.md).
+App changes released from `main` get a semantic version.
+Documentation-only and housekeeping updates do not create releases.
+Release titles are just the version number, with dot points underneath saying what changed.
+The full rules are in the [release docs](docs/release/versioning.md).
 
 ## Support
 
-Join the [Vivid Discord](https://discord.gg/3jcxk3vJ4X) to get help, share feedback and follow the project. Feel free to invite anyone who might enjoy Vivid.
+Join the [Vivid Discord](https://discord.gg/3jcxk3vJ4X) to get help, share feedback and follow the project.
+Feel free to invite anyone who might enjoy Vivid.
 
-If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery). Sponsors also get access to TestFlight beta builds. Testing the app, reporting issues and spreading the word helps a lot too.
+If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery).
+Sponsors also get access to TestFlight beta builds.
+Testing the app, reporting issues and spreading the word helps a lot too.
 
 ## Sponsors
 
-A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery). Your support keeps development going. Gold sponsors ($25 or more a month) get the biggest spot, Silver sponsors (any other active sponsorship, including one-time) the next row, and past sponsors a smaller row underneath. Click the image to open it, then click a sponsor to visit their profile.
+A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://github.com/sponsors/blurbery).
+Your support keeps development going.
+Gold sponsors ($25 or more a month) get the biggest spot, Silver sponsors (any other active sponsorship, including one-time) the next row, and past sponsors a smaller row underneath.
+Click the image to open it, then click a sponsor to visit their profile.
 
 <p align="center">
   <a href="https://cdn.jsdelivr.net/gh/blurbery/vivid@sponsors/sponsors.svg"><img src="https://raw.githubusercontent.com/blurbery/vivid/sponsors/sponsors.svg" width="800" alt="Vivid's sponsors"></a>
@@ -113,10 +152,17 @@ A huge thank you to the people who sponsor Vivid on [GitHub Sponsors](https://gi
 
 ## Licence
 
-Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Portions derived from Silo Apple, copyright 2026 Silo Media L.L.C. and contributors, remain under AGPL-3.0-or-later with the Silo Apple App Store exception. Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
+Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION).
+Distributed covered derivatives must provide corresponding source under GPLv3.
+Portions derived from Silo Apple, copyright 2026 Silo Media L.L.C. and contributors, remain under AGPL-3.0-or-later with the Silo Apple App Store exception.
+Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
 
-[Vivid attribution](ATTRIBUTION.md) contains additional terms under GPLv3 sections 7(b) and 7(c) for material blurbery has authority to license on those terms. Distributors must preserve the Vivid/blurbery attribution in source notices, accurately represent its origin and identify modified versions. Third-party rights remain unchanged.
+[Vivid attribution](ATTRIBUTION.md) contains additional terms under GPLv3 sections 7(b) and 7(c) for material blurbery has authority to license on those terms.
+Distributors must preserve the Vivid/blurbery attribution in source notices, accurately represent its origin and identify modified versions.
+Third-party rights remain unchanged.
 
 [GPLv3](LICENSE) · [Apple distribution permission](LICENSE-APPLE-EXCEPTION) · [Attribution](ATTRIBUTION.md) · [Third-party libraries](THIRD_PARTY_NOTICES.md) · [Brand policy](TRADEMARK.md)
 
-Vivid™ and the logo are my brand. Forks and other projects need my written permission to use them; otherwise, use your own name and logo. See the [brand policy](TRADEMARK.md).
+Vivid™ and the logo are my brand.
+Forks and other projects need my written permission to use them; otherwise, use your own name and logo.
+See the [brand policy](TRADEMARK.md).

@@ -8,10 +8,13 @@
 
 ---
 
-Vivid is available in English, French, German, Spanish, Japanese and Simplified Chinese. It follows the device's language, and Settings > General > Language overrides that on iPhone, iPad and Apple TV. English is the source language and the fallback: anything without a translation shows English.
+Vivid is available in English, French, German, Spanish, Japanese and Simplified Chinese.
+It follows the device's language, and Settings > General > Language overrides that on iPhone, iPad and Apple TV.
+English is the source language and the fallback: anything without a translation shows English.
 
 > [!NOTE]
-> The French, German, Spanish, Japanese and Simplified Chinese translations were made with AI assistance and haven't been reviewed by native speakers yet. Corrections are welcome.
+> The French, German, Spanish, Japanese and Simplified Chinese translations were made with AI assistance and haven't been reviewed by native speakers yet.
+> Corrections are welcome.
 
 ## How the language is chosen
 
@@ -33,9 +36,17 @@ Dates, numbers, durations and language names follow Vivid's language with the de
 
 ## Metadata
 
-Library metadata (titles, overviews, taglines, genres and episode names) comes from Silo, Emby or Jellyfin in the server's metadata language, and Vivid's language doesn't change it. Silo sets this per profile (`catalog.metadata_language`, "Library default" when unset), and Emby and Jellyfin set it per library on the server. These settings are shared by every device using that profile or library, so Vivid doesn't change them to match a device's language. Silo also names its own Home rows, such as Continue Watching and its trending rows, so they appear as the server writes them. Vivid writes Emby and Jellyfin's Home row titles itself, so those follow Vivid's language, and a saved Home snapshot from another language isn't used.
+Library metadata (titles, overviews, taglines, genres and episode names) comes from Silo, Emby or Jellyfin in the server's metadata language, and Vivid's language doesn't change it.
+Silo sets this per profile (`catalog.metadata_language`, "Library default" when unset), and Emby and Jellyfin set it per library on the server.
+These settings are shared by every device using that profile or library, so Vivid doesn't change them to match a device's language.
+Silo also names its own Home rows, such as Continue Watching and its trending rows, so they appear as the server writes them.
+Vivid writes Emby and Jellyfin's Home row titles itself, so those follow Vivid's language, and a saved Home snapshot from another language isn't used.
 
-What Vivid looks up on TMDb itself follows Vivid's language: collection names and the Calendar's Trending titles and overviews. `VividAppLanguage.tmdbLanguage` gives TMDb's code (`fr-FR`, `de-DE`, `es-ES`, `ja-JP`, `zh-CN`, or none for English). The TMDb caches are keyed by it, the saved Calendar starts again when it changes, and an overview TMDb hasn't translated falls back to English. Studios & Networks stays in English because it matches TMDb titles against the library. [The TMDb relay](tmdb-relay.md) accepts `language` only on the routes that use it; deploy the relay before an app build that sends it.
+What Vivid looks up on TMDb itself follows Vivid's language: collection names and the Calendar's Trending titles and overviews.
+`VividAppLanguage.tmdbLanguage` gives TMDb's code (`fr-FR`, `de-DE`, `es-ES`, `ja-JP`, `zh-CN`, or none for English).
+The TMDb caches are keyed by it, the saved Calendar starts again when it changes, and an overview TMDb hasn't translated falls back to English.
+Studios & Networks stays in English because it matches TMDb titles against the library.
+[The TMDb relay](tmdb-relay.md) accepts `language` only on the routes that use it; deploy the relay before an app build that sends it.
 
 ## The String Catalogs
 
@@ -51,9 +62,13 @@ What Vivid looks up on TMDb itself follows Vivid's language: collection names an
   </tbody>
 </table>
 
-The Localizable catalogs hold every string the Swift compiler can look up: literals passed to `Text`, `Button`, `Toggle`, `Label`, `Picker`, `navigationTitle` and other APIs that take a `LocalizedStringKey`, plus `String(localized:)` and `LocalizedStringResource` literals. Interpolated strings become format keys, such as `%lld` for an integer, and counts use the catalog's plural variations.
+The Localizable catalogs hold every string the Swift compiler can look up: literals passed to `Text`, `Button`, `Toggle`, `Label`, `Picker`, `navigationTitle` and other APIs that take a `LocalizedStringKey`, plus `String(localized:)` and `LocalizedStringResource` literals.
+Interpolated strings become format keys, such as `%lld` for an integer, and counts use the catalog's plural variations.
 
-Every entry is marked manual, and [the sync script](../scripts/l10n/sync-string-catalog.sh) maintains the catalogs rather than Xcode. The two apps are generated from separate XcodeGen specs, and Xcode syncs a catalog with only the platform it just built. Left to itself, an iOS build would delete every untranslated string that only Apple TV uses, and a tvOS build would do the reverse. Xcode never changes manual entries, and compiler extraction (`SWIFT_EMIT_LOC_STRINGS`) is off in `iosApp/project-common.yml`, so everyday builds leave the catalogs alone.
+Every entry is marked manual, and [the sync script](../scripts/l10n/sync-string-catalog.sh) maintains the catalogs rather than Xcode.
+The two apps are generated from separate XcodeGen specs, and Xcode syncs a catalog with only the platform it just built.
+Left to itself, an iOS build would delete every untranslated string that only Apple TV uses, and a tvOS build would do the reverse.
+Xcode never changes manual entries, and compiler extraction (`SWIFT_EMIT_LOC_STRINGS`) is off in `iosApp/project-common.yml`, so everyday builds leave the catalogs alone.
 
 ### Updating them
 
@@ -63,34 +78,50 @@ Run the script after adding or changing interface text, and always before sendin
 scripts/l10n/sync-string-catalog.sh
 ```
 
-It builds both apps for the simulator with compiler extraction on, syncs each catalog from its own targets in one pass and marks every entry manual again. New strings are added. Strings the code no longer uses are removed, or marked stale if they have translations. Plural variations and translations are kept. It restores `Package.resolved` when it finishes and leaves `Vivid.xcodeproj` as the tvOS project.
+It builds both apps for the simulator with compiler extraction on, syncs each catalog from its own targets in one pass and marks every entry manual again.
+New strings are added.
+Strings the code no longer uses are removed, or marked stale if they have translations.
+Plural variations and translations are kept.
+It restores `Package.resolved` when it finishes and leaves `Vivid.xcodeproj` as the tvOS project.
 
-The first run builds both apps from scratch. Later runs reuse the derived data in `$TMPDIR/vivid-string-catalog` and build incrementally. Pass a fresh derived data path to drop strings from Swift files that were deleted, or `--no-build` to sync again from the last builds.
+The first run builds both apps from scratch.
+Later runs reuse the derived data in `$TMPDIR/vivid-string-catalog` and build incrementally.
+Pass a fresh derived data path to drop strings from Swift files that were deleted, or `--no-build` to sync again from the last builds.
 
 A key added to a catalog by hand is removed on the next sync unless it has a translation, so write every interface string in Swift.
 
 ## Writing translatable code
 
 - **SwiftUI literals** passed to `Text`, `Button`, `Label` and similar are translatable already.
-- **Text held in a `String`** needs `String(localized:)` where it's written. Keep identifiers, saved values, comparisons and anything sent to a server on a stable English or raw value, and add a display property for what people see, as `AppTab.title`, `AppHealthReport.displaySummary`, `SubtitleDisplayOrder.displayLanguageName(_:)` and `activeRouteDisplayLabel` do.
-- **Shared components** that take visible text mirror `Text`: an initialiser taking `LocalizedStringKey` (or `LocalizedStringResource`) for literals, and a generic `StringProtocol` initialiser marked `@_disfavoredOverload` that shows a variable as it is. Without `@_disfavoredOverload`, or with a concrete `String` overload, literals pick the verbatim initialiser and stop being translated.
+- **Text held in a `String`** needs `String(localized:)` where it's written.
+  Keep identifiers, saved values, comparisons and anything sent to a server on a stable English or raw value, and add a display property for what people see, as `AppTab.title`, `AppHealthReport.displaySummary`, `SubtitleDisplayOrder.displayLanguageName(_:)` and `activeRouteDisplayLabel` do.
+- **Shared components** that take visible text mirror `Text`: an initialiser taking `LocalizedStringKey` (or `LocalizedStringResource`) for literals, and a generic `StringProtocol` initialiser marked `@_disfavoredOverload` that shows a variable as it is.
+  Without `@_disfavoredOverload`, or with a concrete `String` overload, literals pick the verbatim initialiser and stop being translated.
 - **Server text** is never passed to `LocalizedStringKey(...)`, where a `%` in a title would be read as a format specifier.
-- **Counts** are one interpolated string, `"\(count) items"`, with `one` and `other` variations in the catalog. Don't add an English `s` by hand.
-- **Numbers** interpolated as an `Int` take the locale's thousands separator, in English too: "1,690 MB". That suits counts and measures. Season and episode numbers, file IDs, error codes and video heights are identifiers, so interpolate them as `String(number)` and the key gets `%@`: "Season \(String(season))" reads "Season 2024", not "Season 2,024".
+- **Counts** are one interpolated string, `"\(count) items"`, with `one` and `other` variations in the catalog.
+  Don't add an English `s` by hand.
+- **Numbers** interpolated as an `Int` take the locale's thousands separator, in English too: "1,690 MB".
+  That suits counts and measures.
+  Season and episode numbers, file IDs, error codes and video heights are identifiers, so interpolate them as `String(number)` and the key gets `%@`: "Season \(String(season))" reads "Season 2024", not "Season 2,024".
 - **Sentences** are written whole, `"\(count) of \(total)"`, never joined from pieces, and any word inserted into one is translated too.
-- **Optional parameters:** a ternary of literals passed to an Optional `LocalizedStringResource?` only has its first branch extracted. Give each branch its own `Text` or `String(localized:)`.
+- **Optional parameters:** a ternary of literals passed to an Optional `LocalizedStringResource?` only has its first branch extracted.
+  Give each branch its own `Text` or `String(localized:)`.
 - **One English word with two meanings** gets its own key, such as `String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")` beside the Series tab.
-- **Playback failure messages** stay English where they're made, because their wording drives route fallback, diagnostics and reports to the server. `PlaybackFailureText` translates them where they're shown, and shows Vivid's technical failures (engine, protocol and route details) as plain messages that say what to do next. The original message stays in logs and diagnostics.
+- **Playback failure messages** stay English where they're made, because their wording drives route fallback, diagnostics and reports to the server.
+  `PlaybackFailureText` translates them where they're shown, and shows Vivid's technical failures (engine, protocol and route details) as plain messages that say what to do next.
+  The original message stays in logs and diagnostics.
 - **Not translated:** logs, diagnostics reports sent to Vivid, identifiers, product names, and legal text (the copyright line, the TMDB attribution, the line in Acknowledgements saying Vivid isn't made, endorsed or supported by Silo, Emby or Jellyfin, licences and the privacy policy).
 
 ## Adding a language
 
 1. Add a case to `VividAppLanguage` with its native name and TMDb code.
-2. Translate the four catalogs in Xcode's catalog editor, or export with `xcodebuild -exportLocalizations` and import the translated `.xcloc`. Plural keys need the language's plural forms.
+2. Translate the four catalogs in Xcode's catalog editor, or export with `xcodebuild -exportLocalizations` and import the translated `.xcloc`.
+   Plural keys need the language's plural forms.
 3. Run the sync script so the catalogs match both apps.
 4. Check iPhone, iPad and Apple TV in that language, including long strings in buttons, tab bars and Apple TV menus.
 
-Right-to-left languages such as Arabic and Hebrew mirror the layout. Treat adding one as a design change and get blurbery's approval first.
+Right-to-left languages such as Arabic and Hebrew mirror the layout.
+Treat adding one as a design change and get blurbery's approval first.
 
 ## Tests
 

@@ -8,7 +8,8 @@
 
 ---
 
-This guide specifies, by behaviour, the Swift bridge that sits between Vivid's Lucid Engine adapter and libmpv on iPhone, iPad and Apple TV. It was written for a clean-room reimplementation of the previous bridge, which has since been removed, and it describes how Vivid's own bridge behaves.
+This guide specifies, by behaviour, the Swift bridge that sits between Vivid's Lucid Engine adapter and libmpv on iPhone, iPad and Apple TV.
+It was written for a clean-room reimplementation of the previous bridge, which has since been removed, and it describes how Vivid's own bridge behaves.
 
 Contents:
 
@@ -34,7 +35,8 @@ Contents:
 
 ### 1.1 What the bridge does
 
-The bridge is the layer between `VividMPVPlayer` (the Lucid Engine adapter, which is not being rewritten) and libmpv. It owns:
+The bridge is the layer between `VividMPVPlayer` (the Lucid Engine adapter, which is not being rewritten) and libmpv.
+It owns:
 
 - one mpv client context per load, its options, its event loop and its teardown;
 - property observation, conversion of mpv values to Swift values, and ordered delivery of properties and events to the adapter on the main thread;
@@ -49,9 +51,12 @@ The bridge does not render frames, own the audio session, choose tracks (apart f
 
 ### 1.2 Status
 
-The previous bridge (three files in `iosApp/iosApp/Playback/MPV/`, listed in section 2.2) was adapted from a third-party GPL-3.0 project without App Store permission. This specification drove a Vivid-written replacement that had to behave exactly the same: blurbery described playback as perfect, so any visible difference was a regression.
+The previous bridge (three files in `iosApp/iosApp/Playback/MPV/`, listed in section 2.2) was adapted from a third-party GPL-3.0 project without App Store permission.
+This specification drove a Vivid-written replacement that had to behave exactly the same: blurbery described playback as perfect, so any visible difference was a regression.
 
-The replacement was first compiled alongside the previous bridge, and a small selection file chose between them with a compilation condition. The switch-over made the replacement permanent and removed the previous bridge, the selection file and the condition (section 4.5). Where this document describes the previous bridge, it does so only to explain why the bridge behaves as it does.
+The replacement was first compiled alongside the previous bridge, and a small selection file chose between them with a compilation condition.
+The switch-over made the replacement permanent and removed the previous bridge, the selection file and the condition (section 4.5).
+Where this document describes the previous bridge, it does so only to explain why the bridge behaves as it does.
 
 ### 1.3 How to read this document
 
@@ -66,14 +71,18 @@ Naming rules:
 
 - Names that callers use today are written exactly as they are and must not change (section 4).
 - New type names come from the naming plan in section 4.5.
-- Every other name (helpers, stored properties, locks, nested and private types, local variables) is the implementer's choice. Identifiers that appear inside the quoted Vivid code in section 12 are illustrative only and are not required.
+- Every other name (helpers, stored properties, locks, nested and private types, local variables) is the implementer's choice.
+  Identifiers that appear inside the quoted Vivid code in section 12 are illustrative only and are not required.
 - Where a reason is given for an ordering or a rule, the reason is part of the requirement.
 
 ## 2. Clean-room rules for readers
 
-The implementer must never see the previous bridge code, and must not see the previous engine package's Apple patches either. Everything the implementer needs about the engine is stated as behaviour in this document, so no engine source is required. Both have been removed from the repository, but they remain in its history, so these rules still apply to anyone who changes the bridge.
+The implementer must never see the previous bridge code, and must not see the previous engine package's Apple patches either.
+Everything the implementer needs about the engine is stated as behaviour in this document, so no engine source is required.
+Both have been removed from the repository, but they remain in its history, so these rules still apply to anyone who changes the bridge.
 
-The engine's Apple patches (its `avfoundation` video and audio outputs and related changes) are being rewritten clean-room as a separate project. Sections 6.19 and 7 are therefore the single interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state, and the engine rewrite must keep everything they state true.
+The engine's Apple patches (its `avfoundation` video and audio outputs and related changes) are being rewritten clean-room as a separate project.
+Sections 6.19 and 7 are therefore the single interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state, and the engine rewrite must keep everything they state true.
 
 ### 2.1 May read
 
@@ -97,11 +106,13 @@ The engine's Apple patches (its `avfoundation` video and audio outputs and relat
 - The previous bridge's three files (`MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift` and `ExternalDisplayManager.swift`, formerly in `iosApp/iosApp/Playback/MPV/`), any version of them in history, and anything that shows their content: `git log -p`, `git show`, `git blame` or diffs that include them (including the import commits `1598f91` and `04a349d`, the commit that removed them, and any repository-wide history listing without a path filter).
 - `scripts/tests/playback-end-recovery-tests.py`, now removed, in any version in history (it embedded the previous bridge's private structure).
 - The third-party project the previous bridge was adapted from, in any form: repository, forks, releases, issues, pull requests or packaged builds.
-- Anything from the previous engine package or the projects it was built from: no patch files (the `patches/` trees and their series files), engine sources, Swift files (including demos, sources and the package manifests), build scripts, READMEs or other documents, in the repositories, their history or a resolved SwiftPM checkout. The only engine files the bridge needs are the four public headers in section 2.1, read from Lucid Engine.
+- Anything from the previous engine package or the projects it was built from: no patch files (the `patches/` trees and their series files), engine sources, Swift files (including demos, sources and the package manifests), build scripts, READMEs or other documents, in the repositories, their history or a resolved SwiftPM checkout.
+  The only engine files the bridge needs are the four public headers in section 2.1, read from Lucid Engine.
 - Vivid files, now removed, that reproduced the previous engine's patch source, in any version in history: `patches/mpv/` (Vivid's audio-driver patch for the previous package, whose context lines came from the patched engine), `scripts/tests/compressed-audio-recovery-tests.py` (it extracted and embedded the patched audio driver's source) and `.github/workflows/mpv-audio-driver.yml` (it embedded lines of that source).
 - The working notes the spec editor used to prepare this document.
 
-If something here seems incomplete or contradictory, ask the spec editor. Do not look at the previous bridge's code or the previous engine's patches to settle it.
+If something here seems incomplete or contradictory, ask the spec editor.
+Do not look at the previous bridge's code or the previous engine's patches to settle it.
 
 ## 3. Build context and platform conditions
 
@@ -131,7 +142,8 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | `iosApp/Tests/PlayerSurfaceLayoutTests.swift` | Through the adapter, with real media in the simulator, asserts that the PiP source's layer is the core's `sampleBufferDisplayLayer`; that `layer.superlayer?.superlayer` is the host view's layer; that the layer reports `isReadyForDisplay` within 15 seconds; that layout and preview cycles leave the paused state and position unchanged; that the same layer survives presentation changes within one load; that a successor load has a different layer; and that the video route is the sample-buffer route with no `AVPlayer`. |
 | `scripts/tests/mpv-track-tests.py` | Copies the adapter's private `retireCore(resetDisplayCriteria:)` method, which `stop()` calls to clear the core's delegate, dispose it and release the audio session, and runs it against a stand-in. The stand-in provides everything the method uses: `core` with its `delegate` and `dispose(preserveDisplayCriteria:completion:)`, `audioSessionToken`, `deactivatesAudioSessionOnStop`, the `audioTeardown` and `audioSessionOwner` statics and `AVAudioSession.sharedInstance()`. A new member used in the method needs a matching stand-in. |
 
-No other file, script, plist or workflow names anything the bridge declares. `VividPlaybackBoundaryTests` and `VividPlaybackStatsProjectionTests` also drive real media through the bridge, via the adapter (section 16.1).
+No other file, script, plist or workflow names anything the bridge declares.
+`VividPlaybackBoundaryTests` and `VividPlaybackStatsProjectionTests` also drive real media through the bridge, via the adapter (section 16.1).
 
 ### 4.2 Type requirements
 
@@ -149,7 +161,9 @@ No other file, script, plist or workflow names anything the bridge declares. `Vi
 
 ### 4.3 Members callers use
 
-Members marked "base" must be declared on the base class, because callers use them on a bare base instance. Members marked "core" may be declared on either class, provided they are reachable through the core type. Every signature, label, default, optionality and return type is exact.
+Members marked "base" must be declared on the base class, because callers use them on a bare base instance.
+Members marked "core" may be declared on either class, provided they are reachable through the core type.
+Every signature, label, default, optionality and return type is exact.
 
 | Member | Exact signature | Where | Called by, thread | Behaviour |
 | --- | --- | --- | --- | --- |
@@ -182,7 +196,8 @@ Members marked "base" must be declared on the base class, because callers use th
 
 ### 4.4 Overridable hooks
 
-`VividMPVCore` overrides these. They must be declared (non-final, internal) on the base or the core with exactly these shapes.
+`VividMPVCore` overrides these.
+They must be declared (non-final, internal) on the base or the core with exactly these shapes.
 
 | Hook | Exact shape | Default | When the bridge uses it |
 | --- | --- | --- | --- |
@@ -190,7 +205,8 @@ Members marked "base" must be declared on the base class, because callers use th
 | Preload switch | `var selectsAudioWhilePreloading: Bool { get }` (computed, so it can be overridden with a computed getter) | `false` | Read once, during context setup inside `initialize`, to decide whether to register the `on_preloaded` hook. *Vivid (`8268108`)* |
 | Preload choice | `func preloadedAudioTrackID(tracks: [[String: Any]]) -> Int64?` | `nil` | On the event queue, while mpv waits in `on_preloaded`, with the converted `track-list`. A non-nil result becomes mpv's `aid` before mpv continues (section 6.15). *Vivid (`8268108`)* |
 
-Name collisions to avoid: `VividMPVCore` declares stored properties named `headers`, `registersManagedStreams`, `managedStreamsRegistered`, `startPosition`, `autoplay`, `audioOnly`, `initialRate`, `initialVolume`, `audioLanguages`, `plannedAudio` and `airPlayPCM`. The new base and core must not declare members with any of these names.
+Name collisions to avoid: `VividMPVCore` declares stored properties named `headers`, `registersManagedStreams`, `managedStreamsRegistered`, `startPosition`, `autoplay`, `audioOnly`, `initialRate`, `initialVolume`, `audioLanguages`, `plannedAudio` and `airPlayPCM`.
+The new base and core must not declare members with any of these names.
 
 ### 4.5 Naming plan
 
@@ -211,7 +227,8 @@ The delegate protocol `VividPlayerCoreDelegate` has exactly:
 - `func onPropertyChange(name: String, value: Any?, sourceId: Int64?)`
 - `func onEvent(name: String, data: [String: Any]?)`
 
-Until the switch-over, a selection file (`iosApp/iosApp/Playback/MPV/VividBridgeSelection.swift`) gave each caller-visible type one alias, which named either the previous bridge's type or the new type according to a compilation condition. The switch-over removed the file and the condition, and callers now name the new types directly:
+Until the switch-over, a selection file (`iosApp/iosApp/Playback/MPV/VividBridgeSelection.swift`) gave each caller-visible type one alias, which named either the previous bridge's type or the new type according to a compilation condition.
+The switch-over removed the file and the condition, and callers now name the new types directly:
 
 | File | Uses |
 | --- | --- |
@@ -223,7 +240,8 @@ No caller names `VividSampleBufferLayer`; callers reach it through `sampleBuffer
 
 ### 4.6 Delegate events and payloads
 
-Callers read payloads with `as?` casts, so a value of the wrong Swift type (for example `Int64` where `Int` is expected) fails silently. The types below are part of the contract.
+Callers read payloads with `as?` casts, so a value of the wrong Swift type (for example `Int64` where `Int` is expected) fails silently.
+The types below are part of the contract.
 
 | Event | Trigger | Payload (exact keys and Swift types) | Path |
 | --- | --- | --- | --- |
@@ -236,7 +254,11 @@ Callers read payloads with `as?` casts, so a value of the wrong Swift type (for 
 | `display-commit-lock` | **[debug-only]** every start-of-file and end-of-file hold (section 8.3) | `"transition": String` (`start_file` or `end_file`), `"wait_ms": Double`, `"held_ms": Double`. No `sourceId`. | ordered *Vivid (`f347bb7`)* |
 | `display-switch-started`, `display-switch-ended` | **[debug-only]**, tvOS: `AVDisplayManagerModeSwitchStart` and `AVDisplayManagerModeSwitchEnd` posted by any object | `nil` | direct, synchronous in the notification handler *Vivid (`f347bb7`)* |
 
-How the adapter uses them: `error` present (cast `as? Int`) fails playback; otherwise `reason` cast `as? Int` equal to 0 means natural end of file, and any other reason cancels end confirmation. `file-loaded` marks the session ready (the load loop polls for it). `playback-restart` marks the first frame, clears seeking and buffering and resets `hr-seek` after a keyframe resume. `log-message` is matched against fixed audio diagnostics. The adapter ignores `start-file`, `sourceId`, `positionSeconds`, `level` and `message`, but they are still produced and must stay.
+How the adapter uses them: `error` present (cast `as? Int`) fails playback; otherwise `reason` cast `as? Int` equal to 0 means natural end of file, and any other reason cancels end confirmation.
+`file-loaded` marks the session ready (the load loop polls for it).
+`playback-restart` marks the first frame, clears seeking and buffering and resets `hr-seek` after a keyframe resume.
+`log-message` is matched against fixed audio diagnostics.
+The adapter ignores `start-file`, `sourceId`, `positionSeconds`, `level` and `message`, but they are still produced and must stay.
 
 mpv's end-file reason raw values: `MPV_END_FILE_REASON_EOF` 0, `STOP` 2, `QUIT` 3, `ERROR` 4, `REDIRECT` 5.
 
@@ -269,7 +291,8 @@ mpv's end-file reason raw values: `MPV_END_FILE_REASON_EOF` 0, `STOP` 2, `QUIT` 
 | Event queue: one serial `DispatchQueue` per core, label `mpv`, quality of service `.userInitiated`, created with the core | Draining mpv events and handling them; every synchronous `mpv_get_property` read; the `on_preloaded` work including the call to `preloadedAudioTrackID(tracks:)`; source-transition holds and the restart snapshot; the final `mpv_terminate_destroy` and the dispose completion. |
 | Main queue | Every delegate callback; every request completion except the inline cases in section 6.13; the platform display write; EDR changes; all view and layer changes; notification handlers. |
 
-Everything except the two items in section 5.6 belongs to one core. Two cores alive at the same time, such as a retiring core and its replacement, must not affect each other.
+Everything except the two items in section 5.6 belongs to one core.
+Two cores alive at the same time, such as a retiring core and its replacement, must not affect each other.
 
 ### 5.2 State that needs protection
 
@@ -288,21 +311,31 @@ The implementer chooses the locks, but these properties must hold.
 
 ### 5.3 Ordering and deadlock rules
 
-1. Take the source-transition exclusion before the cache guard, never the reverse. The event queue and main both take both.
-2. Call the platform display write with the source-transition exclusion held and the cache guard released. Holding the exclusion stops a start-of-file or end-of-file hold from interleaving with a half-finished HDMI write; releasing the cache guard keeps observer cache updates on the event queue from blocking behind a slow main-thread display call.
-3. Request registration happens inside the liveness guard. Never take the liveness guard while holding the request guard.
+1. Take the source-transition exclusion before the cache guard, never the reverse.
+   The event queue and main both take both.
+2. Call the platform display write with the source-transition exclusion held and the cache guard released.
+   Holding the exclusion stops a start-of-file or end-of-file hold from interleaving with a half-finished HDMI write; releasing the cache guard keeps observer cache updates on the event queue from blocking behind a slow main-thread display call.
+3. Request registration happens inside the liveness guard.
+   Never take the liveness guard while holding the request guard.
 4. Non-blocking mpv calls made from the caller thread (`mpv_set_property_async`, `mpv_get_property_async`, `mpv_command_async`, `mpv_observe_property`, `mpv_request_log_messages` from `setLogLevel`, `mpv_hook_add`) and `mpv_hook_continue` run while the liveness guard is held, so they cannot race destruction of the handle.
-5. Blocking mpv calls (`mpv_get_property`, and the preload hook's `mpv_set_property_string`) run only on the event queue, and never while the liveness guard is held: copy the handle while holding the guard and release it before the call. Reason: the engine's video output can wait on main, and main takes the liveness guard. A handle copied on the event queue stays valid for the call, because destruction is queued on that same queue. Assert the queue in these calls (for example with `dispatchPrecondition`).
-6. In the restart and early snapshots, finish every synchronous read before taking the source-transition exclusion. Never call mpv while holding the exclusion or the cache guard.
+5. Blocking mpv calls (`mpv_get_property`, and the preload hook's `mpv_set_property_string`) run only on the event queue, and never while the liveness guard is held: copy the handle while holding the guard and release it before the call.
+   Reason: the engine's video output can wait on main, and main takes the liveness guard.
+   A handle copied on the event queue stays valid for the call, because destruction is queued on that same queue.
+   Assert the queue in these calls (for example with `dispatchPrecondition`).
+6. In the restart and early snapshots, finish every synchronous read before taking the source-transition exclusion.
+   Never call mpv while holding the exclusion or the cache guard.
 7. The relay's guard is held only while scheduling a drain (which only enqueues an asynchronous block) and while detaching.
-8. Apart from the two nestings in rules 1 and 3, never hold two bridge guards at once: the liveness guard is never held together with the cache guard or the coalescing guard, in either order; the cache and coalescing guards are never held together; and nothing else is taken while the request guard or the relay guard is held. Main takes the liveness guard in every delivery block, so any inversion would deadlock playback.
-9. Never make main wait synchronously on the event queue, and never destroy a context that has been stored in the core from main: destruction of a stored context runs on the event queue and can need main. The one exception is a context that set-up created but never stored (section 6.2), which is destroyed at once on main; that is safe because no video output exists for it yet.
+8. Apart from the two nestings in rules 1 and 3, never hold two bridge guards at once: the liveness guard is never held together with the cache guard or the coalescing guard, in either order; the cache and coalescing guards are never held together; and nothing else is taken while the request guard or the relay guard is held.
+   Main takes the liveness guard in every delivery block, so any inversion would deadlock playback.
+9. Never make main wait synchronously on the event queue, and never destroy a context that has been stored in the core from main: destruction of a stored context runs on the event queue and can need main.
+   The one exception is a context that set-up created but never stored (section 6.2), which is destroyed at once on main; that is safe because no video output exists for it yet.
 10. Never hold the coalescing guard while calling the delegate.
 
 ### 5.4 Dispatch hops
 
 - Wakeup thread to event queue: one asynchronous drain per wakeup (extra drains are harmless; they find no events).
-- Event queue to main: exactly one `DispatchQueue.main.async` per ordered delivery (property or event). No second hop, no `Task`, no `MainActor.run`: the coalescing tests drain main exactly twice and expect every delivery.
+- Event queue to main: exactly one `DispatchQueue.main.async` per ordered delivery (property or event).
+  No second hop, no `Task`, no `MainActor.run`: the coalescing tests drain main exactly twice and expect every delivery.
 - Event queue to main for display work: the cached apply, the early snapshot write and EDR updates.
 - Caller thread to main: the inline-or-main completion helper (section 6.13).
 - Caller thread to event queue: disposal enqueues the destroy step asynchronously.
@@ -325,8 +358,10 @@ The implementer chooses the locks, but these properties must hold.
 
 Exactly two pieces of state are process-wide, both main-thread only:
 
-1. On tvOS, the identity of the display criteria the bridge last wrote (section 8.12). Sharing it is what lets a replacement core recognise that the criteria already on the HDMI link are the ones it wants, so consecutive episodes of the same format cause no renegotiation.
-2. On iOS, the external-display coordinator's single weak "active core" slot (section 9.2). Attaching replaces it; detaching clears it only when the same core is passed.
+1. On tvOS, the identity of the display criteria the bridge last wrote (section 8.12).
+   Sharing it is what lets a replacement core recognise that the criteria already on the HDMI link are the ones it wants, so consecutive episodes of the same format cause no renegotiation.
+2. On iOS, the external-display coordinator's single weak "active core" slot (section 9.2).
+   Attaching replaces it; detaching clears it only when the same core is passed.
 
 Everything else is per core.
 
@@ -334,14 +369,19 @@ Everything else is per core.
 
 ### 6.1 Construction
 
-- Creating a base instance does only this: base object initialisation, creating the per-core event queue, and default values. It creates no mpv context, touches no UIKit object, registers no observer and dispatches nothing. Safe on any thread.
-- Creating the core (or `VividMPVCore`) is equally cheap. No views or layers exist until `initialize`.
+- Creating a base instance does only this: base object initialisation, creating the per-core event queue, and default values.
+  It creates no mpv context, touches no UIKit object, registers no observer and dispatches nothing.
+  Safe on any thread.
+- Creating the core (or `VividMPVCore`) is equally cheap.
+  No views or layers exist until `initialize`.
 - Defaults that matter: delegate nil; `isPipActive` false; `matchContentEnabled` true; `onEnterBackground` nil; not visible; not initialised; pause state "paused" (both the displayed and the confirmed value, section 6.12); width, height, signal peak, Dolby Vision profile and level, container and estimated frame rates 0; deinterlace false; colour tags absent; display criteria **held** (section 8.3); source epoch 0; "early snapshot wanted" false; no source id remembered.
-- The base has no `deinit` work. The core's `deinit` calls `dispose()` with default arguments (no preservation, no completion), which is a no-op whenever the owner already disposed (section 6.17).
+- The base has no `deinit` work.
+  The core's `deinit` calls `dispose()` with default arguments (no preservation, no completion), which is a no-op whenever the owner already disposed (section 6.17).
 
 ### 6.2 Initialisation (`initialize(in:hostView:)`)
 
-Called on main, once per core, after the adapter has set `delegate`, `matchContentEnabled`, `onEnterBackground` (iOS) and its own option properties. Everything here completes before `initialize` returns, because the adapter reads the results of its own options hook and `sampleBufferDisplayLayer` straight afterwards.
+Called on main, once per core, after the adapter has set `delegate`, `matchContentEnabled`, `onEnterBackground` (iOS) and its own option properties.
+Everything here completes before `initialize` returns, because the adapter reads the results of its own options hook and `sampleBufferDisplayLayer` straight afterwards.
 
 Objects created:
 
@@ -353,20 +393,32 @@ Objects created:
 Requirements:
 
 - The host view and the window passed in are remembered weakly, for the core's whole life: they stay remembered after a failed `initialize` and after `dispose` (sections 6.17.2 and 14.1).
-- The container, holding the layer, is at subview index 0 of the host view before the mpv context is created. Reason: the layer must already be in its final parent whenever the engine creates its video output (section 7.2), and the adapter's own content sits above the video.
+- The container, holding the layer, is at subview index 0 of the host view before the mpv context is created.
+  Reason: the layer must already be in its final parent whenever the engine creates its video output (section 7.2), and the adapter's own content sits above the video.
 
 Creating the mpv context, as constraints:
 
-- `mpv_create` creates the context. If it fails, print the creation-failure line (section 10.2) and fail.
-- Before `mpv_initialize`, in any order among themselves: request log messages at level `warn` (Debug and Release alike); set `wid` with `mpv_set_option` and `MPV_FORMAT_INT64` (section 7.2); set the bridge's options (section 6.3) with `mpv_set_option_string`. Every status goes through the error check with no option name (section 10.2); a rejected option is logged and set-up continues.
-- `configurePlatformMpvOptions(mpv:)` is then called once with the handle, after all of the bridge's options and before `mpv_initialize`. Reason: mpv lets a later set win, so the adapter's options take precedence.
-- `mpv_initialize` follows. On a negative status, print the initialisation-failure line, destroy the handle at once on main with `mpv_terminate_destroy` (no video output exists yet) and fail.
-- Publication: create the wakeup relay (a weak reference to the core, plus one manual retain held on mpv's behalf). Then, atomically with respect to disposal, either store the handle and relay and install the wakeup callback with `mpv_set_wakeup_callback`, or, if the core is already disposed or already holds a handle, destroy the new handle at once on main, drop the retain and fail. Reason: a disposal running at the same time must see either no handle or the handle together with its callback.
-- Only after publication, while the handle is live: register the ten internal observers (section 6.7) and, only if `selectsAudioWhilePreloading` is true at that moment, call `mpv_hook_add(handle, 0, "on_preloaded", 0)` with its status through the error check. *Vivid (`8268108`)*. If no live handle is found here, fail.
+- `mpv_create` creates the context.
+  If it fails, print the creation-failure line (section 10.2) and fail.
+- Before `mpv_initialize`, in any order among themselves: request log messages at level `warn` (Debug and Release alike); set `wid` with `mpv_set_option` and `MPV_FORMAT_INT64` (section 7.2); set the bridge's options (section 6.3) with `mpv_set_option_string`.
+  Every status goes through the error check with no option name (section 10.2); a rejected option is logged and set-up continues.
+- `configurePlatformMpvOptions(mpv:)` is then called once with the handle, after all of the bridge's options and before `mpv_initialize`.
+  Reason: mpv lets a later set win, so the adapter's options take precedence.
+- `mpv_initialize` follows.
+  On a negative status, print the initialisation-failure line, destroy the handle at once on main with `mpv_terminate_destroy` (no video output exists yet) and fail.
+- Publication: create the wakeup relay (a weak reference to the core, plus one manual retain held on mpv's behalf).
+  Then, atomically with respect to disposal, either store the handle and relay and install the wakeup callback with `mpv_set_wakeup_callback`, or, if the core is already disposed or already holds a handle, destroy the new handle at once on main, drop the retain and fail.
+  Reason: a disposal running at the same time must see either no handle or the handle together with its callback.
+- Only after publication, while the handle is live: register the ten internal observers (section 6.7) and, only if `selectsAudioWhilePreloading` is true at that moment, call `mpv_hook_add(handle, 0, "on_preloaded", 0)` with its status through the error check. *Vivid (`8268108`)*.
+  If no live handle is found here, fail.
 
-After the context exists, in any order before returning `true`: register the lifecycle observers (section 6.18); on iOS, attach to the external-display coordinator (section 9.2), whose placement refresh hides the container because the core is not visible yet (on tvOS nothing hides it); and mark the core initialised. Observers and the attach happen only after the context succeeds, so a failed `initialize` registers and attaches nothing.
+After the context exists, in any order before returning `true`: register the lifecycle observers (section 6.18); on iOS, attach to the external-display coordinator (section 9.2), whose placement refresh hides the container because the core is not visible yet (on tvOS nothing hides it); and mark the core initialised.
+Observers and the attach happen only after the context succeeds, so a failed `initialize` registers and attaches nothing.
 
-Failure end state, whatever step failed: `initialize` returns `false`; the layer and the container are out of the view tree and forgotten; no observer is registered; nothing is attached to the coordinator; the core is not marked disposed. The remembered window and host view are kept. This is a requirement: a later `dispose(preserveDisplayCriteria: false)` on tvOS then clears the display criteria through the remembered window, which is how the TV leaves the previous title's mode when a load fails to start and the player closes. A later `dispose` still calls its completion.
+Failure end state, whatever step failed: `initialize` returns `false`; the layer and the container are out of the view tree and forgotten; no observer is registered; nothing is attached to the coordinator; the core is not marked disposed.
+The remembered window and host view are kept.
+This is a requirement: a later `dispose(preserveDisplayCriteria: false)` on tvOS then clears the display criteria through the remembered window, which is how the TV leaves the previous title's mode when a load fails to start and the player closes.
+A later `dispose` still calls its completion.
 
 What the adapter does next, for context, all in the same main-actor turn: it applies its subtitle settings (about sixteen `setProperty` calls), connects the host view to the core (only from then on does `layoutSubviews` call `updateFrame()`), sets the layer's `videoGravity`, calls `setVisible(true)`, wraps the layer for Picture in Picture on iOS (not for audio-only loads), calls `setLogLevel("v")` in `VIVID_P8_TRIAL` builds or `setLogLevel("warn")` otherwise, registers its 21 observations, then issues `loadfile`.
 
@@ -389,7 +441,8 @@ Options the bridge sets after `wid` (their order among themselves is not signifi
 
 The simulator check takes precedence over the platform check: the tvOS simulator gets `avfoundation-composite-osd=no` and `hwdec=no` and does not get `avfoundation-presentation=host`.
 
-A rejected option is logged by the error check and otherwise ignored; only `mpv_create` or `mpv_initialize` failure aborts set-up. The bridge sets no process environment variables (*Vivid (`d5108a5`)* removed the last ones).
+A rejected option is logged by the error check and otherwise ignored; only `mpv_create` or `mpv_initialize` failure aborts set-up.
+The bridge sets no process environment variables (*Vivid (`d5108a5`)* removed the last ones).
 
 For context only (Vivid-owned, not rewritten), the adapter's options hook then sets:
 
@@ -417,19 +470,28 @@ For context only (Vivid-owned, not rewritten), the adapter's options hook then s
 | `http-header-fields` | set with `mpv_set_option` and `MPV_FORMAT_NODE` as a string array |
 | `vividstream` protocol | registered with `mpv_stream_cb_add_ro` when the managed reader applies |
 
-The first group is applied as a fixed, ordered list, but its order must not matter, because these options are independent. None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
+The first group is applied as a fixed, ordered list, but its order must not matter, because these options are independent.
+None of the adapter's option names overlap the bridge's. The bridge sets no further options after initialisation; its only run-time writes are listed in section 6.13.6.
 
 ### 6.4 Log level and log messages
 
 - Initial level: `warn`, requested while the context is created (section 6.2).
-- `setLogLevel(_:)` calls `mpv_request_log_messages` with the given string while the handle is live. It is a silent no-op without a live handle, and its status is ignored.
-- `MPV_EVENT_LOG_MESSAGE` becomes the `log-message` event (section 4.6) unless the core is backgrounded, in which case the message is dropped. The bridge applies no level filtering, trimming or redaction of its own; mpv's level request is the only filter. The adapter does the redaction.
+- `setLogLevel(_:)` calls `mpv_request_log_messages` with the given string while the handle is live.
+  It is a silent no-op without a live handle, and its status is ignored.
+- `MPV_EVENT_LOG_MESSAGE` becomes the `log-message` event (section 4.6) unless the core is backgrounded, in which case the message is dropped.
+  The bridge applies no level filtering, trimming or redaction of its own; mpv's level request is the only filter.
+  The adapter does the redaction.
 
 ### 6.5 Wakeup callback and event drain
 
-- The C wakeup callback receives the raw relay pointer. A null pointer is a no-op. Otherwise it borrows the relay (no retain or release) and asks it to schedule a drain.
-- The relay, under its own guard, forwards only if its weak core reference is still set. Forwarding means enqueuing one asynchronous block on the core's event queue that holds the core weakly. Nothing else happens on mpv's thread.
-- A drain block, if the core still exists, repeats: fetch the handle under the liveness guard and stop if the core is terminal or has no handle; call `mpv_wait_event(handle, 0)` outside the guard (zero timeout, never blocks); stop if the returned pointer is null or the event id is `MPV_EVENT_NONE`; otherwise handle the event (section 6.6). Because the handle is fetched again on every iteration, a disposal that begins mid-drain stops the drain after the current event.
+- The C wakeup callback receives the raw relay pointer.
+  A null pointer is a no-op.
+  Otherwise it borrows the relay (no retain or release) and asks it to schedule a drain.
+- The relay, under its own guard, forwards only if its weak core reference is still set.
+  Forwarding means enqueuing one asynchronous block on the core's event queue that holds the core weakly.
+  Nothing else happens on mpv's thread.
+- A drain block, if the core still exists, repeats: fetch the handle under the liveness guard and stop if the core is terminal or has no handle; call `mpv_wait_event(handle, 0)` outside the guard (zero timeout, never blocks); stop if the returned pointer is null or the event id is `MPV_EVENT_NONE`; otherwise handle the event (section 6.6).
+  Because the handle is fetched again on every iteration, a disposal that begins mid-drain stops the drain after the current event.
 - The drain keeps the core alive while it runs, so the last release of a core can happen on the event queue (section 15).
 
 ### 6.6 Events
@@ -451,7 +513,8 @@ The first group is applied as a fixed, ordered list, but its order must not matt
 
 ### 6.7 Property observation
 
-Internal observers are registered once the handle is published (section 6.2), each with its own reserved reply userdata: ten distinct values, none of them 0. Their deliveries update the bridge's caches and are never forwarded to the delegate. Registration order is not significant.
+Internal observers are registered once the handle is published (section 6.2), each with its own reserved reply userdata: ten distinct values, none of them 0. Their deliveries update the bridge's caches and are never forwarded to the delegate.
+Registration order is not significant.
 
 | Property | mpv format |
 | --- | --- |
@@ -470,10 +533,13 @@ Internal observers are registered once the handle is published (section 6.2), ea
 
 Caller observations through `observeProperty(_:format:)`:
 
-- Format strings map to mpv formats: `double` to `MPV_FORMAT_DOUBLE`, `flag` to `MPV_FORMAT_FLAG`, `node` to `MPV_FORMAT_NODE`, `string` to `MPV_FORMAT_STRING`. Any other string (including `int64`) is silently ignored and nothing is observed.
-- Registered with `mpv_observe_property(handle, 0, name, format)` (reply userdata 0) while the handle is live; a silent no-op without one; status ignored. There is no unobserve API.
+- Format strings map to mpv formats: `double` to `MPV_FORMAT_DOUBLE`, `flag` to `MPV_FORMAT_FLAG`, `node` to `MPV_FORMAT_NODE`, `string` to `MPV_FORMAT_STRING`.
+  Any other string (including `int64`) is silently ignored and nothing is observed.
+- Registered with `mpv_observe_property(handle, 0, name, format)` (reply userdata 0) while the handle is live; a silent no-op without one; status ignored.
+  There is no unobserve API.
 - The adapter registers, in this order: `time-pos` double, `duration` double, `pause` flag, `paused-for-cache` flag, `seeking` flag, `eof-reached` flag, `track-list` node, `chapter-list` node, `aid` string, `sid` string, `secondary-sid` string, `video-params` node, `video-out-params` node, `audio-out-params` node, `audio-codec-name` string, `hwdec-current` string, `container-fps` double, `demuxer-cache-duration` double, `demuxer-cache-state` node, `avsync` double, `frame-drop-count` double.
-- `container-fps` is therefore observed twice. mpv sends two change events: the internal one updates the caches only; the userdata-0 one updates the same caches again and is delivered. Internal observations must be suppressed by reply userdata, never by property name, or `container-fps` stops reaching the adapter.
+- `container-fps` is therefore observed twice. mpv sends two change events: the internal one updates the caches only; the userdata-0 one updates the same caches again and is delivered.
+  Internal observations must be suppressed by reply userdata, never by property name, or `container-fps` stops reaching the adapter.
 
 ### 6.8 Converting a property change to a Swift value
 
@@ -493,7 +559,8 @@ A nil value is still processed and, unless suppressed, still delivered (callers 
 
 ### 6.9 What a property change does
 
-Every change event first updates the bridge's own state and is then either delivered or suppressed. The state is always updated, even for a change that is then suppressed (an internal observation, or a non-critical property while backgrounded); that is the whole point of the internal observers.
+Every change event first updates the bridge's own state and is then either delivered or suppressed.
+The state is always updated, even for a change that is then suppressed (an internal observation, or a non-critical property while backgrounded); that is the whole point of the internal observers.
 
 Effects by property name, whichever observation delivered the change:
 
@@ -507,25 +574,34 @@ Effects by property name, whichever observation delivered the change:
 | `video-params/colormatrix`, `video-params/gamma`, `video-params/primaries` | When the value is a `String`: stored, and an apply is scheduled. |
 | `video-params/sig-peak` | When the value is a `Double`: stored as the signal peak, an EDR update with this value is enqueued on main (section 8.15), and an apply is scheduled. |
 
-An unavailable or wrongly typed value never changes a display cache and never schedules an apply; only the restart snapshot (section 8.4) writes defaults. Reason: such a value says nothing reliable about the stream that is about to be shown.
+An unavailable or wrongly typed value never changes a display cache and never schedules an apply; only the restart snapshot (section 8.4) writes defaults.
+Reason: such a value says nothing reliable about the stream that is about to be shown.
 
-Delivery: after those effects, the change is suppressed if its reply userdata is one of the internal observer values, or if the core is backgrounded and the name is not one of `duration`, `eof-reached`, `pause`, `paused-for-cache`, `seekable` or `time-pos`. Otherwise it goes to ordered delivery (section 6.10) with the source id remembered when the event was handled.
+Delivery: after those effects, the change is suppressed if its reply userdata is one of the internal observer values, or if the core is backgrounded and the name is not one of `duration`, `eof-reached`, `pause`, `paused-for-cache`, `seekable` or `time-pos`.
+Otherwise it goes to ordered delivery (section 6.10) with the source id remembered when the event was handled.
 
 ### 6.10 Ordered delivery and coalescing *Vivid (`128014c`)*
 
 Goal: main sees properties and events in mpv's order, except that four high-frequency properties are merged, so a main thread that falls behind receives only their newest values instead of a backlog.
 
-Coalesced properties: `time-pos`, `avsync`, `demuxer-cache-state`, `demuxer-cache-duration`. Every other property and every event dispatched through `dispatchDelegateEvent` is "ordered".
+Coalesced properties: `time-pos`, `avsync`, `demuxer-cache-state`, `demuxer-cache-duration`.
+Every other property and every event dispatched through `dispatchDelegateEvent` is "ordered".
 
 State, under the coalescing guard: an ordered list of pending coalesced values (at most one entry per property name, each holding name, value and source id); the token of the one scheduled flush entitled to deliver that list, or none; and a token counter (wrapping arithmetic).
 
 Rules:
 
-- A coalesced value whose name is already pending replaces that entry in place, keeping the entry's original position. A new name is appended.
-- If no flush is scheduled when a coalesced value arrives, allocate a new token, record it as the scheduled one and enqueue one main block carrying it. If a flush is already scheduled, enqueue nothing.
+- A coalesced value whose name is already pending replaces that entry in place, keeping the entry's original position.
+  A new name is appended.
+- If no flush is scheduled when a coalesced value arrives, allocate a new token, record it as the scheduled one and enqueue one main block carrying it.
+  If a flush is already scheduled, enqueue nothing.
 - An ordered item first takes the whole pending list and clears the scheduled token, synchronously on the calling thread, then enqueues one main block that delivers the taken list in order followed by the item itself.
-- A flush block on main checks, under the guard, whether its token is still the scheduled one. If not, its values have already gone out ahead of a later ordered item, and it does nothing. If so, it takes the list and clears the token; then, only if the core is not terminal, delivers the list. If terminal, the taken values are discarded.
-- Every main block for an ordered item first checks that the core still exists (weak capture) and is not terminal. If either fails it delivers nothing, including the pending values it carried.
+- A flush block on main checks, under the guard, whether its token is still the scheduled one.
+  If not, its values have already gone out ahead of a later ordered item, and it does nothing.
+  If so, it takes the list and clears the token; then, only if the core is not terminal, delivers the list.
+  If terminal, the taken values are discarded.
+- Every main block for an ordered item first checks that the core still exists (weak capture) and is not terminal.
+  If either fails it delivers nothing, including the pending values it carried.
 - The delegate is read at delivery time on main.
 - No timers: coalescing depends only on how far main lags.
 
@@ -539,7 +615,8 @@ Worked scenarios (the three unit tests, which must pass unchanged):
 | `time-pos` 1, main drains; `time-pos` 2, main drains; `time-pos` 3, main drains | `time-pos` 1, 2 and 3 |
 | `time-pos` 1, then `beginDisposal()`, then main drains | nothing |
 
-Events that bypass ordered delivery: `display-criteria-prepared` and, **[debug-only]**, `display-switch-started` and `display-switch-ended` call the delegate directly on main without taking the pending list. A coalesced value pending at that moment goes out later with its flush or the next ordered item.
+Events that bypass ordered delivery: `display-criteria-prepared` and, **[debug-only]**, `display-switch-started` and `display-switch-ended` call the delegate directly on main without taking the pending list.
+A coalesced value pending at that moment goes out later with its flush or the next ordered item.
 
 ### 6.11 Background filtering
 
@@ -553,15 +630,24 @@ This applies whenever the core is backgrounded, including while Picture in Pictu
 
 ### 6.12 Pause cache
 
-Purpose: decide whether iOS scene activation needs the paused redraw (section 6.18), using a "displayed" pause state that follows the adapter's requests at once and falls back to what mpv confirms. Only `setProperty("pause", ...)` and `setPropertyAsync("pause", ...)` create requests. A value of `1`, `true`, `yes` or `on`, in any letter case, means paused; anything else means playing. The original string is sent to mpv unchanged. The bookkeeping is the implementer's choice; these rules must hold, under the cache guard:
+Purpose: decide whether iOS scene activation needs the paused redraw (section 6.18), using a "displayed" pause state that follows the adapter's requests at once and falls back to what mpv confirms.
+Only `setProperty("pause", ...)` and `setPropertyAsync("pause", ...)` create requests.
+A value of `1`, `true`, `yes` or `on`, in any letter case, means paused; anything else means playing.
+The original string is sent to mpv unchanged.
+The bookkeeping is the implementer's choice; these rules must hold, under the cache guard:
 
 - Initially both the displayed and the confirmed state are paused.
 - A new request sets displayed to its value at once.
-- A request resolves when its completion arrives, whatever the result: success, mpv error, no handle, or cancellation at disposal. The resolution is applied before the caller's completion runs. If the core has gone by then, only the caller's completion runs.
-- Requests are ordered by when they were made. A request that resolves after a newer request has already resolved changes nothing.
+- A request resolves when its completion arrives, whatever the result: success, mpv error, no handle, or cancellation at disposal.
+  The resolution is applied before the caller's completion runs.
+  If the core has gone by then, only the caller's completion runs.
+- Requests are ordered by when they were made.
+  A request that resolves after a newer request has already resolved changes nothing.
 - When a request resolves, every older request still outstanding is retired with it and no longer counts as outstanding.
-- A successful resolution sets confirmed to the request's value, unless a `pause` observation arrived after the request was made; then the observation's value stands. A failed resolution leaves confirmed unchanged.
-- A `pause` observation (a `Bool`) always sets confirmed. It also sets displayed, but only when no request is outstanding.
+- A successful resolution sets confirmed to the request's value, unless a `pause` observation arrived after the request was made; then the observation's value stands.
+  A failed resolution leaves confirmed unchanged.
+- A `pause` observation (a `Bool`) always sets confirmed.
+  It also sets displayed, but only when no request is outstanding.
 - After every resolution, displayed is the value of the newest outstanding request, if there is one, otherwise confirmed.
 
 | Sequence (start: displayed and confirmed paused, nothing outstanding) | Displayed after | Confirmed after |
@@ -581,7 +667,9 @@ Purpose: decide whether iOS scene activation needs the paused redraw (section 6.
 
 - Each core numbers its asynchronous requests with its own `UInt64` counter starting at 1, incrementing by 1. The number is the request's reply userdata.
 - A request (number, kind "set", "get" or "command", and completion) is registered immediately before its mpv submission, under the liveness guard, so registration and submission happen only while a live handle exists.
-- On a reply, the entry is removed by number. A reply with no entry (unknown, or already cancelled by disposal) is ignored. Every completion therefore runs at most once, and exactly once in practice.
+- On a reply, the entry is removed by number.
+  A reply with no entry (unknown, or already cancelled by disposal) is ignored.
+  Every completion therefore runs at most once, and exactly once in practice.
 
 #### 6.13.2 Replies
 
@@ -598,7 +686,8 @@ Every reply completion is delivered with `DispatchQueue.main.async`, in the orde
 
 #### 6.13.3 Inline or asynchronous completion
 
-An inline-or-main helper calls the completion immediately when already on the main thread, otherwise enqueues it on main. It is used for:
+An inline-or-main helper calls the completion immediately when already on the main thread, otherwise enqueues it on main.
+It is used for:
 
 - `setPropertyAsync` and `getPropertyAsync` on a terminal core (failure);
 - any submission attempted without a live handle, whether terminal or never created (failure);
@@ -606,24 +695,30 @@ An inline-or-main helper calls the completion immediately when already on the ma
 
 Always `DispatchQueue.main.async`, never inline: a negative status returned by the `*_async` submission call (the request is taken back out of the table and failed with the mpv error), every reply, and every cancellation at disposal.
 
-The adapter wraps several completions in `withCheckedThrowingContinuation`. The inline path resumes the continuation synchronously, which is fine; a completion must never run twice or zero times.
+The adapter wraps several completions in `withCheckedThrowingContinuation`.
+The inline path resumes the continuation synchronously, which is fine; a completion must never run twice or zero times.
 
 #### 6.13.4 The request methods
 
 - `setPropertyAsync(_:value:completion:)`:
-  1. If the core is terminal, fail inline-or-main with the not-available error (section 10.1). (A core that is not terminal but has no handle passes this check and then fails the same way at submission.)
+  1. If the core is terminal, fail inline-or-main with the not-available error (section 10.1).
+     (A core that is not terminal but has no handle passes this check and then fails the same way at submission.)
   2. If the name is `pause`, begin a pause intent (section 6.12), send the original string, and when the reply arrives finish the intent and then call the caller's completion.
   3. Otherwise send the value as a string property.
 - "Send as a string property" means `mpv_set_property_async(handle, number, name, MPV_FORMAT_STRING, &cString)`, registered as a "set" request.
 - `setProperty(_:value:)` is `setPropertyAsync` with an empty completion.
-- `getPropertyAsync(_:completion:)`: terminal check as above, then `mpv_get_property_async(handle, number, name, MPV_FORMAT_STRING)`, registered as a "get" request. Callers parse numbers from the string themselves (the adapter uses `Double(_:)`).
-- `commandAsync(_:completion:)`: an empty array completes as in section 6.13.3. Otherwise build NUL-terminated C copies of the arguments and a null-terminated pointer array, submit with `mpv_command_async`, registered as a "command" request, and free the copies after the submission call returns whatever the outcome (mpv copies the arguments during the call).
+- `getPropertyAsync(_:completion:)`: terminal check as above, then `mpv_get_property_async(handle, number, name, MPV_FORMAT_STRING)`, registered as a "get" request.
+  Callers parse numbers from the string themselves (the adapter uses `Double(_:)`).
+- `commandAsync(_:completion:)`: an empty array completes as in section 6.13.3.
+  Otherwise build NUL-terminated C copies of the arguments and a null-terminated pointer array, submit with `mpv_command_async`, registered as a "command" request, and free the copies after the submission call returns whatever the outcome (mpv copies the arguments during the call).
 - `command(_:)` is `commandAsync` with an empty completion.
 
 #### 6.13.5 Ordering
 
-- Requests reach mpv in call order, because submission is synchronous within each call. The adapter relies on this (for example, it queues `seek 0 relative+exact` immediately before an `audio-spdif` change).
-- mpv decides the order of replies (a `loadfile` reply can arrive after replies to later property sets). The bridge adds no reordering.
+- Requests reach mpv in call order, because submission is synchronous within each call.
+  The adapter relies on this (for example, it queues `seek 0 relative+exact` immediately before an `audio-spdif` change).
+- mpv decides the order of replies (a `loadfile` reply can arrive after replies to later property sets).
+  The bridge adds no reordering.
 - Completions and delegate deliveries share the main queue, so a completion and a property change produced by the same drain arrive in drain order, except that coalesced properties can be merged or delivered later (section 6.10).
 
 #### 6.13.6 Writes the bridge makes on its own
@@ -639,7 +734,9 @@ The adapter wraps several completions in `withCheckedThrowingContinuation`. The 
 
 ### 6.14 Synchronous reads
 
-Only on the event queue (assert it). Each copies the handle under the liveness guard and calls `mpv_get_property` without it (section 5.3 rule 5). Each returns nil when there is no live handle or mpv returns a negative status.
+Only on the event queue (assert it).
+Each copies the handle under the liveness guard and calls `mpv_get_property` without it (section 5.3 rule 5).
+Each returns nil when there is no live handle or mpv returns a negative status.
 
 | Shape | mpv format | Result |
 | --- | --- | --- |
@@ -652,10 +749,12 @@ Reads made: `estimated-vf-fps`, `container-fps`, `time-pos` (number); `deinterla
 
 ### 6.15 Preload audio choice *Vivid (`8268108`)*
 
-Purpose: when the playback plan names an audio track, select it inside `on_preloaded`, which mpv runs once the file's tracks are known but before its own default track pick and before the initial seek. Selecting it any later makes a resume seek twice.
+Purpose: when the playback plan names an audio track, select it inside `on_preloaded`, which mpv runs once the file's tracks are known but before its own default track pick and before the initial seek.
+Selecting it any later makes a resume seek twice.
 
 - The hook is registered only when `selectsAudioWhilePreloading` was true during set-up.
-- On the hook, on the event queue: read `track-list` as a list of maps; ask `preloadedAudioTrackID(tracks:)` for an id; if both succeed and the handle is live, set `aid` synchronously with `mpv_set_property_string` to the id rendered with Swift's default decimal `String` conversion, status through the error check with option name `aid`. Any nil along the way leaves mpv's own choice.
+- On the hook, on the event queue: read `track-list` as a list of maps; ask `preloadedAudioTrackID(tracks:)` for an id; if both succeed and the handle is live, set `aid` synchronously with `mpv_set_property_string` to the id rendered with Swift's default decimal `String` conversion, status through the error check with option name `aid`.
+  Any nil along the way leaves mpv's own choice.
 - The hook is always continued afterwards (section 6.6).
 
 ### 6.16 Value conversions
@@ -664,7 +763,8 @@ Purpose: when the playback plan names an audio track, select it inside `on_prelo
 
 Applies to every C string the bridge receives from mpv: property names, string property values, get-property replies, log prefix, level and text, end-file error messages, `mpv_error_string` results and hook names. mpv may hand over bytes that are not UTF-8.
 
-Rule: decode the NUL-terminated bytes as UTF-8 if they are valid UTF-8; otherwise map every byte before the NUL to the Unicode scalar with the same value (a Latin-1 reading). Never fail and never return nil for a non-null pointer; never produce replacement characters.
+Rule: decode the NUL-terminated bytes as UTF-8 if they are valid UTF-8; otherwise map every byte before the NUL to the Unicode scalar with the same value (a Latin-1 reading).
+Never fail and never return nil for a non-null pointer; never produce replacement characters.
 
 #### 6.16.2 Node conversion (`convertNode(_:)`)
 
@@ -683,11 +783,16 @@ Results by node format (children of arrays and maps are converted one level deep
 | `MPV_FORMAT_NODE_ARRAY` | `[Any]` in order, leaving out children that convert to nil (later elements shift down; never padded) |
 | `MPV_FORMAT_NONE` or anything else | nil |
 
-Budget, as invariants. Each top-level call has its own budget, shared by the whole tree: 4,096 nodes and 16,777,216 bytes (16 MiB) of string and byte-array data. The root is at depth 0.
+Budget, as invariants.
+Each top-level call has its own budget, shared by the whole tree: 4,096 nodes and 16,777,216 bytes (16 MiB) of string and byte-array data.
+The root is at depth 0.
 
-- A node deeper than 32, or reached when the node budget is used up, converts to nil. Every other visited node uses one unit of the node budget before anything else is checked.
-- A string or byte array uses its length in bytes. One longer than the bytes left converts to nil, and measuring a string never reads further than the bytes left allow (plus its terminator).
-- A map key uses bytes like a string but no node unit. When a key cannot be converted, its entry is skipped and its value is never visited; when a value converts to nil, its key's bytes stay used.
+- A node deeper than 32, or reached when the node budget is used up, converts to nil.
+  Every other visited node uses one unit of the node budget before anything else is checked.
+- A string or byte array uses its length in bytes.
+  One longer than the bytes left converts to nil, and measuring a string never reads further than the bytes left allow (plus its terminator).
+- A map key uses bytes like a string but no node unit.
+  When a key cannot be converted, its entry is skipped and its value is never visited; when a value converts to nil, its key's bytes stay used.
 - An array or map converts to nil when its count is negative, when its count exceeds the node units left after its own unit, or when its count is above 0 but its storage is missing (no values, or for a map no keys).
 - A null string, byte-array or list pointer converts to nil, as does a byte array with a size above 0 and no data.
 
@@ -695,40 +800,67 @@ Consequences callers depend on: flags stay `Bool`, integers stay `Int64`, fracti
 
 #### 6.16.3 Dimension check
 
-The side-data dimension check takes two `Int64` values and passes exactly when both are above 0, both are at most 16,384, and width times height, computed without overflow, is at most 67,108,864 (64 x 1,024 x 1,024). It is used by the early snapshot, by the tvOS platform write and by this map rule:
+The side-data dimension check takes two `Int64` values and passes exactly when both are above 0, both are at most 16,384, and width times height, computed without overflow, is at most 67,108,864 (64 x 1,024 x 1,024).
+It is used by the early snapshot, by the tvOS platform write and by this map rule:
 
-Map rule (applied to every map before its entries are converted): scan all entries. If no value in the map is a byte array, or the map has neither a `width`/`w` key nor a `height`/`h` key, the map passes. Otherwise both a width-like and a height-like entry must exist (when a key appears more than once the last occurrence counts; entries with null keys are skipped for this lookup but still count towards "has a byte array"); each value must convert to `Int64` (an `MPV_FORMAT_INT64` value as is, or an `MPV_FORMAT_DOUBLE` value that is finite, integral and exactly representable as `Int64`); and the pair must pass the dimension check. The scan compares raw key bytes and uses none of the budget. (The previous bridge trapped on a double of exactly 2^63 here; the replacement may reject it instead.) Failing makes the whole map nil. Purpose: reject attacker-sized side data (for example an embedded image) before allocating for it.
+Map rule (applied to every map before its entries are converted): scan all entries.
+If no value in the map is a byte array, or the map has neither a `width`/`w` key nor a `height`/`h` key, the map passes.
+Otherwise both a width-like and a height-like entry must exist (when a key appears more than once the last occurrence counts; entries with null keys are skipped for this lookup but still count towards "has a byte array"); each value must convert to `Int64` (an `MPV_FORMAT_INT64` value as is, or an `MPV_FORMAT_DOUBLE` value that is finite, integral and exactly representable as `Int64`); and the pair must pass the dimension check.
+The scan compares raw key bytes and uses none of the budget.
+(The previous bridge trapped on a double of exactly 2^63 here; the replacement may reject it instead.)
+Failing makes the whole map nil.
+Purpose: reject attacker-sized side data (for example an embedded image) before allocating for it.
 
 #### 6.16.4 Other conversions
 
 - `end-file`: `reason` is the raw value of mpv's end-file reason as a Swift `Int`, and `error` is the event's error field as a Swift `Int`.
-- A failed mpv status becomes an `NSError` whose code is the status and whose localised description is that status's `mpv_error_string`, decoded with section 6.16.1. The domain is the implementer's choice (section 10.1).
+- A failed mpv status becomes an `NSError` whose code is the status and whose localised description is that status's `mpv_error_string`, decoded with section 6.16.1.
+  The domain is the implementer's choice (section 10.1).
 
 ### 6.17 Disposal
 
 #### 6.17.1 `beginDisposal()`
 
-Under the liveness guard: if already terminal, return false; otherwise mark terminal and return true. Marking terminal alone immediately makes later requests fail, queued delivery blocks drop their payloads and drains stop. It destroys nothing. It must work on a bare instance that never had a context.
+Under the liveness guard: if already terminal, return false; otherwise mark terminal and return true.
+Marking terminal alone immediately makes later requests fail, queued delivery blocks drop their payloads and drains stop.
+It destroys nothing.
+It must work on a bare instance that never had a context.
 
 #### 6.17.2 `dispose(preserveDisplayCriteria:completion:)`
 
 Required order, with reasons:
 
-1. Call `beginDisposal()`. If it returns false, return at once without calling this call's completion. Reason: `deinit` also disposes, and only the first dispose does the work.
-2. tvOS, unless `preserveDisplayCriteria` is true: clear the display criteria synchronously, before `dispose` returns, through the `avDisplayManager` of the container's window, else the remembered window (section 8.13). If neither exists, nothing is cleared. This clear is not gated by `matchContentEnabled` or by the system's matching setting. Reason: the adapter lets go of the core as soon as `dispose` returns, so the clear cannot wait for a later turn, and it must run while the container, if any, is still in its window.
+1. Call `beginDisposal()`.
+   If it returns false, return at once without calling this call's completion.
+   Reason: `deinit` also disposes, and only the first dispose does the work.
+2. tvOS, unless `preserveDisplayCriteria` is true: clear the display criteria synchronously, before `dispose` returns, through the `avDisplayManager` of the container's window, else the remembered window (section 8.13).
+   If neither exists, nothing is cleared.
+   This clear is not gated by `matchContentEnabled` or by the system's matching setting.
+   Reason: the adapter lets go of the core as soon as `dispose` returns, so the clear cannot wait for a later turn, and it must run while the container, if any, is still in its window.
 3. Remove every notification observer this core registered and, on iOS, detach from the external-display coordinator (in either order).
 4. The shared teardown below, which queues mpv's destruction.
 5. The UIKit teardown below, after the destruction has been queued, without waiting for it.
 
 Shared teardown:
 
-- Every pending request is taken out of the table and failed with the disposed error (section 10.1), asynchronously on main. Replies that arrive later find no entry.
-- Under the cache guard only (not the source-transition exclusion), the hold is set and these caches are cleared: Dolby Vision profile and level, container frame rate, signal peak and measured cadence to 0; deinterlace to false; transfer, primaries and matrix to absent. Left as they are (all harmless once disposed): width, height, the pause state, the epoch, the "early snapshot wanted" and "apply scheduled" flags, the visible mark and the remembered source id.
-- Under the liveness guard, the core is marked disposed and its handle and relay pointer are taken out of the state. The relay is then detached (its weak core reference cleared under its own guard), so no new drain can be scheduled even if mpv calls the wakeup callback again.
-- The destroy step is enqueued on the event queue: if there was a handle, clear its wakeup callback with `mpv_set_wakeup_callback(handle, nil, nil)` and then call `mpv_terminate_destroy`; if there was a relay, drop the manual retain; finally call the completion, if given. Any drain already queued or running finishes first, and drains that run later find no handle. The completion therefore runs on the event queue, exactly once, even when no handle was ever created.
-- Capture rule: the destroy step and every block that disposal enqueues (including the request failures) capture only plain values: the handle, the relay pointer, the completion, the pending completions and their error. Never the core, strongly or weakly. Reason: disposal can run inside the core's `deinit`, where enqueuing a block that refers to the core, even weakly, crashes the app.
+- Every pending request is taken out of the table and failed with the disposed error (section 10.1), asynchronously on main.
+  Replies that arrive later find no entry.
+- Under the cache guard only (not the source-transition exclusion), the hold is set and these caches are cleared: Dolby Vision profile and level, container frame rate, signal peak and measured cadence to 0; deinterlace to false; transfer, primaries and matrix to absent.
+  Left as they are (all harmless once disposed): width, height, the pause state, the epoch, the "early snapshot wanted" and "apply scheduled" flags, the visible mark and the remembered source id.
+- Under the liveness guard, the core is marked disposed and its handle and relay pointer are taken out of the state.
+  The relay is then detached (its weak core reference cleared under its own guard), so no new drain can be scheduled even if mpv calls the wakeup callback again.
+- The destroy step is enqueued on the event queue: if there was a handle, clear its wakeup callback with `mpv_set_wakeup_callback(handle, nil, nil)` and then call `mpv_terminate_destroy`; if there was a relay, drop the manual retain; finally call the completion, if given.
+  Any drain already queued or running finishes first, and drains that run later find no handle.
+  The completion therefore runs on the event queue, exactly once, even when no handle was ever created.
+- Capture rule: the destroy step and every block that disposal enqueues (including the request failures) capture only plain values: the handle, the relay pointer, the completion, the pending completions and their error.
+  Never the core, strongly or weakly.
+  Reason: disposal can run inside the core's `deinit`, where enqueuing a block that refers to the core, even weakly, crashes the app.
 
-UIKit teardown, as the end state once `dispose` returns: no layer (`sampleBufferDisplayLayer` is nil and the layer has left its parent); no container in any view; no cover view; not initialised. The remembered window and host view are kept (section 14.1). The host view is untouched and shows its black background until the next load's container arrives. On iOS, an adopted external window stays up. Removing the layer before mpv is destroyed is safe because the engine's video output keeps its own reference to the layer until its own teardown (section 7.2).
+UIKit teardown, as the end state once `dispose` returns: no layer (`sampleBufferDisplayLayer` is nil and the layer has left its parent); no container in any view; no cover view; not initialised.
+The remembered window and host view are kept (section 14.1).
+The host view is untouched and shows its black background until the next load's container arrives.
+On iOS, an adopted external window stays up.
+Removing the layer before mpv is destroyed is safe because the engine's video output keeps its own reference to the layer until its own teardown (section 7.2).
 
 #### 6.17.3 What happens to work in flight
 
@@ -745,15 +877,19 @@ UIKit teardown, as the end state once `dispose` returns: no layer (`sampleBuffer
 | A drain in the middle of an event | Finishes that event (its synchronous reads now return nil because the handle has left the state), then stops. |
 | Wakeups after the relay is detached | Ignored by the relay. |
 
-The adapter's `stop()` relies on this: it clears `delegate`, enters a shared `DispatchGroup`, calls `dispose(preserveDisplayCriteria:)` with a completion that leaves the group, then drops its reference. Audio session deactivation waits on that group.
+The adapter's `stop()` relies on this: it clears `delegate`, enters a shared `DispatchGroup`, calls `dispose(preserveDisplayCriteria:)` with a completion that leaves the group, then drops its reference.
+Audio session deactivation waits on that group.
 
 #### 6.17.4 Second dispose and `deinit`
 
-A second `dispose` is a complete no-op, including not calling its completion. The core's `deinit` runs `dispose()` with defaults: a no-op after an explicit dispose; on tvOS, if the owner never disposed, it clears the display criteria. If the last release happens off main (section 15), that `dispose` would run its UIKit teardown off main; the adapter always disposes first, so in practice `deinit` does nothing.
+A second `dispose` is a complete no-op, including not calling its completion.
+The core's `deinit` runs `dispose()` with defaults: a no-op after an explicit dispose; on tvOS, if the owner never disposed, it clears the display criteria.
+If the last release happens off main (section 15), that `dispose` would run its UIKit teardown off main; the adapter always disposes first, so in practice `deinit` does nothing.
 
 ### 6.18 App lifecycle
 
-Registration (in `initialize`, after mpv set-up succeeds). Handlers must run synchronously on the posting thread (selector-based observers, or block observers with a nil queue):
+Registration (in `initialize`, after mpv set-up succeeds).
+Handlers must run synchronously on the posting thread (selector-based observers, or block observers with a nil queue):
 
 | Platform | Notifications | Object |
 | --- | --- | --- |
@@ -771,15 +907,24 @@ Behaviour:
 | Will enter foreground | Clear the backgrounded mark and, unless Picture in Picture is active, `setProperty("vid", "auto")`. Nothing else. |
 | Did activate (iOS only) | Clear the backgrounded mark. If Picture in Picture is active, do nothing more. Otherwise: `setProperty("vid", "auto")`; the placement refresh (section 9.3); `flush()` on the layer if its `requiresFlushToResumeDecoding` is true or its `status` is `.failed` (never `flushAndRemoveImage`); EDR with the cached signal peak; and, if the displayed pause state (section 6.12) is paused, the paused redraw `seek 0 relative+exact`. Required order: the `vid` write is issued before the redraw seek, so mpv receives them in that order. The other actions all happen on main in the same turn, and their relative order is not observable. |
 
-What `vid=no` and `vid=auto` do in the engine: with `force-window` unset (mpv 0.41), deselecting video destroys the engine's video output and selecting it again creates a new one. Backgrounding without Picture in Picture is therefore a full teardown: the picture is removed (the layer shows its black background) and the engine's subtitle layer and its control of the layer's timing go with it. Returning builds a new video output with a new subtitle layer and new timing. That needs the layer still in its container (it always is) and main free to answer the engine (section 5.3). Audio continues while video is deselected, if playback was not paused.
+What `vid=no` and `vid=auto` do in the engine: with `force-window` unset (mpv 0.41), deselecting video destroys the engine's video output and selecting it again creates a new one.
+Backgrounding without Picture in Picture is therefore a full teardown: the picture is removed (the layer shows its black background) and the engine's subtitle layer and its control of the layer's timing go with it.
+Returning builds a new video output with a new subtitle layer and new timing.
+That needs the layer still in its container (it always is) and main free to answer the engine (section 5.3).
+Audio continues while video is deselected, if playback was not paused.
 
-Did activate also fires on returns that never backgrounded (Control Centre, notification banners, alerts, an app-switcher peek). Screen lock behaves as background followed by foreground and activation on unlock. The engine also recovers its own presentation when the app becomes active again; the bridge's recovery is additional and must stay.
+Did activate also fires on returns that never backgrounded (Control Centre, notification banners, alerts, an app-switcher peek).
+Screen lock behaves as background followed by foreground and activation on unlock.
+The engine also recovers its own presentation when the app becomes active again; the bridge's recovery is additional and must stay.
 
-The bridge handles no memory warnings, thermal state changes, audio session interruptions or route changes, and never touches `AVAudioSession`. Do not add any.
+The bridge handles no memory warnings, thermal state changes, audio session interruptions or route changes, and never touches `AVAudioSession`.
+Do not add any.
 
 ### 6.19 Audio-output options (set by the adapter, for context)
 
-The bridge sets no audio option, never touches `AVAudioSession`, and must never override the options below. Its only duty is to run the adapter's options hook at the right moment (section 6.2). These options belong to the engine's AVFoundation audio output; upstream mpv's manual does not describe them, so their meaning is recorded here.
+The bridge sets no audio option, never touches `AVAudioSession`, and must never override the options below.
+Its only duty is to run the adapter's options hook at the right moment (section 6.2).
+These options belong to the engine's AVFoundation audio output; upstream mpv's manual does not describe them, so their meaning is recorded here.
 
 | Option | Value the adapter sets | Meaning |
 | --- | --- | --- |
@@ -797,19 +942,27 @@ The bridge sets no audio option, never touches `AVAudioSession`, and must never 
 | `ao-avfoundation-compressed-anchor-resume` | `yes` (tvOS, AirPlay route only) | After a pause, anchor mpv to AirPlay's clock as at start-up, so video waits for the audio instead of running ahead and then stopping to resynchronise. |
 | `ao-avfoundation-compressed-buffer` | `1.25` (tvOS, AirPlay route only) | Seconds of compressed audio queued before starting (instead of two), kept above the output's one-second priming reserve. |
 
-These options belong to Vivid's own engine (the Lucid Engine patch specification). A build that links an engine without Vivid's audio output, such as the previous package, rejects them; the console then shows, through the error check (section 10.2), one `MPV error: option not found option=ao-avfoundation-manage-audio-session at <module>/VividMPVPlayer.swift:<line>` line on every load (the module is `Vivid` on iOS and `VividTV` on tvOS) and, on tvOS with an AirPlay route, five more `MPV error: option not found at ...` lines with no `option=` detail, because the adapter does not pass the name for those. Playback continues without the options' effects.
+These options belong to Vivid's own engine (the Lucid Engine patch specification).
+A build that links an engine without Vivid's audio output, such as the previous package, rejects them; the console then shows, through the error check (section 10.2), one `MPV error: option not found option=ao-avfoundation-manage-audio-session at <module>/VividMPVPlayer.swift:<line>` line on every load (the module is `Vivid` on iOS and `VividTV` on tvOS) and, on tvOS with an AirPlay route, five more `MPV error: option not found at ...` lines with no `option=` detail, because the adapter does not pass the name for those.
+Playback continues without the options' effects.
 
 ## 7. Video surface and the video-output contract
 
 ### 7.1 Who draws the picture
 
-The bridge does not render. It creates one `AVSampleBufferDisplayLayer` subclass per core, hands that layer to the engine as `wid`, and selects the engine's sample-buffer video output with `vo=avfoundation`. From then on the engine alone puts pictures on the layer, controls its timing and draws subtitles. Hardware-decoded frames keep the decoder's own colour tags; only software uploads are tagged from mpv's parameters. Nothing in the bridge touches pictures or their tags.
+The bridge does not render.
+It creates one `AVSampleBufferDisplayLayer` subclass per core, hands that layer to the engine as `wid`, and selects the engine's sample-buffer video output with `vo=avfoundation`.
+From then on the engine alone puts pictures on the layer, controls its timing and draws subtitles.
+Hardware-decoded frames keep the decoder's own colour tags; only software uploads are tagged from mpv's parameters.
+Nothing in the bridge touches pictures or their tags.
 
-The bridge never calls any `mpv_render_context_*` function, never creates a `CAMetalLayer`, never creates or tags pixel buffers, never sets the layer's `controlTimebase`, never enqueues a sample buffer and never flushes the layer except for the recovery in section 6.18. Do not add any of these: the engine already owns them, and two owners would fight.
+The bridge never calls any `mpv_render_context_*` function, never creates a `CAMetalLayer`, never creates or tags pixel buffers, never sets the layer's `controlTimebase`, never enqueues a sample buffer and never flushes the layer except for the recovery in section 6.18.
+Do not add any of these: the engine already owns them, and two owners would fight.
 
 ### 7.2 The video-output contract
 
-This is the complete contract between the bridge and the engine's sample-buffer video output: what the bridge guarantees, the options it uses, and the engine behaviour it relies on. The engine rewrite keeps the same contract (section 2).
+This is the complete contract between the bridge and the engine's sample-buffer video output: what the bridge guarantees, the options it uses, and the engine behaviour it relies on.
+The engine rewrite keeps the same contract (section 2).
 
 What the bridge guarantees:
 
@@ -857,15 +1010,19 @@ From outermost to innermost:
 | Cover view (iOS) | The bridge, only while video is on an external screen | Section 9.4. |
 | External window and root view (iOS) | The external-display coordinator | Section 9.2. |
 
-`PlayerSurfaceLayoutTests` asserts this two-level nesting (layer directly in the container's layer, container directly in the host view) and one new layer per load with the host view never replaced. Keep both.
+`PlayerSurfaceLayoutTests` asserts this two-level nesting (layer directly in the container's layer, container directly in the host view) and one new layer per load with the host view never replaced.
+Keep both.
 
 ### 7.4 Gravity
 
-The adapter owns the viewer's gravity choice and writes it straight onto `sampleBufferDisplayLayer?.videoGravity` whenever it changes and once after each `initialize`. The bridge does not intercept, animate or override it.
+The adapter owns the viewer's gravity choice and writes it straight onto `sampleBufferDisplayLayer?.videoGravity` whenever it changes and once after each `initialize`.
+The bridge does not intercept, animate or override it.
 
 ### 7.5 Geometry updates (`updateFrame`)
 
-Called on main by the host view's `layoutSubviews` (every layout pass, including rotation, iPad split-view resizing, preview and full-screen transitions), by the adapter when Picture in Picture starts or stops, and by the placement refresh. It does nothing if the layer or the container no longer exists. Otherwise it establishes this end state within one `CATransaction` with actions disabled:
+Called on main by the host view's `layoutSubviews` (every layout pass, including rotation, iPad split-view resizing, preview and full-screen transitions), by the adapter when Picture in Picture starts or stops, and by the placement refresh.
+It does nothing if the layer or the container no longer exists.
+Otherwise it establishes this end state within one `CATransaction` with actions disabled:
 
 | Item | End state |
 | --- | --- |
@@ -874,7 +1031,8 @@ Called on main by the host view's `layoutSubviews` (every layout pass, including
 | Cover view, if any | Frame equal to the remembered window's bounds, or `.zero` if the window has gone. |
 | Layer `contentsScale` | Taken from the screen of the container's own window (so an external screen wins while the container is there), else the remembered window's screen, else `UIScreen.main`: that screen's `nativeScale` if above 0, otherwise its `scale`. |
 
-On iOS, EDR is then applied with the cached signal peak (section 8.15), after the transaction, so EDR is re-asserted on every host layout pass. Rotation produces one snap per layout pass, never an animated stretch.
+On iOS, EDR is then applied with the cached signal peak (section 8.15), after the transaction, so EDR is re-asserted on every host layout pass.
+Rotation produces one snap per layout pass, never an animated stretch.
 
 ### 7.6 Options deliberately not set
 
@@ -895,7 +1053,10 @@ On iOS, EDR is then applied with the cached signal peak (section 8.15), after th
 
 ### 8.1 Overview
 
-On Apple TV the bridge asks for the HDMI frame rate and dynamic range that suit the decoded stream, by assigning `AVDisplayCriteria` to `preferredDisplayCriteria` on the `avDisplayManager` of the window showing the video, always on main. The inputs are the stream properties mpv reports (section 8.2). Nothing is written between files, so the TV stays in whatever mode it is in (section 8.3). Each file's criteria are then written from an early snapshot (section 8.5) or from the restart snapshot (section 8.4), and later observer changes are merged into single writes (section 8.6).
+On Apple TV the bridge asks for the HDMI frame rate and dynamic range that suit the decoded stream, by assigning `AVDisplayCriteria` to `preferredDisplayCriteria` on the `avDisplayManager` of the window showing the video, always on main.
+The inputs are the stream properties mpv reports (section 8.2).
+Nothing is written between files, so the TV stays in whatever mode it is in (section 8.3).
+Each file's criteria are then written from an early snapshot (section 8.5) or from the restart snapshot (section 8.4), and later observer changes are merged into single writes (section 8.6).
 
 On iPhone and iPad the same caches and holds run, but nothing is written (section 8.15).
 
@@ -914,7 +1075,8 @@ On iPhone and iPad the same caches and holds run, but nothing is written (sectio
 | Primaries | `video-params/primaries` | `primaries` of `video-params` | `primaries` of `video-out-params` | absent |
 | Matrix | `video-params/colormatrix` | `colormatrix` of `video-params` | `colormatrix` of `video-out-params` | absent |
 
-The early snapshot reads the decoded **output** parameters (`video-out-params`) while the restart snapshot reads `video-params`. Do not unify them.
+The early snapshot reads the decoded **output** parameters (`video-out-params`) while the restart snapshot reads `video-params`.
+Do not unify them.
 
 ### 8.3 The hold, the epoch and the source-transition exclusion *Vivid (`f347bb7`)*
 
@@ -922,58 +1084,79 @@ State (under the cache guard): the hold flag (initially held); a source epoch (`
 
 Transitions:
 
-- **Start of file** (`MPV_EVENT_START_FILE`), before anything else for that event: take the source-transition exclusion, then the cache guard; reset the measured cadence to 0; advance the epoch; set "early snapshot wanted"; set held. Release the cache guard, then the exclusion.
+- **Start of file** (`MPV_EVENT_START_FILE`), before anything else for that event: take the source-transition exclusion, then the cache guard; reset the measured cadence to 0; advance the epoch; set "early snapshot wanted"; set held.
+  Release the cache guard, then the exclusion.
 - **End of file** (`MPV_EVENT_END_FILE`), before the `end-file` dispatch: the same, except "early snapshot wanted" is cleared and the cadence is left alone.
 - **Playback restart**: the snapshot in section 8.4 releases the hold.
 - **Dispose**: sets the hold and resets the caches (section 6.17.2).
 
-Seeks do not engage the hold; they only produce another restart snapshot. Of the two holds, only the start-of-file hold resets the measured cadence.
+Seeks do not engage the hold; they only produce another restart snapshot.
+Of the two holds, only the start-of-file hold resets the measured cadence.
 
-**[debug-only]** Each start-of-file and end-of-file hold measures, with a monotonic clock in nanoseconds on the event queue, how long it waited to acquire the exclusion (`wait_ms`) and how long from acquiring it until just after releasing it (`held_ms`), each divided by 1,000,000 as a `Double`. After releasing, it dispatches `display-commit-lock` with `transition` (`start_file` or `end_file`), `wait_ms` and `held_ms` through ordered delivery, so the event precedes the `start-file` or `end-file` of the same mpv event.
+**[debug-only]** Each start-of-file and end-of-file hold measures, with a monotonic clock in nanoseconds on the event queue, how long it waited to acquire the exclusion (`wait_ms`) and how long from acquiring it until just after releasing it (`held_ms`), each divided by 1,000,000 as a `Double`.
+After releasing, it dispatches `display-commit-lock` with `transition` (`start_file` or `end_file`), `wait_ms` and `held_ms` through ordered delivery, so the event precedes the `start-file` or `end-file` of the same mpv event.
 
 ### 8.4 Authoritative snapshot at playback restart
 
-`MPV_EVENT_PLAYBACK_RESTART` arrives each time the first picture after a load or a seek is on screen. On the event queue, in this order:
+`MPV_EVENT_PLAYBACK_RESTART` arrives each time the first picture after a load or a seek is on screen.
+On the event queue, in this order:
 
 1. Read synchronously, in any order and holding no bridge guard: `estimated-vf-fps` (number), `container-fps` (number), `deinterlace-active` (flag), `video-params` (map), `current-tracks/video` (map).
-2. Take the exclusion, then the cache guard. Overwrite every cached input from the reads, writing the section 8.2 defaults for anything unavailable. Clear the hold and clear "early snapshot wanted", even when every read failed. Release both.
+2. Take the exclusion, then the cache guard.
+   Overwrite every cached input from the reads, writing the section 8.2 defaults for anything unavailable.
+   Clear the hold and clear "early snapshot wanted", even when every read failed.
+   Release both.
 3. Schedule a cached apply (section 8.6).
 4. Read `time-pos` and dispatch `playback-restart` (section 6.6 gives the reason for this order).
 
-Reason for reading instead of using the caches: property changes for the new file can still be queued behind this event, so the caches may be stale. The snapshot does not apply EDR. It also overwrites the width and height caches.
+Reason for reading instead of using the caches: property changes for the new file can still be queued behind this event, so the caches may be stale.
+The snapshot does not apply EDR.
+It also overwrites the width and height caches.
 
 ### 8.5 Early snapshot at video reconfiguration *Vivid (`f347bb7`)*
 
-Enabled only on tvOS and only when the core's `matchContentEnabled` is true; on iOS it never runs. Purpose: start the HDMI switch from the first complete picture-format snapshot, which can be available before audio is ready, without pausing either stream.
+Enabled only on tvOS and only when the core's `matchContentEnabled` is true; on iOS it never runs.
+Purpose: start the HDMI switch from the first complete picture-format snapshot, which can be available before audio is ready, without pausing either stream.
 
 On each `MPV_EVENT_VIDEO_RECONFIG`, on the event queue:
 
-1. Under the cache guard, note the epoch and whether "early snapshot wanted" and the hold are both set. If not both, stop.
+1. Under the cache guard, note the epoch and whether "early snapshot wanted" and the hold are both set.
+   If not both, stop.
 2. Read synchronously, stopping silently at the first failure (leaving "early snapshot wanted" set, so a later reconfiguration can retry and the restart snapshot remains the fallback): `video-out-params` (map); `current-tracks/video` (map); `w` and `h` from the output parameters as `Int64`; those dimensions must pass the dimension check (section 6.16.3); `container-fps` present, finite and above 0; `estimated-vf-fps` present, finite and above 0; `deinterlace-active` present.
 3. Derive, from these fresh values (not the caches): field output and the requested rate (section 8.7); profile and level from the track (`Int64`, default 0); signal peak from the output parameters' `sig-peak` (`Double`, default 0); transfer, primaries and matrix from the output parameters; then the profile 7 mapping (section 8.8).
 4. Under the cache guard, clear "early snapshot wanted", so repeated reconfigurations within one file never dispatch a second early write.
-5. Enqueue on main, holding the core weakly: stop if the core is gone or terminal; take the exclusion; under the cache guard confirm that the epoch is unchanged and the hold is still set (otherwise a source transition or the restart snapshot happened meanwhile: release and stop); release the cache guard and run the platform write (section 8.9) with the derived values (width and height as `Int32`). If it reports applied (which includes "already applied"), call the delegate's `onEvent` directly with the name `display-criteria-prepared` and nil data, still inside the exclusion, bypassing ordered delivery. Release the exclusion.
+5. Enqueue on main, holding the core weakly: stop if the core is gone or terminal; take the exclusion; under the cache guard confirm that the epoch is unchanged and the hold is still set (otherwise a source transition or the restart snapshot happened meanwhile: release and stop); release the cache guard and run the platform write (section 8.9) with the derived values (width and height as `Int32`).
+   If it reports applied (which includes "already applied"), call the delegate's `onEvent` directly with the name `display-criteria-prepared` and nil data, still inside the exclusion, bypassing ordered delivery.
+   Release the exclusion.
 
-The early write does not touch the caches and does not release the hold, so partial observer updates cannot clear or change the mode before the restart snapshot reconciles the final cadence. The adapter uses the event only as a trace mark.
+The early write does not touch the caches and does not release the hold, so partial observer updates cannot clear or change the mode before the restart snapshot reconciles the final cadence.
+The adapter uses the event only as a trace mark.
 
 ### 8.6 Cached apply (coalesced)
 
-Scheduling: under the cache guard, if an apply is already scheduled do nothing; otherwise mark one scheduled and enqueue one main block that holds the core weakly. Merging is an optimisation only; correctness comes from sections 8.3 and 8.4.
+Scheduling: under the cache guard, if an apply is already scheduled do nothing; otherwise mark one scheduled and enqueue one main block that holds the core weakly.
+Merging is an optimisation only; correctness comes from sections 8.3 and 8.4.
 
 Triggers: an available observer value for profile, level, container rate, deinterlace flag, transfer, primaries, matrix, signal peak, width or height (section 6.9); and the restart snapshot.
 
 The main block:
 
-1. Take the exclusion, then the cache guard. Clear the scheduled mark, so changes that arrive during the write schedule a fresh pass.
-2. If held, release both and return without calling the platform write. There is no disposal check in this block; disposal sets the hold.
+1. Take the exclusion, then the cache guard.
+   Clear the scheduled mark, so changes that arrive during the write schedule a fresh pass.
+2. If held, release both and return without calling the platform write.
+   There is no disposal check in this block; disposal sets the hold.
 3. Derive from the caches: field output and the requested rate (section 8.7); width and height as `Int32`, truncated from the `Double` caches (an out-of-range value traps, as today; real values are always small); profile, level, signal peak, transfer, primaries and matrix, with the profile 7 mapping applied (section 8.8).
-4. Release the cache guard and run the platform write with the exclusion held, ignoring its result. Release the exclusion.
+4. Release the cache guard and run the platform write with the exclusion held, ignoring its result.
+   Release the exclusion.
 
 ### 8.7 Frame rate
 
-1. **Field output**: true when the deinterlace flag is set, or when both the container rate and the measured cadence are above 0 and measured divided by container is strictly between 1.7 and 2.3. So ratios of 1.71 and 2.29 count, and 1.7, 2.3, 1.0 and 3.0 do not.
+1. **Field output**: true when the deinterlace flag is set, or when both the container rate and the measured cadence are above 0 and measured divided by container is strictly between 1.7 and 2.3.
+   So ratios of 1.71 and 2.29 count, and 1.7, 2.3, 1.0 and 3.0 do not.
 2. **Presented rate**: twice the container rate for field output, otherwise the container rate.
-3. **Nominal snapping**: a rate that is not above 0 (including NaN) becomes 0. Otherwise find the nearest of 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 100, 119.88 and 120 Hz by absolute difference (on an exact tie the earlier entry in that list wins). If the absolute difference divided by that nominal rate is strictly below 0.01, use the nominal rate; otherwise use the presented rate unchanged. Reason: TVs offer modes only at nominal rates.
+3. **Nominal snapping**: a rate that is not above 0 (including NaN) becomes 0. Otherwise find the nearest of 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 100, 119.88 and 120 Hz by absolute difference (on an exact tie the earlier entry in that list wins).
+   If the absolute difference divided by that nominal rate is strictly below 0.01, use the nominal rate; otherwise use the presented rate unchanged.
+   Reason: TVs offer modes only at nominal rates.
 
 Examples: 23.9 gives 23.976; 59.9 gives 59.94; 47.9 gives 48; 23.5 stays 23.5 (about 2% from 23.976); 45 stays 45; 0 and NaN give 0; container 25 with the deinterlacer active gives 50; container 30 with a measured 60 gives 60.
 
@@ -981,11 +1164,15 @@ The cadence is re-measured at every restart, including after seeks, so a seek ca
 
 ### 8.8 Profile 7 mapping
 
-In both the early snapshot and the cached apply: when the Dolby Vision profile is 7, pass profile 8 with compatibility id 1, keep the level, and fill any absent transfer, primaries and matrix with `smpte2084`, `bt2020` and `bt2020nc`. Otherwise pass the values unchanged with no compatibility id. Reason: the pinned decoder outputs profile 8.1 for these streams. *Vivid (`d5108a5`)* made this unconditional and removed every configurable conversion mode; the bridge never touches the process environment.
+In both the early snapshot and the cached apply: when the Dolby Vision profile is 7, pass profile 8 with compatibility id 1, keep the level, and fill any absent transfer, primaries and matrix with `smpte2084`, `bt2020` and `bt2020nc`.
+Otherwise pass the values unchanged with no compatibility id.
+Reason: the pinned decoder outputs profile 8.1 for these streams. *Vivid (`d5108a5`)* made this unconditional and removed every configurable conversion mode; the bridge never touches the process environment.
 
 ### 8.9 The platform write (tvOS)
 
-Runs on main with the exclusion held and the cache guard released. Inputs: profile, level, compatibility id (optional), rate (already snapped), width and height (`Int32`), signal peak, transfer, primaries, matrix. It reports whether suitable criteria are in effect afterwards ("applied").
+Runs on main with the exclusion held and the cache guard released.
+Inputs: profile, level, compatibility id (optional), rate (already snapped), width and height (`Int32`), signal peak, transfer, primaries, matrix.
+It reports whether suitable criteria are in effect afterwards ("applied").
 
 Definitions:
 
@@ -993,7 +1180,8 @@ Definitions:
 - **Request rate**: the input rate as a `Float` when it is above 0, otherwise 0.
 - **No usable metadata**: the request rate, the profile and the signal peak are all not above 0, and transfer, primaries and matrix are all absent.
 - **Requested range**: Dolby Vision when the profile is above 0, with no check of what the display supports; otherwise the base range (section 8.10) passed through the capability filter.
-- **Hint**: the format description for the requested range (section 8.11). If it cannot be built and the profile is above 0, the requested range becomes the base range **without** the capability filter and the hint is built for that instead.
+- **Hint**: the format description for the requested range (section 8.11).
+  If it cannot be built and the profile is above 0, the requested range becomes the base range **without** the capability filter and the hint is built for that instead.
 - **Identity**: section 8.12, built from the final requested range, the request rate, width, height, profile, level and compatibility id.
 
 Outcomes:
@@ -1026,7 +1214,8 @@ Range names (used in the identity and for diagnostics): `SDR`, `HDR10`, `HLG`, `
 
 ### 8.11 Format hints
 
-Each hint is built with `CMVideoFormatDescriptionCreate` (default allocator, the input width and height). A status other than `noErr` means no hint.
+Each hint is built with `CMVideoFormatDescriptionCreate` (default allocator, the input width and height).
+A status other than `noErr` means no hint.
 
 | Range | Codec type | Extensions |
 | --- | --- | --- |
@@ -1043,23 +1232,35 @@ Dolby Vision configuration record (`DOVIDecoderConfigurationRecord`, ETSI TS 103
 - bytes 2 and 3: a big-endian 16-bit field holding, from the most significant bit down, the profile (7 bits), the level (6 bits), RPU present (1 bit, set), enhancement layer present (1 bit, clear) and base layer present (1 bit, set);
 - byte 4: the compatibility id in the top 4 bits (the remaining bits zero).
 
-Profile, level and compatibility id are first narrowed to 8 bits by truncation, then masked to 7, 6 and 4 bits; the `dvvC` or `dvcC` choice also uses the truncated profile. The compatibility id is the supplied one; when none is supplied it is 1 for profile 8 and 0 otherwise. So profile 5 is requested with id 0, and every profile 8 stream (including 8.4) with id 1.
+Profile, level and compatibility id are first narrowed to 8 bits by truncation, then masked to 7, 6 and 4 bits; the `dvvC` or `dvcC` choice also uses the truncated profile.
+The compatibility id is the supplied one; when none is supplied it is 1 for profile 8 and 0 otherwise.
+So profile 5 is requested with id 0, and every profile 8 stream (including 8.4) with id 1.
 
 ### 8.12 Shared request identity
 
-The identity is the tuple (final range, request rate as `Float`, width, height, profile, level, compatibility id or "none", where "none" differs from every real id). Any encoding that compares these seven fields exactly will do; compare the rate as the `Float` that is actually requested, after snapping. The signal peak and colour tags are not part of it beyond their effect on the range.
+The identity is the tuple (final range, request rate as `Float`, width, height, profile, level, compatibility id or "none", where "none" differs from every real id).
+Any encoding that compares these seven fields exactly will do; compare the rate as the `Float` that is actually requested, after snapping.
+The signal peak and colour tags are not part of it beyond their effect on the range.
 
-There is one identity slot for the whole process, shared by every core and touched only on main (section 5.6). It is recorded by every real write and forgotten by every real clear.
+There is one identity slot for the whole process, shared by every core and touched only on main (section 5.6).
+It is recorded by every real write and forgotten by every real clear.
 
 ### 8.13 Clearing, replacement and final stop
 
-**Clearing** (from the platform write's clearing outcomes and from `dispose`): act only if something is set, meaning the shared identity is recorded or the manager's `preferredDisplayCriteria` is currently not nil. Then assign nil to `preferredDisplayCriteria` and forget the identity. When nothing is set, do nothing, so repeated failures never cause spurious writes. Clearing removes criteria set by anyone, not only by the bridge.
+**Clearing** (from the platform write's clearing outcomes and from `dispose`): act only if something is set, meaning the shared identity is recorded or the manager's `preferredDisplayCriteria` is currently not nil.
+Then assign nil to `preferredDisplayCriteria` and forget the identity.
+When nothing is set, do nothing, so repeated failures never cause spurious writes.
+Clearing removes criteria set by anyone, not only by the bridge.
 
-**Replacement**: the adapter builds a new core for every load and, at the start of each load, disposes the previous core with `dispose(preserveDisplayCriteria: true, ...)`. The outgoing core then leaves the criteria and the shared identity alone, so when the incoming core asks for the same criteria the outcome is "applied, no write": episodes of one format play back to back with no HDMI renegotiation.
+**Replacement**: the adapter builds a new core for every load and, at the start of each load, disposes the previous core with `dispose(preserveDisplayCriteria: true, ...)`.
+The outgoing core then leaves the criteria and the shared identity alone, so when the incoming core asks for the same criteria the outcome is "applied, no write": episodes of one format play back to back with no HDMI renegotiation.
 
-**Final stop**: the adapter's final teardown disposes with `preserveDisplayCriteria: false`. On tvOS `dispose` then clears synchronously on main, before mpv teardown is queued, while the container is still in its window (section 6.17.2). This clear is not gated by `matchContentEnabled` or the system matching setting.
+**Final stop**: the adapter's final teardown disposes with `preserveDisplayCriteria: false`.
+On tvOS `dispose` then clears synchronously on main, before mpv teardown is queued, while the container is still in its window (section 6.17.2).
+This clear is not gated by `matchContentEnabled` or the system matching setting.
 
-**Audio-only loads** (`vid=no` from the start) reach a restart snapshot with no video parameters, so the size is 0 and the next apply clears any criteria preserved from the previous video. Backgrounding (`vid=no`, section 6.18) does not clear: the resulting unavailable observer values are ignored, and nothing is written until video returns.
+**Audio-only loads** (`vid=no` from the start) reach a restart snapshot with no video parameters, so the size is 0 and the next apply clears any criteria preserved from the previous video.
+Backgrounding (`vid=no`, section 6.18) does not clear: the resulting unavailable observer values are ignored, and nothing is written until video returns.
 
 ### 8.14 Where the core's Match Content flag comes from (caller side, for context)
 
@@ -1072,14 +1273,19 @@ The adapter copies `LoadOptions.matchContentEnabled` into `matchContentEnabled` 
 | Direct URL without server quality options | Always true |
 | Offline file | Always true |
 
-Consequences: on the last two paths the flag is true even when the system setting is off, so the early snapshot still runs and every write lands on the "system matching disabled" clear; if the viewer turns the setting on mid-play, the next re-evaluation performs a real write. On the first two paths, a load started with the setting off never writes or clears for its whole life. On any path, a load started with the setting on clears at its next re-evaluation if the setting is turned off.
+Consequences: on the last two paths the flag is true even when the system setting is off, so the early snapshot still runs and every write lands on the "system matching disabled" clear; if the viewer turns the setting on mid-play, the next re-evaluation performs a real write.
+On the first two paths, a load started with the setting off never writes or clears for its whole life.
+On any path, a load started with the setting on clears at its next re-evaluation if the setting is turned off.
 
 ### 8.15 iPhone and iPad: no display criteria, EDR on the layer
 
-- There is no `AVDisplayManager` path: the platform write returns not applied without doing anything, the early snapshot never runs, and `dispose` has nothing to clear. External screens get no display criteria.
+- There is no `AVDisplayManager` path: the platform write returns not applied without doing anything, the early snapshot never runs, and `dispose` has nothing to clear.
+  External screens get no display criteria.
 - EDR decision: wanted when the signal peak is strictly above 1.0 (mpv reports the peak relative to SDR reference white, so SDR is 1.0 and PQ, HLG and Dolby Vision content is normally above it).
-- Applying it, with implicit animations disabled: on iOS 26 and later set the layer's `preferredDynamicRange` to `.high` when wanted, else `.standard`; on iOS 18 to 25 set `wantsExtendedDynamicRangeContent` to the decision. Nothing happens if the layer has gone, and nothing at all on tvOS.
-- Applied: on every available signal-peak observer value (with that value, enqueued on main; the hop keeps the core alive until it runs and does not check the terminal state); on every geometry update with the cached peak (section 7.5); and on scene activation with the cached peak. The restart snapshot updates the cached peak but does not apply EDR itself.
+- Applying it, with implicit animations disabled: on iOS 26 and later set the layer's `preferredDynamicRange` to `.high` when wanted, else `.standard`; on iOS 18 to 25 set `wantsExtendedDynamicRangeContent` to the decision.
+  Nothing happens if the layer has gone, and nothing at all on tvOS.
+- Applied: on every available signal-peak observer value (with that value, enqueued on main; the hop keeps the core alive until it runs and does not check the terminal state); on every geometry update with the cached peak (section 7.5); and on scene activation with the cached peak.
+  The restart snapshot updates the cached peak but does not apply EDR itself.
 - External screen and Picture in Picture use the same layer, so the EDR state follows it.
 
 ### 8.16 HDR by source on Apple TV, and debug-only switch events
@@ -1095,17 +1301,25 @@ Consequences: on the last two paths the flag is true even when the system settin
 | Dolby Vision profile 7 | Dolby Vision profile 8, compatibility 1, absent tags filled as PQ, BT.2020 and BT.2020 non-constant | As above |
 | Dolby Vision whose hint cannot be built | The base range from the tags, without the capability filter | |
 
-The rate is always part of the same request. Which parts tvOS honours (rate, range or both) is decided by the viewer's Match Content settings.
+The rate is always part of the same request.
+Which parts tvOS honours (rate, range or both) is decided by the viewer's Match Content settings.
 
-**[debug-only]**, tvOS: the core observes `AVDisplayManagerModeSwitchStart` and `AVDisplayManagerModeSwitchEnd` (any object) and, synchronously in the handler, calls the delegate's `onEvent` with the name `display-switch-started` or `display-switch-ended` and nil data, with no hop and no disposal check. The observers are removed at `dispose`. The adapter records the events in its trial trace and latest-playback report; Release builds never receive them.
+**[debug-only]**, tvOS: the core observes `AVDisplayManagerModeSwitchStart` and `AVDisplayManagerModeSwitchEnd` (any object) and, synchronously in the handler, calls the delegate's `onEvent` with the name `display-switch-started` or `display-switch-ended` and nil data, with no hop and no disposal check.
+The observers are removed at `dispose`.
+The adapter records the events in its trial trace and latest-playback report; Release builds never receive them.
 
 ## 9. External displays, Picture in Picture, background and AirPlay
 
 ### 9.1 Role test
 
-`VividExternalDisplay.isExternalDisplayRole(_:)` returns true exactly when the role's raw string value is `UIWindowSceneSessionRoleExternalDisplay` or `UIWindowSceneSessionRoleExternalDisplayNonInteractive` (exact, case-sensitive, whole-string comparison). Every other role returns false, including the application role, CarPlay roles and any role added in a future SDK. Compare raw strings; do not reference the deprecated `windowExternalDisplay` constant. The test is pure and stateless and callable from any isolation. `PlaybackSessionRecorder` relies on it classifying exactly the roles the coordinator adopts.
+`VividExternalDisplay.isExternalDisplayRole(_:)` returns true exactly when the role's raw string value is `UIWindowSceneSessionRoleExternalDisplay` or `UIWindowSceneSessionRoleExternalDisplayNonInteractive` (exact, case-sensitive, whole-string comparison).
+Every other role returns false, including the application role, CarPlay roles and any role added in a future SDK.
+Compare raw strings; do not reference the deprecated `windowExternalDisplay` constant.
+The test is pure and stateless and callable from any isolation.
+`PlaybackSessionRecorder` relies on it classifying exactly the roles the coordinator adopts.
 
-With Stage Manager on iPad, an app window dragged to an extended display is an application-role scene, so it is never treated as external. Only the role decides, never which screen a scene is on.
+With Stage Manager on iPad, an app window dragged to an extended display is an application-role scene, so it is never treated as external.
+Only the role decides, never which screen a scene is on.
 
 ### 9.2 The external-display coordinator (iOS only)
 
@@ -1122,11 +1336,17 @@ State: a weak reference to the active core (one at a time), and strong reference
 
 Nothing ever releases an adopted scene (section 14.2).
 
-Wiring status in Vivid today: `iosApp/iosApp/Info.plist` has no `UIApplicationSceneManifest`, the XcodeGen specs add no scene keys, the app uses the SwiftUI `App` life cycle with a single `WindowGroup`, and the only app delegate (`VividAppDelegate`) does not implement `application(_:configurationForConnecting:options:)`. So adoption can happen only through the search at attach time, once per load. A display connected in the middle of playback is not picked up until the next load. Whether iOS ever hands this app an external-display-role scene at all is unverified (section 16.3 records how to check). If it never does, external screens simply mirror the device and the only live part of this section is the role test.
+Wiring status in Vivid today: `iosApp/iosApp/Info.plist` has no `UIApplicationSceneManifest`, the XcodeGen specs add no scene keys, the app uses the SwiftUI `App` life cycle with a single `WindowGroup`, and the only app delegate (`VividAppDelegate`) does not implement `application(_:configurationForConnecting:options:)`.
+So adoption can happen only through the search at attach time, once per load.
+A display connected in the middle of playback is not picked up until the next load.
+Whether iOS ever hands this app an external-display-role scene at all is unverified (section 16.3 records how to check).
+If it never does, external screens simply mirror the device and the only live part of this section is the role test.
 
 ### 9.3 Placement refresh
 
-Runs on main from `externalDisplayDidChange()`, `setVisible(true)`, the coordinator and iOS scene activation. It does nothing if there is no container (never initialised, or disposed). Otherwise, the external target is the coordinator's external root view, but only on iOS, only while the core is visible and only while `isPipActive` is false; in every other case there is no target.
+Runs on main from `externalDisplayDidChange()`, `setVisible(true)`, the coordinator and iOS scene activation.
+It does nothing if there is no container (never initialised, or disposed).
+Otherwise, the external target is the coordinator's external root view, but only on iOS, only while the core is visible and only while `isPipActive` is false; in every other case there is no target.
 
 | Situation | Container's parent afterwards | Cover view (iOS) afterwards |
 | --- | --- | --- |
@@ -1136,7 +1356,8 @@ Runs on main from `externalDisplayDidChange()`, `setVisible(true)`, the coordina
 
 In every case the container's `isHidden` then equals "not visible" (implicit animations disabled), and the geometry update (section 7.5) runs last, so sizes and scale reflect the new parent and screen.
 
-`setVisible(true)`: does nothing without a container; otherwise records the core as visible, runs the placement refresh, and unhides the container with implicit animations disabled. Vivid calls it once per load, straight after `initialize`; on iOS it reveals the container that `initialize` left hidden (section 6.2), and on both platforms it gives the container its flexible autoresizing mask through the move.
+`setVisible(true)`: does nothing without a container; otherwise records the core as visible, runs the placement refresh, and unhides the container with implicit animations disabled.
+Vivid calls it once per load, straight after `initialize`; on iOS it reveals the container that `initialize` left hidden (section 6.2), and on both platforms it gives the container its flexible autoresizing mask through the move.
 
 On tvOS there is never an external target, so the refresh always keeps or returns the container to the host view.
 
@@ -1144,36 +1365,57 @@ On tvOS there is never an external target, so the refresh always keeps or return
 
 End states:
 
-- After the container is placed in a target view, it is the target's first (bottom-most) subview, its frame equals the target's bounds, and it resizes with the target (flexible width and height). It is moved to index 0 even when it was already in the target but not first. This is done with implicit animations disabled. The same layer moves with the container; nothing is recreated, and mpv is not told.
-- While shown, the cover view (iOS) is the remembered window's first subview: black, not interactive, resizing with the window, filling its bounds and not hidden. It is created on first need and reused, with implicit animations disabled. Removing it takes it out of the window and forgets it. Each geometry update re-sizes it to the window's bounds.
+- After the container is placed in a target view, it is the target's first (bottom-most) subview, its frame equals the target's bounds, and it resizes with the target (flexible width and height).
+  It is moved to index 0 even when it was already in the target but not first.
+  This is done with implicit animations disabled.
+  The same layer moves with the container; nothing is recreated, and mpv is not told.
+- While shown, the cover view (iOS) is the remembered window's first subview: black, not interactive, resizing with the window, filling its bounds and not hidden.
+  It is created on first need and reused, with implicit animations disabled.
+  Removing it takes it out of the window and forgets it.
+  Each geometry update re-sizes it to the window's bounds.
 
-When video moves to an external screen: the container (with the video layer and the engine's subtitle layer) shows full-screen on the external screen at that screen's scale, and the device shows the player controls over the black cover view. The container returns to the host view when Picture in Picture starts.
+When video moves to an external screen: the container (with the video layer and the engine's subtitle layer) shows full-screen on the external screen at that screen's scale, and the device shows the player controls over the black cover view.
+The container returns to the host view when Picture in Picture starts.
 
-If two cores were alive and visible at once, each could move its own container into the shared external root view when its refresh runs (each at index 0, so the most recently refreshed is bottom-most). Reproduce this as is; add no arbitration.
+If two cores were alive and visible at once, each could move its own container into the shared external root view when its refresh runs (each at index 0, so the most recently refreshed is bottom-most).
+Reproduce this as is; add no arbitration.
 
 ### 9.5 Picture in Picture (iOS)
 
-- Source: after each successful `initialize` the adapter wraps `sampleBufferDisplayLayer` in `SampleBufferPiPSource` (not for audio-only loads), and `PictureInPictureCoordinator` builds an `AVPictureInPictureController` from `AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer:playbackDelegate:)` with `canStartPictureInPictureAutomaticallyFromInline = true`. A new load produces a new layer; while Picture in Picture is up, the coordinator swaps the content source on the same controller. The bridge only has to keep exposing the current layer.
-- Flag flow: the coordinator sets the adapter's `pictureInPictureActive` synchronously in will-start (so it is already true when the scene's did-enter-background arrives during an automatic start), again in did-start, and to false in did-stop, failed-to-start and session teardown. Every assignment, changed or not, makes the adapter, in order: set the core's `isPipActive`; record it in the session recorder; call `setPipSubtitleCompositing(_:)` with the same value; call `externalDisplayDidChange()`; call `updateFrame()`. The bridge must read `isPipActive` at the moment each notification or refresh runs.
-- `setPipSubtitleCompositing(_:)`: on iOS, send `avfoundation-pip-composite-osd` = `yes` or `no` as an asynchronous string property set, on every call (not only on changes), ignoring the result; failures are silent. On tvOS, do nothing.
-- Effects while active: subtitles are composited into the samples in frame space so the Picture in Picture window shows them; the container is never placed on an external screen (it returns to the host view and the cover view is removed); entering the background keeps video running; foreground and activation skip the `vid` restore and the presentation restore. On stop, compositing is switched off, placement is re-evaluated (video may move back to an external screen) and geometry is refreshed. No paused redraw is issued on stop itself.
-- iOS stays on the video output's media-time presentation so Picture in Picture's timeline and play or pause follow media time. Play, pause, skip and the time range in the Picture in Picture window go through the adapter, not the bridge.
+- Source: after each successful `initialize` the adapter wraps `sampleBufferDisplayLayer` in `SampleBufferPiPSource` (not for audio-only loads), and `PictureInPictureCoordinator` builds an `AVPictureInPictureController` from `AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer:playbackDelegate:)` with `canStartPictureInPictureAutomaticallyFromInline = true`.
+  A new load produces a new layer; while Picture in Picture is up, the coordinator swaps the content source on the same controller.
+  The bridge only has to keep exposing the current layer.
+- Flag flow: the coordinator sets the adapter's `pictureInPictureActive` synchronously in will-start (so it is already true when the scene's did-enter-background arrives during an automatic start), again in did-start, and to false in did-stop, failed-to-start and session teardown.
+  Every assignment, changed or not, makes the adapter, in order: set the core's `isPipActive`; record it in the session recorder; call `setPipSubtitleCompositing(_:)` with the same value; call `externalDisplayDidChange()`; call `updateFrame()`.
+  The bridge must read `isPipActive` at the moment each notification or refresh runs.
+- `setPipSubtitleCompositing(_:)`: on iOS, send `avfoundation-pip-composite-osd` = `yes` or `no` as an asynchronous string property set, on every call (not only on changes), ignoring the result; failures are silent.
+  On tvOS, do nothing.
+- Effects while active: subtitles are composited into the samples in frame space so the Picture in Picture window shows them; the container is never placed on an external screen (it returns to the host view and the cover view is removed); entering the background keeps video running; foreground and activation skip the `vid` restore and the presentation restore.
+  On stop, compositing is switched off, placement is re-evaluated (video may move back to an external screen) and geometry is refreshed.
+  No paused redraw is issued on stop itself.
+- iOS stays on the video output's media-time presentation so Picture in Picture's timeline and play or pause follow media time.
+  Play, pause, skip and the time range in the Picture in Picture window go through the adapter, not the bridge.
 
 ### 9.6 Background, screen lock and return
 
-Section 6.18 gives the full behaviour. Display-relevant points:
+Section 6.18 gives the full behaviour.
+Display-relevant points:
 
-- On iOS the core observes only the main window's scene (captured at `initialize`), so activity on an external scene is ignored. When the main scene enters the background, video output is switched off (`vid=no`) unless Picture in Picture is active, even if the video is currently on the external screen.
-- Only scene activation runs the placement refresh, the layer recovery, EDR and the paused redraw. Will-enter-foreground only restores `vid`.
+- On iOS the core observes only the main window's scene (captured at `initialize`), so activity on an external scene is ignored.
+  When the main scene enters the background, video output is switched off (`vid=no`) unless Picture in Picture is active, even if the video is currently on the external screen.
+- Only scene activation runs the placement refresh, the layer recovery, EDR and the paused redraw.
+  Will-enter-foreground only restores `vid`.
 - On tvOS there is no activation handler and no placement refresh; Home and return only toggle `vid`, leaving the HDMI mode untouched.
 - With Picture in Picture off, every background and return destroys and rebuilds the engine's video output (section 6.18).
 
 ### 9.7 AirPlay and screen mirroring
 
-- The bridge has no AirPlay-specific logic. This pipeline has no `AVPlayer` for video, so there is no AirPlay video hand-off.
+- The bridge has no AirPlay-specific logic.
+  This pipeline has no `AVPlayer` for video, so there is no AirPlay video hand-off.
 - When no external-role scene is adopted (the expected case today, section 9.2), iOS mirrors the device screen to a cable display or to AirPlay Screen Mirroring, so the video is mirrored as part of the host view, and the recorder's `externalScreen` field reads false.
 - If an external-role scene exists at load time and is adopted, video moves as described in section 9.4, and Picture in Picture pulls it back to the device.
-- AirPlay audio (for example to HomePod) is handled by the engine's audio output and the adapter's AirPlay options. The bridge's only part is that video presentation follows mpv's audio-driven clock through the video output.
+- AirPlay audio (for example to HomePod) is handled by the engine's audio output and the adapter's AirPlay options.
+  The bridge's only part is that video presentation follows mpv's audio-driven clock through the video output.
 
 ## 10. Errors, logs and strings other code depends on
 
@@ -1185,11 +1427,18 @@ Section 6.18 gives the full behaviour. Display-relevant points:
 | Disposed error | The request was still pending when the player was disposed. | Every request pending when disposal starts | Asynchronously on main |
 | mpv error | An mpv call failed. Its code is the mpv status and its localised description is that status's `mpv_error_string` (section 6.16.1). | An mpv `*_async` call returned a negative status at submission, or a reply carried a negative `error` | Asynchronously on main |
 
-Nothing in Vivid tests these errors' types, domains or texts. They reach the adapter's callers untyped (for example through `VividPlaybackController.finishLoad`), where only diagnostics record the bridged `NSError` domain and code. The new code therefore chooses its own wording for the two bridge errors and its own domain for mpv errors. Recommended: make `VividPlayerCoreError` a plain struct conforming to `LocalizedError` whose `errorDescription` is the wording, with no `CustomNSError` conformance (its bridged domain is then its module-qualified type name, which necessarily differs from today's, and its code 1); and keep mpv errors as `NSError` with the mpv status as the code. The bridge special-cases no mpv error code. Those seen in practice include `MPV_ERROR_PROPERTY_UNAVAILABLE` (-10) from gets, `MPV_ERROR_OPTION_NOT_FOUND` (-5) for unknown options and `MPV_ERROR_LOADING_FAILED` (-13) in `end-file`. `mpv_create` and `mpv_initialize` failures are reported only as `initialize` returning false.
+Nothing in Vivid tests these errors' types, domains or texts.
+They reach the adapter's callers untyped (for example through `VividPlaybackController.finishLoad`), where only diagnostics record the bridged `NSError` domain and code.
+The new code therefore chooses its own wording for the two bridge errors and its own domain for mpv errors.
+Recommended: make `VividPlayerCoreError` a plain struct conforming to `LocalizedError` whose `errorDescription` is the wording, with no `CustomNSError` conformance (its bridged domain is then its module-qualified type name, which necessarily differs from today's, and its code 1); and keep mpv errors as `NSError` with the mpv status as the code.
+The bridge special-cases no mpv error code.
+Those seen in practice include `MPV_ERROR_PROPERTY_UNAVAILABLE` (-10) from gets, `MPV_ERROR_OPTION_NOT_FOUND` (-5) for unknown options and `MPV_ERROR_LOADING_FAILED` (-13) in `end-file`.
+`mpv_create` and `mpv_initialize` failures are reported only as `initialize` returning false.
 
 ### 10.2 Console output
 
-The bridge prints only these lines, with Swift `print` to standard output (tvOS captures main-app standard output), in Debug and Release alike. It emits no debug traces and builds no trace strings anywhere.
+The bridge prints only these lines, with Swift `print` to standard output (tvOS captures main-app standard output), in Debug and Release alike.
+It emits no debug traces and builds no trace strings anywhere.
 
 | When | Text |
 | --- | --- |
@@ -1197,7 +1446,12 @@ The bridge prints only these lines, with Swift `print` to standard output (tvOS 
 | `mpv_initialize` failed | One line, starting with the tag, giving the `mpv_error_string` of the status. Wording free. |
 | `checkError` sees a negative status | Exactly `[VividPlayerCore] MPV error: <mpv_error_string>`, then ` option=<name>` when an option name was passed, then ` at <file>:<line>` from the `file` and `line` parameters. |
 
-`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its first group, the enhancement options and `tls-verify`, and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The previous bridge used a different tag; nothing in the repository depends on the tag.
+`checkError` does nothing for a status of 0 or above.
+Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS).
+The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`.
+The adapter passes the name for the options in its first group, the enhancement options and `tls-verify`, and not for the others (section 6.19).
+`docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail.
+The previous bridge used a different tag; nothing in the repository depends on the tag.
 
 ### 10.3 Strings other code reads
 
@@ -1210,11 +1464,13 @@ The bridge prints only these lines, with Swift `print` to standard output (tvOS 
 
 ### 10.4 Forbidden strings
 
-A release check for the previous engine package, now removed, proved that its patched audio driver was linked by finding the literal strings `first start recovery after` and `trace edge %s` in the app binary. They must still never appear in any Swift source, including the bridge (which ships in every binary, section 3) and its tests.
+A release check for the previous engine package, now removed, proved that its patched audio driver was linked by finding the literal strings `first start recovery after` and `trace edge %s` in the app binary.
+They must still never appear in any Swift source, including the bridge (which ships in every binary, section 3) and its tests.
 
 ### 10.5 Documents updated at the switch-over
 
-`THIRD_PARTY_NOTICES.md` and `iosApp/Resources/OpenSourceLicenses/README.txt` described the previous bridge's files as adapted from a third-party project. The switch-over removed those files and those descriptions, and both documents now describe Lucid Engine's libraries.
+`THIRD_PARTY_NOTICES.md` and `iosApp/Resources/OpenSourceLicenses/README.txt` described the previous bridge's files as adapted from a third-party project.
+The switch-over removed those files and those descriptions, and both documents now describe Lucid Engine's libraries.
 
 ## 11. Constants and timing values
 
@@ -1249,25 +1505,36 @@ A release check for the previous engine package, now removed, proved that its pa
 | `vid` = `no` / `auto` | Background and foreground video toggles | 6.18 |
 | `[VividPlayerCore]` | Console tag | 10.2 |
 
-The bridge has no timers, retry counts, polling intervals, timeouts or animation durations. The 50 ms polling, 60 second open budget, 15 second seek budget, 250 ms end confirmation, 0.25 second `avsync` publishing and 1 and 10 second diagnostic sampling all belong to the adapter.
+The bridge has no timers, retry counts, polling intervals, timeouts or animation durations.
+The 50 ms polling, 60 second open budget, 15 second seek budget, 250 ms end confirmation, 0.25 second `avsync` publishing and 1 and 10 second diagnostic sampling all belong to the adapter.
 
 ## 12. Vivid-authored behaviour by commit
 
-The previous bridge's files arrived in the import commits `1598f91` (base and core, 15 September 2026) and `04a349d` (external display file, 16 September 2026). Everything below was written by blurbery for Vivid, either while importing or in later commits. Code blocks quote only whole lines that later Vivid commits added and that are Vivid's own expression. Lines that existed before, or that closely copy earlier lines, are replaced by `// [not quoted: ...]` placeholders and their behaviour is described in the section the text points to. Neutral structural lines (braces, conditional-compilation lines, bare returns) and generic idioms inside Vivid blocks are quoted as they are; lines that name an identifier introduced by the original import, including its lock, are placeholders. Identifiers inside the quotes are illustrative: the implementer may reuse Vivid's own code or choose different names.
+The previous bridge's files arrived in the import commits `1598f91` (base and core, 15 September 2026) and `04a349d` (external display file, 16 September 2026).
+Everything below was written by blurbery for Vivid, either while importing or in later commits.
+Code blocks quote only whole lines that later Vivid commits added and that are Vivid's own expression.
+Lines that existed before, or that closely copy earlier lines, are replaced by `// [not quoted: ...]` placeholders and their behaviour is described in the section the text points to.
+Neutral structural lines (braces, conditional-compilation lines, bare returns) and generic idioms inside Vivid blocks are quoted as they are; lines that name an identifier introduced by the original import, including its lock, are placeholders.
+Identifiers inside the quotes are illustrative: the implementer may reuse Vivid's own code or choose different names.
 
 ### 12.1 Import-time adaptations (`1598f91`, `04a349d`)
 
 Not quotable; behaviour only.
 
-- The video container is mounted in the adapter's persistent host view (inserted at subview index 0) instead of the window; `initialize` takes the host view as its second argument and remembers it before anything else. When video returns from an external screen it goes back to the host view, or to the window if the host view has gone (sections 6.2 and 9.3).
-- The core gained the settable `matchContentEnabled` flag (default true). When it is false the platform display write returns at once without writing or clearing (section 8.9). `749b657` corrected that early return to report "not applied".
+- The video container is mounted in the adapter's persistent host view (inserted at subview index 0) instead of the window; `initialize` takes the host view as its second argument and remembers it before anything else.
+  When video returns from an external screen it goes back to the host view, or to the window if the host view has gone (sections 6.2 and 9.3).
+- The core gained the settable `matchContentEnabled` flag (default true).
+  When it is false the platform display write returns at once without writing or clearing (section 8.9).
+  `749b657` corrected that early return to report "not applied".
 - The initial mpv log level is `warn` in Debug and Release alike.
 - Debug traces are switched off in every build.
-- File headers and whole-file platform guards. `04a349d` widened the base and core guards to iOS, and `aef1726` removed the experiment flag from all three guards, giving iOS-or-tvOS for the base and core and iOS-only for the external display file (section 3).
+- File headers and whole-file platform guards.
+  `04a349d` widened the base and core guards to iOS, and `aef1726` removed the experiment flag from all three guards, giving iOS-or-tvOS for the base and core and iOS-only for the external display file (section 3).
 
 ### 12.2 `bca4095`: background hook
 
-The core gained `onEnterBackground`, called as the very first step of the background handler, before the core marks itself backgrounded and before the Picture in Picture check (section 6.18). The adapter sets it on iOS only.
+The core gained `onEnterBackground`, called as the very first step of the background handler, before the core marks itself backgrounded and before the Picture in Picture check (section 6.18).
+The adapter sets it on iOS only.
 
 Vivid-authored (`bca4095`), the stored property:
 
@@ -1284,7 +1551,8 @@ Vivid-authored (`bca4095`), the first statement of the background handler:
 ### 12.3 `d5108a5`: debug gate and Dolby Vision conversion
 
 - The debug trace gate became a single constant that is off in every build, so no trace string is ever built.
-- Every configurable Dolby Vision conversion mode was removed, including the two process environment variables that used to be exported before the context was created. The bridge sets no environment variables (section 6.3).
+- Every configurable Dolby Vision conversion mode was removed, including the two process environment variables that used to be exported before the context was created.
+  The bridge sets no environment variables (section 6.3).
 - Profile 7 is now always requested as profile 8 with compatibility id 1, keeping the cached level (section 8.8).
 
 Vivid-authored (`d5108a5`), the gate's explanation:
@@ -1304,11 +1572,14 @@ Vivid-authored (`d5108a5`), inside the profile 7 mapping of the cached apply:
 
 ### 12.4 `932e46a`: comments only
 
-Comment rewording that removed references to the previous host app. No behaviour change. One reworded comment recorded that a caller using the (now omitted) zoom feature must restore its transform after presentation changes.
+Comment rewording that removed references to the previous host app.
+No behaviour change.
+One reworded comment recorded that a caller using the (now omitted) zoom feature must restore its transform after presentation changes.
 
 ### 12.5 `f347bb7`: early display criteria and the source-transition exclusion
 
-Behaviour (sections 8.3 to 8.6 and 8.16): the separate source-transition exclusion, the epoch and the "early snapshot wanted" flag; the start-of-file and end-of-file holds; the early snapshot at `MPV_EVENT_VIDEO_RECONFIG` with its `display-criteria-prepared` event; the switch that enables it only on tvOS with Match Content; the exclusion around the cached apply and the restart snapshot; and the debug-only `display-commit-lock`, `display-switch-started` and `display-switch-ended` events. Release note: "Started Apple TV content matching earlier while playback continues, and protected display updates when changing sources."
+Behaviour (sections 8.3 to 8.6 and 8.16): the separate source-transition exclusion, the epoch and the "early snapshot wanted" flag; the start-of-file and end-of-file holds; the early snapshot at `MPV_EVENT_VIDEO_RECONFIG` with its `display-criteria-prepared` event; the switch that enables it only on tvOS with Match Content; the exclusion around the cached apply and the restart snapshot; and the debug-only `display-commit-lock`, `display-switch-started` and `display-switch-ended` events.
+Release note: "Started Apple TV content matching earlier while playback continues, and protected display updates when changing sources."
 
 Vivid-authored (`f347bb7`), state:
 
@@ -1465,7 +1736,9 @@ Vivid-authored (`f347bb7`), their registration, at the start of the core's notif
 
 ### 12.6 `a0e0e9b`: dispose completion
 
-`dispose` and the shared teardown gained an optional `@Sendable` completion, called as the last step of the destroy step on the event queue, after the wakeup callback is cleared, mpv is destroyed and the relay is released. A second `dispose` never calls its completion (section 6.17). Release note: "Cleanup now waits for retiring players and preserves the new episode's audio session."
+`dispose` and the shared teardown gained an optional `@Sendable` completion, called as the last step of the destroy step on the event queue, after the wakeup callback is cleared, mpv is destroyed and the relay is released.
+A second `dispose` never calls its completion (section 6.17).
+Release note: "Cleanup now waits for retiring players and preserves the new episode's audio session."
 
 Vivid-authored (`a0e0e9b`), the last statement of the destroy step:
 
@@ -1593,7 +1866,9 @@ Vivid-authored (`51630a4`), the error check:
 
 ### 12.9 `8268108`: audio choice while preloading
 
-The overridable preload switch and choice, registration of `on_preloaded`, handling of `MPV_EVENT_HOOK` with an unconditional continue, the list read of `track-list` and the synchronous `aid` write (sections 6.6 and 6.15). Release note: "Vivid picks the audio track your setup can play before the player jumps to your position, so it no longer seeks twice." Measured for this change alone (`docs/cores/player-engine.md`): on Apple TV 4K (3rd generation) with tvOS 27, resuming a 4K Dolby Vision MKV, file loaded to playback start fell from 5.3 to 5.8 s to 2.0 to 3.6 s.
+The overridable preload switch and choice, registration of `on_preloaded`, handling of `MPV_EVENT_HOOK` with an unconditional continue, the list read of `track-list` and the synchronous `aid` write (sections 6.6 and 6.15).
+Release note: "Vivid picks the audio track your setup can play before the player jumps to your position, so it no longer seeks twice."
+Measured for this change alone (`docs/cores/player-engine.md`): on Apple TV 4K (3rd generation) with tvOS 27, resuming a 4K Dolby Vision MKV, file loaded to playback start fell from 5.3 to 5.8 s to 2.0 to 3.6 s.
 
 Vivid-authored (`8268108`), the overridable hooks:
 
@@ -1650,9 +1925,12 @@ Vivid-authored (`8268108`), the audio choice:
 
 ## 13. Deliberately omitted members and paths
 
-The previous bridge contained code that nothing in Vivid reached. The replacement omits it. Each row gives the evidence, from a repository-wide search before the switch-over, that it was unreached.
+The previous bridge contained code that nothing in Vivid reached.
+The replacement omits it.
+Each row gives the evidence, from a repository-wide search before the switch-over, that it was unreached.
 
-Evidence used by several rows: the complete set of property names the adapter passes to `setProperty` and `setPropertyAsync` is `volume`, `pause`, `hr-seek`, `speed`, `audio-spdif`, `aid`, `sid`, `secondary-sid`, `sub-delay`, `secondary-sub-delay` and the subtitle style keys `sub-ass-override`, `secondary-sub-ass-override`, `sub-font`, `sub-bold`, `sub-font-size`, `sub-color`, `sub-border-style`, `sub-back-color`, `sub-outline-color`, `sub-outline-size`, `sub-shadow-offset`, `sub-align-y`, `sub-margin-x`, `sub-margin-y`, `sub-pos`, `secondary-sub-pos`, `sub-scale-with-window` and `sub-use-margins`. Nothing else calls the setters.
+Evidence used by several rows: the complete set of property names the adapter passes to `setProperty` and `setPropertyAsync` is `volume`, `pause`, `hr-seek`, `speed`, `audio-spdif`, `aid`, `sid`, `secondary-sid`, `sub-delay`, `secondary-sub-delay` and the subtitle style keys `sub-ass-override`, `secondary-sub-ass-override`, `sub-font`, `sub-bold`, `sub-font-size`, `sub-color`, `sub-border-style`, `sub-back-color`, `sub-outline-color`, `sub-outline-size`, `sub-shadow-offset`, `sub-align-y`, `sub-margin-x`, `sub-margin-y`, `sub-pos`, `secondary-sub-pos`, `sub-scale-with-window` and `sub-use-margins`.
+Nothing else calls the setters.
 
 | Omitted from the previous bridge **[unreached]** | Evidence | What the replacement does instead |
 | --- | --- | --- |
@@ -1682,11 +1960,15 @@ If a later change needs any of these, specify it then as new Vivid behaviour.
 
 ## 14. Known quirks reproduced deliberately
 
-These behaviours are probably not ideal, but they are current behaviour and blurbery describes playback as perfect. Reproduce each exactly. Each is a candidate for a later, separate fix with its own testing.
+These behaviours are probably not ideal, but they are current behaviour and blurbery describes playback as perfect.
+Reproduce each exactly.
+Each is a candidate for a later, separate fix with its own testing.
 
 ### 14.1 Dispose during playback restart can clear Apple TV criteria
 
-If `dispose` runs on main while the event queue is handling `MPV_EVENT_PLAYBACK_RESTART`, the snapshot's synchronous reads can return nothing (the handle has left the state), the snapshot then releases the hold with zero and absent values, and the cached apply it schedules can reach the platform write with zero dimensions, which clears the criteria, even when `preserveDisplayCriteria` was requested. The window is a fraction of a millisecond at teardown. It happens only because all four of these hold, so keep all four:
+If `dispose` runs on main while the event queue is handling `MPV_EVENT_PLAYBACK_RESTART`, the snapshot's synchronous reads can return nothing (the handle has left the state), the snapshot then releases the hold with zero and absent values, and the cached apply it schedules can reach the platform write with zero dimensions, which clears the criteria, even when `preserveDisplayCriteria` was requested.
+The window is a fraction of a millisecond at teardown.
+It happens only because all four of these hold, so keep all four:
 
 1. The cached apply's main block has no terminal check.
 2. Disposal sets the hold under the cache guard only, without the source-transition exclusion.
@@ -1695,7 +1977,11 @@ If `dispose` runs on main while the event queue is handling `MPV_EVENT_PLAYBACK_
 
 ### 14.2 An adopted external scene is never released
 
-Nothing handles an external scene disconnecting (section 13). If the coordinator ever adopts a scene, it keeps the scene, its window and its root view controller for the rest of the process, the external root view stays non-nil, and later attaches skip discovery. After the display is unplugged, a visible core keeps moving its container into a window on a dead scene and covers the main window with the black cover view, so the viewer sees black on the device and nothing elsewhere. The external window also stays up (black) after the player closes while the scene is adopted. Do not restore disconnect handling as part of this rewrite.
+Nothing handles an external scene disconnecting (section 13).
+If the coordinator ever adopts a scene, it keeps the scene, its window and its root view controller for the rest of the process, the external root view stays non-nil, and later attaches skip discovery.
+After the display is unplugged, a visible core keeps moving its container into a window on a dead scene and covers the main window with the black cover view, so the viewer sees black on the device and nothing elsewhere.
+The external window also stays up (black) after the player closes while the scene is adopted.
+Do not restore disconnect handling as part of this rewrite.
 
 ### 14.3 `vid=auto` on every return
 
@@ -1703,7 +1989,8 @@ Will-enter-foreground and iOS scene activation send `vid=auto` (unless Picture i
 
 ### 14.4 Dolby Vision profile 8 always uses compatibility id 1
 
-The configuration record uses compatibility id 1 for every profile 8 stream (including 8.4, which is HLG-based) and 0 for every other profile without a supplied id. The bridge never reads the real id from mpv, although the adapter reads `dolby-vision-compatibility-id` from `track-list` for its own label.
+The configuration record uses compatibility id 1 for every profile 8 stream (including 8.4, which is HLG-based) and 0 for every other profile without a supplied id.
+The bridge never reads the real id from mpv, although the adapter reads `dolby-vision-compatibility-id` from `track-list` for its own label.
 
 ### 14.5 Profile 7 is requested as 8.1
 
@@ -1711,7 +1998,8 @@ Profile 7 is always requested as profile 8 with compatibility 1 and PQ, BT.2020 
 
 ### 14.6 Dolby Vision is requested without a display capability check
 
-Dolby Vision sources skip `AVPlayer.availableHDRModes`; only HDR10 and HLG are filtered. The Dolby Vision fallback (when no hint can be built) uses the unfiltered base range.
+Dolby Vision sources skip `AVPlayer.availableHDRModes`; only HDR10 and HLG are filtered.
+The Dolby Vision fallback (when no hint can be built) uses the unfiltered base range.
 
 ### 14.7 Other parity-required behaviour
 
@@ -1720,7 +2008,8 @@ Dolby Vision sources skip `AVPlayer.availableHDRModes`; only HDR10 and HLG are f
 - SDR video tagged with BT.2020 primaries or matrix is requested as HDR10.
 - An audio-only load clears criteria preserved from the previous video at its restart snapshot (zero size).
 - A seek re-measures the cadence, so it can change field detection and the requested rate mid-stream.
-- `display-criteria-prepared` is delivered while the source-transition exclusion is held. A delegate that synchronously re-entered display code would deadlock; the adapter's delegate hops through a `Task`, so it is safe today.
+- `display-criteria-prepared` is delivered while the source-transition exclusion is held.
+  A delegate that synchronously re-entered display code would deadlock; the adapter's delegate hops through a `Task`, so it is safe today.
 - On iOS the container is hidden when `initialize` returns and revealed by `setVisible(true)`; on tvOS it is never hidden.
 - External screens are discovered only when a core attaches (once per load); a display connected mid-playback is used from the next load.
 - If two cores are alive and visible at once, both can place their containers in the shared external root view.
@@ -1738,23 +2027,28 @@ Places where a natural rewrite would silently change behaviour.
 
 Types and payloads:
 
-1. `end-file`'s `reason` and `error` are Swift `Int`; every `sourceId` is `Int64`; node integers are `Int64`, flags `Bool`, fractions `Double`. A wrong type fails `as?` silently (for example, `reason` as `Int64` would stop natural end of file from ever being recognised).
-2. Node arrays drop nil children (indices shift), maps drop nil values, and a map with a byte array and bad or partial dimensions becomes nil as a whole. Do not "improve" any of these.
+1. `end-file`'s `reason` and `error` are Swift `Int`; every `sourceId` is `Int64`; node integers are `Int64`, flags `Bool`, fractions `Double`.
+   A wrong type fails `as?` silently (for example, `reason` as `Int64` would stop natural end of file from ever being recognised).
+2. Node arrays drop nil children (indices shift), maps drop nil values, and a map with a byte array and bad or partial dimensions becomes nil as a whole.
+   Do not "improve" any of these.
 3. For a non-null pointer, string decoding never yields nil or replacement characters: invalid UTF-8 becomes one character per byte.
 4. `positionSeconds` is omitted, not set to 0, when `time-pos` is unavailable or not finite.
 5. `start-file` without data forgets the remembered source id; `end-file` uses its own event id and does not clear the remembered one.
 
 Ordering and delivery:
 
-6. Exactly one `DispatchQueue.main.async` hop per ordered delivery. No `Task`, no second hop.
+6. Exactly one `DispatchQueue.main.async` hop per ordered delivery.
+   No `Task`, no second hop.
 7. A replaced coalesced value keeps its original position; every ordered item delivers the pending coalesced values ahead of itself in the same main block.
-8. Start-of-file and end-of-file holds happen before their delegate events. The restart snapshot schedules the display apply before dispatching `playback-restart`.
+8. Start-of-file and end-of-file holds happen before their delegate events.
+   The restart snapshot schedules the display apply before dispatching `playback-restart`.
 9. Completions use the inline-or-main rule exactly as in section 6.13.3; the adapter's checked continuations depend on exactly-once completion.
 10. Requests reach mpv in call order; the adapter relies on a seek being queued immediately before an `audio-spdif` change.
 
 Threads, locks and deadlocks:
 
-11. Never hold the liveness guard across a blocking mpv call; never make main wait on the event queue; never destroy a stored context from main. The only context destroyed on main is one that set-up created but never stored (section 6.2).
+11. Never hold the liveness guard across a blocking mpv call; never make main wait on the event queue; never destroy a stored context from main.
+    The only context destroyed on main is one that set-up created but never stored (section 6.2).
 12. Source-transition exclusion before cache guard; the platform write runs with the exclusion held and the cache guard released; the liveness guard is never held together with the cache or coalescing guard (section 5.3 rule 8).
 13. Request registration is atomic with the liveness check; cancellation and replies both remove entries under the guard.
 14. Free the command argument copies only after `mpv_command_async` returns.
@@ -1762,32 +2056,44 @@ Threads, locks and deadlocks:
 
 Lifetime and teardown:
 
-16. The wakeup relay holds the core weakly, is retained once, is detached before destruction, and is released only on the event queue after the wakeup callback is cleared and the handle destroyed. Releasing it earlier lets a late wakeup touch freed memory.
-17. Drain, delivery, apply and early-write blocks hold the core weakly; the EDR hop keeps it alive and does not check disposal. The last release of a core can therefore happen on the event queue, in an EDR block or, for a core that was never disposed, on mpv's wakeup thread while the relay schedules a drain; `deinit` then calls `dispose`. Nothing that `dispose` enqueues may capture the core, strongly or weakly (section 6.17.2). Do not add main-thread-only work that assumes `deinit` runs on main.
+16. The wakeup relay holds the core weakly, is retained once, is detached before destruction, and is released only on the event queue after the wakeup callback is cleared and the handle destroyed.
+    Releasing it earlier lets a late wakeup touch freed memory.
+17. Drain, delivery, apply and early-write blocks hold the core weakly; the EDR hop keeps it alive and does not check disposal.
+    The last release of a core can therefore happen on the event queue, in an EDR block or, for a core that was never disposed, on mpv's wakeup thread while the relay schedules a drain; `deinit` then calls `dispose`.
+    Nothing that `dispose` enqueues may capture the core, strongly or weakly (section 6.17.2).
+    Do not add main-thread-only work that assumes `deinit` runs on main.
 18. The base has no `deinit` work; bare instances are created and released on background threads.
 19. The first `dispose` calls its completion exactly once, on the event queue, even without a handle; a second `dispose` never calls its completion.
-19a. A failed `initialize` keeps the remembered window and host view, so a later non-preserving `dispose` on tvOS can still clear the criteria (section 6.2).
+19a.
+A failed `initialize` keeps the remembered window and host view, so a later non-preserving `dispose` on tvOS can still clear the criteria (section 6.2).
 20. The tvOS clear in `dispose` is synchronous and happens before mpv teardown is queued and before the container leaves its window.
 21. UIKit teardown in `dispose` happens after the destroy step is queued, not after it runs; the engine's own reference to the layer makes this safe.
 
 Surfaces:
 
 22. Keep the exact nesting: layer directly in the container's layer, container directly in the host view at index 0. One new container and layer per core; never replace the host view.
-23. After creation, size the layer only as section 7.5 describes. Disable implicit actions for every geometry, visibility, placement and EDR change. Write exact values only.
+23. After creation, size the layer only as section 7.5 describes.
+    Disable implicit actions for every geometry, visibility, placement and EDR change.
+    Write exact values only.
 24. `contentsScale` comes from the container's own window's screen first, then the remembered window's screen, then the main screen; `nativeScale` if above 0, else `scale`.
-25. Everything the viewer can see during moves and loads is black: container, layer background, cover view, external window and its root view. The layer is opaque.
+25. Everything the viewer can see during moves and loads is black: container, layer background, cover view, external window and its root view.
+    The layer is opaque.
 26. When the container is already in the right superview but not at index 0, re-insert it at index 0.
 27. `setPipSubtitleCompositing` sends its write on every call, not only on changes.
-28. Layer recovery is `flush()` (never `flushAndRemoveImage`) and only when `requiresFlushToResumeDecoding` or `status == .failed`. The only bridge-issued seek is the paused redraw on iOS activation; do not add a seek on foreground.
+28. Layer recovery is `flush()` (never `flushAndRemoveImage`) and only when `requiresFlushToResumeDecoding` or `status == .failed`.
+    The only bridge-issued seek is the paused redraw on iOS activation; do not add a seek on foreground.
 
 Match Content:
 
-29. Held from creation and from every start and end of file until the restart snapshot. Observers never write unavailable values; a nil `width` or `height` schedules nothing.
+29. Held from creation and from every start and end of file until the restart snapshot.
+    Observers never write unavailable values; a nil `width` or `height` schedules nothing.
 30. The restart snapshot overwrites everything, including absent colour tags and zero numbers.
-31. Early snapshot reads `video-out-params`; restart snapshot reads `video-params`. Do not unify.
+31. Early snapshot reads `video-out-params`; restart snapshot reads `video-params`.
+    Do not unify.
 32. The early snapshot runs at most once per file, clears its flag on the event queue before hopping to main, re-checks the epoch and the hold on main under the exclusion, never writes caches and never releases the hold.
 33. The two "no action" conditions (Match Content flag off, no window) win over every clearing condition; the identity is compared only after a hint is built; an identity match also needs `preferredDisplayCriteria` to be non-nil.
-34. Snap the rate first, then convert to `Float`, then compare. A tiny difference such as 23.976 versus 23.9761 must not cause a new write.
+34. Snap the rate first, then convert to `Float`, then compare.
+    A tiny difference such as 23.976 versus 23.9761 must not cause a new write.
 35. The identity slot is process-wide, shared by every core of the selected bridge.
 36. Of the two source holds, only the start-of-file hold resets the measured cadence; the end-of-file hold leaves it.
 
@@ -1805,10 +2111,14 @@ Values and flags:
 
 ### 16.1 How the tests relate to the bridge
 
-- Unit tests name the bridge's types (`VividPlayerCoreBase`, `VividPlayerCore`, `VividExternalDisplay`) directly. The coalescing and conversion tests are in both test targets (`VividTests` and `VividTVTests`).
-- The three coalescing scenarios of section 6.10 are in `VividPlayerCoreTests`. An identical copy that tested whichever bridge the selection file chose was removed at the switch-over.
-- These engine-level tests drive real media through the bridge, via the adapter: `PlayerSurfaceLayoutTests` (section 4.1); `VividPlaybackBoundaryTests`, including `testInitialAudioOrdinalResolvesInsideTheFirstOpen` (the `on_preloaded` choice end to end) and `testEmbeddedPickerTracksRemainSelectableAfterPrimaryClears`; and `VividPlaybackStatsProjectionTests.testSimulatorPlaybackKeepsTransportWorkingThroughTelemetryUpdates` (in both test targets). The complete iOS suite (normal and optimised builds, as `.github/workflows/player-regression.yml` runs them) and the tvOS suite passed on simulators with the new bridge selected before the switch-over.
-- The behaviours under "Display criteria" in section 16.2 are covered by `VividPlayerDisplayCriteriaTests`, and playback-end recovery by `PlaybackEndRecoveryTests` and `VividEndOfStreamConfirmationTests`. The text-extraction script that checked the previous bridge's base file was removed at the switch-over.
+- Unit tests name the bridge's types (`VividPlayerCoreBase`, `VividPlayerCore`, `VividExternalDisplay`) directly.
+  The coalescing and conversion tests are in both test targets (`VividTests` and `VividTVTests`).
+- The three coalescing scenarios of section 6.10 are in `VividPlayerCoreTests`.
+  An identical copy that tested whichever bridge the selection file chose was removed at the switch-over.
+- These engine-level tests drive real media through the bridge, via the adapter: `PlayerSurfaceLayoutTests` (section 4.1); `VividPlaybackBoundaryTests`, including `testInitialAudioOrdinalResolvesInsideTheFirstOpen` (the `on_preloaded` choice end to end) and `testEmbeddedPickerTracksRemainSelectableAfterPrimaryClears`; and `VividPlaybackStatsProjectionTests.testSimulatorPlaybackKeepsTransportWorkingThroughTelemetryUpdates` (in both test targets).
+  The complete iOS suite (normal and optimised builds, as `.github/workflows/player-regression.yml` runs them) and the tvOS suite passed on simulators with the new bridge selected before the switch-over.
+- The behaviours under "Display criteria" in section 16.2 are covered by `VividPlayerDisplayCriteriaTests`, and playback-end recovery by `PlaybackEndRecoveryTests` and `VividEndOfStreamConfirmationTests`.
+  The text-extraction script that checked the previous bridge's base file was removed at the switch-over.
 - `scripts/tests/mpv-track-tests.py` runs the adapter's own `retireCore(resetDisplayCriteria:)` method, which `stop()` calls, against stand-ins.
 
 ### 16.2 Automated (unit-testable) behaviours
@@ -1819,8 +2129,10 @@ Construction and conversion:
 - [ ] `convertNode` returns `Int64` for `MPV_FORMAT_INT64`, `Bool` for `MPV_FORMAT_FLAG`, `Double` for `MPV_FORMAT_DOUBLE` (NaN passes through), `String` for `MPV_FORMAT_STRING`, and `Data` for `MPV_FORMAT_BYTE_ARRAY` (empty `Data` for size 0).
 - [ ] An array with a child that converts to nil comes back shorter, in order.
 - [ ] A map entry with a null key or a nil value is omitted; a duplicate key keeps the last value.
-- [ ] Depth 32 converts; depth 33 is nil. A container whose count exceeds the remaining entries is nil; a string or byte array larger than the remaining bytes is nil; budgets are per top-level call.
-- [ ] A map containing a byte array with `w` 16,384 and `h` 4,096 converts; with `w` 16,385, `w` 0, only `w`, or `w` 2.5 (a non-integral double) it is nil; with integral double dimensions it converts. A map without a byte array converts whatever its dimensions.
+- [ ] Depth 32 converts; depth 33 is nil.
+  A container whose count exceeds the remaining entries is nil; a string or byte array larger than the remaining bytes is nil; budgets are per top-level call.
+- [ ] A map containing a byte array with `w` 16,384 and `h` 4,096 converts; with `w` 16,385, `w` 0, only `w`, or `w` 2.5 (a non-integral double) it is nil; with integral double dimensions it converts.
+  A map without a byte array converts whatever its dimensions.
 - [ ] Invalid UTF-8 decodes byte for byte as Latin-1, in property names, values, log text and node strings.
 
 Delivery and payloads:
@@ -1850,7 +2162,8 @@ Pause cache (section 6.12):
 - [ ] Every row of the scenario table, including that `pause` with `ON` or `on` means paused and that a failing request reverts the displayed value.
 - [ ] Scene activation issues the paused redraw only when the displayed value is paused.
 
-Display criteria (restating as behaviour the bridge assertions of the CI harness that checked the previous bridge). Default fixture: early snapshot enabled; decoded output 1920 x 1080 with transfer `bt.1886`; empty track map; container 24 fps and measured 24 fps; deinterlace flag false; "early snapshot wanted" and the hold both set; core live.
+Display criteria (restating as behaviour the bridge assertions of the CI harness that checked the previous bridge).
+Default fixture: early snapshot enabled; decoded output 1920 x 1080 with transfer `bt.1886`; empty track map; container 24 fps and measured 24 fps; deinterlace flag false; "early snapshot wanted" and the hold both set; core live.
 
 - [ ] 1. The early snapshot does not perform the platform write synchronously; the write is dispatched to main.
 - [ ] 2. After main runs, exactly one write happens, at 24 Hz: matching starts from the decoded cadence before playback restart.
@@ -1890,7 +2203,8 @@ Lifecycle:
 - [ ] `initialize` returns true; the `wid` layer is `sampleBufferDisplayLayer`; the layer's grandparent layer is the host view's layer; on iOS the container is hidden until `setVisible(true)`.
 - [ ] `dispose` calls its completion exactly once, off main, after the context is destroyed; a second `dispose` is a no-op; `dispose` after a failed set-up still calls its completion.
 - [ ] Two cores (one disposing, one loading) run side by side with independent queues, requests and caches; a preserving dispose followed by an identical commit from the new core does not write again.
-- [ ] Console output in normal playback is empty. Only an engine without Vivid's audio output prints the `MPV error: option not found` lines described in section 6.19.
+- [ ] Console output in normal playback is empty.
+  Only an engine without Vivid's audio output prints the `MPV error: option not found` lines described in section 6.19.
 - [ ] No Swift source contains `first start recovery after` or `trace edge %s` (section 10.4).
 
 ### 16.3 Device tests
@@ -1899,7 +2213,8 @@ Record for each: device, OS, source (codec, range, frame rate, container), route
 
 Apple TV, with Match Dynamic Range and Match Frame Rate on:
 
-- [ ] HDR10 23.976 film: one switch to HDR10 at 23.976 Hz early in start-up; playback continues through the TV's blackout; no second switch at the first frame. In a trace build, `display-criteria-prepared` before `playback-restart` and exactly one `display-switch-started` and `display-switch-ended` pair.
+- [ ] HDR10 23.976 film: one switch to HDR10 at 23.976 Hz early in start-up; playback continues through the TV's blackout; no second switch at the first frame.
+  In a trace build, `display-criteria-prepared` before `playback-restart` and exactly one `display-switch-started` and `display-switch-ended` pair.
 - [ ] Dolby Vision profile 8.1 MKV: Dolby Vision at the film's rate, with normal brightness and colour.
 - [ ] Dolby Vision profile 5 file: Dolby Vision mode with correct colours.
 - [ ] Dolby Vision profile 7 (dual-layer remux): Dolby Vision mode; diagnostics label profile 8.1.
@@ -1911,18 +2226,22 @@ Apple TV, with Match Dynamic Range and Match Frame Rate on:
 - [ ] An HDR10 episode followed by an SDR episode: one switch to SDR early in the second episode, with no clear in between.
 - [ ] Close the player: the TV returns to its default mode promptly; no film rate lingers on the Home screen.
 - [ ] Seek several times in a 23.976 film: no mode switches; the last frame stays on screen during each seek.
-- [ ] Press Home during playback and return: video comes back (the engine rebuilds its video output), the HDMI mode is unchanged and there is no extra switch. Note any brief black frame.
+- [ ] Press Home during playback and return: video comes back (the engine rebuilds its video output), the HDMI mode is unchanged and there is no extra switch.
+  Note any brief black frame.
 - [ ] Start a title that fails to load straight after one that played (for example a damaged file), then close the player: the TV returns to its default mode.
 - [ ] Match Content setting by load path (section 8.14): a server-plan load started with the setting off never writes or clears; a direct-without-options or offline load started with it off clears instead of writing, and turning it on mid-play switches at the next re-evaluation (for example after a seek); any load started with it on clears at the next re-evaluation after turning it off.
 - [ ] An audio-only item after a video item clears the criteria at the audio item's start.
-- [ ] Resume a 4K Dolby Vision title with a planned audio track: only one seek, and the planned track plays. Start Over and resume prompts behave as before. Loading never stalls when there is no plan or the plan cannot be matched.
+- [ ] Resume a 4K Dolby Vision title with a planned audio track: only one seek, and the planned track plays.
+  Start Over and resume prompts behave as before.
+  Loading never stalls when there is no plan or the plan cannot be matched.
 - [ ] Embedded ASS and PGS subtitles over HDR10 and Dolby Vision, without dimming the video.
 - [ ] AirPlay audio to HomePod while video plays on the TV: picture and sound in sync after start, pause, resume and seeks.
 - [ ] A long session (two hours or more, 4K Dolby Vision): no drift, no growing stutter, steady memory.
 
 iPhone and iPad:
 
-- [ ] HDR10 and Dolby Vision on an HDR-capable device: highlights brighter than UI white; SDR not boosted. On iOS 26 the layer's preferred dynamic range follows; on iOS 18 to 25 the EDR flag does.
+- [ ] HDR10 and Dolby Vision on an HDR-capable device: highlights brighter than UI white; SDR not boosted.
+  On iOS 26 the layer's preferred dynamic range follows; on iOS 18 to 25 the EDR flag does.
 - [ ] Rotation, iPad split-view resizing, preview to full-screen transitions and the Next Up mini player: video snaps to size with no stretch animation or black flash; the same layer stays; subtitles reposition after each resize.
 - [ ] Picture in Picture from the button and automatically on swiping home: subtitles burned in; play, pause and skip work; returning restores the separate subtitle layer; a paused video shows the right frame.
 - [ ] Picture in Picture across Next Up: the window stays and switches to the new episode.
@@ -1931,24 +2250,31 @@ iPhone and iPad:
 - [ ] Lock and unlock while paused and while playing.
 - [ ] Control Centre pull-down and release while paused: one paused redraw (a brief seeking state), picture unchanged.
 - [ ] AirPlay audio route change during playback: audio moves, video stays on the device.
-- [ ] External display with an HDMI adapter, and with AirPlay Screen Mirroring: record whether video moves to the external screen (with a black device screen) or mirrors, and the latest-playback report's `externalScreen` value. Unplug during playback and record what the bridge shows (section 14.2).
+- [ ] External display with an HDMI adapter, and with AirPlay Screen Mirroring: record whether video moves to the external screen (with a black device screen) or mirrors, and the latest-playback report's `externalScreen` value.
+  Unplug during playback and record what the bridge shows (section 14.2).
 - [ ] Simulator: software decoding works.
 
 ## 17. Amendments after implementation
 
-Recorded after the first implementation and its reviews, as behaviour and decisions. Where this section differs from an earlier one, this section wins.
+Recorded after the first implementation and its reviews, as behaviour and decisions.
+Where this section differs from an earlier one, this section wins.
 
 ### 17.1 Extra files for internal components
 
-Coordinator decision: the implementation may add internal top-level types prefixed `VividPlayer`, in extra files, to split the bridge into a centre plus outer components (video surface, display criteria, external display, lifecycle observation). This overrides the top-level rule in section 3 in that respect only. Everything else in that rule still applies: no top-level functions, variables or constants, no extensions on system types, no explicit `@objc(...)` runtime names, and, while the previous bridge was still compiled, no clash with its files.
+Coordinator decision: the implementation may add internal top-level types prefixed `VividPlayer`, in extra files, to split the bridge into a centre plus outer components (video surface, display criteria, external display, lifecycle observation).
+This overrides the top-level rule in section 3 in that respect only.
+Everything else in that rule still applies: no top-level functions, variables or constants, no extensions on system types, no explicit `@objc(...)` runtime names, and, while the previous bridge was still compiled, no clash with its files.
 
 ### 17.2 Wakeup callback and guard nesting
 
-The wakeup callback is installed while the liveness guard is held (section 6.2), and mpv may call it synchronously on the calling thread, so the relay guard can be taken while the liveness guard is held. This nesting is allowed (the previous bridge did the same), provided nothing ever takes the liveness guard while holding the relay guard. This amends section 5.3 rules 7 and 8.
+The wakeup callback is installed while the liveness guard is held (section 6.2), and mpv may call it synchronously on the calling thread, so the relay guard can be taken while the liveness guard is held.
+This nesting is allowed (the previous bridge did the same), provided nothing ever takes the liveness guard while holding the relay guard.
+This amends section 5.3 rules 7 and 8.
 
 ### 17.3 Last-resort screen on tvOS
 
-When choosing the screen for `contentsScale` (section 7.5), the last resort on tvOS may be the screen of the first connected window scene instead of `UIScreen.main`. On Apple TV they are the same screen.
+When choosing the screen for `contentsScale` (section 7.5), the last resort on tvOS may be the screen of the first connected window scene instead of `UIScreen.main`.
+On Apple TV they are the same screen.
 
 ### 17.4 Answers to the implementer's questions
 
@@ -1964,38 +2290,54 @@ When choosing the screen for `contentsScale` (section 7.5), the last resort on t
 
 ### 17.5 Console locations of the start-up checks
 
-The bridge's own start-up checks (the log level request, `wid`, each bridge option and `mpv_hook_add`) must each report a distinct console location in the ` at <file>:<line>` part, so a failure identifies the option. They still pass no option name, so their lines carry no ` option=` detail (section 10.2).
+The bridge's own start-up checks (the log level request, `wid`, each bridge option and `mpv_hook_add`) must each report a distinct console location in the ` at <file>:<line>` part, so a failure identifies the option.
+They still pass no option name, so their lines carry no ` option=` detail (section 10.2).
 
 ### 17.6 Registration order of the internal observations
 
-The ten internal observations (section 6.7) are registered in this order: `video-params/sig-peak`, `width`, `height`, `current-tracks/video/dolby-vision-profile`, `current-tracks/video/dolby-vision-level`, `container-fps`, `deinterlace-active`, `video-params/gamma`, `video-params/primaries`, `video-params/colormatrix`. This replaces the statement in section 6.7 that the order is not significant.
+The ten internal observations (section 6.7) are registered in this order: `video-params/sig-peak`, `width`, `height`, `current-tracks/video/dolby-vision-profile`, `current-tracks/video/dolby-vision-level`, `container-fps`, `deinterlace-active`, `video-params/gamma`, `video-params/primaries`, `video-params/colormatrix`.
+This replaces the statement in section 6.7 that the order is not significant.
 
 ### 17.7 Audio-output option meanings
 
 Corrections from the engine specification, applied to the section 6.19 table and its closing paragraph:
 
-- `ao-avfoundation-compressed-first-start-grace` applies to the first start of each audio output instance, until that instance's clock first moves, not only to a title's first start. On an AC-3 or E-AC-3 track every speed change across 1x creates a new instance, so the shorter grace applies again after each one; on other tracks a crossing keeps the same instance, and the compressed sink is not used at all (section 17.11). It is capped at `ao-avfoundation-compressed-start-grace`.
-- With `ao-avfoundation-manage-audio-session=no`, the output sets no category or mode and never activates or deactivates the session, but it still declares multichannel content (passthrough, or more than two channels) and still sets the preferred output channel count for decoded audio. Vivid's session recorder reads both.
+- `ao-avfoundation-compressed-first-start-grace` applies to the first start of each audio output instance, until that instance's clock first moves, not only to a title's first start.
+  On an AC-3 or E-AC-3 track every speed change across 1x creates a new instance, so the shorter grace applies again after each one; on other tracks a crossing keeps the same instance, and the compressed sink is not used at all (section 17.11).
+  It is capped at `ao-avfoundation-compressed-start-grace`.
+- With `ao-avfoundation-manage-audio-session=no`, the output sets no category or mode and never activates or deactivates the session, but it still declares multichannel content (passthrough, or more than two channels) and still sets the preferred output channel count for decoded audio.
+  Vivid's session recorder reads both.
 - `ao-avfoundation-compressed-start-grace` is also the deadline between the recovery and the fallback to decoded audio, extended by the same amount each time a slow source delivers more.
 - `audio-exclusive` has no effect on this audio output.
-- Every `ao-avfoundation-*` option belongs to Vivid's own engine and is accepted by every build that links it. Only a build that links an engine without Vivid's audio output, such as the previous package, rejects them, with the console lines described in section 6.19.
+- Every `ao-avfoundation-*` option belongs to Vivid's own engine and is accepted by every build that links it.
+  Only a build that links an engine without Vivid's audio output, such as the previous package, rejects them, with the console lines described in section 6.19.
 
 ### 17.8 Zoom, pan and scale options and subtitles
 
-The engine never re-renders, scales or moves the picture for `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`, but mpv still applies them to the rectangle that separate-layer subtitles are placed against, so setting them would move subtitles away from the picture. The rule that the bridge never sets them is unchanged; the reason in section 7.2 is corrected.
+The engine never re-renders, scales or moves the picture for `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`, but mpv still applies them to the rectangle that separate-layer subtitles are placed against, so setting them would move subtitles away from the picture.
+The rule that the bridge never sets them is unchanged; the reason in section 7.2 is corrected.
 
 ### 17.9 Main-thread wait after a subtitle-layer resynchronisation
 
-The engine also waits synchronously for the main thread on the first frame it draws after any subtitle-layer resynchronisation (after a reconfiguration, an option or `panscan` change, a real resize, or a switch of subtitle compositing), when it re-reads the layer geometry. This is added to the list in section 7.2. The bridge rule is unchanged: the main thread never blocks waiting on mpv.
+The engine also waits synchronously for the main thread on the first frame it draws after any subtitle-layer resynchronisation (after a reconfiguration, an option or `panscan` change, a real resize, or a switch of subtitle compositing), when it re-reads the layer geometry.
+This is added to the list in section 7.2.
+The bridge rule is unchanged: the main thread never blocks waiting on mpv.
 
 ### 17.10 Video output for cover art
 
-An audio-only load also gets a video output whenever `vid=auto` selects embedded cover art (mpv's default `audio-display` is `embedded-first`). The bridge writes `vid=auto` on every return to the foreground and every iOS activation, with no audio-only check (section 14.3), so this can happen at those moments. The layer must be in its parent then too, which the guarantee in section 7.2 already requires; its reason now says so.
+An audio-only load also gets a video output whenever `vid=auto` selects embedded cover art (mpv's default `audio-display` is `embedded-first`).
+The bridge writes `vid=auto` on every return to the foreground and every iOS activation, with no audio-only check (section 14.3), so this can happen at those moments.
+The layer must be in its parent then too, which the guarantee in section 7.2 already requires; its reason now says so.
 
 ### 17.11 Speed changes and the audio output
 
 Correction from the engine specification (its sections 1.7 and 3.1), applied to the `ao-avfoundation-compressed-first-start-grace` row in section 6.19 and its bullet in section 17.7, which said that every speed change across 1x creates a new audio output instance.
 
-A speed change across 1x replaces the audio output only on an AC-3 or E-AC-3 track. There the adapter's `audio-spdif` write swaps passthrough for decoded PCM or back, so mpv closes the audio output and opens a new one, which starts from scratch. On any other track (DTS, TrueHD, AAC and the rest, decoded to PCM at every speed), the crossing still changes `audio-spdif`, so mpv rebuilds its audio decoder and filters, but it keeps the same audio output: no new instance, no reset and no fresh sink. If mpv's queued audio runs out before the rebuilt chain refills it, mpv starts that same output again. Those tracks never use the compressed sink, so the option does not apply to them; the earlier wording would only have led a tester to expect output replacements that never happen. While Volume Boost or Enhanced Dialogue is on, the adapter writes `audio-spdif` empty in both directions, so a crossing changes neither the option nor the output, on any track, and the adapter queues no seek.
+A speed change across 1x replaces the audio output only on an AC-3 or E-AC-3 track.
+There the adapter's `audio-spdif` write swaps passthrough for decoded PCM or back, so mpv closes the audio output and opens a new one, which starts from scratch.
+On any other track (DTS, TrueHD, AAC and the rest, decoded to PCM at every speed), the crossing still changes `audio-spdif`, so mpv rebuilds its audio decoder and filters, but it keeps the same audio output: no new instance, no reset and no fresh sink.
+If mpv's queued audio runs out before the rebuilt chain refills it, mpv starts that same output again.
+Those tracks never use the compressed sink, so the option does not apply to them; the earlier wording would only have led a tester to expect output replacements that never happen.
+While Volume Boost or Enhanced Dialogue is on, the adapter writes `audio-spdif` empty in both directions, so a crossing changes neither the option nor the output, on any track, and the adapter queues no seek.
 
 Nothing changes for the bridge: it sets no audio option, and the adapter's speed and `audio-spdif` writes (section 6.19) are as before.

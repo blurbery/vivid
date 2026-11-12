@@ -8,7 +8,8 @@
 
 ---
 
-Vivid owns its interface, browsing behaviour and playback experience. Each media server supplies authentication, library data, playback sources and user state through its own API.
+Vivid owns its interface, browsing behaviour and playback experience.
+Each media server supplies authentication, library data, playback sources and user state through its own API.
 
 ## Current support
 
@@ -24,37 +25,122 @@ Vivid owns its interface, browsing behaviour and playback experience. Each media
 </table>
 
 > [!NOTE]
-> Silo, Emby and Jellyfin are implemented. See the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md) for supported behaviour and verification gaps. Keep each provider’s requests and credentials separate.
+> Silo, Emby and Jellyfin are implemented.
+> See the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md) for supported behaviour and verification gaps.
+> Keep each provider’s requests and credentials separate.
 
-Movies and Series offer Release Date in the Sort menu on iPhone, iPad and Apple TV. It starts with Newest; selecting it again switches to Oldest. Movies use their release date and series use their premiere date, rather than the date files were added. Sorting happens on the server before pagination: Silo uses `release_date`, while Emby and Jellyfin use `PremiereDate`. The existing Preserve sort & filters preference also retains this selection. Genre is single-select on every provider: choosing another genre replaces the previous one, and choosing the only ticked genre clears it. A filter saved earlier with several genres still loads, and collapses to the next genre chosen. A filter saved with the removed Rating sort (or any sort Vivid no longer offers) loads sorted by Title A-Z.
+Movies and Series offer Release Date in the Sort menu on iPhone, iPad and Apple TV.
+It starts with Newest; selecting it again switches to Oldest.
+Movies use their release date and series use their premiere date, rather than the date files were added.
+Sorting happens on the server before pagination: Silo uses `release_date`, while Emby and Jellyfin use `PremiereDate`.
+The existing Preserve sort & filters preference also retains this selection.
+Genre is single-select on every provider: choosing another genre replaces the previous one, and choosing the only ticked genre clears it.
+A filter saved earlier with several genres still loads, and collapses to the next genre chosen.
+A filter saved with the removed Rating sort (or any sort Vivid no longer offers) loads sorted by Title A-Z.
 
-TV Shows libraries also offer Date Last Episode Released and Date Last Episode Added, both starting with Newest. They reorder the shows themselves, still as show posters, rather than listing episodes. Date Last Episode Released sorts by the air date of each show's newest aired episode: Silo uses `last_air_date` (the newest aired episode with a file in a library) and Emby uses `LastContentPremiereDate,SortName`. Jellyfin's API has no equivalent, so Jellyfin doesn't offer it, and a sort saved on another server falls back to Title there. Date Last Episode Added sorts by when each show last gained an episode: Silo uses `latest_episode_added`, and Emby and Jellyfin use `DateLastContentAdded,SortName`, the same as their own web apps. Neither option appears in Movies or mixed libraries, or on studio and network pages. On Silo, shows without a value go last in either order; on Emby and Jellyfin, where they land is up to the server. In poster grids (libraries, Search, For You, collections and person, studio and network pages), a series poster shows its year span like Emby's own apps: "2021 - Present" while it's still airing (Silo `show_status` returning, Emby and Jellyfin `Status` Continuing), "2005 - 2017" once it ended in a later year (from Silo's last air date, or Emby and Jellyfin's `EndDate`), and the year alone otherwise. Emby is asked for `Status` and `EndDate` with the other browse fields; Jellyfin sends them anyway.
+TV Shows libraries also offer Date Last Episode Released and Date Last Episode Added, both starting with Newest.
+They reorder the shows themselves, still as show posters, rather than listing episodes.
+Date Last Episode Released sorts by the air date of each show's newest aired episode: Silo uses `last_air_date` (the newest aired episode with a file in a library) and Emby uses `LastContentPremiereDate,SortName`.
+Jellyfin's API has no equivalent, so Jellyfin doesn't offer it, and a sort saved on another server falls back to Title there.
+Date Last Episode Added sorts by when each show last gained an episode: Silo uses `latest_episode_added`, and Emby and Jellyfin use `DateLastContentAdded,SortName`, the same as their own web apps.
+Neither option appears in Movies or mixed libraries, or on studio and network pages.
+On Silo, shows without a value go last in either order; on Emby and Jellyfin, where they land is up to the server.
+In poster grids (libraries, Search, For You, collections and person, studio and network pages), a series poster shows its year span like Emby's own apps: "2021 - Present" while it's still airing (Silo `show_status` returning, Emby and Jellyfin `Status` Continuing), "2005 - 2017" once it ended in a later year (from Silo's last air date, or Emby and Jellyfin's `EndDate`), and the year alone otherwise.
+Emby is asked for `Status` and `EndDate` with the other browse fields; Jellyfin sends them anyway.
 
 ## Saved accounts on Apple TV, iPhone and iPad
 
-A fresh iPhone/iPad installation attempts a private iCloud vault restore, falling through to local setup when no usable session is restored. The startup splash stops waiting for it after about five seconds, so a slow or blocked iCloud doesn't hold the first screen. A session restore that has already started by then is allowed to finish first, so launch can route with it. A restore that finishes after setup has appeared keeps going in the background: it saves the restored profiles, but doesn't sign one in or leave the setup screen, so nothing typed there is lost. Restore from iCloud then shows them in the saved-profile selector, signing in lets sync restore profiles again, and the next launch restores one before routing, as an on-time restore would. A fresh Apple TV opens the provider selector directly. On iPhone, iPad and Apple TV, Restore from iCloud below the provider cards lets you check for saved accounts manually, retry or go back to server setup. The selector uses Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin opens the same form with its own native authentication.
+A fresh iPhone/iPad installation attempts a private iCloud vault restore, falling through to local setup when no usable session is restored.
+The startup splash stops waiting for it after about five seconds, so a slow or blocked iCloud doesn't hold the first screen.
+A session restore that has already started by then is allowed to finish first, so launch can route with it.
+A restore that finishes after setup has appeared keeps going in the background: it saves the restored profiles, but doesn't sign one in or leave the setup screen, so nothing typed there is lost.
+Restore from iCloud then shows them in the saved-profile selector, signing in lets sync restore profiles again, and the next launch restores one before routing, as an on-time restore would.
+A fresh Apple TV opens the provider selector directly.
+On iPhone, iPad and Apple TV, Restore from iCloud below the provider cards lets you check for saved accounts manually, retry or go back to server setup.
+The selector uses Vivid branding and three 16:9 provider cards.
+Silo opens native server/account setup.
+Emby opens the same form with native Emby authentication on mobile and Apple TV.
+Jellyfin opens the same form with its own native authentication.
 
-Use an HTTPS address for a server reached over the internet. Vivid's App Transport Security setting only allows plain HTTP for local addresses (IP addresses, `.local` names and single-label host names), so server requests to a plain-HTTP public hostname are blocked.
+Use an HTTPS address for a server reached over the internet.
+Vivid's App Transport Security setting only allows plain HTTP for local addresses (IP addresses, `.local` names and single-label host names), so server requests to a plain-HTTP public hostname are blocked.
 
-The address form tries up to three addresses in turn. In Auto with no scheme or port typed, that's HTTPS, plain HTTP, then plain HTTP on the provider's usual port (8090 for Silo, 8096 for Emby and Jellyfin). A host that doesn't answer can keep it busy for about a minute, so Cancel appears while it connects: under Connect on iPhone and iPad, and beside it on Apple TV, where focus returns to Connect once Cancel goes. Cancel, Back and leaving the page all stop the search: the form is free again straight away, no further address is tried, and a stopped search shows no error afterwards, and only moves on to sign-in when the server had already answered (see below). A request already on its way is cancelled where it can be; one that can't be, such as Silo's shared API version check, is left to finish and its answer is ignored. The address and settings stay as typed. In first-run setup, Connect saves the server that answers and makes it the one Vivid uses, which rebuilds the screens and closes the address page; sign-in follows anyway (or, for a Silo server that still needs administrator setup, that setup page), on every server type, iPhone, iPad and Apple TV. A server that had already answered when Cancel was pressed may still be saved, and sign-in or Silo's setup page then follows as Connect would have. When no address answers, the error shows the general "Could not reach" message. The one exception is when every address tried was plain HTTP to a public hostname (the HTTP choice, or an address typed with `http://`) and App Transport Security blocked it: then the message says to use the server's HTTPS address. In Auto, a public host that doesn't answer over HTTPS gets the general message, since its plain HTTP addresses are always blocked. A denied Local Network permission also gets the general message: Vivid only uses documented APIs here, and none of them reports that refusal for a particular server.
+The address form tries up to three addresses in turn.
+In Auto with no scheme or port typed, that's HTTPS, plain HTTP, then plain HTTP on the provider's usual port (8090 for Silo, 8096 for Emby and Jellyfin).
+A host that doesn't answer can keep it busy for about a minute, so Cancel appears while it connects: under Connect on iPhone and iPad, and beside it on Apple TV, where focus returns to Connect once Cancel goes.
+Cancel, Back and leaving the page all stop the search: the form is free again straight away, no further address is tried, and a stopped search shows no error afterwards, and only moves on to sign-in when the server had already answered (see below).
+A request already on its way is cancelled where it can be; one that can't be, such as Silo's shared API version check, is left to finish and its answer is ignored.
+The address and settings stay as typed.
+In first-run setup, Connect saves the server that answers and makes it the one Vivid uses, which rebuilds the screens and closes the address page; sign-in follows anyway (or, for a Silo server that still needs administrator setup, that setup page), on every server type, iPhone, iPad and Apple TV.
+A server that had already answered when Cancel was pressed may still be saved, and sign-in or Silo's setup page then follows as Connect would have.
+When no address answers, the error shows the general "Could not reach" message.
+The one exception is when every address tried was plain HTTP to a public hostname (the HTTP choice, or an address typed with `http://`) and App Transport Security blocked it: then the message says to use the server's HTTPS address.
+In Auto, a public host that doesn't answer over HTTPS gets the general message, since its plain HTTP addresses are always blocked.
+A denied Local Network permission also gets the general message: Vivid only uses documented APIs here, and none of them reports that refusal for a particular server.
 
-The first-run marker belongs to the installation. Removing the app removes its sandbox, preferences, caches and downloads. Keychain can outlive an uninstall, so the next clean Vivid installation clears Vivid’s local Keychain audience before it restores anything from iCloud. An ordinary app update keeps the existing Keychain data. This cleanup is limited to Vivid’s storage identity.
+The first-run marker belongs to the installation.
+Removing the app removes its sandbox, preferences, caches and downloads.
+Keychain can outlive an uninstall, so the next clean Vivid installation clears Vivid’s local Keychain audience before it restores anything from iCloud.
+An ordinary app update keeps the existing Keychain data.
+This cleanup is limited to Vivid’s storage identity.
 
-Account updates during launch keep the current login-restoration attempt running. If active startup loading lasts more than two seconds, the logo shows Vivid’s loading dots underneath. Temporary Keychain failures use bounded retries; if the saved login still cannot be read, the existing Retry alert remains available and the dots stop while waiting for input.
+Account updates during launch keep the current login-restoration attempt running.
+If active startup loading lasts more than two seconds, the logo shows Vivid’s loading dots underneath.
+Temporary Keychain failures use bounded retries; if the saved login still cannot be read, the existing Retry alert remains available and the dots stop while waiting for input.
 
-On iPhone, iPad and Apple TV, Settings → Servers → Manage Servers → Add Server opens a separate Add Server page within Settings, with Silo, Emby and Jellyfin choices. Back returns to Manage Servers without resetting the current session. Each provider’s connection form also returns to those choices with Back. On iPhone and iPad, Connect only checks that the server answers, then opens its sign-in as the next page, and Back returns to the address. A Silo server that still needs administrator setup shows that on the address page instead. Vivid doesn't save the server or switch to it until that sign-in works: a wrong password shows on the sign-in page and the current profile stays in use, so leaving Vivid in the middle (for example to copy a password from another app) keeps the page and what was typed. Once the server accepts the sign-in, it's saved as a new profile, as Add Profile does. Apple TV retains its saved-account authentication form and uses the Siri Remote Back button for both steps, without additional on-screen Back buttons. Restore from iCloud remains on first-run setup and is not shown in this Add Server flow.
+On iPhone, iPad and Apple TV, Settings → Servers → Manage Servers → Add Server opens a separate Add Server page within Settings, with Silo, Emby and Jellyfin choices.
+Back returns to Manage Servers without resetting the current session.
+Each provider’s connection form also returns to those choices with Back.
+On iPhone and iPad, Connect only checks that the server answers, then opens its sign-in as the next page, and Back returns to the address.
+A Silo server that still needs administrator setup shows that on the address page instead.
+Vivid doesn't save the server or switch to it until that sign-in works: a wrong password shows on the sign-in page and the current profile stays in use, so leaving Vivid in the middle (for example to copy a password from another app) keeps the page and what was typed.
+Once the server accepts the sign-in, it's saved as a new profile, as Add Profile does.
+Apple TV retains its saved-account authentication form and uses the Siri Remote Back button for both steps, without additional on-screen Back buttons.
+Restore from iCloud remains on first-run setup and is not shown in this Add Server flow.
 
-Settings starts with the signed-in profile, then Profiles (the other saved accounts) and Add Profile, as described in [App Design](app-design.md#settings-and-startup). Beside the iPhone Duo's side strip, which keeps the signed-in profile and Add Profile, Settings shows only the Profiles row, and only when more than one profile is saved. iPhone, iPad and Apple TV support up to eight saved accounts. Add Profile is hidden at the limit. Here, a **profile card is a saved server account**, identified by server and user (and, for a Silo household member's card, by that viewing profile too). Add Profile signs in another Silo, Emby or Jellyfin account. A Silo household can also give each family member their own card: see [Silo household profiles](#silo-household-profiles). Every card shows its name with the server underneath (the Silo server's name, or Emby or Jellyfin, unless that profile has been given its own server name with Rename Server), on Who’s watching and in Settings. In Settings the server follows the profile's role, Admin or User, for example “Admin · Emby”; a signed-out profile shows “Signed out” with its server instead. Silo reports the account's role, and Emby and Jellyfin report whether the user is a server administrator. A profile saves its role whenever its session is saved, so one Vivid hasn't signed in to since shows only its server until then. The iPhone/iPad Who’s watching screen keeps one or two accounts and Add Profile on the original horizontal row. With three or more accounts it uses the fitted layout: three saved accounts across, with Add Profile centred underneath; four saved accounts use two rows of two. Five to eight use rows of three with the last row centred and Add Profile in the next place, under a smaller logo; the screen scrolls only when it's too short for them all. Apple TV keeps one centred row. A ring highlights the signed-in account on Who’s watching, and Settings > Profiles ticks it. Selecting an inactive saved account switches sessions, while selecting the active one opens its account settings.
+Settings starts with the signed-in profile, then Profiles (the other saved accounts) and Add Profile, as described in [App Design](app-design.md#settings-and-startup).
+Beside the iPhone Duo's side strip, which keeps the signed-in profile and Add Profile, Settings shows only the Profiles row, and only when more than one profile is saved. iPhone, iPad and Apple TV support up to eight saved accounts.
+Add Profile is hidden at the limit.
+Here, a **profile card is a saved server account**, identified by server and user (and, for a Silo household member's card, by that viewing profile too).
+Add Profile signs in another Silo, Emby or Jellyfin account.
+A Silo household can also give each family member their own card: see [Silo household profiles](#silo-household-profiles).
+Every card shows its name with the server underneath (the Silo server's name, or Emby or Jellyfin, unless that profile has been given its own server name with Rename Server), on Who’s watching and in Settings.
+In Settings the server follows the profile's role, Admin or User, for example “Admin · Emby”; a signed-out profile shows “Signed out” with its server instead.
+Silo reports the account's role, and Emby and Jellyfin report whether the user is a server administrator.
+A profile saves its role whenever its session is saved, so one Vivid hasn't signed in to since shows only its server until then.
+The iPhone/iPad Who’s watching screen keeps one or two accounts and Add Profile on the original horizontal row.
+With three or more accounts it uses the fitted layout: three saved accounts across, with Add Profile centred underneath; four saved accounts use two rows of two.
+Five to eight use rows of three with the last row centred and Add Profile in the next place, under a smaller logo; the screen scrolls only when it's too short for them all.
+Apple TV keeps one centred row.
+A ring highlights the signed-in account on Who’s watching, and Settings > Profiles ticks it.
+Selecting an inactive saved account switches sessions, while selecting the active one opens its account settings.
 
-On Apple TV, native tvOS users retain separate server lists, login credentials and saved-account selections. Returning to a configured native user restores their selected local saved session before startup routing, without requiring iCloud. New native users still start setup. Migration only adopts legacy shared server entries referenced by that user's saved accounts or active server; it does not import another native user's credentials. Top Shelf reads the current native user's credentials too. It shows Continue Watching and Next Up for the last active viewer: the active saved profile and, on Silo, its active viewing profile. How many saved profiles or viewing profiles exist doesn't matter. With several saved profiles, Vivid still asks who's watching when it opens, so the shelf can show the last viewer's rows to whoever is next; a PIN keeps a profile off it. The rows appear only when all of these hold; otherwise Top Shelf shows static Vivid artwork:
+On Apple TV, native tvOS users retain separate server lists, login credentials and saved-account selections.
+Returning to a configured native user restores their selected local saved session before startup routing, without requiring iCloud.
+New native users still start setup.
+Migration only adopts legacy shared server entries referenced by that user's saved accounts or active server; it does not import another native user's credentials.
+Top Shelf reads the current native user's credentials too.
+It shows Continue Watching and Next Up for the last active viewer: the active saved profile and, on Silo, its active viewing profile.
+How many saved profiles or viewing profiles exist doesn't matter.
+With several saved profiles, Vivid still asks who's watching when it opens, so the shelf can show the last viewer's rows to whoever is next; a PIN keeps a profile off it.
+The rows appear only when all of these hold; otherwise Top Shelf shows static Vivid artwork:
 
 - The active saved profile is signed in and has no PIN.
 - Vivid remembers the viewing profile for this server and account, the profile launch behaviour doesn't ask on every launch, its time-away lock hasn't expired, and no profile choice is pending.
-- On Silo, the viewing profile has no PIN. Vivid saves the account's profile list, and which profiles have a PIN, each time it reads it (on launch, sign-in, profile selection, server switches and Settings alike), and Top Shelf stays static until it has. A profile that was chosen with a PIN never appears, even though Vivid itself can reopen it.
+- On Silo, the viewing profile has no PIN.
+  Vivid saves the account's profile list, and which profiles have a PIN, each time it reads it (on launch, sign-in, profile selection, server switches and Settings alike), and Top Shelf stays static until it has.
+  A profile that was chosen with a PIN never appears, even though Vivid itself can reopen it.
 
-Each row keeps the order the server sent: Continue Watching mixes started titles with the next episode of shows in progress, and those episodes have no watch time of their own to sort by. Episodes show their series' main poster, because an episode's image is a 16:9 still. On Silo it comes from the series' own details, and when that lookup fails, the series has no poster or the episode names no series, the episode keeps its own image. Emby and Jellyfin use the series image whenever the episode names a series, and the episode's own image otherwise. Top Shelf checks the same rules again before it returns its rows, so a change made while it was loading shows the artwork instead. When Silo answers 401, the extension asks the server for a fresh access token once, shares it with every request in that run and keeps it in memory only; it never writes credentials, so the app's stored session is untouched. Account, viewing-profile and profile launch setting changes request a Top Shelf refresh, as does Vivid leaving the screen, so the rows include what was just watched; tvOS controls when the cached shelf is refreshed.
+Each row keeps the order the server sent: Continue Watching mixes started titles with the next episode of shows in progress, and those episodes have no watch time of their own to sort by.
+Episodes show their series' main poster, because an episode's image is a 16:9 still.
+On Silo it comes from the series' own details, and when that lookup fails, the series has no poster or the episode names no series, the episode keeps its own image.
+Emby and Jellyfin use the series image whenever the episode names a series, and the episode's own image otherwise.
+Top Shelf checks the same rules again before it returns its rows, so a change made while it was loading shows the artwork instead.
+When Silo answers 401, the extension asks the server for a fresh access token once, shares it with every request in that run and keeps it in memory only; it never writes credentials, so the app's stored session is untouched.
+Account, viewing-profile and profile launch setting changes request a Top Shelf refresh, as does Vivid leaving the screen, so the rows include what was just watched; tvOS controls when the cached shelf is refreshed.
 
-For diagnostics, each run saves its time and one status line in the App Group defaults. The status never holds an address, a token or a server message:
+For diagnostics, each run saves its time and one status line in the App Group defaults.
+The status never holds an address, a token or a server message:
 
 | Status | Meaning |
 | --- | --- |
@@ -64,7 +150,9 @@ For diagnostics, each run saves its time and one status line in the App Group de
 | `blocked: changed-during-load` | The viewer changed, or stopped passing the rules, while the rows were loading. |
 | `failed: <reason>` | The request failed: `signed-out`, `refresh-refused`, `http-<code>`, `timeout`, `offline` (the Apple TV has no connection), `unreachable` (the server can't be found or reached), `network`, `bad-address`, `bad-response` or `cancelled`. |
 
-Vivid uses server-provided account pictures with initials as a fallback. The legacy DiceBear avatar picker and household-profile creation screen have been removed. Vivid doesn't create Silo profiles; Add Profile adds a saved server account, or a card for an existing Silo household member.
+Vivid uses server-provided account pictures with initials as a fallback.
+The legacy DiceBear avatar picker and household-profile creation screen have been removed.
+Vivid doesn't create Silo profiles; Add Profile adds a saved server account, or a card for an existing Silo household member.
 
 <table width="100%">
   <thead><tr><th align="left">Action</th><th align="left" width="10000">Behaviour</th></tr></thead>
@@ -81,38 +169,112 @@ Vivid uses server-provided account pictures with initials as a fallback. The leg
   </tbody>
 </table>
 
-First sign-in uses the Vivid startup animation while Home is prepared, showing “Getting ready” (and “Loading your Home” after the first run). Home then opens directly without a server-driven personalisation tour. Studios & Networks loads at the same time, and Home waits for it, for up to two minutes, so its row is there when Home appears. Saved results make it almost instant after the first time. Adding or re-authenticating a saved account from the selector or Settings also keeps the startup presentation visible until the profile is entered and Home's saved snapshot is ready, with a recovery page if preparation fails. That page names the server and the cause (offline, server unreachable, wrong PIN, expired sign-in, server error or unexpected response) and offers the matching action. Back to sign in on that page, or cancelling its PIN prompt, signs out of the account being prepared and marks it as needing sign-in (cancelling a Silo household member's PIN while choosing a profile returns to the list instead), so an unreachable server can't hold the app on it after a relaunch, reinstall or iCloud restore. Normal cached startup does not repeat those setup messages. When an account has no active viewing profile, Vivid enters the card's household member, or otherwise its primary profile (or its only profile), and asks for that profile's PIN when one is set. Only a new sign-in to a Silo account with several viewing profiles asks which one to use. The saved-account selector uses the selected app theme, a centred silver V and “Who’s watching?”.
+First sign-in uses the Vivid startup animation while Home is prepared, showing “Getting ready” (and “Loading your Home” after the first run).
+Home then opens directly without a server-driven personalisation tour.
+Studios & Networks loads at the same time, and Home waits for it, for up to two minutes, so its row is there when Home appears.
+Saved results make it almost instant after the first time.
+Adding or re-authenticating a saved account from the selector or Settings also keeps the startup presentation visible until the profile is entered and Home's saved snapshot is ready, with a recovery page if preparation fails.
+That page names the server and the cause (offline, server unreachable, wrong PIN, expired sign-in, server error or unexpected response) and offers the matching action.
+Back to sign in on that page, or cancelling its PIN prompt, signs out of the account being prepared and marks it as needing sign-in (cancelling a Silo household member's PIN while choosing a profile returns to the list instead), so an unreachable server can't hold the app on it after a relaunch, reinstall or iCloud restore.
+Normal cached startup does not repeat those setup messages.
+When an account has no active viewing profile, Vivid enters the card's household member, or otherwise its primary profile (or its only profile), and asks for that profile's PIN when one is set.
+Only a new sign-in to a Silo account with several viewing profiles asks which one to use.
+The saved-account selector uses the selected app theme, a centred silver V and “Who’s watching?”.
 
-Manage Servers and Add Profile share the registered server list. Add Profile starts on the type of the server its address is filled from, and its saved-server list shows only servers of the chosen type on mobile and Apple TV. Switching type swaps a saved server of another type for the most recent saved server of the new type, or clears the address when there isn't one. A typed address that matches a saved server is treated like a picked one; any other typed address is used as entered. If that address isn't a Jellyfin server, Quick Connect says the server doesn't offer Quick Connect when the route is missing or its answer isn't `true` or `false`; other failures, such as a refused request, a server error or no connection, show their own message, and a password sign-in fails as before. Selecting or adding a Silo connection through either flow keeps it available to the other. Silo, Emby and Jellyfin can be added on mobile and Apple TV. Jellyfin uses its own [native core](cores/jellyfin.md). Setup and sign-in use the selected app theme and the shared Vivid footer. See [appearance and startup](app-design.md#settings-and-startup) for the shared presentation. Apple TV opens the same username/password form for all three providers, without starting QR pairing. A Jellyfin server with Quick Connect turned on also offers [Quick Connect](cores/jellyfin.md#quick-connect) there and in Add Profile, Sign In and Update Login, on mobile and Apple TV. An Emby server offers [Emby Connect](cores/emby.md#emby-connect) in the same places.
+Manage Servers and Add Profile share the registered server list.
+Add Profile starts on the type of the server its address is filled from, and its saved-server list shows only servers of the chosen type on mobile and Apple TV.
+Switching type swaps a saved server of another type for the most recent saved server of the new type, or clears the address when there isn't one.
+A typed address that matches a saved server is treated like a picked one; any other typed address is used as entered.
+If that address isn't a Jellyfin server, Quick Connect says the server doesn't offer Quick Connect when the route is missing or its answer isn't `true` or `false`; other failures, such as a refused request, a server error or no connection, show their own message, and a password sign-in fails as before.
+Selecting or adding a Silo connection through either flow keeps it available to the other.
+Silo, Emby and Jellyfin can be added on mobile and Apple TV.
+Jellyfin uses its own [native core](cores/jellyfin.md).
+Setup and sign-in use the selected app theme and the shared Vivid footer.
+See [appearance and startup](app-design.md#settings-and-startup) for the shared presentation.
+Apple TV opens the same username/password form for all three providers, without starting QR pairing.
+A Jellyfin server with Quick Connect turned on also offers [Quick Connect](cores/jellyfin.md#quick-connect) there and in Add Profile, Sign In and Update Login, on mobile and Apple TV.
+An Emby server offers [Emby Connect](cores/emby.md#emby-connect) in the same places.
 
 ### Silo household profiles
 
-A Silo account can hold several viewing profiles, each with its own watchlist, history, PIN and parental limits. When Add Profile or the first sign-in reaches a Silo account with more than one, Vivid asks “Who’s watching?” and lists that account's profiles with their Silo profile pictures. The primary profile comes first and a lock marks profiles with a PIN. Long lists use the same rows of three as Who’s watching on iPhone and iPad, and one row on Apple TV. Choosing a profile with a PIN asks for it; cancelling that PIN prompt returns to the list, and Cancel signs out of the new sign-in without saving anything.
+A Silo account can hold several viewing profiles, each with its own watchlist, history, PIN and parental limits.
+When Add Profile or the first sign-in reaches a Silo account with more than one, Vivid asks “Who’s watching?” and lists that account's profiles with their Silo profile pictures.
+The primary profile comes first and a lock marks profiles with a PIN.
+Long lists use the same rows of three as Who’s watching on iPhone and iPad, and one row on Apple TV.
+Choosing a profile with a PIN asks for it; cancelling that PIN prompt returns to the list, and Cancel signs out of the new sign-in without saving anything.
 
-- The primary profile, or an account's only profile, uses the original card, exactly as before. Existing cards keep their identity, sign-in and iCloud data unchanged.
-- Each other family member gets their own card, bound to their Silo viewing profile. It always enters that profile, with its own session and PIN proof, and never falls back to the primary profile. If that viewing profile is removed from the server, the card shows “This profile isn’t available” instead. This also covers a card whose session still holds the removed profile, which Silo refuses with 404 `not_found`: Vivid checks the account's profile list, which it requests without the viewing profile, and leaves Home only when the profile has gone.
-- Every Silo card is labelled with its viewing profile's name in Silo, the primary profile included, since that name is chosen in Silo and isn't the sign-in username. Renaming a profile in Silo updates its card once Vivid next loads that profile. A card whose profile hasn't loaded yet, or an unbound card holding a profile other than the primary, keeps its username. Emby and Jellyfin cards keep their usernames. Whenever a Silo card shows its profile name, its account settings show that name as Profile above the Username used to sign in.
+- The primary profile, or an account's only profile, uses the original card, exactly as before.
+  Existing cards keep their identity, sign-in and iCloud data unchanged.
+- Each other family member gets their own card, bound to their Silo viewing profile.
+  It always enters that profile, with its own session and PIN proof, and never falls back to the primary profile.
+  If that viewing profile is removed from the server, the card shows “This profile isn’t available” instead.
+  This also covers a card whose session still holds the removed profile, which Silo refuses with 404 `not_found`: Vivid checks the account's profile list, which it requests without the viewing profile, and leaves Home only when the profile has gone.
+- Every Silo card is labelled with its viewing profile's name in Silo, the primary profile included, since that name is chosen in Silo and isn't the sign-in username.
+  Renaming a profile in Silo updates its card once Vivid next loads that profile.
+  A card whose profile hasn't loaded yet, or an unbound card holding a profile other than the primary, keeps its username.
+  Emby and Jellyfin cards keep their usernames.
+  Whenever a Silo card shows its profile name, its account settings show that name as Profile above the Username used to sign in.
 - Sign In and Update Login on a card keep its profile and never ask which one to use.
-- In a signed-in Silo card's account settings, Household → Search for Accounts shows “Searching for accounts”, then lists that account's profiles that aren't on this device yet, each with Add underneath. Choosing one adds its card, and it leaves the list. No password is needed: Vivid starts a device sign-in, approves it with the signed-in session and saves the new session, so every card keeps its own session and signing one out never signs out another. A profile with a PIN asks for it first. The current card stays signed in. This needs the Silo server's device sign-in (the server feature behind QR sign-in); Vivid itself no longer offers QR sign-in.
-- Parental limits are enforced by Silo for the profile each card sends. On a shared device, a Vivid PIN on the parent's card stops a child switching to it.
+- In a signed-in Silo card's account settings, Household → Search for Accounts shows “Searching for accounts”, then lists that account's profiles that aren't on this device yet, each with Add underneath.
+  Choosing one adds its card, and it leaves the list.
+  No password is needed: Vivid starts a device sign-in, approves it with the signed-in session and saves the new session, so every card keeps its own session and signing one out never signs out another.
+  A profile with a PIN asks for it first.
+  The current card stays signed in.
+  This needs the Silo server's device sign-in (the server feature behind QR sign-in); Vivid itself no longer offers QR sign-in.
+- Parental limits are enforced by Silo for the profile each card sends.
+  On a shared device, a Vivid PIN on the parent's card stops a child switching to it.
 - Household members' cards count towards the eight saved accounts.
-- They sync through iCloud in a separate record (`account-vault-profiles-v1`) that older Vivid builds don't read, so a device on an older build keeps showing only the original cards rather than merging a family member into one. Update Vivid on every device to see them everywhere. Saved-profile order keeps a separate entry for household members, so devices on older builds don't keep rewriting the shared order.
+- They sync through iCloud in a separate record (`account-vault-profiles-v1`) that older Vivid builds don't read, so a device on an older build keeps showing only the original cards rather than merging a family member into one.
+  Update Vivid on every device to see them everywhere.
+  Saved-profile order keeps a separate entry for household members, so devices on older builds don't keep rewriting the shared order.
 
 The profile choice is in <a href="../iosApp/iosApp/tvOS/Profiles/SiloProfileChoiceView.swift">SiloProfileChoiceView</a> and Search for Accounts in <a href="../iosApp/iosApp/tvOS/Profiles/SiloHouseholdSearch.swift">SiloHouseholdSearch</a>, both shared by iPhone, iPad and Apple TV.
 
-An account can have an optional four-digit Vivid PIN. Its salted digest is kept in Keychain, with a thirty-second delay after five incorrect attempts. PIN-protected cards remain locked if their PIN record cannot be read. This local account lock is separate from the server's viewing-profile PIN and must not bypass its verification proof.
+An account can have an optional four-digit Vivid PIN.
+Its salted digest is kept in Keychain, with a thirty-second delay after five incorrect attempts.
+PIN-protected cards remain locked if their PIN record cannot be read.
+This local account lock is separate from the server's viewing-profile PIN and must not bypass its verification proof.
 
-Account metadata is stored locally and session tokens are kept in Keychain; the entered password is not retained. Startup retries temporary Keychain availability failures twice. A persistent read failure offers Retry without treating the account as signed out, and failed token reads are not cached. Restoring an account uses the HTTP identity-transition gate, cancels outgoing requests and shared artwork work, and clears active response/profile and decoded artwork caches. Both Apple TV and mobile rebuild the routed screen after the destination session is restored, including switches between accounts on the same server. Access and refresh tokens are captured together with the matching viewing-profile proof. A server can still revoke or expire a session, in which case fresh authentication may be necessary. When Silo refuses a token refresh, Vivid sends the same refresh again after three seconds and again after six before treating the session as expired, so a server that briefly refuses a valid session (for example while its database restarts) does not sign the account out. Other requests that hit a 401 during that wait share the same refresh, and a 429, 5xx or network failure on a retry keeps the session as before. When a session does expire, with any provider, the saved-account selector opens straight away with that account marked as needing sign-in. Vivid doesn't restore the refused session by itself after that, including on relaunch; only a newer sign-in for that account arriving from another device through iCloud brings it back without a password. The expiry isn't pushed to other devices, although an account update that hasn't uploaded yet can still carry the signed-out state with it.
+Account metadata is stored locally and session tokens are kept in Keychain; the entered password is not retained.
+Startup retries temporary Keychain availability failures twice.
+A persistent read failure offers Retry without treating the account as signed out, and failed token reads are not cached.
+Restoring an account uses the HTTP identity-transition gate, cancels outgoing requests and shared artwork work, and clears active response/profile and decoded artwork caches.
+Both Apple TV and mobile rebuild the routed screen after the destination session is restored, including switches between accounts on the same server.
+Access and refresh tokens are captured together with the matching viewing-profile proof.
+A server can still revoke or expire a session, in which case fresh authentication may be necessary.
+When Silo refuses a token refresh, Vivid sends the same refresh again after three seconds and again after six before treating the session as expired, so a server that briefly refuses a valid session (for example while its database restarts) does not sign the account out.
+Other requests that hit a 401 during that wait share the same refresh, and a 429, 5xx or network failure on a retry keeps the session as before.
+When a session does expire, with any provider, the saved-account selector opens straight away with that account marked as needing sign-in.
+Vivid doesn't restore the refused session by itself after that, including on relaunch; only a newer sign-in for that account arriving from another device through iCloud brings it back without a password.
+The expiry isn't pushed to other devices, although an account update that hasn't uploaded yet can still carry the signed-out state with it.
 
-Artwork requests, decoded images, disk responses and Home snapshots are scoped by server, signed-in account and viewing profile. Saved account avatars use their own account scope even while another account is active. Older Home snapshots without account ownership are not reused; this does not remove saved sessions.
+Artwork requests, decoded images, disk responses and Home snapshots are scoped by server, signed-in account and viewing profile.
+Saved account avatars use their own account scope even while another account is active.
+Older Home snapshots without account ownership are not reused; this does not remove saved sessions.
 
-Account transitions save already-verified outgoing account metadata without waiting for a server refresh. Once the viewing profile is authorised, Home opens from its scoped disk cache and refreshes in the background; an empty cache shows loading dots. Fresh Home and library requests do not hold the login animation open. Launch prefetch covers the active session, not every saved account. [Home refresh](#home-refresh) describes the subsequent provider-specific updates.
+Account transitions save already-verified outgoing account metadata without waiting for a server refresh.
+Once the viewing profile is authorised, Home opens from its scoped disk cache and refreshes in the background; an empty cache shows loading dots.
+Fresh Home and library requests do not hold the login animation open.
+Launch prefetch covers the active session, not every saved account.
+[Home refresh](#home-refresh) describes the subsequent provider-specific updates.
 
-In Settings > Profiles, select a profile to switch to it, or the signed-in or a signed-out one to open its account settings. iPhone and iPad rearrange there with Edit; Apple TV by holding a profile to pick it up, moving it up or down, then pressing centre to drop and save (Back cancels). On iPhone and iPad Who’s watching, tap a profile to select it. Hold and drag to rearrange: the held card follows the finger and the other profiles move aside as it passes over them. Release within the profile row to save the previewed order; releasing outside the profiles cancels the move. VoiceOver also offers Move earlier and Move later actions. On Apple TV Who’s watching, hold a profile to pick it up, move left or right, then press centre to drop and save; Back cancels. Rearranging keeps the profile row at its normal height, without Done or delete buttons. Delete Profile is inside the profile’s account settings and still requires confirmation. The visible profile selector, and the Settings profile rows and Profiles page, refresh iCloud every ten seconds while active and no move is in progress. Apple TV wobble honours Reduce Motion. These controls manage saved Vivid connections, not accounts on the media server.
+In Settings > Profiles, select a profile to switch to it, or the signed-in or a signed-out one to open its account settings. iPhone and iPad rearrange there with Edit; Apple TV by holding a profile to pick it up, moving it up or down, then pressing centre to drop and save (Back cancels).
+On iPhone and iPad Who’s watching, tap a profile to select it.
+Hold and drag to rearrange: the held card follows the finger and the other profiles move aside as it passes over them.
+Release within the profile row to save the previewed order; releasing outside the profiles cancels the move.
+VoiceOver also offers Move earlier and Move later actions.
+On Apple TV Who’s watching, hold a profile to pick it up, move left or right, then press centre to drop and save; Back cancels.
+Rearranging keeps the profile row at its normal height, without Done or delete buttons.
+Delete Profile is inside the profile’s account settings and still requires confirmation.
+The visible profile selector, and the Settings profile rows and Profiles page, refresh iCloud every ten seconds while active and no move is in progress.
+Apple TV wobble honours Reduce Motion.
+These controls manage saved Vivid connections, not accounts on the media server.
 
 ## Home refresh
 
-Home first presents its account-scoped cached content, then reconciles it with the active media server. Periodic refresh runs only while Home is visible, the app is active and authenticated, and detail or playback navigation is not covering it. Each interval starts after the previous refresh completes.
+Home first presents its account-scoped cached content, then reconciles it with the active media server.
+Periodic refresh runs only while Home is visible, the app is active and authenticated, and detail or playback navigation is not covering it.
+Each interval starts after the previous refresh completes.
 
 <table width="100%">
   <thead><tr><th align="left">Platform/provider</th><th align="left" width="10000">Refresh behaviour</th></tr></thead>
@@ -125,7 +287,11 @@ Home first presents its account-scoped cached content, then reconciles it with t
   </tbody>
 </table>
 
-Successful final playback-progress writes and detail-page watched/unwatched changes also request a Home refresh. Hidden Apple TV refresh requests wait until return. Overlapping requests are coalesced and stale responses cannot replace newer state. Continue Watching changes when the server response reflects the update; this is separate from the private iCloud account vault and does not guarantee immediate server-push invalidation. The implementation is in [HomeView](../iosApp/iosApp/Screens/Home/HomeScreen.swift) and [HomeViewModel](../iosApp/iosApp/Screens/Home/HomeFeedModel.swift).
+Successful final playback-progress writes and detail-page watched/unwatched changes also request a Home refresh.
+Hidden Apple TV refresh requests wait until return.
+Overlapping requests are coalesced and stale responses cannot replace newer state.
+Continue Watching changes when the server response reflects the update; this is separate from the private iCloud account vault and does not guarantee immediate server-push invalidation.
+The implementation is in [HomeView](../iosApp/iosApp/Screens/Home/HomeScreen.swift) and [HomeViewModel](../iosApp/iosApp/Screens/Home/HomeFeedModel.swift).
 
 ## Search matching
 
@@ -133,15 +299,38 @@ Search finds titles whatever their spacing and punctuation, and with a typo or t
 
 ### Library index
 
-Vivid first matches the query on the device, against every movie and series in the library index that [Studios & Networks](apple-tv-browsing.md#studios--networks) saves when it reads the library. It keeps only each title's name, year, type and ID in memory and reads the matches' details from the saved index, so a library of hundreds of thousands of titles fits. That read happens for every signed-in account and profile, whether or not the row is shown, and Emby and Jellyfin keep one per native user. The index ignores case, accents, spacing and punctuation, so a title split anywhere still matches, and "&" matches "and". A query of five to eight letters and digits can have one typo (a wrong, missing, extra or swapped letter) and a longer one two, measured from the start of a word in the title (`spidrman`). A query of several words also finds titles holding each word in any order, where each word of five letters or more can have its own typo (`harry poter goblet`). It only checks the title Vivid shows, not original or alternative titles, adds at most the 100 best matches, and reads a title's first 64 letters and digits for typos, so a word starting after that only matches without one.
+Vivid first matches the query on the device, against every movie and series in the library index that [Studios & Networks](apple-tv-browsing.md#studios--networks) saves when it reads the library.
+It keeps only each title's name, year, type and ID in memory and reads the matches' details from the saved index, so a library of hundreds of thousands of titles fits.
+That read happens for every signed-in account and profile, whether or not the row is shown, and Emby and Jellyfin keep one per native user.
+The index ignores case, accents, spacing and punctuation, so a title split anywhere still matches, and "&" matches "and".
+A query of five to eight letters and digits can have one typo (a wrong, missing, extra or swapped letter) and a longer one two, measured from the start of a word in the title (`spidrman`).
+A query of several words also finds titles holding each word in any order, where each word of five letters or more can have its own typo (`harry poter goblet`).
+It only checks the title Vivid shows, not original or alternative titles, adds at most the 100 best matches, and reads a title's first 64 letters and digits for typos, so a word starting after that only matches without one.
 
-Titles that read as the query show first: the same title, one starting with it, one with a word starting with it, or one with every word. The server's results for the query as typed follow, then titles that only contain the query or match it with a typo. A server card replaces the index's card for the same title where it stands, for current artwork and watched state, and titles are only ever added after those shown, so nothing moves under focus. If Silo posters from the index have expired, Vivid searches up to three of those titles again after the server has answered and the search has finished, and uses the fresh cards. When the server doesn't answer, it skips this. The index is as old as the last library read, normally under a day. A newer title shows when the server matches the query as typed, but while the index finds other titles the pieces below don't run, so until the next read `spiderman` can miss a newly added Spider-Man film. A removed title can show until the next read. The index loads when Search opens and is kept for the session; a search before it has loaded, or one it finds nothing for, falls back to the pieces below.
+Titles that read as the query show first: the same title, one starting with it, one with a word starting with it, or one with every word.
+The server's results for the query as typed follow, then titles that only contain the query or match it with a typo.
+A server card replaces the index's card for the same title where it stands, for current artwork and watched state, and titles are only ever added after those shown, so nothing moves under focus.
+If Silo posters from the index have expired, Vivid searches up to three of those titles again after the server has answered and the search has finished, and uses the fresh cards.
+When the server doesn't answer, it skips this.
+The index is as old as the last library read, normally under a day.
+A newer title shows when the server matches the query as typed, but while the index finds other titles the pieces below don't run, so until the next read `spiderman` can miss a newly added Spider-Man film.
+A removed title can show until the next read.
+The index loads when Search opens and is kept for the session; a search before it has loaded, or one it finds nothing for, falls back to the pieces below.
 
 ### Without the index
 
-The server answers the query as typed, and those results come first in the server's order. Vivid also asks the server for one or two pieces of the query: the first half of its longest word, plus that whole word when the query has more than one. From those results it adds the titles whose letters and digits, ignoring case and accents, contain the query's, with titles that start with the query first. Only the first page adds them. Later pages are the server's own, and when one holds a title already shown, the server's card replaces it where it stands. Until every page has loaded, the result count is the server's total or the number of titles shown, whichever is more. Emby and Jellyfin send each piece as their own `SearchTerm`, the same as the query.
+The server answers the query as typed, and those results come first in the server's order.
+Vivid also asks the server for one or two pieces of the query: the first half of its longest word, plus that whole word when the query has more than one.
+From those results it adds the titles whose letters and digits, ignoring case and accents, contain the query's, with titles that start with the query first.
+Only the first page adds them.
+Later pages are the server's own, and when one holds a title already shown, the server's card replaces it where it stands.
+Until every page has loaded, the result count is the server's total or the number of titles shown, whichever is more.
+Emby and Jellyfin send each piece as their own `SearchTerm`, the same as the query.
 
-If no title holding the query has turned up by then, the title may split it before the pieces reach, as X-Men splits `xmen`. Vivid then tries the longest word with a hyphen after each of its first letters, up to five and short of where the pieces start: `x-men` and `xm-en`, or `toy-story` among three for `toystory`. Every server finds a title typed with its hyphen, a hyphen in the wrong place matches nothing, and these results are matched and added the same way. A search that already found a match skips this step.
+If no title holding the query has turned up by then, the title may split it before the pieces reach, as X-Men splits `xmen`.
+Vivid then tries the longest word with a hyphen after each of its first letters, up to five and short of where the pieces start: `x-men` and `xm-en`, or `toy-story` among three for `toystory`.
+Every server finds a title typed with its hyphen, a hyphen in the wrong place matches nothing, and these results are matched and added the same way.
+A search that already found a match skips this step.
 
 <table width="100%">
   <thead><tr><th align="left">Server</th><th align="left" width="10000">Why the query alone can miss, and what the pieces find</th></tr></thead>
@@ -153,71 +342,245 @@ If no title holding the query has turned up by then, the title may split it befo
 </table>
 
 > [!NOTE]
-> The pieces and the hyphen step don't allow for typos, and they only check the title Vivid shows. A single word needs five letters and digits before Vivid sends its start, and a query of several words needs a word of four before Vivid sends that word on its own, so `dune` and `x men` add no pieces. The hyphen step needs a word of four. A long word split between its sixth letter and its middle, or split twice, isn't found this way. The hyphen step only runs when nothing else matched, so a literal match, such as a title called Xmen, stops it finding X-Men too. Each piece returns at most 100 titles, so a piece matching much of a large library can miss some. A piece that fails adds nothing and leaves the server's own results.
+> The pieces and the hyphen step don't allow for typos, and they only check the title Vivid shows.
+> A single word needs five letters and digits before Vivid sends its start, and a query of several words needs a word of four before Vivid sends that word on its own, so `dune` and `x men` add no pieces.
+> The hyphen step needs a word of four.
+> A long word split between its sixth letter and its middle, or split twice, isn't found this way.
+> The hyphen step only runs when nothing else matched, so a literal match, such as a title called Xmen, stops it finding X-Men too.
+> Each piece returns at most 100 titles, so a piece matching much of a large library can miss some.
+> A piece that fails adds nothing and leaves the server's own results.
 
-The index's matching is in [LibrarySearchIndex](../iosApp/iosApp/Screens/Search/LibrarySearchIndex.swift), the pieces in [SearchMatching](../iosApp/iosApp/Screens/Search/SearchMatching.swift), the result order in [SearchResultList](../iosApp/iosApp/Screens/Search/SearchResultList.swift) and the flow in [SearchViewModel](../iosApp/iosApp/Screens/Search/SearchPageModel.swift). `LibrarySearchIndexTests` cover the index's matching and ranking. `SearchMatchingTests` cover the pieces, the hyphen splits and the matching, and an Emby and a Jellyfin adapter test each check that a piece goes out as that server's `SearchTerm` and that its results are matched. On an Emby 4.10.2 library, read-only checks of its search index found no movie or series matching `spiderman` or `walle`, while `spide`, `oce`, `wal` and `ant` reached Spider-Man, Ocean's Eight, WALL·E and Ant-Man, each with under 100 movies and series. The words of `x-men`, `toy-story`, `he-man` and `harry-potter` found 12 X-Men titles, 7 Toy Story titles, the He-Man series and the Harry Potter films, and `xm-en` found nothing. Those checks searched the index for the words; a hyphenated search on Emby itself hasn't been tried. The Silo and Jellyfin rows come from their source code. In the app on simulators (an iPad Pro 13-inch with a Silo account, and an iPhone 18 Pro with Emby and Jellyfin accounts), the index found `spiderman`, `xmen`, `interstelar` and `harry poter goblet` on all three servers, including where the server itself returned nothing (Emby for all four), and a query the index couldn't match fell back to the pieces and the hyphen step. Apple TV and physical devices haven't been tried yet.
+The index's matching is in [LibrarySearchIndex](../iosApp/iosApp/Screens/Search/LibrarySearchIndex.swift), the pieces in [SearchMatching](../iosApp/iosApp/Screens/Search/SearchMatching.swift), the result order in [SearchResultList](../iosApp/iosApp/Screens/Search/SearchResultList.swift) and the flow in [SearchViewModel](../iosApp/iosApp/Screens/Search/SearchPageModel.swift).
+`LibrarySearchIndexTests` cover the index's matching and ranking.
+`SearchMatchingTests` cover the pieces, the hyphen splits and the matching, and an Emby and a Jellyfin adapter test each check that a piece goes out as that server's `SearchTerm` and that its results are matched.
+On an Emby 4.10.2 library, read-only checks of its search index found no movie or series matching `spiderman` or `walle`, while `spide`, `oce`, `wal` and `ant` reached Spider-Man, Ocean's Eight, WALL·E and Ant-Man, each with under 100 movies and series.
+The words of `x-men`, `toy-story`, `he-man` and `harry-potter` found 12 X-Men titles, 7 Toy Story titles, the He-Man series and the Harry Potter films, and `xm-en` found nothing.
+Those checks searched the index for the words; a hyphenated search on Emby itself hasn't been tried.
+The Silo and Jellyfin rows come from their source code.
+In the app on simulators (an iPad Pro 13-inch with a Silo account, and an iPhone 18 Pro with Emby and Jellyfin accounts), the index found `spiderman`, `xmen`, `interstelar` and `harry poter goblet` on all three servers, including where the server itself returned nothing (Emby for all four), and a query the index couldn't match fell back to the pieces and the hyphen step.
+Apple TV and physical devices haven't been tried yet.
 
 ## Private iCloud account sync
 
-When iCloud is available, Vivid stores saved server accounts, login sessions and optional Vivid PIN records in an encrypted-values record (`account-vault-v1`) in the user’s private CloudKit database. Silo household members' cards go in a second record, `account-vault-profiles-v1` (see [Silo household profiles](#silo-household-profiles)); deletion records and shared preferences stay in the first. The same vault is used on iPhone, iPad and Apple TV. Sync runs during startup, when the app becomes active, and after account authentication, sign-out, PIN, profile-order or deletion changes. After server setup (first run, or Use a different server on the sign-in screen) or choosing a server from the server list, sync doesn't restore the previously active saved profile over it until a saved profile on that server is active, so leaving Vivid mid-sign-in keeps the sign-in screen and what was typed. A relaunch still restores the active saved profile. If iCloud is unavailable or the initial restore fails, Vivid continues using local accounts or opens server setup when none are available. On a new Apple TV, the server choices open directly. A centred Restore from iCloud button below them opens an optional restore screen; Back remains available during a check or after an error. Restored accounts open the saved-profile selector. An iPhone and existing iCloud data are not required to set up an Apple TV. Vivid tries syncing again later, and still fetches the existing vault before uploading local changes.
+When iCloud is available, Vivid stores saved server accounts, login sessions and optional Vivid PIN records in an encrypted-values record (`account-vault-v1`) in the user’s private CloudKit database.
+Silo household members' cards go in a second record, `account-vault-profiles-v1` (see [Silo household profiles](#silo-household-profiles)); deletion records and shared preferences stay in the first.
+The same vault is used on iPhone, iPad and Apple TV.
+Sync runs during startup, when the app becomes active, and after account authentication, sign-out, PIN, profile-order or deletion changes.
+After server setup (first run, or Use a different server on the sign-in screen) or choosing a server from the server list, sync doesn't restore the previously active saved profile over it until a saved profile on that server is active, so leaving Vivid mid-sign-in keeps the sign-in screen and what was typed.
+A relaunch still restores the active saved profile.
+If iCloud is unavailable or the initial restore fails, Vivid continues using local accounts or opens server setup when none are available.
+On a new Apple TV, the server choices open directly.
+A centred Restore from iCloud button below them opens an optional restore screen; Back remains available during a check or after an error.
+Restored accounts open the saved-profile selector.
+An iPhone and existing iCloud data are not required to set up an Apple TV.
+Vivid tries syncing again later, and still fetches the existing vault before uploading local changes.
 
-Deleting a saved account on mobile or Apple TV writes a dated tombstone, whether the account is currently signed in or signed out. Every device applies that tombstone before uploading its local accounts, which prevents a stale iPhone, iPad or Apple TV from adding the deleted account back. The saved server remains when another saved account still references it. Deletion reaches another device at its next successful iCloud sync; an offline device may retain the card until then. Removing a server also records a server deletion, so profiles held only on another device are removed when they next sync. Only entering credentials again after the deletion can deliberately restore that same server/user identity. A sign-in made while a sync is already running is kept: that sync skips the newly added account, and the next sync retires the deletion. Removing the app does not delete the private CloudKit vault or accounts from the user’s other devices; it removes data held by that installation.
+Deleting a saved account on mobile or Apple TV writes a dated tombstone, whether the account is currently signed in or signed out.
+Every device applies that tombstone before uploading its local accounts, which prevents a stale iPhone, iPad or Apple TV from adding the deleted account back.
+The saved server remains when another saved account still references it.
+Deletion reaches another device at its next successful iCloud sync; an offline device may retain the card until then.
+Removing a server also records a server deletion, so profiles held only on another device are removed when they next sync.
+Only entering credentials again after the deletion can deliberately restore that same server/user identity.
+A sign-in made while a sync is already running is kept: that sync skips the newly added account, and the next sync retires the deletion.
+Removing the app does not delete the private CloudKit vault or accounts from the user’s other devices; it removes data held by that installation.
 
-The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured Seerr, MDBList and OpenSubtitles credentials. Shared preferences and connections belong to the matching server account and viewing profile, not to every account using the same Apple iCloud login. A second Silo account has its own settings; an Emby account does not inherit a Silo account’s keys or settings. Plugin reads and edits pause while the active server/profile does not match the selected saved account. Unowned legacy global TMDb credentials and TV layout choices are not copied into a newly selected account. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state continues to sync through the selected media server’s own API. [Home refresh](#home-refresh) reads that server state independently of private iCloud account sync.
+The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured Seerr, MDBList and OpenSubtitles credentials.
+Shared preferences and connections belong to the matching server account and viewing profile, not to every account using the same Apple iCloud login.
+A second Silo account has its own settings; an Emby account does not inherit a Silo account’s keys or settings.
+Plugin reads and edits pause while the active server/profile does not match the selected saved account.
+Unowned legacy global TMDb credentials and TV layout choices are not copied into a newly selected account.
+Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local.
+Watched and resume state continues to sync through the selected media server’s own API.
+[Home refresh](#home-refresh) reads that server state independently of private iCloud account sync.
 
-The implementation lives in <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift">TVSavedAccountStore</a> and <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountViews.swift">TVSavedAccountViews</a>. On mobile, the account cards are in `PhoneProfileCards.swift` and the editor is in `PhoneAccountEditor.swift`, using the same store. Servers remains a separate Settings category for registered connections. Mobile Sign Out is in the account editor, not Servers. Saved Emby sessions additionally preserve the native user ID; the Emby adapter implements its API translation. Saved-account storage alone does not establish provider compatibility.
+The implementation lives in <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift">TVSavedAccountStore</a> and <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountViews.swift">TVSavedAccountViews</a>.
+On mobile, the account cards are in `PhoneProfileCards.swift` and the editor is in `PhoneAccountEditor.swift`, using the same store.
+Servers remains a separate Settings category for registered connections.
+Mobile Sign Out is in the account editor, not Servers.
+Saved Emby sessions additionally preserve the native user ID; the Emby adapter implements its API translation.
+Saved-account storage alone does not establish provider compatibility.
 
 ### Restore and troubleshooting
 
-Use the same Apple iCloud account and the matching saved server account and viewing profile on each device. On Apple TV, check the **current Apple TV user**, not only the App Store account or default user. Vivid uses that user's private CloudKit database. The eight-account limit applies on iPhone, iPad and Apple TV, including new accounts restored from iCloud. It limits saved accounts per device/native TV user, not the number of devices using iCloud. Existing saved accounts can still be updated at the limit. A device on an older Vivid build keeps its four-account limit and restores up to four from iCloud.
+Use the same Apple iCloud account and the matching saved server account and viewing profile on each device.
+On Apple TV, check the **current Apple TV user**, not only the App Store account or default user.
+Vivid uses that user's private CloudKit database.
+The eight-account limit applies on iPhone, iPad and Apple TV, including new accounts restored from iCloud.
+It limits saved accounts per device/native TV user, not the number of devices using iCloud.
+Existing saved accounts can still be updated at the limit.
+A device on an older Vivid build keeps its four-account limit and restores up to four from iCloud.
 
-Development and Production CloudKit databases are separate. TestFlight uses Production; a development installation can use Development even with the same Apple account. Deploying a schema makes its record types available in Production but does not copy Development records. Correct signed entitlements alone do not prove that the Production schema or saved records exist. The [12 September Production restore record](release/versioning.md#production-icloud-restoration) documents the schema repair and confirmed Apple TV restoration.
+Development and Production CloudKit databases are separate.
+TestFlight uses Production; a development installation can use Development even with the same Apple account.
+Deploying a schema makes its record types available in Production but does not copy Development records.
+Correct signed entitlements alone do not prove that the Production schema or saved records exist.
+The [12 September Production restore record](release/versioning.md#production-icloud-restoration) documents the schema repair and confirmed Apple TV restoration.
 
-Keep at least one configured installation intact when diagnosing restore. Open its profile/settings page and leave it active for about twenty seconds so the existing ten-second sync loop can publish, then use Restore from iCloud or Try Again on the other device. Delivery is best effort and can take longer. Do not delete the app, delete a saved account or disconnect a plugin just to test sync.
+Keep at least one configured installation intact when diagnosing restore.
+Open its profile/settings page and leave it active for about twenty seconds so the existing ten-second sync loop can publish, then use Restore from iCloud or Try Again on the other device.
+Delivery is best effort and can take longer.
+Do not delete the app, delete a saved account or disconnect a plugin just to test sync.
 
-“Couldn’t restore from iCloud” means the restore attempt failed; inspect the device's CloudKit error and the Production schema before assuming a device fault. “No saved accounts are available” can also appear when no iCloud account is available, so it does not prove that a signed-in private vault is empty. Redact credentials and account details from diagnostic output. Manual server setup remains available.
+“Couldn’t restore from iCloud” means the restore attempt failed; inspect the device's CloudKit error and the Production schema before assuming a device fault.
+“No saved accounts are available” can also appear when no iCloud account is available, so it does not prove that a signed-in private vault is empty.
+Redact credentials and account details from diagnostic output.
+Manual server setup remains available.
 
-The vault restores saved connections and shared settings, not local caches. MDBList confirmed export checkpoints survive connection failures on that installation. Watched history is not imported from MDBList. OpenSubtitles' bounded download cache lasts only for the app session; temporary player files are removed when playback ends. The subtitle chosen for each title is kept on the device so it returns on resume, and is not restored by the vault. Restoring a key cannot recover files or checkpoints removed with an installation.
+The vault restores saved connections and shared settings, not local caches.
+MDBList confirmed export checkpoints survive connection failures on that installation.
+Watched history is not imported from MDBList.
+OpenSubtitles' bounded download cache lasts only for the app session; temporary player files are removed when playback ends.
+The subtitle chosen for each title is kept on the device so it returns on resume, and is not restored by the vault.
+Restoring a key cannot recover files or checkpoints removed with an installation.
 
 ## Plugins on iPhone, iPad and Apple TV
 
 For step-by-step setup and what each plugin adds, see the [plugins guide](plugins.md).
 
-Settings → Plugins appears immediately below Servers, with MDBList and Simkl in a Watchlists group below TMDb and OpenSubtitles. TMDb works without setup through Vivid's [TMDb relay](tmdb-relay.md), for trailers, ratings, Studios & Networks and collection rows, with no personal key. MDBList accepts a personal API key from [MDBList Preferences](https://mdblist.com/preferences/). A validated connection stays connected when history is empty or a later sync fails; sync messages appear separately. MDBList, Simkl and OpenSubtitles show a green dot beside Connected. Simkl appears in Plugins only in builds that carry Vivid's Simkl app registration. TMDb shows Connected with a green dot whenever TMDb is available.
+Settings → Plugins appears immediately below Servers, with MDBList and Simkl in a Watchlists group below TMDb and OpenSubtitles.
+TMDb works without setup through Vivid's [TMDb relay](tmdb-relay.md), for trailers, ratings, Studios & Networks and collection rows, with no personal key.
+MDBList accepts a personal API key from [MDBList Preferences](https://mdblist.com/preferences/).
+A validated connection stays connected when history is empty or a later sync fails; sync messages appear separately.
+MDBList, Simkl and OpenSubtitles show a green dot beside Connected.
+Simkl appears in Plugins only in builds that carry Vivid's Simkl app registration.
+TMDb shows Connected with a green dot whenever TMDb is available.
 
-OpenSubtitles accepts a personal consumer API key in Plugins. It validates the key before saving it in this device’s Keychain, scoped to the server account and profile and synced through the encrypted private iCloud account vault. During playback, open Subtitles → Find on OpenSubtitles, choose a language code and search, then choose a matching release to download and use. On Apple TV the menu shows the current language as one row that opens its own language list, with the results directly underneath. Searches use the title and, for episodes, season and episode numbers. Search text is trimmed and lowercased to match the API’s canonical URLs; credential-bearing redirects are accepted only for the same HTTPS search endpoint. Failed searches distinguish missing configuration, network failures and HTTP response codes without displaying credentials or raw responses. Downloads use OpenSubtitles’ quota; this API-key-only connection does not include account login or extra subscription allowances. Files stay local, with no media-server upload. Repeat downloads reuse a session-memory cache capped at eight files and 10 MiB; replacing an entry does not create another copy, and account/key changes clear the cache. A failed repeat search keeps the previous results only for the same query, language, playback context and connection. Downloaded tracks and their selection are retained across successful replacement loads for the same item, including quality changes. Moving to another item or ending playback removes the temporary files. The chosen file is also kept for that title and file version on this device, for the 40 most recent titles, so stopping and resuming restores it. While an OpenSubtitles file is the main subtitle, Subtitle Delay (in the iPhone and iPad player settings, and the Apple TV subtitle and sync panels) sets that file's own offset, up to 10 seconds either way, and the offset is kept with the remembered file; other subtitles keep the normal delay, and a different file starts at zero. Apple TV offers 100 ms steps within 2 seconds and 500 ms steps beyond. Apple TV keeps these in Caches, so tvOS may clear them to free space, in which case the title falls back to its normal subtitle choice. Choosing another subtitle, Off or Auto forgets it, and disconnecting removes them all. Live account downloads, subtitle timing and external playback routes still require device verification.
+OpenSubtitles accepts a personal consumer API key in Plugins.
+It validates the key before saving it in this device’s Keychain, scoped to the server account and profile and synced through the encrypted private iCloud account vault.
+During playback, open Subtitles → Find on OpenSubtitles, choose a language code and search, then choose a matching release to download and use.
+On Apple TV the menu shows the current language as one row that opens its own language list, with the results directly underneath.
+Searches use the title and, for episodes, season and episode numbers.
+Search text is trimmed and lowercased to match the API’s canonical URLs; credential-bearing redirects are accepted only for the same HTTPS search endpoint.
+Failed searches distinguish missing configuration, network failures and HTTP response codes without displaying credentials or raw responses.
+Downloads use OpenSubtitles’ quota; this API-key-only connection does not include account login or extra subscription allowances.
+Files stay local, with no media-server upload.
+Repeat downloads reuse a session-memory cache capped at eight files and 10 MiB; replacing an entry does not create another copy, and account/key changes clear the cache.
+A failed repeat search keeps the previous results only for the same query, language, playback context and connection.
+Downloaded tracks and their selection are retained across successful replacement loads for the same item, including quality changes.
+Moving to another item or ending playback removes the temporary files.
+The chosen file is also kept for that title and file version on this device, for the 40 most recent titles, so stopping and resuming restores it.
+While an OpenSubtitles file is the main subtitle, Subtitle Delay (in the iPhone and iPad player settings, and the Apple TV subtitle and sync panels) sets that file's own offset, up to 10 seconds either way, and the offset is kept with the remembered file; other subtitles keep the normal delay, and a different file starts at zero.
+Apple TV offers 100 ms steps within 2 seconds and 500 ms steps beyond.
+Apple TV keeps these in Caches, so tvOS may clear them to free space, in which case the title falls back to its normal subtitle choice.
+Choosing another subtitle, Off or Auto forgets it, and disconnecting removes them all.
+Live account downloads, subtitle timing and external playback routes still require device verification.
 
-Connect validates the API key and shows Connected without waiting for watchlist work. Neither service's old watched history is scanned or imported. Movies and individual episodes completed or marked watched in Vivid are queued for MDBList after the media server confirms the watched write. Offline completions join this path after their queued server update succeeds. Pending sends retain their original timestamp across retries, and confirmed exports are deduplicated. Repeat plays are not exported as separate rewatches. Missing IDs and unconfirmed matches stay queued without blocking later items or watchlists. Vivid checks while active, normally every ten minutes; new watches and watchlist edits request an earlier check. Quota responses pause retries for an hour, including manual checks.
+Connect validates the API key and shows Connected without waiting for watchlist work.
+Neither service's old watched history is scanned or imported.
+Movies and individual episodes completed or marked watched in Vivid are queued for MDBList after the media server confirms the watched write.
+Offline completions join this path after their queued server update succeeds.
+Pending sends retain their original timestamp across retries, and confirmed exports are deduplicated.
+Repeat plays are not exported as separate rewatches.
+Missing IDs and unconfirmed matches stay queued without blocking later items or watchlists.
+Vivid checks while active, normally every ten minutes; new watches and watchlist edits request an earlier check.
+Quota responses pause retries for an hour, including manual checks.
 
-Watchlists sync movie and series additions and removals in both directions using the existing Vivid watchlist API. The first sync combines the lists; later removals win over conflicting additions. Only titles available on the active server and profile are imported, with exact TMDb or IMDb matching. Search narrows candidates by title, so different server titles can leave an item unmatched. Progress also shows individual candidate checks. For Emby and Jellyfin, this syncs Vivid’s account-scoped watchlist, not the server’s favourites. Missing, ambiguous or conflicting matches remain untouched and are retried later. An unavailable server item does not remove its MDBList entry. Completed writes are read back before advancing the local sync baseline. Each pass changes at most 32 titles. In-app watchlist edits request another foreground check; Sync now runs a manual check. Watchlist changes never call watched-state or playback APIs.
+Watchlists sync movie and series additions and removals in both directions using the existing Vivid watchlist API.
+The first sync combines the lists; later removals win over conflicting additions.
+Only titles available on the active server and profile are imported, with exact TMDb or IMDb matching.
+Search narrows candidates by title, so different server titles can leave an item unmatched.
+Progress also shows individual candidate checks.
+For Emby and Jellyfin, this syncs Vivid’s account-scoped watchlist, not the server’s favourites.
+Missing, ambiguous or conflicting matches remain untouched and are retried later.
+An unavailable server item does not remove its MDBList entry.
+Completed writes are read back before advancing the local sync baseline.
+Each pass changes at most 32 titles.
+In-app watchlist edits request another foreground check; Sync now runs a manual check.
+Watchlist changes never call watched-state or playback APIs.
 
-The API key stays in Keychain and syncs through the encrypted private iCloud account vault, like Trailers. Connection changes reach devices using the same iCloud account and saved server account/profile at their next successful vault sync. MDBList and OpenSubtitles save explicit connection changes in the encrypted sync ledger immediately. A missing local key does not count as a disconnect, and a successful vault sync restores the saved key even when its ledger entry has not changed. Explicit Disconnect still removes the key across synced devices. Sync checkpoints are local and account/profile-scoped. Interrupted syncs save confirmed export progress for retry. Watchlist reconciliation still reads fresh remote watchlists. Already-confirmed exports are skipped and stored identifiers are deduplicated. The key, external media identifiers, watched dates and watchlist changes are sent to MDBList, never media-server credentials. Disconnect removes the key and stops subsequent sync work without deleting history.
+The API key stays in Keychain and syncs through the encrypted private iCloud account vault, like Trailers.
+Connection changes reach devices using the same iCloud account and saved server account/profile at their next successful vault sync.
+MDBList and OpenSubtitles save explicit connection changes in the encrypted sync ledger immediately.
+A missing local key does not count as a disconnect, and a successful vault sync restores the saved key even when its ledger entry has not changed.
+Explicit Disconnect still removes the key across synced devices.
+Sync checkpoints are local and account/profile-scoped.
+Interrupted syncs save confirmed export progress for retry.
+Watchlist reconciliation still reads fresh remote watchlists.
+Already-confirmed exports are skipped and stored identifiers are deduplicated.
+The key, external media identifiers, watched dates and watchlist changes are sent to MDBList, never media-server credentials.
+Disconnect removes the key and stops subsequent sync work without deleting history.
 
-MDBList watched-history import and its local watched-status overlay are removed. Watched indicators and resume positions come from the media server. Existing local import records are discarded without changing either service's history. Sync now sends pending completed watches and checks watchlists only.
+MDBList watched-history import and its local watched-status overlay are removed.
+Watched indicators and resume positions come from the media server.
+Existing local import records are discarded without changing either service's history.
+Sync now sends pending completed watches and checks watchlists only.
 
-Simkl signs in with Simkl's device flow (`POST /oauth2/device`, then polling `/oauth2/token`), asking for `media:read media:write`. iPhone and iPad show the code with an Open Simkl button for the approval page, pre-filled when Simkl sends an https link with the code; Apple TV shows a QR code and the short code for simkl.com/pin. Polling waits Simkl's interval (at least five seconds, five more on `slow_down`) and stops when the code expires, because a declined request sends no signal. A grant without `media:write`, which Simkl issues silently for an unrecognised scope, is revoked and reported. The app registration has no client secret, so its client ID is public; the device code is never shown or logged. Simkl's 7-day access token and 180-day sliding refresh token stay in this device's Keychain, scoped to the server account and profile, and are not in the iCloud vault: each refresh ends the previous access token, so devices sharing one grant would keep cutting each other off. Each device signs in separately. Tokens refresh 12 hours before they expire, or once after a 401; a refused refresh ends the local sign-in and keeps the sync checkpoint for the same Simkl account. Disconnect, and removing the saved account, revoke the grant (best effort) and delete the tokens.
+Simkl signs in with Simkl's device flow (`POST /oauth2/device`, then polling `/oauth2/token`), asking for `media:read media:write`. iPhone and iPad show the code with an Open Simkl button for the approval page, pre-filled when Simkl sends an https link with the code; Apple TV shows a QR code and the short code for simkl.com/pin.
+Polling waits Simkl's interval (at least five seconds, five more on `slow_down`) and stops when the code expires, because a declined request sends no signal.
+A grant without `media:write`, which Simkl issues silently for an unrecognised scope, is revoked and reported.
+The app registration has no client secret, so its client ID is public; the device code is never shown or logged.
+Simkl's 7-day access token and 180-day sliding refresh token stay in this device's Keychain, scoped to the server account and profile, and are not in the iCloud vault: each refresh ends the previous access token, so devices sharing one grant would keep cutting each other off.
+Each device signs in separately.
+Tokens refresh 12 hours before they expire, or once after a 401; a refused refresh ends the local sign-in and keeps the sync checkpoint for the same Simkl account.
+Disconnect, and removing the saved account, revoke the grant (best effort) and delete the tokens.
 
-Simkl sync follows Simkl's activity-gated pattern. Each check reads `/sync/activities` first and stops there when nothing has moved. The first check reads the whole library (`/sync/all-items/movies`, `shows` and `anime`, splitting by status if Simkl says it's too large); later ones read only the types whose status timestamps moved, with `date_from` set to the saved snapshot, and compare `extended=simkl_ids_only` lists only when `removed_from_list` moved. A list that's empty, or missing more than a quarter of that type's cached titles (and more than five), isn't trusted: Vivid reads that type again in full instead. The library and its snapshot are kept together in Caches; if the system clears them, the next check reads the library again. Checks run on launch and foreground (at most every 15 minutes), about 90 seconds after a completed watch or watchlist edit, about hourly while the app stays open, and from Sync now (at most once a minute). After a failed check only Sync now runs until its backoff ends: 5 minutes after a per-second limit or write lock, otherwise 5 minutes doubling with each failure in a row up to 2 hours. The backoff still holds when Vivid is opened again. A daily limit or a 412, described below, holds Sync now as well. Requests go one at a time, and each write starts at least 1.1 seconds after the previous one finished. Per-second limits and Simkl's short write lock are retried after a pause; a daily-limit response waits for `Retry-After`, and sync stops by itself when `X-RateLimit-Remaining` falls below 20, resuming after Simkl's reset at midnight US Eastern time. A 412 pauses sync for six hours.
+Simkl sync follows Simkl's activity-gated pattern.
+Each check reads `/sync/activities` first and stops there when nothing has moved.
+The first check reads the whole library (`/sync/all-items/movies`, `shows` and `anime`, splitting by status if Simkl says it's too large); later ones read only the types whose status timestamps moved, with `date_from` set to the saved snapshot, and compare `extended=simkl_ids_only` lists only when `removed_from_list` moved.
+A list that's empty, or missing more than a quarter of that type's cached titles (and more than five), isn't trusted: Vivid reads that type again in full instead.
+The library and its snapshot are kept together in Caches; if the system clears them, the next check reads the library again.
+Checks run on launch and foreground (at most every 15 minutes), about 90 seconds after a completed watch or watchlist edit, about hourly while the app stays open, and from Sync now (at most once a minute).
+After a failed check only Sync now runs until its backoff ends: 5 minutes after a per-second limit or write lock, otherwise 5 minutes doubling with each failure in a row up to 2 hours.
+The backoff still holds when Vivid is opened again.
+A daily limit or a 412, described below, holds Sync now as well.
+Requests go one at a time, and each write starts at least 1.1 seconds after the previous one finished.
+Per-second limits and Simkl's short write lock are retried after a pause; a daily-limit response waits for `Retry-After`, and sync stops by itself when `X-RateLimit-Remaining` falls below 20, resuming after Simkl's reset at midnight US Eastern time.
+A 412 pauses sync for six hours.
 
-Completed watches use the same confirmed-write path as MDBList and go to `POST /sync/history` in one batch of up to 50: movies with their TMDb, IMDb and TVDB IDs, episodes with the series' IDs plus season and episode numbers and `use_tvdb_anime_seasons`. Titles are never sent, so Simkl can't fuzzy-match the wrong item. Each entry is confirmed from `not_found`, not the status code; an entry Vivid can't account for keeps the whole batch pending, which is safe because Simkl ignores a watch it already has (`allow_rewatch` is never sent). Unmatched entries are retried up to five times. Entries Simkl files as another kind of title are reported. Watchlists sync with Simkl's Plan to Watch. Server titles are matched to Simkl IDs through the library by exact ID, or through Simkl's `/redirect` lookup for titles it lists under other IDs (at most 40 a check, and none after one fails; a title Simkl can't find is looked up again weekly, and a failed or deferred lookup on the next check, while a 429 or 412 answer pauses the whole check: a 429 there waits 5 minutes, since lookups don't use the daily allowance). Simkl titles reach the server watchlist only after a title search with an exact ID match (20 a check, unmatched ones retried daily). Additions go through `POST /sync/add-to-list`, and only for titles Simkl doesn't have at all, so a title Simkl tracks as Watching, Completed, On Hold or Dropped is never moved. Removals go through `POST /sync/history/remove` by Simkl ID alone, and only for a Plan to Watch title with no watched episodes and no last-watched date in a library read from the same check, because that endpoint also deletes history. Simkl moving a title out of Plan to Watch after it's watched leaves it on the server watchlist; only a deletion from the Simkl library or a move to Dropped removes it there. The watchlist runs before completed watches in each check, so a title is never removed after its watch is sent. The baseline's Simkl side only changes from library reads, never from Vivid's writes. A request that fails is tried again on the next check. Vivid only adds titles Simkl's own lookup already found, so a `not_found` answer is rare; such a title isn't offered again until it leaves and rejoins the watchlist. Each pass changes at most 32 titles and removes at most 10 from the server watchlist. Server writes are read back before the baseline moves. Media-server credentials are never sent to Simkl.
+Completed watches use the same confirmed-write path as MDBList and go to `POST /sync/history` in one batch of up to 50: movies with their TMDb, IMDb and TVDB IDs, episodes with the series' IDs plus season and episode numbers and `use_tvdb_anime_seasons`.
+Titles are never sent, so Simkl can't fuzzy-match the wrong item.
+Each entry is confirmed from `not_found`, not the status code; an entry Vivid can't account for keeps the whole batch pending, which is safe because Simkl ignores a watch it already has (`allow_rewatch` is never sent).
+Unmatched entries are retried up to five times.
+Entries Simkl files as another kind of title are reported.
+Watchlists sync with Simkl's Plan to Watch.
+Server titles are matched to Simkl IDs through the library by exact ID, or through Simkl's `/redirect` lookup for titles it lists under other IDs (at most 40 a check, and none after one fails; a title Simkl can't find is looked up again weekly, and a failed or deferred lookup on the next check, while a 429 or 412 answer pauses the whole check: a 429 there waits 5 minutes, since lookups don't use the daily allowance).
+Simkl titles reach the server watchlist only after a title search with an exact ID match (20 a check, unmatched ones retried daily).
+Additions go through `POST /sync/add-to-list`, and only for titles Simkl doesn't have at all, so a title Simkl tracks as Watching, Completed, On Hold or Dropped is never moved.
+Removals go through `POST /sync/history/remove` by Simkl ID alone, and only for a Plan to Watch title with no watched episodes and no last-watched date in a library read from the same check, because that endpoint also deletes history.
+Simkl moving a title out of Plan to Watch after it's watched leaves it on the server watchlist; only a deletion from the Simkl library or a move to Dropped removes it there.
+The watchlist runs before completed watches in each check, so a title is never removed after its watch is sent.
+The baseline's Simkl side only changes from library reads, never from Vivid's writes.
+A request that fails is tried again on the next check.
+Vivid only adds titles Simkl's own lookup already found, so a `not_found` answer is rare; such a title isn't offered again until it leaves and rejoins the watchlist.
+Each pass changes at most 32 titles and removes at most 10 from the server watchlist.
+Server writes are read back before the baseline moves.
+Media-server credentials are never sent to Simkl.
 
-The shared plugin UI is available with all three server providers. Jellyfin routes watchlist and watched writes through its own [native core](cores/jellyfin.md); live Jellyfin plugin-account scenarios still need verification. Simkl is covered by focused unit tests of its request shapes, response parsing and watchlist rules, and by `scripts/ci/check-simkl-sync.sh`, which runs the real client and sync store against a simulated Simkl and media server: sign-in, the first sync, completed watches, each watchlist rule, an untrustworthy removal list, token renewal and a revoked sign-in, the daily limit and disconnecting, while checking the request rules above. Live Simkl accounts haven't been tested: a code was requested with Vivid's client ID, but no sign-in was approved. The following record dates from [PR #8](https://github.com/blurbery/vivid/pull/8) (merged 11 September 2026), which added MDBList and OpenSubtitles: the owner reported testing the preceding plugin build on iPhone and Apple TV, and that PR's follow-up fixes passed targeted checks, signed device builds and remote iOS tests/tvOS build checks; those follow-up builds were not installed. It applies to that revision and does not establish every live account, quota, subtitle or cross-device scenario.
+The shared plugin UI is available with all three server providers.
+Jellyfin routes watchlist and watched writes through its own [native core](cores/jellyfin.md); live Jellyfin plugin-account scenarios still need verification.
+Simkl is covered by focused unit tests of its request shapes, response parsing and watchlist rules, and by `scripts/ci/check-simkl-sync.sh`, which runs the real client and sync store against a simulated Simkl and media server: sign-in, the first sync, completed watches, each watchlist rule, an untrustworthy removal list, token renewal and a revoked sign-in, the daily limit and disconnecting, while checking the request rules above.
+Live Simkl accounts haven't been tested: a code was requested with Vivid's client ID, but no sign-in was approved.
+The following record dates from [PR #8](https://github.com/blurbery/vivid/pull/8) (merged 11 September 2026), which added MDBList and OpenSubtitles: the owner reported testing the preceding plugin build on iPhone and Apple TV, and that PR's follow-up fixes passed targeted checks, signed device builds and remote iOS tests/tvOS build checks; those follow-up builds were not installed.
+It applies to that revision and does not establish every live account, quota, subtitle or cross-device scenario.
 
 ## Optional Seerr requests on Apple TV, iPhone and iPad
 
-Settings → Seerr appears below Plugins with Seerr’s official icon rendered as a monochrome vector. Enter a URL, username and password. Local Seerr accounts use their email address; imported Jellyfin/Emby accounts use their username. Plex-only sign-in is not supported by this form.
+Settings → Seerr appears below Plugins with Seerr’s official icon rendered as a monochrome vector.
+Enter a URL, username and password.
+Local Seerr accounts use their email address; imported Jellyfin/Emby accounts use their username.
+Plex-only sign-in is not supported by this form.
 
-Vivid validates the login before enabling Search’s “Available to request” section. The connection is scoped to the saved server account and viewing profile, with credentials in the current-user Keychain and an isolated ephemeral cookie session. Disconnect removes the saved connection. Redirects are rejected; configure the final URL, including any reverse-proxy base path. A saved password can only be reused when both URL and username are unchanged.
+Vivid validates the login before enabling Search’s “Available to request” section.
+The connection is scoped to the saved server account and viewing profile, with credentials in the current-user Keychain and an isolated ephemeral cookie session.
+Disconnect removes the saved connection.
+Redirects are rejected; configure the final URL, including any reverse-proxy base path.
+A saved password can only be reused when both URL and username are unchanged.
 
-Search and request details use Seerr’s `/api/v1` endpoints. Movie requests use the default non-4K destination; series requests ask for all seasons. Permissions, quotas and destination configuration remain enforced by Seerr. Without a configured connection, request results are hidden. The mobile app uses this same account-scoped Seerr connection.
+Search and request details use Seerr’s `/api/v1` endpoints.
+Movie requests use the default non-4K destination; series requests ask for all seasons.
+Permissions, quotas and destination configuration remain enforced by Seerr.
+Without a configured connection, request results are hidden.
+The mobile app uses this same account-scoped Seerr connection.
 
-Run `scripts/ci/check-seerr-client.sh` for offline authentication, URL validation, response mapping, session renewal and request-body checks. A live configured Seerr instance is still needed to verify its deployment-specific login and how that server handles requests.
+Run `scripts/ci/check-seerr-client.sh` for offline authentication, URL validation, response mapping, session renewal and request-body checks.
+A live configured Seerr instance is still needed to verify its deployment-specific login and how that server handles requests.
 
 The settings icon uses the main silhouette from [Seerr’s official SVG](https://github.com/seerr-team/seerr/blob/develop/public/os_icon.svg), with colour highlights removed for template rendering.
 
 ## Existing connection code
 
-These shared files retain Silo behaviour and dispatch to the active provider’s adapter. Provider-specific ownership is listed in the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md).
+These shared files retain Silo behaviour and dispatch to the active provider’s adapter.
+Provider-specific ownership is listed in the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md).
 
 <table width="100%">
   <thead>
@@ -234,27 +597,62 @@ These shared files retain Silo behaviour and dispatch to the active provider’s
   </tbody>
 </table>
 
-Vivid supports Silo as a third-party media provider. Its transport probes the public `/api/v2/system/info` document for each server base URL. A supported v2 response selects the native v2 API; a missing discovery endpoint or the older HTML fallback retains v1. Authentication, service and network failures do not trigger a downgrade. A result is reused for 60 seconds. For up to ten minutes an older result is used straight away while a background check refreshes it; beyond that, requests wait for a fresh check. Discovery sends no saved account or profile credentials.
+Vivid supports Silo as a third-party media provider.
+Its transport probes the public `/api/v2/system/info` document for each server base URL.
+A supported v2 response selects the native v2 API; a missing discovery endpoint or the older HTML fallback retains v1.
+Authentication, service and network failures do not trigger a downgrade.
+A result is reused for 60 seconds.
+For up to ten minutes an older result is used straight away while a background check refreshes it; beyond that, requests wait for a fresh check.
+Discovery sends no saved account or profile credentials.
 
-The adapter preserves Vivid's existing screens and translates renamed endpoints, collection envelopes, decimal identifiers, catalogue cursors and settings capabilities at the networking boundary. New-server catalogue windows retain the server's opaque cursor while Vivid keeps its current scrolling behaviour. Browse filters become v2's JSON rule groups; watch status, favourites, watchlist, HDR and Dolby Vision rules are sent as true/false values and decades as whole-number years, because v2 compares the JSON type as sent. Genres, content ratings and other text facets stay strings. Older Silo requests retain their v1 routes, including `/api/v1/auth/setup`, `/api/v1/auth/login` and `/api/v1/theme/branding`. Emby continues through its separate adapter.
+The adapter preserves Vivid's existing screens and translates renamed endpoints, collection envelopes, decimal identifiers, catalogue cursors and settings capabilities at the networking boundary.
+New-server catalogue windows retain the server's opaque cursor while Vivid keeps its current scrolling behaviour.
+Browse filters become v2's JSON rule groups; watch status, favourites, watchlist, HDR and Dolby Vision rules are sent as true/false values and decades as whole-number years, because v2 compares the JSON type as sent.
+Genres, content ratings and other text facets stay strings.
+Older Silo requests retain their v1 routes, including `/api/v1/auth/setup`, `/api/v1/auth/login` and `/api/v1/theme/branding`.
+Emby continues through its separate adapter.
 
-Native v2 playback uses the server's installation identity and sequenced progress contract. Its session-scoped stream references are retained, while account credentials remain request headers. On native v2, Vivid accepts only relative `/api/v2/` media paths and refuses absolute URLs, so it doesn't ask a v2 server for proxy media origins (`authorized_media_origins_v1`). A server that isn't asked for that feature is expected to keep streams on the API origin even when it has a proxy node; one that returns a proxy URL anyway fails every route. Download registries and monitors consume every cursor page before reconciliation; file status reports retain the downloaded revision. Native v2 progress bootstrap stages a complete account/profile replacement before publishing it, preserving pending offline events and downloaded files. The older progress flow remains available for v1 servers.
+Native v2 playback uses the server's installation identity and sequenced progress contract.
+Its session-scoped stream references are retained, while account credentials remain request headers.
+On native v2, Vivid accepts only relative `/api/v2/` media paths and refuses absolute URLs, so it doesn't ask a v2 server for proxy media origins (`authorized_media_origins_v1`).
+A server that isn't asked for that feature is expected to keep streams on the API origin even when it has a proxy node; one that returns a proxy URL anyway fails every route.
+Download registries and monitors consume every cursor page before reconciliation; file status reports retain the downloaded revision.
+Native v2 progress bootstrap stages a complete account/profile replacement before publishing it, preserving pending offline events and downloaded files.
+The older progress flow remains available for v1 servers.
 
-The compatibility work follows the Silo v2 contract deployed from `dd8c474b40d1cc485bf37d3117f7c148a891d4a6`. Cast and crew identifiers remain strings, watch-state timing fields map to Vivid's existing models, and batched settings use repeated query parameters. Playback mutation IDs use the server's canonical UUID format, and related-title queries retain a consistent page size within each catalogue window. Live tvOS checks cover profile selection, title and Spotlight details, and playback; they do not establish exhaustive settings, downloads or server-upgrade coverage. Vivid does not deploy, administer or modify Silo as part of connecting to it.
+The compatibility work follows the Silo v2 contract deployed from `dd8c474b40d1cc485bf37d3117f7c148a891d4a6`.
+Cast and crew identifiers remain strings, watch-state timing fields map to Vivid's existing models, and batched settings use repeated query parameters.
+Playback mutation IDs use the server's canonical UUID format, and related-title queries retain a consistent page size within each catalogue window.
+Live tvOS checks cover profile selection, title and Spotlight details, and playback; they do not establish exhaustive settings, downloads or server-upgrade coverage.
+Vivid does not deploy, administer or modify Silo as part of connecting to it.
 
-The server's display name labels that connection. It must not replace Vivid's app identity. Authentication and profile flows remain provider-specific behind the shared sign-in form unless verified otherwise.
+The server's display name labels that connection.
+It must not replace Vivid's app identity.
+Authentication and profile flows remain provider-specific behind the shared sign-in form unless verified otherwise.
 
 ## Playback reporting
 
-The platform engine supplies playback state and engine observations. Vivid owns reporting that state to the selected server; upgrading the engine does not replace the app’s session bridge.
+The platform engine supplies playback state and engine observations.
+Vivid owns reporting that state to the selected server; upgrading the engine does not replace the app’s session bridge.
 
-Vivid has no viewing threshold of its own for partial resume progress. Once an item reaches its first frame it reports the real position, and each server applies its own resume rules, as its own apps do: Silo keeps no position under its minimum resume percentage (an admin setting, 5% by default), and Emby and Jellyfin apply their resume settings. Completion uses Vivid's separate 90%/credits/natural-end rules for both movies and episodes. See [reporting and completion](playback/architecture.md#downloads-and-external-playback).
+Vivid has no viewing threshold of its own for partial resume progress.
+Once an item reaches its first frame it reports the real position, and each server applies its own resume rules, as its own apps do: Silo keeps no position under its minimum resume percentage (an admin setting, 5% by default), and Emby and Jellyfin apply their resume settings.
+Completion uses Vivid's separate 90%/credits/natural-end rules for both movies and episodes.
+See [reporting and completion](playback/architecture.md#downloads-and-external-playback).
 
-For Silo, `PlayerViewModel` runs a periodic progress report every ten seconds from the first frame. A new item (or a Play from Beginning) that never reaches its first frame reports position zero, which the Silo server ignores; reloads of an item that has already played report its real position. `PlaybackSessionBridge` posts position and pause state to `/api/v1/playback/{session_id}/progress`, sends Protocol V3 route events, and flushes final progress before stopping the session. The Silo server owns playback persistence and watch history; its backend handlers do not belong in the Apple app. Playback reporting is separate from Vivid's own diagnostics: problem reports and the latest playback record stay on the device unless someone sends them from Settings → Diagnostics, which posts them to the [diagnostics relay](diagnostics-relay.md), not to the media server.
+For Silo, `PlayerViewModel` runs a periodic progress report every ten seconds from the first frame.
+A new item (or a Play from Beginning) that never reaches its first frame reports position zero, which the Silo server ignores; reloads of an item that has already played report its real position.
+`PlaybackSessionBridge` posts position and pause state to `/api/v1/playback/{session_id}/progress`, sends Protocol V3 route events, and flushes final progress before stopping the session.
+The Silo server owns playback persistence and watch history; its backend handlers do not belong in the Apple app.
+Playback reporting is separate from Vivid's own diagnostics: problem reports and the latest playback record stay on the device unless someone sends them from Settings → Diagnostics, which posts them to the [diagnostics relay](diagnostics-relay.md), not to the media server.
 
-The progress request fields match `blurbery/silo-server` at `d91fd15194d126cf67c85db1e908ddb163fee62d`. This is a source-contract check, not an end-to-end device test of that server revision. Preserve the existing client reporting when changing branding, and keep Silo, Emby and Jellyfin reporting separate when extending any provider.
+The progress request fields match `blurbery/silo-server` at `d91fd15194d126cf67c85db1e908ddb163fee62d`.
+This is a source-contract check, not an end-to-end device test of that server revision.
+Preserve the existing client reporting when changing branding, and keep Silo, Emby and Jellyfin reporting separate when extending any provider.
 
-Emby uses native PlaybackInfo negotiation, Ping until an item reaches its first frame and Sessions/Playing reporting from then on, with tick conversion and authenticated playback inputs. Its account-scoped settings, subtitle wiring, download limits and device-check status are documented in the [Emby core](cores/emby.md). This does not change the Silo reporting contract.
+Emby uses native PlaybackInfo negotiation, Ping until an item reaches its first frame and Sessions/Playing reporting from then on, with tick conversion and authenticated playback inputs.
+Its account-scoped settings, subtitle wiring, download limits and device-check status are documented in the [Emby core](cores/emby.md).
+This does not change the Silo reporting contract.
 
 ## Adding a provider
 
@@ -263,9 +661,13 @@ The Emby adapter applies the following boundaries; they also govern future provi
 - Identify the provider before selecting its login and API flow.
 - Keep provider, server and user identity attached to tokens, requests, caches and playback sessions.
 - Translate provider metadata, images, resume positions and playback sources into Vivid's UI and player inputs.
-- Represent capabilities explicitly. A provider without a feature should not receive unsupported requests or expose a misleading control.
-- Cancel and invalidate obsolete work when the provider, server or user changes. A late response must not overwrite the new selection.
-- Handle each provider's realtime events and progress reporting separately. Do not assume the same endpoints, credentials, profiles or event schema.
+- Represent capabilities explicitly.
+  A provider without a feature should not receive unsupported requests or expose a misleading control.
+- Cancel and invalidate obsolete work when the provider, server or user changes.
+  A late response must not overwrite the new selection.
+- Handle each provider's realtime events and progress reporting separately.
+  Do not assume the same endpoints, credentials, profiles or event schema.
 - Preserve the existing Silo connection while developing and testing another provider.
 
-Before advertising support, verify login/logout, library browsing, artwork, resume/progress, subtitles, playback, server switching and relevant failure cases against that provider. Keep the same physical-device browsing checks for every provider.
+Before advertising support, verify login/logout, library browsing, artwork, resume/progress, subtitles, playback, server switching and relevant failure cases against that provider.
+Keep the same physical-device browsing checks for every provider.

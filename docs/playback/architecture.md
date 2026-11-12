@@ -8,7 +8,8 @@
 
 ---
 
-How the [Vivid player core](../cores/vivid.md), Lucid Engine and each server core share playback responsibilities. The [Silo server core](../cores/silo.md), [Emby server core](../cores/emby.md) and [Jellyfin server core](../cores/jellyfin.md) are implemented as separate provider integrations.
+How the [Vivid player core](../cores/vivid.md), Lucid Engine and each server core share playback responsibilities.
+The [Silo server core](../cores/silo.md), [Emby server core](../cores/emby.md) and [Jellyfin server core](../cores/jellyfin.md) are implemented as separate provider integrations.
 
 ## Ownership
 
@@ -23,167 +24,435 @@ How the [Vivid player core](../cores/vivid.md), Lucid Engine and each server cor
   </tbody>
 </table>
 
-Library playback uses Vivid’s existing playback controller. Lucid Engine opens sources through its media core, with compressed AC-3/E-AC-3 output through Apple’s resource loader and decoded PCM through sample-buffer audio. No loopback HLS producer or second reservoir sits in front of it. iPhone/iPad use the same Lucid Engine adapter.
+Library playback uses Vivid’s existing playback controller.
+Lucid Engine opens sources through its media core, with compressed AC-3/E-AC-3 output through Apple’s resource loader and decoded PCM through sample-buffer audio.
+No loopback HLS producer or second reservoir sits in front of it. iPhone/iPad use the same Lucid Engine adapter.
 
-The existing adapter implements Silo's Protocol V3. That is a provider contract, not Vivid's universal server API. A new provider should map its own session and source information into the player inputs without pretending to speak Protocol V3.
+The existing adapter implements Silo's Protocol V3.
+That is a provider contract, not Vivid's universal server API.
+A new provider should map its own session and source information into the player inputs without pretending to speak Protocol V3.
 
 ## Apple TV pipeline
 
-Lucid Engine’s `VividMPVPlayer` adapter maps playback state, resume, tracks, subtitles and the existing SwiftUI surface onto the media core. The Apple bridge respects Match Content. `PlaybackTrialTrace` records source-free timing events and numeric audio and buffer diagnostics. See the [Lucid Engine guide](../cores/player-engine.md) for the output architecture and device checks.
+Lucid Engine’s `VividMPVPlayer` adapter maps playback state, resume, tracks, subtitles and the existing SwiftUI surface onto the media core.
+The Apple bridge respects Match Content.
+`PlaybackTrialTrace` records source-free timing events and numeric audio and buffer diagnostics.
+See the [Lucid Engine guide](../cores/player-engine.md) for the output architecture and device checks.
 
-Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer; on Apple TV it also reads at most 60 seconds ahead. Credential updates use Vivid’s existing reload boundary.
+Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer; on Apple TV it also reads at most 60 seconds ahead.
+Credential updates use Vivid’s existing reload boundary.
 
 ## iPhone and iPad pipeline
 
-The iOS target uses the same pinned media package and Lucid Engine adapter as
-tvOS. It exposes the sample-buffer layer through the existing PiP coordinator,
-forwards PiP compositing state and honours the background-playback preference.
-The iOS bridge retains its media-time presentation path; the tvOS host-clock
-presentation configuration remains platform-specific.
+The iOS target uses the same pinned media package and Lucid Engine adapter as tvOS.
+It exposes the sample-buffer layer through the existing PiP coordinator, forwards PiP compositing state and honours the background-playback preference.
+The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation configuration remains platform-specific.
 
 Credential changes use Vivid’s reload boundary on both platforms.
 
 ## Loads and lifecycle
 
-Final playback teardown releases shared audio only when that controller actually started an engine load. Discarded, unused SwiftUI player models and repeated stops cannot deactivate another player’s audio session or reset its display criteria. Replacement loads retain that ownership until the real final stop.
+Final playback teardown releases shared audio only when that controller actually started an engine load.
+Discarded, unused SwiftUI player models and repeated stops cannot deactivate another player’s audio session or reset its display criteria.
+Replacement loads retain that ownership until the real final stop.
 
 - Keep one clear owner for the engine and its observations.
-- Generation-fence loads, session staging, callbacks and recovery. A cancelled or replaced load must not publish into a newer item.
-- Keep session/progress identity aligned with the committed source. Stop stale staged sessions on failure or supersession.
-- Map server, source and presentation positions through the existing timeline mapper. Do not treat them as interchangeable seconds.
-- Renew or replan through the current session bridge and load-spec path. Cancellation is not a playback failure; rate limiting must not trigger an immediate retry loop. A retryable audio session refusal (for example while a new output route settles after an HDMI, eARC, soundbar or headphone switch) is retried briefly on the same load; a permanent refusal (bad parameters, a missing entitlement or an incompatible category) fails at once. Either way the failure goes through that load's existing failure handling (the Retry screen, or the Next Up surface for autoplay and recovery loads) and, like rate limiting, never steps the V3 route down to a remux or transcode.
+- Generation-fence loads, session staging, callbacks and recovery.
+  A cancelled or replaced load must not publish into a newer item.
+- Keep session/progress identity aligned with the committed source.
+  Stop stale staged sessions on failure or supersession.
+- Map server, source and presentation positions through the existing timeline mapper.
+  Do not treat them as interchangeable seconds.
+- Renew or replan through the current session bridge and load-spec path.
+  Cancellation is not a playback failure; rate limiting must not trigger an immediate retry loop.
+  A retryable audio session refusal (for example while a new output route settles after an HDMI, eARC, soundbar or headphone switch) is retried briefly on the same load; a permanent refusal (bad parameters, a missing entitlement or an incompatible category) fails at once.
+  Either way the failure goes through that load's existing failure handling (the Retry screen, or the Next Up surface for autoplay and recovery loads) and, like rate limiting, never steps the V3 route down to a remux or transcode.
 - Preserve pause intent, resume position, seek completion and exactly-once end/episode-handover work across recovery.
 
-The following episode, the On Deck items and the series or movie's logo and background that Next Up loads are fetched once the current item shows its first picture, not while its stream is opening. The logo and background come from one catalogue item request, kept for the next episode of the same series; if it fails, as it does offline, Next Up shows the name as text. On Deck reads the whole Home payload plus up to a dozen items, which would otherwise compete with startup. Neither Apple TV nor iPhone and iPad currently shows an On Deck shelf.
+The following episode, the On Deck items and the series or movie's logo and background that Next Up loads are fetched once the current item shows its first picture, not while its stream is opening.
+The logo and background come from one catalogue item request, kept for the next episode of the same series; if it fails, as it does offline, Next Up shows the name as text.
+On Deck reads the whole Home payload plus up to a dozen items, which would otherwise compete with startup.
+Neither Apple TV nor iPhone and iPad currently shows an On Deck shelf.
 
-Unexpected or uncertain end-of-stream events must not open Next Up or mark the
-item completed. A terminal event needs finite, positive source timing within
-eight seconds of the known duration. Earlier endings and missing timing use the
-current item's existing recovery/error path. Playback errors never become
-successful completion merely because they occur near the end. Intentional
-credits skips to the duration still complete normally, except on credits
-that open Next Up (an episode with another one after it whose credits marker
-runs to the end of the file; [Playback](README.md) has the conditions): there Skip Credits
-opens Next Up and playback continues, and automatic skipping leaves them
-alone. Recovery and buffering
-must not advance the automatic Next Up presentation. Pausing, scrubbing, seeking,
-quality changes and terminal errors also suspend automatic advancement. An EOF
-property is confirmed after 250 ms so a queued engine error can cancel it;
-replacement loads, seeks and withdrawn EOF signals invalidate that confirmation.
-The retained source remains available for rewinding from terminal Next Up, and a
-local rewind re-arms its next end notification. Fresh and provisional loads keep
-ownership of their failures. Premature EOF during a load is retained until that
-owner settles, scoped to the same episode and discarded on a new seek or load.
-A rejected recovery presents the existing Retry surface. Emby and offline failures retain their existing Retry behaviour.
+Unexpected or uncertain end-of-stream events must not open Next Up or mark the item completed.
+A terminal event needs finite, positive source timing within eight seconds of the known duration.
+Earlier endings and missing timing use the current item's existing recovery/error path.
+Playback errors never become successful completion merely because they occur near the end.
+Intentional credits skips to the duration still complete normally, except on credits that open Next Up (an episode with another one after it whose credits marker runs to the end of the file; [Playback](README.md) has the conditions): there Skip Credits opens Next Up and playback continues, and automatic skipping leaves them alone.
+Recovery and buffering must not advance the automatic Next Up presentation.
+Pausing, scrubbing, seeking, quality changes and terminal errors also suspend automatic advancement.
+An EOF property is confirmed after 250 ms so a queued engine error can cancel it; replacement loads, seeks and withdrawn EOF signals invalidate that confirmation.
+The retained source remains available for rewinding from terminal Next Up, and a local rewind re-arms its next end notification.
+Fresh and provisional loads keep ownership of their failures.
+Premature EOF during a load is retained until that owner settles, scoped to the same episode and discarded on a new seek or load.
+A rejected recovery presents the existing Retry surface.
+Emby and offline failures retain their existing Retry behaviour.
 
 Focused handler tests cover these boundaries with instrumented recovery calls.
 They do not simulate real HTTP/HLS outages, server restarts or native output.
-The EOF confirmation window is bounded; an error arriving after completion or a
-truncated source reporting a plausible near-end duration remains ambiguous.
+The EOF confirmation window is bounded; an error arriving after completion or a truncated source reporting a plausible near-end duration remains ambiguous.
 
 ## Apple TV presentation
 
-The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the existing metadata and action positions. A 10-point gap separates the preview from its metadata. It resizes the same persistent player surface through the existing preview anchor; episode loading, first-frame gating and transport commands are unchanged.
+The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the existing metadata and action positions.
+A 10-point gap separates the preview from its metadata.
+It resizes the same persistent player surface through the existing preview anchor; episode loading, first-frame gating and transport commands are unchanged.
 
-The same Vivid surface remains mounted as playback moves between full screen and Next Up preview geometry. Next Up owns only the preview bounds and action layout; it must never create a second player or restart the current item. The preview slot is a transparent button under the surface, so a tap (or Select on Apple TV) goes back to the episode; the surface takes no touches or focus itself, and the slot reports its focus with its bounds so the surface can draw the focus ring. Its top-right preview and bottom-left actions are constrained to the actual viewport. The countdown and Play Now depend on an available next episode; absence of a next episode must show an explicit end/error state instead.
+The same Vivid surface remains mounted as playback moves between full screen and Next Up preview geometry.
+Next Up owns only the preview bounds and action layout; it must never create a second player or restart the current item.
+The preview slot is a transparent button under the surface, so a tap (or Select on Apple TV) goes back to the episode; the surface takes no touches or focus itself, and the slot reports its focus with its bounds so the surface can draw the focus ring.
+Its top-right preview and bottom-left actions are constrained to the actual viewport.
+The countdown and Play Now depend on an available next episode; absence of a next episode must show an explicit end/error state instead.
 
-Vivid’s custom timeline drives Lucid on both platforms. On Apple TV, a round subtitle shortcut immediately left of the sliders control opens a glass subtitle selection menu, with Off, embedded tracks and OpenSubtitles search. Subtitle pickers on both platforms omit settings shortcuts; Settings → Subtitles owns language, behaviour and appearance preferences. The sliders control opens the remaining tabs in a Home-style glass bar. Closing either presentation restores focus to its shortcut. The HUD panel is capped at 300 points high, with three-column information and stats layouts; long descriptions, chapters and track lists remain scrollable. Loading dots are decorative and non-focusable, use a bounded animation cadence, and respect Reduce Motion. Lucid Engine presents video through `VividMPVHostView`, wrapped by `VividMPVSurface` for SwiftUI. The same persistent surface survives episode handoff while Vivid retains its own controls. The Info tab's Stream badges show the selected file's resolution, its dynamic range (DV with the Dolby Vision profile, such as DV P5, DV P7 or DV P8.1, then HDR10+, HDR10, HLG, or HDR when the type isn't known, and nothing for SDR), its video codec and the codec of the audio track that's playing, which matches the Audio row and changes when you switch tracks. Until the engine reports the playing track, the file's main audio codec is shown. Profile 7 shows as DV P7 even though Vivid plays it as 8.1 on a Dolby Vision display and as its HDR10 base layer on other displays; the stats show the actual output. The detail pages (one badge on Apple TV, the hero chip and Video range fact on iPhone and iPad) and the version pickers use the same dynamic-range label. Catalogue summaries carry no video-track details, and a downloaded HDR file still shows HDR. iPhone and iPad have no Info panel badges.
+Vivid’s custom timeline drives Lucid on both platforms.
+On Apple TV, a round subtitle shortcut immediately left of the sliders control opens a glass subtitle selection menu, with Off, embedded tracks and OpenSubtitles search.
+Subtitle pickers on both platforms omit settings shortcuts; Settings → Subtitles owns language, behaviour and appearance preferences.
+The sliders control opens the remaining tabs in a Home-style glass bar.
+Closing either presentation restores focus to its shortcut.
+The HUD panel is capped at 300 points high, with three-column information and stats layouts; long descriptions, chapters and track lists remain scrollable.
+Loading dots are decorative and non-focusable, use a bounded animation cadence, and respect Reduce Motion.
+Lucid Engine presents video through `VividMPVHostView`, wrapped by `VividMPVSurface` for SwiftUI.
+The same persistent surface survives episode handoff while Vivid retains its own controls.
+The Info tab's Stream badges show the selected file's resolution, its dynamic range (DV with the Dolby Vision profile, such as DV P5, DV P7 or DV P8.1, then HDR10+, HDR10, HLG, or HDR when the type isn't known, and nothing for SDR), its video codec and the codec of the audio track that's playing, which matches the Audio row and changes when you switch tracks.
+Until the engine reports the playing track, the file's main audio codec is shown.
+Profile 7 shows as DV P7 even though Vivid plays it as 8.1 on a Dolby Vision display and as its HDR10 base layer on other displays; the stats show the actual output.
+The detail pages (one badge on Apple TV, the hero chip and Video range fact on iPhone and iPad) and the version pickers use the same dynamic-range label.
+Catalogue summaries carry no video-track details, and a downloaded HDR file still shows HDR. iPhone and iPad have no Info panel badges.
 
 ## Mobile presentation
 
-iPhone catalogue details open full-screen using the native interactive zoom transition from the tapped card. Pulling down can shrink and move the page, cancel back to full-screen, or dismiss towards its original card. The source identity belongs to that presentation and survives actor, episode and playback navigation; later deep links do not reuse it. The existing detail content, artwork, scroll-driven glass and X control remain, with controls inside the top safe area. The glass title background extends behind the status bar to the top screen edge; detail scroll views hide the native top scroll-edge effect so it does not add a separate blur strip. Actor pages occupy the same full-screen navigation stack and show Back to return to the detail; pulling down scrolls without navigating back. Search uses the same presentation. On iPhone, three-column Library, Search and For You grids fill the available cell width rather than capping posters at 120 points; poster proportions and existing margins stay unchanged. iPad retains its full-screen presentation and source-aware horizontal browsing. Rotation after playback, interrupted dismissals and source-card restoration still require device verification because earlier iOS 26 pushed zoom transitions had geometry and disappearing-source regressions.
+iPhone catalogue details open full-screen using the native interactive zoom transition from the tapped card.
+Pulling down can shrink and move the page, cancel back to full-screen, or dismiss towards its original card.
+The source identity belongs to that presentation and survives actor, episode and playback navigation; later deep links do not reuse it.
+The existing detail content, artwork, scroll-driven glass and X control remain, with controls inside the top safe area.
+The glass title background extends behind the status bar to the top screen edge; detail scroll views hide the native top scroll-edge effect so it does not add a separate blur strip.
+Actor pages occupy the same full-screen navigation stack and show Back to return to the detail; pulling down scrolls without navigating back.
+Search uses the same presentation.
+On iPhone, three-column Library, Search and For You grids fill the available cell width rather than capping posters at 120 points; poster proportions and existing margins stay unchanged. iPad retains its full-screen presentation and source-aware horizontal browsing.
+Rotation after playback, interrupted dismissals and source-card restoration still require device verification because earlier iOS 26 pushed zoom transitions had geometry and disappearing-source regressions.
 
-Settings only allows the outer pull-to-close gesture while its overview is visible; submenu navigation keeps its own back behaviour. Routine iCloud saved-account imports preserve the current iOS screen tree, so metadata refreshes cannot discard Settings or playback. Active-account changes, deletion and session invalidation still reset that tree. On iOS, intro, recap and credits skip buttons stay hidden while playback is loading or buffering. The mobile shell shares account restoration, IntroDB, TMDb and Seerr stores with tvOS. Home’s metadata fetch writes the same per-server/profile disk cache used by the Metadata page. Movie and series detail artwork stays attached to the card edge during scrolling; Home retains its separate parallax and fade-to-black treatment.
+Settings only allows the outer pull-to-close gesture while its overview is visible; submenu navigation keeps its own back behaviour.
+Routine iCloud saved-account imports preserve the current iOS screen tree, so metadata refreshes cannot discard Settings or playback.
+Active-account changes, deletion and session invalidation still reset that tree.
+On iOS, intro, recap and credits skip buttons stay hidden while playback is loading or buffering.
+The mobile shell shares account restoration, IntroDB, TMDb and Seerr stores with tvOS.
+Home’s metadata fetch writes the same per-server/profile disk cache used by the Metadata page.
+Movie and series detail artwork stays attached to the card edge during scrolling; Home retains its separate parallax and fade-to-black treatment.
 
-On iPhone and iPad, pulling down to refresh uniformly zooms the complete spotlight artwork background and keeps its top attached to the scroll viewport. The stretch measures against the fixed parent viewport, including the top safe area. Home triggers its existing refresh action on release after a 90-point pull, using a dots-only Liquid Glass pill and an accessibility Refresh action. Light haptics signal reaching the pull threshold and starting a user-triggered Home refresh on supported iOS devices; background refreshes do not trigger them. Larger white dots sit over dark-tinted Liquid Glass for clearer contrast. It does not attach the native refresh control, whose active inset can clip the poster at the status bar. It follows the pull distance back to zero without changing the refresh action or scaling the title and controls.
+On iPhone and iPad, pulling down to refresh uniformly zooms the complete spotlight artwork background and keeps its top attached to the scroll viewport.
+The stretch measures against the fixed parent viewport, including the top safe area.
+Home triggers its existing refresh action on release after a 90-point pull, using a dots-only Liquid Glass pill and an accessibility Refresh action.
+Light haptics signal reaching the pull threshold and starting a user-triggered Home refresh on supported iOS devices; background refreshes do not trigger them.
+Larger white dots sit over dark-tinted Liquid Glass for clearer contrast.
+It does not attach the native refresh control, whose active inset can clip the poster at the status bar.
+It follows the pull distance back to zero without changing the refresh action or scaling the title and controls.
 
-Mobile controls remain Vivid-owned. Quality, Audio, Subtitles and Chapters use scrollable anchored popovers. An open popover pins the controls; their presentation host remains mounted during buffering and quality reloads so taps, scrolling and sheets retain a live owner. Rotate, Lock, PiP and AirPlay each keep a round glass button. The transport buttons sit at the centre of the player. Visible controls remain mounted during seeking and buffering; each transport tap restarts a five-second auto-hide timer, and tapping the surrounding picture dismisses them. Open menus and sheets suspend auto-hide. iOS Skip Intro and Skip Credits use the same translucent Liquid Glass as other player buttons and retain a fixed gap above the measured bottom control stack when controls hide. The mobile Next Up layout preserves the player surface. Playback failures and retry actions use the shared dark glass design on mobile and Apple TV. See [App Design](../app-design.md#iphone-and-ipad-layout) for navigation and verification.
+Mobile controls remain Vivid-owned.
+Quality, Audio, Subtitles and Chapters use scrollable anchored popovers.
+An open popover pins the controls; their presentation host remains mounted during buffering and quality reloads so taps, scrolling and sheets retain a live owner.
+Rotate, Lock, PiP and AirPlay each keep a round glass button.
+The transport buttons sit at the centre of the player.
+Visible controls remain mounted during seeking and buffering; each transport tap restarts a five-second auto-hide timer, and tapping the surrounding picture dismisses them.
+Open menus and sheets suspend auto-hide. iOS Skip Intro and Skip Credits use the same translucent Liquid Glass as other player buttons and retain a fixed gap above the measured bottom control stack when controls hide.
+The mobile Next Up layout preserves the player surface.
+Playback failures and retry actions use the shared dark glass design on mobile and Apple TV.
+See [App Design](../app-design.md#iphone-and-ipad-layout) for navigation and verification.
 
 ## Account storage and sync
 
-Local account metadata lives in Vivid defaults and session/PIN material lives in Vivid’s Keychain audience. `VividCloudAccountSync` merges those records through encrypted CloudKit fields in the user’s private `iCloud.com.blurbery.vivid` container. It fetches before writing, retries record-change conflicts and applies deletion tombstones before local snapshots. A tombstoned server/user identity can return only after an explicit later authentication. The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured Seerr, MDBList and OpenSubtitles credentials. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state belongs to the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
+Local account metadata lives in Vivid defaults and session/PIN material lives in Vivid’s Keychain audience.
+`VividCloudAccountSync` merges those records through encrypted CloudKit fields in the user’s private `iCloud.com.blurbery.vivid` container.
+It fetches before writing, retries record-change conflicts and applies deletion tombstones before local snapshots.
+A tombstoned server/user identity can return only after an explicit later authentication.
+The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured Seerr, MDBList and OpenSubtitles credentials.
+Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local.
+Watched and resume state belongs to the connected media server.
+Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions.
+It does not import either service’s existing watched history or replace server resume positions.
 
-Fresh-install detection uses an app-container marker. A missing marker with no existing Vivid defaults clears the local Vivid Keychain audience before cloud restoration; an upgrade seeds the marker without clearing the current session. Account sync is best effort when iCloud is unavailable and must not block a working local account.
+Fresh-install detection uses an app-container marker.
+A missing marker with no existing Vivid defaults clears the local Vivid Keychain audience before cloud restoration; an upgrade seeds the marker without clearing the current session.
+Account sync is best effort when iCloud is unavailable and must not block a working local account.
 
 ## Tracks, subtitles and previews
 
-Use the engine’s actual track identities. A dense server ordinal is not necessarily an engine stream ID; stream zero remains valid. Initial selection uses existing provider metadata to prefer a compatible same-language audio alternative while preserving explicit manual choices. `VividInitialAudioPreference` is the one rule: the session bridge applies it before every start, the detail pages show its result through `DetailPlaybackFormatting.resolvedAudioOrdinal`, Continue Watching badges on Apple TV use it, and offline playback applies it to the downloaded file's own tracks. None of them reads a server's `effective_audio_track_index` or remembered audio prefs, and nothing writes `/api/v1/audio-prefs`. A pick in the player, or one made on the detail page, sets `viewingAudioLanguage`, which next episodes in the same viewing prefer when they carry that language. For original-file and offline sources, the platform engine resolves the ordinal against the audio inventory from its first demux open. An explicit source stream ID takes precedence. This path must not introduce a preliminary probe or second source open. See [audio selection](README.md#audio-selection-and-startup) for the policy and its limits.
+Use the engine’s actual track identities.
+A dense server ordinal is not necessarily an engine stream ID; stream zero remains valid.
+Initial selection uses existing provider metadata to prefer a compatible same-language audio alternative while preserving explicit manual choices.
+`VividInitialAudioPreference` is the one rule: the session bridge applies it before every start, the detail pages show its result through `DetailPlaybackFormatting.resolvedAudioOrdinal`, Continue Watching badges on Apple TV use it, and offline playback applies it to the downloaded file's own tracks.
+None of them reads a server's `effective_audio_track_index` or remembered audio prefs, and nothing writes `/api/v1/audio-prefs`.
+A pick in the player, or one made on the detail page, sets `viewingAudioLanguage`, which next episodes in the same viewing prefer when they carry that language.
+For original-file and offline sources, the platform engine resolves the ordinal against the audio inventory from its first demux open.
+An explicit source stream ID takes precedence.
+This path must not introduce a preliminary probe or second source open.
+See [audio selection](README.md#audio-selection-and-startup) for the policy and its limits.
 
-Chapters and embedded subtitle tracks come only from the engine’s media inventory, without server chapter fallbacks. Physical iPhones and iPads running Lucid advertise its original-file pipeline, including client-managed dynamic range and audio selection, so compatible MKV sources need not be remuxed just to normalise their container. Inventory notifications are delivered after the engine stores the updated lists, so menus read the latest chapters and tracks. Selection and disabling happen locally without a Silo replan. Both detail and player controls are labelled Subtitles on iOS and tvOS. They share Lucid’s embedded-track projection, ordering and OpenSubtitles access. Language, behaviour and appearance preferences live in Settings → Subtitles. `PlayerViewModel.settingsSubtitlePrefs` turns them (or the device's caption settings) into the automatic pick's inputs for every server; the player resolves them against the tracks it plays and the detail pages, through `DetailPlaybackFormatting.automaticSubtitleLabel`, against the catalogue's tracks (and on Silo the subtitles it stores, below) with the audio `VividInitialAudioPreference` will start. Neither reads a server's `effective_subtitle_*` values or remembered subtitle prefs, and the detail page never sends a remembered track or Off to the player as a choice.
+Chapters and embedded subtitle tracks come only from the engine’s media inventory, without server chapter fallbacks.
+Physical iPhones and iPads running Lucid advertise its original-file pipeline, including client-managed dynamic range and audio selection, so compatible MKV sources need not be remuxed just to normalise their container.
+Inventory notifications are delivered after the engine stores the updated lists, so menus read the latest chapters and tracks.
+Selection and disabling happen locally without a Silo replan.
+Both detail and player controls are labelled Subtitles on iOS and tvOS.
+They share Lucid’s embedded-track projection, ordering and OpenSubtitles access.
+Language, behaviour and appearance preferences live in Settings → Subtitles.
+`PlayerViewModel.settingsSubtitlePrefs` turns them (or the device's caption settings) into the automatic pick's inputs for every server; the player resolves them against the tracks it plays and the detail pages, through `DetailPlaybackFormatting.automaticSubtitleLabel`, against the catalogue's tracks (and on Silo the subtitles it stores, below) with the audio `VividInitialAudioPreference` will start.
+Neither reads a server's `effective_subtitle_*` values or remembered subtitle prefs, and the detail page never sends a remembered track or Off to the player as a choice.
 
-The detail menu reuses a five-minute, account/content/file-scoped runtime inventory or opens a bounded metadata-only Lucid reader for the selected file. For Silo, Emby and Jellyfin it also lists the selected file's external text subtitles from the catalogue, using the same sidecar IDs the player uses: the server stream index for Emby and Jellyfin, and for Silo the position among the file's external files. Silo's plan numbers external files first in its combined index, so that position is the combined index; before applying a Silo detail choice, Vivid checks that the plan lists external files first, with the same count, and the same language, format and name at that position, and otherwise skips it. A choice that passes selects the same file locally when playback starts. If reading the file's embedded subtitles fails, the server rows still appear beside the retry action. This reader has no audio or video output, submits no viewing progress and closes its temporary session after inspection or cancellation. Catalogue subtitle rows are never used as a fallback for embedded tracks. In the player, Emby and Jellyfin sessions also mount the server's text subtitle files (and text streams while transcoding) as external tracks in the sidecar ID space, keyed by the server stream index so a pick survives quality changes. They render through Vivid's overlay, or natively for ASS and SSA (on iOS a chosen text file is also drawn natively while Picture in Picture runs, as below), and are fetched with the session's request headers without following redirects. A transcode can't carry the file's bitmap tracks (PGS, VobSub and DVB, embedded or beside the media), so the player lists them after its own tracks as burn-in rows, in the same sidecar ID space keyed by server stream index and with no FFmpeg index, and keeps them out of the detail menu's runtime inventory. Choosing one reloads at the current position like a quality change, carrying the stream index as the load's subtitle pick, so seek reloads, retries, renewals and quality changes carry it too. For a pick that names one of the file's bitmap tracks, the bridge sends PlaybackInfo as usual and, only when that answer is a transcode, asks once more with `SubtitleStreamIndex` set. It plays the second answer only when its `TranscodingUrl` names the same stream with `SubtitleMethod=Encode` (or, with no method in the URL, the subtitle's `DeliveryMethod` is `Encode`), and otherwise the first answer, without subtitles. A direct play never asks: Lucid draws these tracks itself, and the server would otherwise transcode just for a subtitle it can't embed. Silo plans and their subtitle intent are not involved. The burned-in row stays selected while the engine shows nothing; choosing any other track, Off or an OpenSubtitles file reloads without it, and cycling or toggling subtitles skips burn-in rows. A burn-in the server answers without confirming, or a burned-in stream that fails to open for a reason that points at the transcode (which reloads once without it instead of ending playback), drops that row until another item plays and shows a notice. A burn-in request that fails (a dropped connection, a timeout or an HTTP error) plays without it and shows a notice, but the row stays so it can be chosen again, and an open failure caused by the connection (any URL loading error), sign-in, a timeout, rate limiting or the audio session takes the usual failure path without counting against the track. Lucid reports a stream that won't open without saying why, so a connection drop at that moment still counts against the burned-in track. Text tracks come first, so Auto prefers a text track to a bitmap one of the same kind. Auto leaves burn-in rows alone while the transcode only repackages the video: an H.264 source whose `TranscodeReasons` are all audio or container reasons, with Vivid allowing a video copy. They can still be chosen by hand. A confirmed burn-in counts as the item's pick, even when Auto chose it before a quality change or renewal, so Auto doesn't run again on that load and can't switch it back off. A burned-in track takes no subtitle style, so its style controls are hidden as for bitmap tracks Lucid draws, and the subtitle delay has no effect on it. Silo plans list external files in the same sidecar ID space by combined index; Vivid offers them as rows, fetches one only when it's chosen (each fetch can start a server subtitle sync job), never sends that pick to Silo on replans or renewals, and re-applies it locally after replacement loads of the same file. `StreamRequest` accepts Silo's `external_subtitle_key` (64 lowercase hex) on subtitle artefact routes only. Embedded choices made before playback are applied locally only to the same content and file. A detail-page download is held in memory for up to 30 minutes and consumed only by the matching account connection, content and file; starting another version cannot attach it.
+The detail menu reuses a five-minute, account/content/file-scoped runtime inventory or opens a bounded metadata-only Lucid reader for the selected file.
+For Silo, Emby and Jellyfin it also lists the selected file's external text subtitles from the catalogue, using the same sidecar IDs the player uses: the server stream index for Emby and Jellyfin, and for Silo the position among the file's external files.
+Silo's plan numbers external files first in its combined index, so that position is the combined index; before applying a Silo detail choice, Vivid checks that the plan lists external files first, with the same count, and the same language, format and name at that position, and otherwise skips it.
+A choice that passes selects the same file locally when playback starts.
+If reading the file's embedded subtitles fails, the server rows still appear beside the retry action.
+This reader has no audio or video output, submits no viewing progress and closes its temporary session after inspection or cancellation.
+Catalogue subtitle rows are never used as a fallback for embedded tracks.
+In the player, Emby and Jellyfin sessions also mount the server's text subtitle files (and text streams while transcoding) as external tracks in the sidecar ID space, keyed by the server stream index so a pick survives quality changes.
+They render through Vivid's overlay, or natively for ASS and SSA (on iOS a chosen text file is also drawn natively while Picture in Picture runs, as below), and are fetched with the session's request headers without following redirects.
+A transcode can't carry the file's bitmap tracks (PGS, VobSub and DVB, embedded or beside the media), so the player lists them after its own tracks as burn-in rows, in the same sidecar ID space keyed by server stream index and with no FFmpeg index, and keeps them out of the detail menu's runtime inventory.
+Choosing one reloads at the current position like a quality change, carrying the stream index as the load's subtitle pick, so seek reloads, retries, renewals and quality changes carry it too.
+For a pick that names one of the file's bitmap tracks, the bridge sends PlaybackInfo as usual and, only when that answer is a transcode, asks once more with `SubtitleStreamIndex` set.
+It plays the second answer only when its `TranscodingUrl` names the same stream with `SubtitleMethod=Encode` (or, with no method in the URL, the subtitle's `DeliveryMethod` is `Encode`), and otherwise the first answer, without subtitles.
+A direct play never asks: Lucid draws these tracks itself, and the server would otherwise transcode just for a subtitle it can't embed.
+Silo plans and their subtitle intent are not involved.
+The burned-in row stays selected while the engine shows nothing; choosing any other track, Off or an OpenSubtitles file reloads without it, and cycling or toggling subtitles skips burn-in rows.
+A burn-in the server answers without confirming, or a burned-in stream that fails to open for a reason that points at the transcode (which reloads once without it instead of ending playback), drops that row until another item plays and shows a notice.
+A burn-in request that fails (a dropped connection, a timeout or an HTTP error) plays without it and shows a notice, but the row stays so it can be chosen again, and an open failure caused by the connection (any URL loading error), sign-in, a timeout, rate limiting or the audio session takes the usual failure path without counting against the track.
+Lucid reports a stream that won't open without saying why, so a connection drop at that moment still counts against the burned-in track.
+Text tracks come first, so Auto prefers a text track to a bitmap one of the same kind.
+Auto leaves burn-in rows alone while the transcode only repackages the video: an H.264 source whose `TranscodeReasons` are all audio or container reasons, with Vivid allowing a video copy.
+They can still be chosen by hand.
+A confirmed burn-in counts as the item's pick, even when Auto chose it before a quality change or renewal, so Auto doesn't run again on that load and can't switch it back off.
+A burned-in track takes no subtitle style, so its style controls are hidden as for bitmap tracks Lucid draws, and the subtitle delay has no effect on it.
+Silo plans list external files in the same sidecar ID space by combined index; Vivid offers them as rows, fetches one only when it's chosen (each fetch can start a server subtitle sync job), never sends that pick to Silo on replans or renewals, and re-applies it locally after replacement loads of the same file.
+`StreamRequest` accepts Silo's `external_subtitle_key` (64 lowercase hex) on subtitle artefact routes only.
+Embedded choices made before playback are applied locally only to the same content and file.
+A detail-page download is held in memory for up to 30 minutes and consumed only by the matching account connection, content and file; starting another version cannot attach it.
 
-Silo also stores subtitles of its own for a file: downloaded from a provider, uploaded, or made by its AI. Its plan lists them with `source: downloaded` after the file's own tracks in the combined index, and Vivid offers the text ones (SRT, WebVTT, ASS and SSA) as it does Silo's external files: lazy rows in the sidecar ID space, fetched only when chosen, never sent to Silo, and re-applied after replacement loads. Silo pins each one's URL to its stored row with `downloaded_subtitle_id`, which `StreamRequest` already accepts on subtitle artefact routes, so a pick is re-applied by that ID rather than by index, which moves when an earlier stored subtitle is removed. They follow the engine's tracks and Silo's external files in the list the automatic pick reads, so between equally good matches the file's own track wins. The catalogue doesn't list them, so detail pages read them from `GET /api/v1/subtitles/{file}` (v2 `listStoredSubtitles`), kept for two minutes per server, profile and file (`SiloStoredSubtitles`). The subtitle menu and the Auto preview add them after the file's own tracks, keyed by the combined index they should have, and with the plan's label ("release (provider)", or the language) so the resolver reads the same forced and SDH words in the title as the player does. A detail choice of one carries its stored ID, and playback selects it only when the plan lists that ID; the pre-start subtitle intent stays catalogue-only. When Silo finishes making a subtitle during playback (`subtitle_ready`, sent for AI transcription and translation, with the track's plan entry), the player adds its row straight away; a subtitle that's already been chosen stays. Stored bitmap files are `burn_in_only` and aren't offered. Silo's v2 list gives languages as canonical tags and leaves out rows whose language it can't canonicalise, while the plan carries the stored value, so on a file where the two differ (such as `eng` against `en`) the preview's exact-language tie-break can name a different track from the player's.
+Silo also stores subtitles of its own for a file: downloaded from a provider, uploaded, or made by its AI.
+Its plan lists them with `source: downloaded` after the file's own tracks in the combined index, and Vivid offers the text ones (SRT, WebVTT, ASS and SSA) as it does Silo's external files: lazy rows in the sidecar ID space, fetched only when chosen, never sent to Silo, and re-applied after replacement loads.
+Silo pins each one's URL to its stored row with `downloaded_subtitle_id`, which `StreamRequest` already accepts on subtitle artefact routes, so a pick is re-applied by that ID rather than by index, which moves when an earlier stored subtitle is removed.
+They follow the engine's tracks and Silo's external files in the list the automatic pick reads, so between equally good matches the file's own track wins.
+The catalogue doesn't list them, so detail pages read them from `GET /api/v1/subtitles/{file}` (v2 `listStoredSubtitles`), kept for two minutes per server, profile and file (`SiloStoredSubtitles`).
+The subtitle menu and the Auto preview add them after the file's own tracks, keyed by the combined index they should have, and with the plan's label ("release (provider)", or the language) so the resolver reads the same forced and SDH words in the title as the player does.
+A detail choice of one carries its stored ID, and playback selects it only when the plan lists that ID; the pre-start subtitle intent stays catalogue-only.
+When Silo finishes making a subtitle during playback (`subtitle_ready`, sent for AI transcription and translation, with the track's plan entry), the player adds its row straight away; a subtitle that's already been chosen stays.
+Stored bitmap files are `burn_in_only` and aren't offered.
+Silo's v2 list gives languages as canonical tags and leaves out rows whose language it can't canonicalise, while the plan carries the stored value, so on a file where the two differ (such as `eng` against `en`) the preview's exact-language tie-break can name a different track from the player's.
 
-The optional OpenSubtitles plugin downloads user-selected SRT files to temporary device storage and registers only those files as selectable external tracks. The API key is never forwarded to subtitle download hosts. Downloads are capped at 5 MiB, guarded by playback generation and connection scope, and retained with their selection across successful replacement loads for the same item, including quality changes. They are removed on final player disposal or when another item loads. These temporary track IDs are not persisted as server subtitle preferences. Separately, the chosen file is remembered per account/profile, item and file version on the device (40 items at most, Caches on tvOS), so a later session for the same file restores and selects it after any staged detail-page download and before a detail-page embedded or Off choice. Choosing another track, Off or Auto forgets it, and disconnecting OpenSubtitles removes every remembered file for that account/profile. The detail menus list a staged or remembered file, ticked, as "OpenSubtitles · file name", with Auto and Off unticked, and choosing it keeps it. The detail pages load the plugin's connection and scope when they appear, so the row shows straight after launch. AI translation is not exposed. Lucid Engine uses the media core’s renderer for embedded subtitles and Vivid’s overlay for external text subtitles. Picture in Picture shows only the engine's pictures, so on iOS a chosen external text file is also handed to the engine as an unselected copy in a temporary file, selected only while Picture in Picture runs and removed when the load ends. Primary and secondary selection, delay and styling remain scoped to the active playback session. A primary pick of an embedded track or server subtitle file, or Off, made in the player also carries to the next episodes that play on from that viewing, matched by language and kind of track (forced, CC/SDH, title). A forced pick carries as forced only, so an episode without a forced track in that language plays without subtitles rather than the full track. So does such a choice made on the detail page before playing, since playback applies it the same way. Neither changes the Subtitles settings. A title started afresh without a detail-page choice, or another title from the player's On Deck row, follows those settings again. OpenSubtitles picks stay with their own title, as described above. Preferences remain device/profile-local.
+The optional OpenSubtitles plugin downloads user-selected SRT files to temporary device storage and registers only those files as selectable external tracks.
+The API key is never forwarded to subtitle download hosts.
+Downloads are capped at 5 MiB, guarded by playback generation and connection scope, and retained with their selection across successful replacement loads for the same item, including quality changes.
+They are removed on final player disposal or when another item loads.
+These temporary track IDs are not persisted as server subtitle preferences.
+Separately, the chosen file is remembered per account/profile, item and file version on the device (40 items at most, Caches on tvOS), so a later session for the same file restores and selects it after any staged detail-page download and before a detail-page embedded or Off choice.
+Choosing another track, Off or Auto forgets it, and disconnecting OpenSubtitles removes every remembered file for that account/profile.
+The detail menus list a staged or remembered file, ticked, as "OpenSubtitles · file name", with Auto and Off unticked, and choosing it keeps it.
+The detail pages load the plugin's connection and scope when they appear, so the row shows straight after launch.
+AI translation is not exposed.
+Lucid Engine uses the media core’s renderer for embedded subtitles and Vivid’s overlay for external text subtitles.
+Picture in Picture shows only the engine's pictures, so on iOS a chosen external text file is also handed to the engine as an unselected copy in a temporary file, selected only while Picture in Picture runs and removed when the load ends.
+Primary and secondary selection, delay and styling remain scoped to the active playback session.
+A primary pick of an embedded track or server subtitle file, or Off, made in the player also carries to the next episodes that play on from that viewing, matched by language and kind of track (forced, CC/SDH, title).
+A forced pick carries as forced only, so an episode without a forced track in that language plays without subtitles rather than the full track.
+So does such a choice made on the detail page before playing, since playback applies it the same way.
+Neither changes the Subtitles settings.
+A title started afresh without a detail-page choice, or another title from the player's On Deck row, follows those settings again.
+OpenSubtitles picks stay with their own title, as described above.
+Preferences remain device/profile-local.
 
-External text tracks advance through indexed start and end boundaries, rebuilding their active cues after a backward seek or delay change that moves the subtitle clock backwards. Cue order, overlaps and inclusive-start/exclusive-end timing are preserved. The overlay receives updates only when its active cues or selected track change; empty and unchanged selections are not repeatedly published. The loader keeps SubRip and WebVTT bold, italic, underline, strike-through and `<font color>` tags as styled runs and `{\anN}` as the cue's alignment, dropping other tags, and the overlay stacks overlapping cues as libass does, with the latest furthest from the edge. Native ASS and embedded rendering keep their authored styles.
+External text tracks advance through indexed start and end boundaries, rebuilding their active cues after a backward seek or delay change that moves the subtitle clock backwards.
+Cue order, overlaps and inclusive-start/exclusive-end timing are preserved.
+The overlay receives updates only when its active cues or selected track change; empty and unchanged selections are not repeatedly published.
+The loader keeps SubRip and WebVTT bold, italic, underline, strike-through and `<font color>` tags as styled runs and `{\anN}` as the cue's alignment, dropping other tags, and the overlay stacks overlapping cues as libass does, with the latest furthest from the edge.
+Native ASS and embedded rendering keep their authored styles.
 
-Apple TV scrubbing shows the timeline and target time without a thumbnail overlay. Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker. Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
+Apple TV scrubbing shows the timeline and target time without a thumbnail overlay.
+Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker.
+Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
 
-iOS scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
+iOS scrub previews use the existing bounded request owner and platform engine frame extractor.
+Late images from an old source or gesture must not paint over a new selection.
 
-Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication. Recovery and the Apple TV timeline receive every delivered buffer update. Routine statistics formatting is limited to once per 0.9 seconds using a monotonic clock; one pending refresh publishes the latest sample when that interval expires, even if playback is paused and no further event arrives. State, track and route changes, unavailable telemetry and new loads still refresh immediately and cancel any pending refresh. This does not change playback timing, skip detection or progress reporting.
+Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication.
+Recovery and the Apple TV timeline receive every delivered buffer update.
+Routine statistics formatting is limited to once per 0.9 seconds using a monotonic clock; one pending refresh publishes the latest sample when that interval expires, even if playback is paused and no further event arrives.
+State, track and route changes, unavailable telemetry and new loads still refresh immediately and cancel any pending refresh.
+This does not change playback timing, skip detection or progress reporting.
 
-Engine properties that can change on every frame (`time-pos`, `avsync`, `demuxer-cache-state` and `demuxer-cache-duration`) are coalesced before they reach the main thread. While one delivery is queued, newer values replace the pending ones, so a busy main thread receives the latest value once instead of replaying stale samples. Any other property or event first carries the pending values with it, keeping mpv's order. When the main thread is idle, every update is still delivered. The A/V sync gap only feeds the statistics overlay, so it is published at most four times a second and always settles on the latest value. The player view reads the playback position only inside the views that display it, and the skip buttons follow a stored marker window that changes only when playback crosses a range edge.
+Engine properties that can change on every frame (`time-pos`, `avsync`, `demuxer-cache-state` and `demuxer-cache-duration`) are coalesced before they reach the main thread.
+While one delivery is queued, newer values replace the pending ones, so a busy main thread receives the latest value once instead of replaying stale samples.
+Any other property or event first carries the pending values with it, keeping mpv's order.
+When the main thread is idle, every update is still delivered.
+The A/V sync gap only feeds the statistics overlay, so it is published at most four times a second and always settles on the latest value.
+The player view reads the playback position only inside the views that display it, and the skip buttons follow a stored marker window that changes only when playback crosses a range edge.
 
 ## IntroDB marker timing
 
-The Intro & Credit Skipper toggle controls both IntroDB and TheIntroDB on iOS and tvOS. Valid markers supplied for the selected file are published first and survive provider failures; item-level markers from another edition are not used. A public TheIntroDB `/v4/media` lookup fills missing file markers and its results are published immediately. If intro, credits or recap is still absent, an independent IntroDB lookup fills only missing kinds, preserving existing ranges. Errors leave the primary result intact, and cancellation, settings and session/content/file guards apply after each request. Neither lookup blocks playback. Each provider has a bounded one-hour in-memory cache and uses an ephemeral session without media-server credentials or API keys.
+The Intro & Credit Skipper toggle controls both IntroDB and TheIntroDB on iOS and tvOS.
+Valid markers supplied for the selected file are published first and survive provider failures; item-level markers from another edition are not used.
+A public TheIntroDB `/v4/media` lookup fills missing file markers and its results are published immediately.
+If intro, credits or recap is still absent, an independent IntroDB lookup fills only missing kinds, preserving existing ranges.
+Errors leave the primary result intact, and cancellation, settings and session/content/file guards apply after each request.
+Neither lookup blocks playback.
+Each provider has a bounded one-hour in-memory cache and uses an ephemeral session without media-server credentials or API keys.
 
-The TheIntroDB adapter converts milliseconds and nullable boundaries to the current prompt model: a null intro start means zero, and a null credits end resolves when finite media duration arrives. Invalid ranges are rejected. For multiple segments of one kind, only the earliest structurally valid range is used; ranges are never joined across scenes. Recaps use the same toggle, countdown and skip control on iOS and tvOS, labelled Skip Recap within the recap range. Intro and recap markers remain separate on the timeline. Preview and multiple prompts per kind are not included. Both services and TMDB are credited under About → Acknowledgements on iOS and tvOS. Open Source Licences remains separate. TMDB’s logo and attribution are in Acknowledgements; the duplicate About-page block has been removed on iOS and tvOS.
+The TheIntroDB adapter converts milliseconds and nullable boundaries to the current prompt model: a null intro start means zero, and a null credits end resolves when finite media duration arrives.
+Invalid ranges are rejected.
+For multiple segments of one kind, only the earliest structurally valid range is used; ranges are never joined across scenes.
+Recaps use the same toggle, countdown and skip control on iOS and tvOS, labelled Skip Recap within the recap range.
+Intro and recap markers remain separate on the timeline.
+Preview and multiple prompts per kind are not included.
+Both services and TMDB are credited under About → Acknowledgements on iOS and tvOS.
+Open Source Licences remains separate.
+TMDB’s logo and attribution are in Acknowledgements; the duplicate About-page block has been removed on iOS and tvOS.
 
-Vivid fetches TheIntroDB timestamps first, independently of the media engine, preferring the series TMDB ID and falling back to IMDb when TMDB is unavailable. IntroDB uses the series IMDb ID and season/episode number. TheIntroDB resolves either ID using that provider's episode numbering, so Vivid sends no TVDB episode-order `mapping`. A v4 response is used only when it carries a TVDB ID and echoes the requested season and episode. v4 no longer returns `tmdb_id`, so Vivid can't compare the response's series with the request and relies on TheIntroDB resolving the ID it was sent. A missing IMDb ID skips only IntroDB, leaving TheIntroDB available for TMDB-only series. Results fill missing marker kinds without replacing existing ranges. IntroDB results must match the requested series IMDb ID, season and episode; TheIntroDB results must match the requested season and episode. The request remains fenced to the active playback session, content and file. Prompts require IntroDB to be enabled, valid markers and a playhead inside the marker range.
+Vivid fetches TheIntroDB timestamps first, independently of the media engine, preferring the series TMDB ID and falling back to IMDb when TMDB is unavailable.
+IntroDB uses the series IMDb ID and season/episode number.
+TheIntroDB resolves either ID using that provider's episode numbering, so Vivid sends no TVDB episode-order `mapping`.
+A v4 response is used only when it carries a TVDB ID and echoes the requested season and episode. v4 no longer returns `tmdb_id`, so Vivid can't compare the response's series with the request and relies on TheIntroDB resolving the ID it was sent.
+A missing IMDb ID skips only IntroDB, leaving TheIntroDB available for TMDB-only series.
+Results fill missing marker kinds without replacing existing ranges.
+IntroDB results must match the requested series IMDb ID, season and episode; TheIntroDB results must match the requested season and episode.
+The request remains fenced to the active playback session, content and file.
+Prompts require IntroDB to be enabled, valid markers and a playhead inside the marker range.
 
-Raw marker results are retained when the lookup finishes before media duration is available. Vivid reapplies them when a finite duration arrives, rather than permanently dropping a fast lookup. A new lookup, replacement load or cleanup clears the saved markers. This handles a duration-ordering race; missing both IMDb and TMDB metadata, absent provider markers and lookup failures remain separate reasons a prompt may not appear.
+Raw marker results are retained when the lookup finishes before media duration is available.
+Vivid reapplies them when a finite duration arrives, rather than permanently dropping a fast lookup.
+A new lookup, replacement load or cleanup clears the saved markers.
+This handles a duration-ordering race; missing both IMDb and TMDB metadata, absent provider markers and lookup failures remain separate reasons a prompt may not appear.
 
 ## Downloads and external playback
 
-Fresh background downloads bind their destination and credential headers to one captured server account and profile. Manifest, artwork and initial status requests carry that same identity and reject a changed account/profile before dispatch. Account/profile changes discard pending pipeline results before starting a transfer, including on Silo; a refresh for the same account can still supply its updated access token. Existing paused transfers retain their resume data.
+Fresh background downloads bind their destination and credential headers to one captured server account and profile.
+Manifest, artwork and initial status requests carry that same identity and reject a changed account/profile before dispatch.
+Account/profile changes discard pending pipeline results before starting a transfer, including on Silo; a refresh for the same account can still supply its updated access token.
+Existing paused transfers retain their resume data.
 
-Reduced-quality downloads are a separate server operation from playback quality. Silo retains its prepared-download API, including smaller qualities for seasons and series where it advertises `bulk_quality`. Silo lists presets other than `original` in `quality_presets` only when `download.transcode_enabled` is on and the user's policy has `download_transcode_allowed`, so a server with either off offers Original only. On iPhone and iPad, Emby and Jellyfin accounts allowed to download and transcode playback save the server's playback transcode of `/Videos/{Id}/stream.mp4` (H.264 with its video bitrate capped to the preset, stereo AAC at 128 or 192 kbps on top, in MP4, with a height cap and a fresh play session per request; embedded text subtitles are saved as separate files because the transcode leaves them out) through the background session. The response has no length, so progress uses an estimate from the bitrate and runtime and the file's real size is recorded when it finishes; an interrupted transfer restarts unless Apple's downloader has usable resume data. An Emby account that may only use sync transcoding falls back to native conversion: Vivid registers the installation as a sync target, negotiates its advertised options, creates one conversion job per movie or episode, polls until the complete file and its metadata are ready, then downloads `/Sync/JobItems/{Id}/File`. Completed transfers retain acknowledgement retries, and offline deletions retain hidden cleanup records. Reconciliation discards results after an account/profile generation change. tvOS does not offer downloads.
+Reduced-quality downloads are a separate server operation from playback quality.
+Silo retains its prepared-download API, including smaller qualities for seasons and series where it advertises `bulk_quality`.
+Silo lists presets other than `original` in `quality_presets` only when `download.transcode_enabled` is on and the user's policy has `download_transcode_allowed`, so a server with either off offers Original only.
+On iPhone and iPad, Emby and Jellyfin accounts allowed to download and transcode playback save the server's playback transcode of `/Videos/{Id}/stream.mp4` (H.264 with its video bitrate capped to the preset, stereo AAC at 128 or 192 kbps on top, in MP4, with a height cap and a fresh play session per request; embedded text subtitles are saved as separate files because the transcode leaves them out) through the background session.
+The response has no length, so progress uses an estimate from the bitrate and runtime and the file's real size is recorded when it finishes; an interrupted transfer restarts unless Apple's downloader has usable resume data.
+An Emby account that may only use sync transcoding falls back to native conversion: Vivid registers the installation as a sync target, negotiates its advertised options, creates one conversion job per movie or episode, polls until the complete file and its metadata are ready, then downloads `/Sync/JobItems/{Id}/File`.
+Completed transfers retain acknowledgement retries, and offline deletions retain hidden cleanup records.
+Reconciliation discards results after an account/profile generation change. tvOS does not offer downloads.
 
-Each download's file is handed to the background session as soon as its manifest is saved; artwork and subtitle files follow and are backfilled on a later launch if the app closed first. Only the preparation step runs a few at a time, and every eligible queued download is prepared at once when the app leaves the foreground (one that would go over a monitored series' storage cap stays queued), so a whole season keeps downloading with the app closed. The downloads Live Activity carries an estimated timeline from the current rate, so its bar, Dynamic Island ring and time-left countdown keep moving while iOS has Vivid suspended; finished transfers wake Vivid to correct it. The Live Activity doesn't need notification permission. Vivid asks for that once, the first time a download is asked for (a movie, an episode, a season, a series or a list of episodes) or series monitoring is turned on, and never at sign-in or on returning to the app. Registration doesn't wait for the answer: each download notification (finished, failed, or new episodes queued by monitoring) checks the permission when it posts, so a download that finishes after the person allows notifications still gets one. Background transfers are tagged with their server, profile and download, so one that finishes after a server or profile switch is saved into its own account's registry rather than discarded. Download permission is checked on sign-in, on every server or profile switch, on foreground and before each download; until it's known, the Downloads tab shows Checking rather than Unavailable, or Couldn't Check Downloads with Try Again if the check fails before any answer. Permission, download-list, offline progress, watched and series monitoring requests are pinned to the scope's own sign-in, so a request in flight during a switch can't apply another account's answer or reach another profile; progress waiting to be sent stays queued until its own profile is active again. A monitoring change the server accepts is saved to the profile that asked for it, even after a switch. Stop Monitoring deletes the subscription on the server first and keeps the series monitored if that fails, so it can be tried again. A completed download the server still lists as pending is reported again on the next reconcile.
+Each download's file is handed to the background session as soon as its manifest is saved; artwork and subtitle files follow and are backfilled on a later launch if the app closed first.
+Only the preparation step runs a few at a time, and every eligible queued download is prepared at once when the app leaves the foreground (one that would go over a monitored series' storage cap stays queued), so a whole season keeps downloading with the app closed.
+The downloads Live Activity carries an estimated timeline from the current rate, so its bar, Dynamic Island ring and time-left countdown keep moving while iOS has Vivid suspended; finished transfers wake Vivid to correct it.
+The Live Activity doesn't need notification permission.
+Vivid asks for that once, the first time a download is asked for (a movie, an episode, a season, a series or a list of episodes) or series monitoring is turned on, and never at sign-in or on returning to the app.
+Registration doesn't wait for the answer: each download notification (finished, failed, or new episodes queued by monitoring) checks the permission when it posts, so a download that finishes after the person allows notifications still gets one.
+Background transfers are tagged with their server, profile and download, so one that finishes after a server or profile switch is saved into its own account's registry rather than discarded.
+Download permission is checked on sign-in, on every server or profile switch, on foreground and before each download; until it's known, the Downloads tab shows Checking rather than Unavailable, or Couldn't Check Downloads with Try Again if the check fails before any answer.
+Permission, download-list, offline progress, watched and series monitoring requests are pinned to the scope's own sign-in, so a request in flight during a switch can't apply another account's answer or reach another profile; progress waiting to be sent stays queued until its own profile is active again.
+A monitoring change the server accepts is saved to the profile that asked for it, even after a switch.
+Stop Monitoring deletes the subscription on the server first and keeps the series monitored if that fails, so it can be tried again.
+A completed download the server still lists as pending is reported again on the next reconcile.
 
-Downloads retain the configured server's HTTP or HTTPS scheme; an HTTPS configuration cannot be downgraded by the initial destination. Background transfers are managed by Apple's networking service, which follows redirects without calling the app's redirect delegate. Initial-origin checks therefore do not enforce redirect isolation. Preventing that requires a different transfer design or server support for URLs that do not carry reusable credentials. Vivid currently retains background transfers with this limitation.
+Downloads retain the configured server's HTTP or HTTPS scheme; an HTTPS configuration cannot be downgraded by the initial destination.
+Background transfers are managed by Apple's networking service, which follows redirects without calling the app's redirect delegate.
+Initial-origin checks therefore do not enforce redirect isolation.
+Preventing that requires a different transfer design or server support for URLs that do not carry reusable credentials.
+Vivid currently retains background transfers with this limitation.
 
-Lucid Engine has no local HLS listener. Remote HLS is read by the media core’s FFmpeg transport.
+Lucid Engine has no local HLS listener.
+Remote HLS is read by the media core’s FFmpeg transport.
 
-Keep downloaded sources and their metadata independent of an online server's current response and out of the iCloud account vault. The detail action observes registration and transfer state directly from `DownloadManager`, while Downloads reads the same records for progress, transfer rate, storage totals and locally stored poster artwork. Series-scoped requests use the parent series artwork. Accept authenticated artwork only as a relative path or a same-origin absolute URL; normalise it before constructing the server request. Validate offline resume, seeking, tracks and teardown explicitly.
+Keep downloaded sources and their metadata independent of an online server's current response and out of the iCloud account vault.
+The detail action observes registration and transfer state directly from `DownloadManager`, while Downloads reads the same records for progress, transfer rate, storage totals and locally stored poster artwork.
+Series-scoped requests use the parent series artwork.
+Accept authenticated artwork only as a relative path or a same-origin absolute URL; normalise it before constructing the server request.
+Validate offline resume, seeking, tracks and teardown explicitly.
 
-Vivid has no viewing threshold of its own for partial resume progress. Once a movie or episode reaches its first frame (or, for an audio-only load, starts playing), Vivid reports the real position, seeks included, and each server applies its own resume rules, as its own apps do. Silo keeps no position under its minimum resume percentage (an admin setting, 5% by default) and still answers the request successfully, so a short re-watch of a finished title doesn't return to Continue Watching until it passes that point. Jellyfin applies its server resume settings: by default a position under 5% keeps no resume point and resets an existing one to the start, over 90% marks the title played, and a title shorter than five minutes is marked played instead of keeping a resume point. Emby applies its own per-library resume settings; its server is closed source, so Vivid hasn't checked exactly how they treat each position. Until a new item (or a Play from Beginning) reaches its first frame, the player's position is only the requested start, so nothing is saved: Silo receives position zero, which its server ignores, and Emby and Jellyfin keep the session alive with their playback Ping endpoint. If that load fails or is closed, Jellyfin gets a stop with its `Failed` flag and no position, and Emby gets no stop at all (Vivid only clears any transcode). That keeps a load that never played from resetting a saved resume point. Recovery reloads, retries after an error, seeks that reload the stream and quality or track changes of an item that has already started keep reporting, because they reload at the real position, even after a Play from Beginning. Jellyfin’s replacement barrier orders progress before retiring an adopted session, while unused PlaybackInfo negotiations are discarded locally.
+Vivid has no viewing threshold of its own for partial resume progress.
+Once a movie or episode reaches its first frame (or, for an audio-only load, starts playing), Vivid reports the real position, seeks included, and each server applies its own resume rules, as its own apps do.
+Silo keeps no position under its minimum resume percentage (an admin setting, 5% by default) and still answers the request successfully, so a short re-watch of a finished title doesn't return to Continue Watching until it passes that point.
+Jellyfin applies its server resume settings: by default a position under 5% keeps no resume point and resets an existing one to the start, over 90% marks the title played, and a title shorter than five minutes is marked played instead of keeping a resume point.
+Emby applies its own per-library resume settings; its server is closed source, so Vivid hasn't checked exactly how they treat each position.
+Until a new item (or a Play from Beginning) reaches its first frame, the player's position is only the requested start, so nothing is saved: Silo receives position zero, which its server ignores, and Emby and Jellyfin keep the session alive with their playback Ping endpoint.
+If that load fails or is closed, Jellyfin gets a stop with its `Failed` flag and no position, and Emby gets no stop at all (Vivid only clears any transcode).
+That keeps a load that never played from resetting a saved resume point.
+Recovery reloads, retries after an error, seeks that reload the stream and quality or track changes of an item that has already started keep reporting, because they reload at the real position, even after a Play from Beginning.
+Jellyfin’s replacement barrier orders progress before retiring an adopted session, while unused PlaybackInfo negotiations are discarded locally.
 
-Offline playback records partial progress the same way, from the first frame, and each server applies its own resume rules when the next download sync sends the position. Silo receives it through its progress sync. Emby and Jellyfin receive a playback stop report (`/Sessions/Playing/Stopped` with only the item and position, no play session or media source) instead of a direct user-data write, so the server applies the resume settings it uses for the final stop of a streamed play. Jellyfin's source shows it handles a stop with no prior start this way, though that hasn't been checked against a live Jellyfin server. For Emby this rests on its last open-source server, as its current server is closed source, and hasn't been checked against a live server. Because the stop is reported at sync time, Jellyfin treats it as a play that has just stopped on this device: it adds an activity log entry, notifies plugins such as webhooks and scrobblers, records the sync time as the last played date when it keeps a position or marks the title played, and leaves play counts unchanged. Emby is expected to do the same. A stop isn't safe to repeat, so the sync never resends one the server has acknowledged: when a completed item's watched write fails, only that write is retried, a batch that fails part-way keeps the acknowledgements it already has, and only one sync sends at a time. A stop the server refuses outright (a 4xx other than 401, 408 or 429) counts as a rejection, so it no longer holds up the items behind it, and after the usual retries it leaves the queue. The exception is an item watched to the end: completed entries are kept so their watched state isn't lost, and are tried again at each sync. A sync asked for while another is sending runs once straight afterwards. An acknowledgement only counts once the queue has been saved: a stop whose answer never arrived, because the response was lost or the app closed before the queue was saved, stays queued and can be sent again. If the device is streaming from the same server at that moment, the server's now-playing entry for this device clears until the next progress report; other devices' sessions are untouched. Completion is separate for every movie and episode: reaching 90% of the duration, reaching a valid credits marker, or a verified natural end marks the item watched however little of it was watched. Seeking does not add a from-start requirement. Completion latches for the current item without stopping playback or triggering Next Up. Selected-file credits are preferred; loaded fallback credits apply when available. Missing or invalid markers fall back to the percentage rule. Silo, Emby and Jellyfin receive the actual playback position and a separate watched-state write, ordered after progress and final Stop; offline completion is also sent through the watched API at the next download sync (sign-in, a server or profile switch, foreground entry or a background refresh), not as soon as the network returns. In the other direction, Emby and Jellyfin downloads read each downloaded item's played state and resume position from the server at each download sync and when the Downloads tab opens, so watching online marks the download watched; items with offline progress still waiting to be sent keep their local state. This applies to the active server/profile, not cross-server watch-state replication. A premature stream end retains its observed position and does not count as a natural completion.
+Offline playback records partial progress the same way, from the first frame, and each server applies its own resume rules when the next download sync sends the position.
+Silo receives it through its progress sync.
+Emby and Jellyfin receive a playback stop report (`/Sessions/Playing/Stopped` with only the item and position, no play session or media source) instead of a direct user-data write, so the server applies the resume settings it uses for the final stop of a streamed play.
+Jellyfin's source shows it handles a stop with no prior start this way, though that hasn't been checked against a live Jellyfin server.
+For Emby this rests on its last open-source server, as its current server is closed source, and hasn't been checked against a live server.
+Because the stop is reported at sync time, Jellyfin treats it as a play that has just stopped on this device: it adds an activity log entry, notifies plugins such as webhooks and scrobblers, records the sync time as the last played date when it keeps a position or marks the title played, and leaves play counts unchanged.
+Emby is expected to do the same.
+A stop isn't safe to repeat, so the sync never resends one the server has acknowledged: when a completed item's watched write fails, only that write is retried, a batch that fails part-way keeps the acknowledgements it already has, and only one sync sends at a time.
+A stop the server refuses outright (a 4xx other than 401, 408 or 429) counts as a rejection, so it no longer holds up the items behind it, and after the usual retries it leaves the queue.
+The exception is an item watched to the end: completed entries are kept so their watched state isn't lost, and are tried again at each sync.
+A sync asked for while another is sending runs once straight afterwards.
+An acknowledgement only counts once the queue has been saved: a stop whose answer never arrived, because the response was lost or the app closed before the queue was saved, stays queued and can be sent again.
+If the device is streaming from the same server at that moment, the server's now-playing entry for this device clears until the next progress report; other devices' sessions are untouched.
+Completion is separate for every movie and episode: reaching 90% of the duration, reaching a valid credits marker, or a verified natural end marks the item watched however little of it was watched.
+Seeking does not add a from-start requirement.
+Completion latches for the current item without stopping playback or triggering Next Up.
+Selected-file credits are preferred; loaded fallback credits apply when available.
+Missing or invalid markers fall back to the percentage rule.
+Silo, Emby and Jellyfin receive the actual playback position and a separate watched-state write, ordered after progress and final Stop; offline completion is also sent through the watched API at the next download sync (sign-in, a server or profile switch, foreground entry or a background refresh), not as soon as the network returns.
+In the other direction, Emby and Jellyfin downloads read each downloaded item's played state and resume position from the server at each download sync and when the Downloads tab opens, so watching online marks the download watched; items with offline progress still waiting to be sent keep their local state.
+This applies to the active server/profile, not cross-server watch-state replication.
+A premature stream end retains its observed position and does not count as a natural completion.
 
-Resume buttons show a short progress indicator and rounded-up minutes remaining, retaining the existing iOS colour. The series hero keeps its series-level season count, genres and facts when episode focus changes.
+Resume buttons show a short progress indicator and rounded-up minutes remaining, retaining the existing iOS colour.
+The series hero keeps its series-level season count, genres and facts when episode focus changes.
 
-On iOS, episode playback selectors display catalogue file/track metadata without waiting for the slower watch response, and reuse cached metadata while refreshing and warm only the two adjacent episodes after the active episode is ready. Other-season episode warming waits until the active selectors and adjacent playback metadata have resolved, and pauses during a new selector request. Request identity and account/profile checks reject stale results; refreshes do not overwrite manual version or track choices.
+On iOS, episode playback selectors display catalogue file/track metadata without waiting for the slower watch response, and reuse cached metadata while refreshing and warm only the two adjacent episodes after the active episode is ready.
+Other-season episode warming waits until the active selectors and adjacent playback metadata have resolved, and pauses during a new selector request.
+Request identity and account/profile checks reject stale results; refreshes do not overwrite manual version or track choices.
 
-Episode resume buttons on both platforms identify the playback target above the bar as S1 E46, without leading zeros. Home Continue Watching uses the same unpadded season and episode numbers. iOS episode cards follow the tvOS metadata order: episode number, title, overview and air date, with the runtime and white watched check in a dark pill beside the shorter in-artwork progress bar. Movie and episode cards place minutes remaining beside a shorter bar inside the artwork. Apple TV media cards and series episode cards use native `.card` focus; Spotlight retains its separate decorative outline. Resume progress stays inside the artwork button and moves with the native effect, as described in [focus ownership](../apple-tv-focus.md#current-tab-and-settings-ownership). On tvOS series shelves, the runtime/watched pill, shorter progress bar and remaining-time label share a row so they cannot overlap.
+Episode resume buttons on both platforms identify the playback target above the bar as S1 E46, without leading zeros.
+Home Continue Watching uses the same unpadded season and episode numbers. iOS episode cards follow the tvOS metadata order: episode number, title, overview and air date, with the runtime and white watched check in a dark pill beside the shorter in-artwork progress bar.
+Movie and episode cards place minutes remaining beside a shorter bar inside the artwork.
+Apple TV media cards and series episode cards use native `.card` focus; Spotlight retains its separate decorative outline.
+Resume progress stays inside the artwork button and moves with the native effect, as described in [focus ownership](../apple-tv-focus.md#current-tab-and-settings-ownership).
+On tvOS series shelves, the runtime/watched pill, shorter progress bar and remaining-time label share a row so they cannot overlap.
 
-Long-pressing a detail page's Play button offers Start Over when there's something to resume, using the existing restart action, and Shuffle on a series (see [Shuffle](README.md#shuffle)). Version selection is under the detail options menu, retaining Auto and individual files; on tvOS series pages this menu uses the three-dot More trigger. Audio and subtitle controls stay in the action row. Readout and selector layouts are described in [Apple TV detail pages](../apple-tv-browsing.md#detail-pages) and [mobile detail pages](../app-design.md#detail-pages-and-validation). The series More menu offers watched actions in Episode, Season, Series order, targeting the episode used by Play/Resume. On tvOS these follow Favourites in the same menu. Season pages also expose that episode’s watched action.
+Long-pressing a detail page's Play button offers Start Over when there's something to resume, using the existing restart action, and Shuffle on a series (see [Shuffle](README.md#shuffle)).
+Version selection is under the detail options menu, retaining Auto and individual files; on tvOS series pages this menu uses the three-dot More trigger.
+Audio and subtitle controls stay in the action row.
+Readout and selector layouts are described in [Apple TV detail pages](../apple-tv-browsing.md#detail-pages) and [mobile detail pages](../app-design.md#detail-pages-and-validation).
+The series More menu offers watched actions in Episode, Season, Series order, targeting the episode used by Play/Resume.
+On tvOS these follow Favourites in the same menu.
+Season pages also expose that episode’s watched action.
 
-Automatic session recovery preserves the latest play/pause intent instead of always starting the replacement stream. Speed settings remain pending while paused and are applied on explicit Play, because a non-zero AVPlayer rate also starts playback.
+Automatic session recovery preserves the latest play/pause intent instead of always starting the replacement stream.
+Speed settings remain pending while paused and are applied on explicit Play, because a non-zero AVPlayer rate also starts playback.
 
-Playback reports every ten seconds from the first frame and on exit; reports are ordered so an older request cannot overwrite the final position. Final playback progress is reported before session stop/cleanup. A successful write posts the refresh signal immediately so Home and detail views can request current resume state while teardown finishes. Successful watched/unwatched writes from detail pages use the same account/profile-scoped Home refresh signal. Home queues refreshes that arrive during an older fetch and rejects stale results on both iOS and tvOS.
+Playback reports every ten seconds from the first frame and on exit; reports are ordered so an older request cannot overwrite the final position.
+Final playback progress is reported before session stop/cleanup.
+A successful write posts the refresh signal immediately so Home and detail views can request current resume state while teardown finishes.
+Successful watched/unwatched writes from detail pages use the same account/profile-scoped Home refresh signal.
+Home queues refreshes that arrive during an older fetch and rejects stale results on both iOS and tvOS.
 
-The [Home refresh policy](../server-connections.md#home-refresh) defines the provider and platform timers alongside entry and watched-state updates. Preserve the fallback refresh when the final playback write fails, and do not send the same final progress twice.
+The [Home refresh policy](../server-connections.md#home-refresh) defines the provider and platform timers alongside entry and watched-state updates.
+Preserve the fallback refresh when the final playback write fails, and do not send the same final progress twice.
 
-PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, device and source. In particular, a receiver cannot be assumed to reproduce the sender's private authentication headers. Do not widen an advertised capability based only on a package upgrade or a successful build.
+PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, device and source.
+In particular, a receiver cannot be assumed to reproduce the sender's private authentication headers.
+Do not widen an advertised capability based only on a package upgrade or a successful build.
 
 ## Diagnostics and dependencies
 
-- `DEBUG` builds read two setup switches from the local launch environment: `VIVID_SHOW_SERVER_SETUP` opens server setup at launch on iPhone and iPad, and on Apple TV `VIVID_SETUP_SERVER_URL` fills an empty server setup address when it holds an `https` URL with a host. Neither embeds maintainer credentials or server addresses.
-- Keep development logs local, redacted and bounded. On-device diagnostics reports are described in [App design](../app-design.md#diagnostics-reports); they include playback failures and recent essential events but are never uploaded automatically. Do not expose credentials, source URLs, paths or subtitle contents in logs or report fields.
+- `DEBUG` builds read two setup switches from the local launch environment: `VIVID_SHOW_SERVER_SETUP` opens server setup at launch on iPhone and iPad, and on Apple TV `VIVID_SETUP_SERVER_URL` fills an empty server setup address when it holds an `https` URL with a host.
+  Neither embeds maintainer credentials or server addresses.
+- Keep development logs local, redacted and bounded.
+  On-device diagnostics reports are described in [App design](../app-design.md#diagnostics-reports); they include playback failures and recent essential events but are never uploaded automatically.
+  Do not expose credentials, source URLs, paths or subtitle contents in logs or report fields.
 - Classify typed failures using stable kinds, with an unknown fallback, rather than matching localised error text.
 - Read the shared media dependency from [project.yml](../../iosApp/project.yml) and [project-ios.yml](../../iosApp/project-ios.yml), with exact revisions and provenance in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
 - Keep the existing package graph and media-framework notices intact during documentation or branding work.
-- Follow [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) for dependency licensing, corresponding source and binary provenance. Inspect the actual archive and its source mapping before distributing a new binary.
+- Follow [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) for dependency licensing, corresponding source and binary provenance.
+  Inspect the actual archive and its source mapping before distributing a new binary.
 - Validate temporary media caches, data protection, cleanup and backup exclusions when changing storage or engine versions.
 
 ## Verification
 
-For relevant changes, record the source commit, engine/package revisions, build, device, OS, server/provider, media sample and observed result. Cover:
+For relevant changes, record the source commit, engine/package revisions, build, device, OS, server/provider, media sample and observed result.
+Cover:
 
 - startup, pause/resume, seeking, stopping and consecutive episodes;
 - source/session expiry, cancellation, reconnection and server/user switches;
@@ -192,6 +461,25 @@ For relevant changes, record the source commit, engine/package revisions, build,
 - route-specific HDR, surround audio, PiP and AirPlay where supported;
 - diagnostic redaction and signed-archive contents before distribution.
 
-State passed, failed, pending and not-run checks separately. Retain measured results under their original builds. Neither old audits nor this guide establish current format support or certify a release.
+State passed, failed, pending and not-run checks separately.
+Retain measured results under their original builds.
+Neither old audits nor this guide establish current format support or certify a release.
 
-Lucid applies general subtitle appearance and delay preferences to its native plain-text renderer and to downloaded subtitle overlays, with the renderer's options worked out from the overlay's drawing so both look the same. Authored ASS and bitmap subtitle styles stay intact. Automatic audio selection uses English when the requested language is unavailable, then the file default if English is also absent. A reload of the same item (quality change, session renewal, Silo replan or Retry) asks for the audio that's playing: the engine's track when its list lines up with the file's, otherwise the track the load asked for, since a transcode's single track is its ordinal 0 and not the file's first. A reload that carries the subtitle Auto chose keeps it Auto's choice, so switching audio afterwards still runs Auto again. Emby and Jellyfin progress reports send the playing audio's stream index and the playing subtitle's (a server file's stream index, an embedded stream's index when the file plays directly, or -1 for none or an OpenSubtitles file). On a transcode the audio, and an embedded subtitle, stay as the session asked for, since the engine's single audio track can't be matched to the file's. Missing automatic subtitle language matches leave subtitles off. The automatic subtitle choice waits until the load is established, so the engine has picked its audio track and Emby and Jellyfin subtitle files are mounted; it then holds for the item. Auto compares the subtitle language with the playing audio's stream tag, or, when the stream has no usable tag, with the catalogue language for that audio track. When the engine's track can't be matched to the catalogue (nothing selected, or a transcode whose audio tracks don't line up with the file's), it uses the audio ordinal from the Silo plan or the load request instead, unless the viewer has switched audio since the load. Only when no ordinal is left, or the ordinal doesn't name a catalogue track, does it use the file's only audio language. Audio whose language still can't be told gets the full track, as foreign audio does. An audio switch runs the automatic choice again with the new audio, in every mode, unless a subtitle was picked for the item. A Silo replan (an audio switch, quality change or route change) reloads the engine with subtitles off, so a picked embedded track is re-armed by its stream index and an automatic one is chosen again once the new tracks are in. After every load, the current subtitle style and delay, including an OpenSubtitles file's own offset, are applied to the new engine. Playback settings show Automatic buffering and omit the unused lossless-audio toggle. The tvOS detail subtitle control uses the same anchored native menu as More, with the selected Play episode/file as its inventory context. Intro, recap and credits actions share fixed bottom-trailing clearance and Liquid Glass styling on each platform.
+Lucid applies general subtitle appearance and delay preferences to its native plain-text renderer and to downloaded subtitle overlays, with the renderer's options worked out from the overlay's drawing so both look the same.
+Authored ASS and bitmap subtitle styles stay intact.
+Automatic audio selection uses English when the requested language is unavailable, then the file default if English is also absent.
+A reload of the same item (quality change, session renewal, Silo replan or Retry) asks for the audio that's playing: the engine's track when its list lines up with the file's, otherwise the track the load asked for, since a transcode's single track is its ordinal 0 and not the file's first.
+A reload that carries the subtitle Auto chose keeps it Auto's choice, so switching audio afterwards still runs Auto again.
+Emby and Jellyfin progress reports send the playing audio's stream index and the playing subtitle's (a server file's stream index, an embedded stream's index when the file plays directly, or -1 for none or an OpenSubtitles file).
+On a transcode the audio, and an embedded subtitle, stay as the session asked for, since the engine's single audio track can't be matched to the file's. Missing automatic subtitle language matches leave subtitles off.
+The automatic subtitle choice waits until the load is established, so the engine has picked its audio track and Emby and Jellyfin subtitle files are mounted; it then holds for the item.
+Auto compares the subtitle language with the playing audio's stream tag, or, when the stream has no usable tag, with the catalogue language for that audio track.
+When the engine's track can't be matched to the catalogue (nothing selected, or a transcode whose audio tracks don't line up with the file's), it uses the audio ordinal from the Silo plan or the load request instead, unless the viewer has switched audio since the load.
+Only when no ordinal is left, or the ordinal doesn't name a catalogue track, does it use the file's only audio language.
+Audio whose language still can't be told gets the full track, as foreign audio does.
+An audio switch runs the automatic choice again with the new audio, in every mode, unless a subtitle was picked for the item.
+A Silo replan (an audio switch, quality change or route change) reloads the engine with subtitles off, so a picked embedded track is re-armed by its stream index and an automatic one is chosen again once the new tracks are in.
+After every load, the current subtitle style and delay, including an OpenSubtitles file's own offset, are applied to the new engine.
+Playback settings show Automatic buffering and omit the unused lossless-audio toggle.
+The tvOS detail subtitle control uses the same anchored native menu as More, with the selected Play episode/file as its inventory context.
+Intro, recap and credits actions share fixed bottom-trailing clearance and Liquid Glass styling on each platform.

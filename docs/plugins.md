@@ -8,7 +8,11 @@
 
 ---
 
-Vivid works fine without plugins. TMDb is built in. MDBList and OpenSubtitles are optional connections to a free service, using your own personal key, and Simkl signs in with your Simkl account. Each adds something on top of your media server. This guide walks through setting each one up and what you get once it's connected.
+Vivid works fine without plugins.
+TMDb is built in.
+MDBList and OpenSubtitles are optional connections to a free service, using your own personal key, and Simkl signs in with your Simkl account.
+Each adds something on top of your media server.
+This guide walks through setting each one up and what you get once it's connected.
 
 <table width="100%">
   <thead>
@@ -25,7 +29,8 @@ Vivid works fine without plugins. TMDb is built in. MDBList and OpenSubtitles ar
 ## Before you start
 
 > [!IMPORTANT]
-> Sign in to your server and choose your profile before connecting a plugin. Each connection belongs to the server account and profile you're using, so another profile or saved account needs its own key.
+> Sign in to your server and choose your profile before connecting a plugin.
+> Each connection belongs to the server account and profile you're using, so another profile or saved account needs its own key.
 
 To find the plugins:
 
@@ -47,11 +52,15 @@ TMDb and OpenSubtitles come first, then MDBList and Simkl under **Watchlists**.
 </table>
 
 > [!TIP]
-> Keys are saved in Keychain and sync through Vivid's encrypted iCloud vault to your other iPhone, iPad and Apple TV for the same server account and profile. Set a plugin up on your iPhone or iPad and it comes through to Apple TV once it syncs, so you don't need to type a long key with the remote. Simkl is the exception: it signs in on each device with a short code, so there's no key to type.
+> Keys are saved in Keychain and sync through Vivid's encrypted iCloud vault to your other iPhone, iPad and Apple TV for the same server account and profile.
+> Set a plugin up on your iPhone or iPad and it comes through to Apple TV once it syncs, so you don't need to type a long key with the remote.
+> Simkl is the exception: it signs in on each device with a short code, so there's no key to type.
 
 ## TMDb
 
-TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. There's nothing to set up: Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Connected** with a green dot, and TMDb's logo and attribution. Vivid deletes any personal TMDb key an earlier version saved, for every saved profile on the device, and the deletion syncs to your other devices.
+TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid.
+There's nothing to set up: Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Connected** with a green dot, and TMDb's logo and attribution.
+Vivid deletes any personal TMDb key an earlier version saved, for every saved profile on the device, and the deletion syncs to your other devices.
 
 ### What you get
 
@@ -98,9 +107,16 @@ On Apple TV, the TMDb rating sits after the quality badges, trailers sit just ab
 
 <p align="center"><sub>These screenshots use sample text wordmarks in place of the real studio and network logos that the app shows.</sub></p>
 
-Studios & Networks is on from the start. Its first load happens while Vivid prepares Home after you sign in or set up a profile: Vivid reads your library, with the networks and studios your server lists for each title, and matches it with TMDb, downloading TMDb's lists at the same time, and Home opens once it's done, so the row is already there. On a large library that can take a minute or two. Home stops waiting after two minutes, or if the load fails, and the row then appears once it's ready. After that it loads straight away and refreshes daily. It chooses from Netflix, HBO, Apple TV, Disney+, Prime Video, Hulu, Peacock, Paramount+, Stan, BritBox, AMC, FX, Crunchyroll, Hallmark, Pixar, Marvel Studios, A24, Lucasfilm, DreamWorks, Studio Ghibli, Sony Pictures, Warner Bros., Universal, Walt Disney Pictures, DC and 20th Century Studios, and uses the 20 with the most matching titles in your library unless you pick your own. A studio or network only shows once at least six titles in your library match it.
+Studios & Networks is on from the start.
+Its first load happens while Vivid prepares Home after you sign in or set up a profile: Vivid reads your library, with the networks and studios your server lists for each title, and matches it with TMDb, downloading TMDb's lists at the same time, and Home opens once it's done, so the row is already there.
+On a large library that can take a minute or two.
+Home stops waiting after two minutes, or if the load fails, and the row then appears once it's ready.
+After that it loads straight away and refreshes daily.
+It chooses from Netflix, HBO, Apple TV, Disney+, Prime Video, Hulu, Peacock, Paramount+, Stan, BritBox, AMC, FX, Crunchyroll, Hallmark, Pixar, Marvel Studios, A24, Lucasfilm, DreamWorks, Studio Ghibli, Sony Pictures, Warner Bros., Universal, Walt Disney Pictures, DC and 20th Century Studios, and uses the 20 with the most matching titles in your library unless you pick your own.
+A studio or network only shows once at least six titles in your library match it.
 
-To choose your own, open **Settings → General** and choose **Studios & Networks** under the Home Screen heading. From there you can:
+To choose your own, open **Settings → General** and choose **Studios & Networks** under the Home Screen heading.
+From there you can:
 
 - turn **Show on Home** on or off
 - pick six to 20 from **Networks** and **Studios** (fewer only when fewer than six brands match your library)
@@ -108,26 +124,43 @@ To choose your own, open **Settings → General** and choose **Studios & Network
 
 ### Good to know
 
-- Trailers, ratings and collection rows need your server to have identified the title. Silo needs a TMDb ID. Emby and Jellyfin can also use an IMDb ID, which Vivid looks up on TMDb. TMDb's Studios & Networks lists, and the other films in a collection row, are matched with your library by TMDb ID where your server lists one, and otherwise by exact title and year. All in Your Library also has every title your server tags with that network or studio, even one with no TMDb ID or year.
+- Trailers, ratings and collection rows need your server to have identified the title.
+  Silo needs a TMDb ID.
+  Emby and Jellyfin can also use an IMDb ID, which Vivid looks up on TMDb.
+  TMDb's Studios & Networks lists, and the other films in a collection row, are matched with your library by TMDb ID where your server lists one, and otherwise by exact title and year.
+  All in Your Library also has every title your server tags with that network or studio, even one with no TMDb ID or year.
 - More Like This comes from your server and works without TMDb.
-- Collection names and the Calendar's Trending titles and overviews come back in Vivid's language when TMDb has a translation, and in English when it doesn't. Studios & Networks stays in English. MDBList and OpenSubtitles messages follow Vivid's language too. Simkl's page and messages are in English for now. See [Localisation](localisation.md).
+- Collection names and the Calendar's Trending titles and overviews come back in Vivid's language when TMDb has a translation, and in English when it doesn't. Studios & Networks stays in English.
+  MDBList and OpenSubtitles messages follow Vivid's language too.
+  Simkl's page and messages are in English for now.
+  See [Localisation](localisation.md).
 - This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 ### If something goes wrong
 
-- **No trailers, ratings or Studios & Networks.** Check you're signed in to a server and have chosen a profile. If you have, Vivid's TMDb relay may be busy or over its daily limit, so try again later.
-- **No trailers on Apple TV.** Install the YouTube app from the App Store.
-- **Studios & Networks stopped loading after Vivid closed while it loaded.** If Vivid closes twice in a row while Studios & Networks is loading, it stops loading on its own so Vivid can still open. With no row saved yet, choose **Try Again** in **Settings → General → Studios & Networks**. Otherwise it tries again a day later, or after an app update.
+- **No trailers, ratings or Studios & Networks.**
+  Check you're signed in to a server and have chosen a profile.
+  If you have, Vivid's TMDb relay may be busy or over its daily limit, so try again later.
+- **No trailers on Apple TV.**
+  Install the YouTube app from the App Store.
+- **Studios & Networks stopped loading after Vivid closed while it loaded.**
+  If Vivid closes twice in a row while Studios & Networks is loading, it stops loading on its own so Vivid can still open.
+  With no row saved yet, choose **Try Again** in **Settings → General → Studios & Networks**.
+  Otherwise it tries again a day later, or after an app update.
 
 ## MDBList
 
-MDBList keeps your watched history and a watchlist in one place that other apps can use too. Vivid sends your finished movies and episodes to it and keeps your watchlist in sync both ways.
+MDBList keeps your watched history and a watchlist in one place that other apps can use too.
+Vivid sends your finished movies and episodes to it and keeps your watchlist in sync both ways.
 
 ### Set it up
 
-1. Sign in at [mdblist.com](https://mdblist.com). It's free.
-2. Open [Preferences](https://mdblist.com/preferences/) and copy your API key. If there isn't one yet, generate it there.
-3. In Vivid, open **Settings → Plugins → MDBList**. On iPhone and iPad, **Get your free API key** opens the same page.
+1. Sign in at [mdblist.com](https://mdblist.com).
+   It's free.
+2. Open [Preferences](https://mdblist.com/preferences/) and copy your API key.
+   If there isn't one yet, generate it there.
+3. In Vivid, open **Settings → Plugins → MDBList**.
+   On iPhone and iPad, **Get your free API key** opens the same page.
 4. Paste it into **MDBList API key** (on Apple TV, **Personal API key**) and choose **Connect**.
 5. Status shows **Connected** with a green dot, and the first sync starts straight away.
 
@@ -156,40 +189,59 @@ MDBList keeps your watched history and a watchlist in one place that other apps 
   </tbody>
 </table>
 
-This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV. The Emby and Jellyfin logos on the MDBList page show that MDBList also works with those servers. Vivid itself only connects to MDBList.
+This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
+The Emby and Jellyfin logos on the MDBList page show that MDBList also works with those servers.
+Vivid itself only connects to MDBList.
 
 ### What it doesn't do
 
-- It doesn't bring history from MDBList into Vivid or your server. Watched status and resume points still come from your server.
-- Marking a whole season or series as watched isn't sent. The individual episodes you finish are.
+- It doesn't bring history from MDBList into Vivid or your server.
+  Watched status and resume points still come from your server.
+- Marking a whole season or series as watched isn't sent.
+  The individual episodes you finish are.
 - Marking something unwatched doesn't remove it from MDBList.
 - Disconnecting keeps your existing history and watchlist on MDBList.
 
 ### If something goes wrong
 
-- **"Check your MDBList API key and try again."** Copy the key again from your MDBList Preferences.
-- **"MDBList's request limit was reached. Sync will try again later."** Vivid waits an hour before trying again, and **Sync now** waits too.
-- **"Sync finished. … watched items could not be matched or confirmed and will be retried."** Vivid matches watched items by their TMDb or IMDb ID (or TVDB for episodes), so titles your server hasn't identified stay unmatched and are tried again later.
-- **A watchlist title from MDBList doesn't appear in Vivid.** Vivid only adds it when it finds the same title on your server by name and ID. If your server names it differently, it stays unmatched and is tried again later.
-- **"This batch is synced. More watchlist changes remain for the next check."** Each sync changes up to 32 watchlist titles, so a large first sync carries on at the next check, about ten minutes later.
+- **"Check your MDBList API key and try again."**
+  Copy the key again from your MDBList Preferences.
+- **"MDBList's request limit was reached.
+  Sync will try again later."**
+  Vivid waits an hour before trying again, and **Sync now** waits too.
+- **"Sync finished. … watched items could not be matched or confirmed and will be retried."**
+  Vivid matches watched items by their TMDb or IMDb ID (or TVDB for episodes), so titles your server hasn't identified stay unmatched and are tried again later.
+- **A watchlist title from MDBList doesn't appear in Vivid.**
+  Vivid only adds it when it finds the same title on your server by name and ID.
+  If your server names it differently, it stays unmatched and is tried again later.
+- **"This batch is synced.
+  More watchlist changes remain for the next check."**
+  Each sync changes up to 32 watchlist titles, so a large first sync carries on at the next check, about ten minutes later.
 
 ## Simkl
 
-Simkl tracks the movies, shows and anime you watch, and keeps a Plan to Watch list. Vivid sends your finished movies and episodes to Simkl and keeps Plan to Watch in step with your Vivid watchlist.
+Simkl tracks the movies, shows and anime you watch, and keeps a Plan to Watch list.
+Vivid sends your finished movies and episodes to Simkl and keeps Plan to Watch in step with your Vivid watchlist.
 
 ### Set it up
 
 1. Create a free account at [simkl.com](https://simkl.com) if you don't have one.
 2. In Vivid, open **Settings > Plugins > Simkl** and choose **Sign in with Simkl**.
 3. Approve Vivid on Simkl:
-   - **iPhone and iPad:** Vivid shows your code. Choose **Open Simkl** to approve it in your browser, where the code is usually filled in (if it isn't, enter the code Vivid shows), or go to [simkl.com/pin](https://simkl.com/pin) on another device and enter it. Sign in, allow Vivid, then come back to Vivid.
+   - **iPhone and iPad:** Vivid shows your code.
+     Choose **Open Simkl** to approve it in your browser, where the code is usually filled in (if it isn't, enter the code Vivid shows), or go to [simkl.com/pin](https://simkl.com/pin) on another device and enter it.
+     Sign in, allow Vivid, then come back to Vivid.
    - **Apple TV:** scan the QR code with your phone, or go to [simkl.com/pin](https://simkl.com/pin) on any device and enter the code shown.
 4. Status shows **Connected** with a green dot, and the first sync starts straight away.
 
 > [!NOTE]
-> Simkl signs in on each device separately. Simkl ends a sign-in's old access each time it's renewed, so one sign-in shared between devices would keep cutting the others off. The sign-in stays in that device's Keychain and isn't synced through iCloud, so sign in on your iPhone, iPad and Apple TV one at a time. Each one only takes a code.
+> Simkl signs in on each device separately.
+> Simkl ends a sign-in's old access each time it's renewed, so one sign-in shared between devices would keep cutting the others off.
+> The sign-in stays in that device's Keychain and isn't synced through iCloud, so sign in on your iPhone, iPad and Apple TV one at a time.
+> Each one only takes a code.
 
-Vivid never sees your Simkl password. It asks Simkl for permission to read and update your lists, and the code stops working after 15 minutes.
+Vivid never sees your Simkl password.
+It asks Simkl for permission to read and update your lists, and the code stops working after 15 minutes.
 
 ### What you get
 
@@ -209,9 +261,12 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 
 ### What it doesn't do
 
-- It doesn't bring history from Simkl into Vivid or your server. Watched status and resume points still come from your server.
-- It doesn't send what you watched before connecting. Only what you finish after that is sent.
-- Marking a whole season or series as watched isn't sent. The individual episodes you finish are.
+- It doesn't bring history from Simkl into Vivid or your server.
+  Watched status and resume points still come from your server.
+- It doesn't send what you watched before connecting.
+  Only what you finish after that is sent.
+- Marking a whole season or series as watched isn't sent.
+  The individual episodes you finish are.
 - Marking something unwatched doesn't remove it from Simkl.
 - It never moves a title Simkl already has as Watching, Completed, On Hold or Dropped back to Plan to Watch, and never removes a title you've watched any of.
 - Ratings, rewatches, live "now watching" scrobbling and custom lists aren't synced.
@@ -219,16 +274,45 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 
 ### If something goes wrong
 
-- **"The Simkl code expired. Sign in again to get a new one."** The code lasts 15 minutes. Choose **Sign in with Simkl** again.
-- **"Simkl didn't allow Vivid to update your lists. Sign in again and allow access."** Vivid needs permission to update your lists as well as read them. Sign in again and allow it.
-- **"Your Simkl sign-in has ended. Sign in again to keep syncing."** Vivid was removed from Simkl's Connected Apps, or the sign-in went unused for six months. Sign in again. Vivid carries on from where it was for the same Simkl account.
-- **"Simkl's daily request limit was reached. Sync will continue after it resets."** Simkl gives each account a daily request allowance, shared by every app you've connected to it. Vivid stops a little before it runs out and carries on after Simkl resets it at midnight US Eastern time.
-- **"Simkl is unavailable. Sync will try again later."** Vivid couldn't reach Simkl, or Simkl had a problem. Vivid waits before checking again, 5 minutes at first and longer each time it fails in a row, up to 2 hours, even if you open it again. Choose **Sync now** to try straight away.
-- **"Simkl is busy. Sync will try again shortly."** Simkl asked Vivid to slow down. It checks again in 5 minutes.
-- **"Simkl is limiting requests from Vivid. Sync will try again later."** Simkl has paused Vivid's access for now. Vivid waits six hours before trying again, and **Sync now** waits too.
-- **"Sync finished. … watched items could not be matched or confirmed and will be retried."** Vivid matches by TMDb, IMDb or TVDB ID, so titles your server hasn't identified stay unmatched. They're tried a few more times, then left.
-- **A Plan to Watch title from Simkl doesn't appear in Vivid.** Vivid only adds it when it finds the same title on your server by name and ID. If your server names it differently, it stays unmatched and is tried again the next day.
-- **You also use a Simkl plugin on Emby or Jellyfin.** Both can send the same watch. Simkl ignores a watch it already has, so you won't see it twice.
+- **"The Simkl code expired.
+  Sign in again to get a new one."**
+  The code lasts 15 minutes.
+  Choose **Sign in with Simkl** again.
+- **"Simkl didn't allow Vivid to update your lists.
+  Sign in again and allow access."**
+  Vivid needs permission to update your lists as well as read them.
+  Sign in again and allow it.
+- **"Your Simkl sign-in has ended.
+  Sign in again to keep syncing."**
+  Vivid was removed from Simkl's Connected Apps, or the sign-in went unused for six months.
+  Sign in again.
+  Vivid carries on from where it was for the same Simkl account.
+- **"Simkl's daily request limit was reached.
+  Sync will continue after it resets."**
+  Simkl gives each account a daily request allowance, shared by every app you've connected to it.
+  Vivid stops a little before it runs out and carries on after Simkl resets it at midnight US Eastern time.
+- **"Simkl is unavailable.
+  Sync will try again later."**
+  Vivid couldn't reach Simkl, or Simkl had a problem.
+  Vivid waits before checking again, 5 minutes at first and longer each time it fails in a row, up to 2 hours, even if you open it again.
+  Choose **Sync now** to try straight away.
+- **"Simkl is busy.
+  Sync will try again shortly."**
+  Simkl asked Vivid to slow down.
+  It checks again in 5 minutes.
+- **"Simkl is limiting requests from Vivid.
+  Sync will try again later."**
+  Simkl has paused Vivid's access for now.
+  Vivid waits six hours before trying again, and **Sync now** waits too.
+- **"Sync finished. … watched items could not be matched or confirmed and will be retried."**
+  Vivid matches by TMDb, IMDb or TVDB ID, so titles your server hasn't identified stay unmatched.
+  They're tried a few more times, then left.
+- **A Plan to Watch title from Simkl doesn't appear in Vivid.**
+  Vivid only adds it when it finds the same title on your server by name and ID.
+  If your server names it differently, it stays unmatched and is tried again the next day.
+- **You also use a Simkl plugin on Emby or Jellyfin.**
+  Both can send the same watch.
+  Simkl ignores a watch it already has, so you won't see it twice.
 
 ## OpenSubtitles
 
@@ -238,11 +322,13 @@ OpenSubtitles lets you search for and download subtitles when your server doesn'
 
 1. Create a free account at [opensubtitles.com](https://www.opensubtitles.com) and sign in.
 2. Open [API consumers](https://www.opensubtitles.com/en/consumers), create a new consumer (call it something like Vivid) and copy its API key.
-3. In Vivid, open **Settings → Plugins → OpenSubtitles**. On iPhone and iPad, **Get your API key** opens the same page.
+3. In Vivid, open **Settings → Plugins → OpenSubtitles**.
+   On iPhone and iPad, **Get your API key** opens the same page.
 4. Paste it into **OpenSubtitles API key** (on Apple TV, **Personal API key**) and choose **Save Connection**.
 5. Status shows **Connected** with a green dot.
 
-Vivid only needs the API key. It never asks for your OpenSubtitles username or password.
+Vivid only needs the API key.
+It never asks for your OpenSubtitles username or password.
 
 <table width="100%">
   <thead>
@@ -274,22 +360,41 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 
 ### Good to know
 
-- Each download counts towards OpenSubtitles' download limit. Vivid connects with the API key only and doesn't sign in to your OpenSubtitles account, so account allowances don't apply.
-- Searches use the title, plus the season and episode for episodes. They don't match your exact file, so choose a release that matches yours. If the timing is still off on Apple TV, use **Subtitle Delay** in the player settings. It moves that subtitle up to 10 seconds either way and remembers the setting. iPhone and iPad don't have a subtitle delay control yet.
-- Downloaded subtitles stay on your device. Nothing is uploaded to your server.
+- Each download counts towards OpenSubtitles' download limit.
+  Vivid connects with the API key only and doesn't sign in to your OpenSubtitles account, so account allowances don't apply.
+- Searches use the title, plus the season and episode for episodes.
+  They don't match your exact file, so choose a release that matches yours.
+  If the timing is still off on Apple TV, use **Subtitle Delay** in the player settings.
+  It moves that subtitle up to 10 seconds either way and remembers the setting. iPhone and iPad don't have a subtitle delay control yet.
+- Downloaded subtitles stay on your device.
+  Nothing is uploaded to your server.
 - Disconnecting removes the key for this server and profile and forgets the subtitle Vivid remembered for each title.
-- Subtitles your Silo server stores for a file (downloaded, uploaded or made by Silo's AI) don't need the plugin. They're listed in the Subtitles menus with the file's own tracks.
+- Subtitles your Silo server stores for a file (downloaded, uploaded or made by Silo's AI) don't need the plugin.
+  They're listed in the Subtitles menus with the file's own tracks.
 
 ### If something goes wrong
 
-- **"Check your OpenSubtitles API key. An account may be required by OpenSubtitles for this download."** Copy the key again from your API consumers page.
-- **"OpenSubtitles' download or request limit has been reached. Try again after your quota resets."** You've used your downloads for now. Try again once OpenSubtitles resets your limit.
-- **"Connect OpenSubtitles in Settings → Plugins before searching for subtitles."** This profile isn't connected yet. Each profile needs its own connection.
-- **"The connection or playing item changed. Please search again." when saving or disconnecting the key.** Sign in to a server and choose your profile first, then try again.
-- **"No subtitles found. Try another title or language."** Try the original title, or another language.
+- **"Check your OpenSubtitles API key.
+  An account may be required by OpenSubtitles for this download."**
+  Copy the key again from your API consumers page.
+- **"OpenSubtitles' download or request limit has been reached.
+  Try again after your quota resets."**
+  You've used your downloads for now.
+  Try again once OpenSubtitles resets your limit.
+- **"Connect OpenSubtitles in Settings → Plugins before searching for subtitles."**
+  This profile isn't connected yet.
+  Each profile needs its own connection.
+- **"The connection or playing item changed.
+  Please search again." when saving or disconnecting the key.**
+  Sign in to a server and choose your profile first, then try again.
+- **"No subtitles found.
+  Try another title or language."**
+  Try the original title, or another language.
 
 ## More detail
 
 Screenshots are from iPhone and Apple TV. iPad looks much the same as iPhone.
 
-[Server Connections](server-connections.md#plugins-on-iphone-ipad-and-apple-tv) covers how plugin keys sync, what's stored on each device and current verification limits. Seerr requests aren't a plugin: they have their own **Settings → Seerr** page, covered in [Server Connections](server-connections.md#optional-seerr-requests-on-apple-tv-iphone-and-ipad). The in-app Privacy Policy under **Settings → About** explains what TMDb, MDBList, Simkl and OpenSubtitles receive.
+[Server Connections](server-connections.md#plugins-on-iphone-ipad-and-apple-tv) covers how plugin keys sync, what's stored on each device and current verification limits.
+Seerr requests aren't a plugin: they have their own **Settings → Seerr** page, covered in [Server Connections](server-connections.md#optional-seerr-requests-on-apple-tv-iphone-and-ipad).
+The in-app Privacy Policy under **Settings → About** explains what TMDb, MDBList, Simkl and OpenSubtitles receive.
