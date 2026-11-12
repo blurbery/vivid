@@ -50,6 +50,10 @@ extension TVMainTabView {
         /// gaining focus opened without one while the tab losing it closed
         /// with one, so the bar jumped.
         @State private var shownFocus: Item?
+        /// A tab that was just chosen and whose page hasn't opened yet. The
+        /// bar closes around it first and the page follows, because closing
+        /// while the page was being built made the close stutter.
+        @State private var pendingRoot: Root?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         enum Item: Hashable {
@@ -91,7 +95,7 @@ extension TVMainTabView {
                 if !isFocused { focus = nil }
             }
             .onChange(of: focus) {
-                withAnimation(tabAnimation) { shownFocus = focus }
+                followFocus()
                 isFocused = focus != nil
                 if focus == nil { onContentHandOff() }
             }
@@ -105,7 +109,9 @@ extension TVMainTabView {
                 utility(leadingUtility)
                 divider
                 ForEach(roots, id: \.self) { root in
-                    rootTab(root)
+                    if showsTab(root) {
+                        rootTab(root).transition(tabTransition)
+                    }
                 }
                 divider
                 utility(swapsUtilities ? .search : .profile)
@@ -125,7 +131,9 @@ extension TVMainTabView {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: VividTheme.Skyline.tabSpacing) {
                             ForEach(roots, id: \.self) { root in
-                                rootTab(root).id(root)
+                                if showsTab(root) {
+                                    rootTab(root).id(root).transition(tabTransition)
+                                }
                             }
                         }
                     }
@@ -161,6 +169,16 @@ extension TVMainTabView {
             return appearing ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
         }
 
+        /// While focus is below the bar it closes to Search, the selected
+        /// tab and the avatar; the other tabs come back once it has focus.
+        private func showsTab(_ root: Root) -> Bool {
+            shownFocus != nil || root == displayedRoot
+        }
+
+        private var tabTransition: AnyTransition {
+            reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.5))
+        }
+
         private var divider: some View {
             Rectangle()
                 .fill(Color.white.opacity(0.22))
@@ -172,7 +190,7 @@ extension TVMainTabView {
         // MARK: Items
 
         private func rootTab(_ root: Root) -> some View {
-            let isSelected = root == selectedRoot
+            let isSelected = root == displayedRoot
             let isItemFocused = shownFocus == .root(root)
             let inverted = isItemFocused || (isSelected && shownFocus == nil)
             let position = (roots.firstIndex(of: root) ?? 0) + 1
@@ -294,8 +312,27 @@ extension TVMainTabView {
 
         // MARK: Actions
 
+        /// The tab the bar draws as selected.
+        private var displayedRoot: Root { pendingRoot ?? selectedRoot }
+
+        private func followFocus() {
+            withAnimation(tabAnimation) { shownFocus = focus }
+        }
+
         private func select(_ root: Root) {
+            guard root != selectedRoot, !reduceMotion else {
+                open(root)
+                return
+            }
+            guard pendingRoot == nil else { return }
+            pendingRoot = root
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.92)) { shownFocus = nil }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) { open(root) }
+        }
+
+        private func open(_ root: Root) {
             onSelect(root)
+            pendingRoot = nil
             DispatchQueue.main.async { focus = nil }
         }
 
