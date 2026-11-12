@@ -66,7 +66,7 @@ struct TVCalendarView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.top, VividTheme.Skyline.barTopInset + 92)
+        .padding(.top, VividTheme.Skyline.barTopInset + 82)
         .task(id: "\(tmdb.contextKey):\(page.rawValue)") {
             switch page {
             case .upcoming: await store.loadUpcoming()

@@ -49,6 +49,18 @@ struct TVMainTabView: View {
             }
         }
 
+        /// The symbol the bar shows while the tab is neither selected nor
+        /// focused, the same one as on iPhone and iPad.
+        var symbol: String {
+            switch self {
+            case .home: AppTab.home.icon
+            case .forYou: AppTab.recommendations.icon
+            case .calendar: AppTab.calendar.icon
+            case .library(.movies): PrimaryMenuBuiltin.movies.navigationIcon
+            case .library(.series): PrimaryMenuBuiltin.series.navigationIcon
+            }
+        }
+
         var accessibilityHint: Text {
             switch self {
             case .forYou: Text("Open Watchlist, Favourites, or Collections")
@@ -267,7 +279,8 @@ struct TVMainTabView: View {
             onSearch: openSearch,
             onProfile: openSettings,
             onContentHandOff: handOffToContent,
-            onExit: selectedRoot == .home ? nil : returnHomeInBar
+            onExit: selectedRoot == .home ? nil : returnHomeInBar,
+            isCovered: !router.path.isEmpty || router.presentedPlayer != nil
         )
     }
 
