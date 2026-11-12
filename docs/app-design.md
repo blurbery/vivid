@@ -8,14 +8,18 @@
 
 ---
 
-Vivid's interface should stay clear, consistent and responsive on Apple devices. Artwork provides the visual variety; the surrounding controls use restrained colours and readable contrast.
+Vivid's interface should stay clear, consistent and responsive on Apple devices.
+Artwork provides the visual variety; the surrounding controls use restrained colours and readable contrast.
 
 ## Design ownership
 
 > [!IMPORTANT]
-> **Only blurbery approves Vivid’s design.** Do not change the app’s visual or interaction design, branding, animations or documentation layout without blurbery’s prior, explicit approval. Contributors and AI tools must preserve the approved design.
+> **Only blurbery approves Vivid’s design.**
+> Do not change the app’s visual or interaction design, branding, animations or documentation layout without blurbery’s prior, explicit approval.
+> Contributors and AI tools must preserve the approved design.
 
-Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership). Reference the owner’s approval in any PR that changes the design; unapproved design changes must not be merged.
+Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership).
+Reference the owner’s approval in any PR that changes the design; unapproved design changes must not be merged.
 
 ## Source of truth
 
@@ -38,137 +42,520 @@ Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership). Refer
   </tbody>
 </table>
 
-`Aurora` is an existing source name. Use the current tokens and components instead of copying values from another app, platform or old mockup. Renaming code symbols is separate implementation work.
+`Aurora` is an existing source name.
+Use the current tokens and components instead of copying values from another app, platform or old mockup.
+Renaming code symbols is separate implementation work.
 
 ## Appearance
 
 - Keep the content, selected action and current focus easy to distinguish.
-- Use charcoal and black where appropriate, with readable foreground contrast. Vivid's approved silver logo works on light and dark backgrounds.
-- Settings > General > Language is the first row on iPhone, iPad and Apple TV, and Apple TV's General page opens on it. It offers System and the six supported languages, each named in its own language, and takes effect after Vivid is reopened. See [Localisation](localisation.md).
-- Settings → General → Themes offers Graphite, Black and Native. Graphite is the default and preserves the existing gradient; Black uses a solid black page canvas. Native retains dark appearance and uses the same static mesh gradient on iPhone, iPad and Apple TV, with the approved blue-grey and warm charcoal colours sampled from the tvOS 27 backdrop. An explicit shared palette avoids differences between transparent system hosting backgrounds. The backdrop has no animation, image loading or live blur. Apple TV's Theme Mode is separate from the theme and fades between colours under any of the three themes: Spotlight Only follows the Home spotlight's slides, and Adaptive follows whatever has focus on the root pages. The choice uses a stable app-defaults key that survives in-place app updates, independently of server and profile, so the loading logo, handoff, the saved-profile picker, sign-in, Settings and browsing pages use it before login. Artwork and playback controls remain visible; playback retains its black canvas. iOS detail pages are independent of Themes and retain their original artwork-colour and glass surfaces under Graphite, Black and Native. On Apple TV the group is called Appearance: its first row, Base Theme, is this choice, and its second, Theme Mode, offers Off, Spotlight Only and Adaptive, described in [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight). Both rows carry a one-line description, and Theme Mode's description changes with the chosen mode. The group has no footer.
-- Theme-aware documentation assets do not mean the entire app supports automatic light/dark appearance. Apple TV setup uses the silver Vivid mark and neutral controls; startup assembles its two vector pieces with the Glide animation.
+- Use charcoal and black where appropriate, with readable foreground contrast.
+  Vivid's approved silver logo works on light and dark backgrounds.
+- Settings > General > Language is the first row on iPhone, iPad and Apple TV, and Apple TV's General page opens on it.
+  It offers System and the six supported languages, each named in its own language, and takes effect after Vivid is reopened.
+  See [Localisation](localisation.md).
+- Settings → General → Themes offers Graphite, Black and Native.
+  Graphite is the default and preserves the existing gradient; Black uses a solid black page canvas.
+  Native retains dark appearance and uses the same static mesh gradient on iPhone, iPad and Apple TV, with the approved blue-grey and warm charcoal colours sampled from the tvOS 27 backdrop.
+  An explicit shared palette avoids differences between transparent system hosting backgrounds.
+  The backdrop has no animation, image loading or live blur.
+  Apple TV's Theme Mode is separate from the theme and fades between colours under any of the three themes: Spotlight Only follows the Home spotlight's slides, and Adaptive follows whatever has focus on the root pages.
+  The choice uses a stable app-defaults key that survives in-place app updates, independently of server and profile, so the loading logo, handoff, the saved-profile picker, sign-in, Settings and browsing pages use it before login.
+  Artwork and playback controls remain visible; playback retains its black canvas. iOS detail pages are independent of Themes and retain their original artwork-colour and glass surfaces under Graphite, Black and Native.
+  On Apple TV the group is called Appearance: its first row, Base Theme, is this choice, and its second, Theme Mode, offers Off, Spotlight Only and Adaptive, described in [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight).
+  Both rows carry a one-line description, and Theme Mode's description changes with the chosen mode.
+  The group has no footer.
+- Theme-aware documentation assets do not mean the entire app supports automatic light/dark appearance.
+  Apple TV setup uses the silver Vivid mark and neutral controls; startup assembles its two vector pieces with the Glide animation.
 - Preserve aspect ratios, truncation rules and stable layout as artwork loads.
-- On Home, Continue Watching and Next Up cards show an episode's series background (on Emby and Jellyfin, the episode's own backdrop if it has one) and a movie's own background, on iPhone, iPad and Apple TV. The Home spotlight shows the same background for a slide, so an episode from those rows doesn't fill the spotlight with its episode still. For You, the player's On Deck and series pages keep episode stills.
+- On Home, Continue Watching and Next Up cards show an episode's series background (on Emby and Jellyfin, the episode's own backdrop if it has one) and a movie's own background, on iPhone, iPad and Apple TV.
+  The Home spotlight shows the same background for a slide, so an episode from those rows doesn't fill the spotlight with its episode still.
+  For You, the player's On Deck and series pages keep episode stills.
 - Reuse spacing, corner radius, typography and motion tokens from the implementation.
 - Support readable text, meaningful accessibility labels and Reduce Motion.
 
 ## Apple TV layout
 
-Home uses the discovery spotlight and collection-based media rows described in [Apple TV Browsing](apple-tv-browsing.md). The spotlight is 785 points tall, with rounded sliding cards shown one at a time, and the logo, metadata and overview on the left, lined up with the detail pages' logo. Its native focus targets use a fixed decorative gradient outline, without focus enlargement, parallax or a blurred colour glow. Ordinary media cards retain native `.card` focus. Server artwork uses subject-aware cropping; Spotlight makes no TMDb requests. Root pages share the selected static theme canvas, except Home's first screen with Theme Mode on Spotlight Only and a spotlight on Home, and every root page with Theme Mode on Adaptive, and a tab bar that hangs from the top edge like a notch, with Search and Profile dividers, without a separate corner logo.
+Home uses the discovery spotlight and collection-based media rows described in [Apple TV Browsing](apple-tv-browsing.md).
+The spotlight is 785 points tall, with rounded sliding cards shown one at a time, and the logo, metadata and overview on the left, lined up with the detail pages' logo.
+Its native focus targets use a fixed decorative gradient outline, without focus enlargement, parallax or a blurred colour glow.
+Ordinary media cards retain native `.card` focus.
+Server artwork uses subject-aware cropping; Spotlight makes no TMDb requests.
+Root pages share the selected static theme canvas, except Home's first screen with Theme Mode on Spotlight Only and a spotlight on Home, and every root page with Theme Mode on Adaptive, and a tab bar that hangs from the top edge like a notch, with Search and Profile dividers, without a separate corner logo.
 
-Movies, Series and For You are independent pages with sub-tabs. Settings opens categories as separate pages on the selected theme canvas, with grey panels, inset dividers and outlined icon tiles, retaining TV-sized controls and white focus highlights. On Apple TV every fixed Settings font size, spacing, corner radius and width is drawn at 1.25 times its original design size through `TVSettingsLayout.scale`, keeping the same proportions while reading from across the room; the few labels that use tvOS system text styles keep those styles. That gives 33-point row titles, 30-point values, 24-point descriptions and footers and 23-point section headers in a 1,015-point column. The Profiles panel and page follow that scale inside Settings, and the Who’s watching profile row keeps its own size. Account settings uses the same canvas and labelled fields, while profile selection uses circular account cards. More Like This on tvOS uses Home’s Large poster size. TV captions use one local server/profile setting across Search, Home, Movies, Series, For You, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only. Titles use 20-point text and secondary captions use 18-point text, both left aligned; episodes substitute episode details for the year and keep them with Title Only, because their title is the series name. Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line. Search keeps seven columns across the safe-area width with reduced spacing below its result tabs.
+Movies, Series and For You are independent pages with sub-tabs.
+Settings opens categories as separate pages on the selected theme canvas, with grey panels, inset dividers and outlined icon tiles, retaining TV-sized controls and white focus highlights.
+On Apple TV every fixed Settings font size, spacing, corner radius and width is drawn at 1.25 times its original design size through `TVSettingsLayout.scale`, keeping the same proportions while reading from across the room; the few labels that use tvOS system text styles keep those styles.
+That gives 33-point row titles, 30-point values, 24-point descriptions and footers and 23-point section headers in a 1,015-point column.
+The Profiles panel and page follow that scale inside Settings, and the Who’s watching profile row keeps its own size.
+Account settings uses the same canvas and labelled fields, while profile selection uses circular account cards.
+More Like This on tvOS uses Home’s Large poster size.
+TV captions use one local server/profile setting across Search, Home, Movies, Series, For You, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only.
+Titles use 20-point text and secondary captions use 18-point text, both left aligned; episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
+Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
+Search keeps seven columns across the safe-area width with reduced spacing below its result tabs.
 
-Detail pages keep their credit, playback-readout and action rows at fixed baselines through loading and episode changes. Long-pressing Play or Resume opens a native context menu: Start Over when there's something to resume, and Shuffle on a series page. This works on iPhone, iPad, the Duo and Apple TV. On iPhone and the Duo's outer screen, the row under Play holds Favourite, Watchlist, Watched, Shuffle (series only) and Download as captioned 52-point circles, 14 points apart and centred, over a hairline. A long caption widens its slot; when the row doesn't fit (a narrow window or long translations) the gaps close first, then the slots narrow, never below the circle, and captions scale down or, in very narrow windows, truncate. Episode resume progress sits inside the native artwork button and moves with its focus effect. The button owns its focus binding, accessibility description and context actions. Media cards use native `.card` styling; playback readouts retain their existing equal-width icon layout. Browsing cards retain their watched badges; episode information removes the old NOW VIEWING label and green-check styling. Long descriptions open separately; they must not push the action row down. Movie and series pages replace the old Details row with Media Information: separate Video & File and Audio glass panels. Video & File uses at most five equal-width columns; each audio track uses at most four. Column count shrinks for sparse panels, but an incomplete final row retains the same column alignment. Settings headings remain white at 50 points on Apple TV (40 at the original design size, drawn through `TVSettingsLayout.scale`), with the shared “© 2026 Vivid™” footer.
+Detail pages keep their credit, playback-readout and action rows at fixed baselines through loading and episode changes.
+Long-pressing Play or Resume opens a native context menu: Start Over when there's something to resume, and Shuffle on a series page.
+This works on iPhone, iPad, the Duo and Apple TV.
+On iPhone and the Duo's outer screen, the row under Play holds Favourite, Watchlist, Watched, Shuffle (series only) and Download as captioned 52-point circles, 14 points apart and centred, over a hairline.
+A long caption widens its slot; when the row doesn't fit (a narrow window or long translations) the gaps close first, then the slots narrow, never below the circle, and captions scale down or, in very narrow windows, truncate.
+Episode resume progress sits inside the native artwork button and moves with its focus effect.
+The button owns its focus binding, accessibility description and context actions.
+Media cards use native `.card` styling; playback readouts retain their existing equal-width icon layout.
+Browsing cards retain their watched badges; episode information removes the old NOW VIEWING label and green-check styling.
+Long descriptions open separately; they must not push the action row down.
+Movie and series pages replace the old Details row with Media Information: separate Video & File and Audio glass panels.
+Video & File uses at most five equal-width columns; each audio track uses at most four.
+Column count shrinks for sparse panels, but an incomplete final row retains the same column alignment.
+Settings headings remain white at 50 points on Apple TV (40 at the original design size, drawn through `TVSettingsLayout.scale`), with the shared “© 2026 Vivid™” footer.
 
-The player retains Vivid’s controls across both Lucid platform integrations. On Apple TV, its slim timeline has round subtitle and sliders controls above it, remaining time below, and no separate rewind/play/forward button cluster. Loading uses four staggered white bouncing dots at screen centre, with static dots for Reduce Motion. Next Up has a top-right mini-player, bottom-left actions and no On Deck shelf on Apple TV. The mini-player is the way back to the episode: moving up from the actions puts a white ring around it and Select returns to full screen. Menu on Next Up closes the player. For an episode with another one after it, whose credits marker runs to the end of the file, Next Up opens as the credits begin, in place of Skip Credits, with a short countdown to the next episode when Auto-play is on; see [Playback](playback/README.md).
+The player retains Vivid’s controls across both Lucid platform integrations.
+On Apple TV, its slim timeline has round subtitle and sliders controls above it, remaining time below, and no separate rewind/play/forward button cluster.
+Loading uses four staggered white bouncing dots at screen centre, with static dots for Reduce Motion.
+Next Up has a top-right mini-player, bottom-left actions and no On Deck shelf on Apple TV.
+The mini-player is the way back to the episode: moving up from the actions puts a white ring around it and Select returns to full screen.
+Menu on Next Up closes the player.
+For an episode with another one after it, whose credits marker runs to the end of the file, Next Up opens as the credits begin, in place of Skip Credits, with a short countdown to the next episode when Auto-play is on; see [Playback](playback/README.md).
 
 ## iPhone and iPad layout
 
-The iPhone and iPad Settings overview keeps the Apple TV-style Settings heading and separate Profiles and Settings sections. Categories share one native inset group, using the same row colour, separators and selected page background as the secondary settings pages. The destination order, icons and descriptions remain consistent across platforms, with text that grows with Dynamic Type and a centred content width on iPad. On iPad the Settings heading is centred in that column, and the Profiles rows fill its width like the category rows. Profiles uses the rows and Settings > Profiles page described in [Settings and startup](#settings-and-startup): selecting a profile there switches to it, the signed-in or a signed-out profile opens its account page, and Edit rearranges them.
+The iPhone and iPad Settings overview keeps the Apple TV-style Settings heading and separate Profiles and Settings sections.
+Categories share one native inset group, using the same row colour, separators and selected page background as the secondary settings pages.
+The destination order, icons and descriptions remain consistent across platforms, with text that grows with Dynamic Type and a centred content width on iPad.
+On iPad the Settings heading is centred in that column, and the Profiles rows fill its width like the category rows.
+Profiles uses the rows and Settings > Profiles page described in [Settings and startup](#settings-and-startup): selecting a profile there switches to it, the signed-in or a signed-out profile opens its account page, and Edit rearranges them.
 
-The mobile app shares the TV feature owners, with touch layouts. Home, Libraries, For You, Downloads and Settings use the saved theme. Movie and series details retain their original artwork-colour and glass surfaces regardless of the selected theme. Browsing cards use Home’s title size with left-aligned titles and years directly underneath the rendered title, without reserving an empty second title line. The shared Captions setting offers Title & Year (the default), Title Only and Artwork Only across Home, Search, Movies, Series and For You; episode cards retain episode information instead of a year, including with Title Only. Artwork Only hides it, except that Continue Watching stills, and Next Up stills on Emby and Jellyfin, always keep their series title and episode line. The Downloads page uses glass storage and transfer cards, live byte and speed progress, and locally fetched movie or main-series posters. Mobile headings use 30-point rounded bold text and smaller section labels; TV headings stay at 40 points, or 50 in Apple TV Settings.
+The mobile app shares the TV feature owners, with touch layouts.
+Home, Libraries, For You, Downloads and Settings use the saved theme.
+Movie and series details retain their original artwork-colour and glass surfaces regardless of the selected theme.
+Browsing cards use Home’s title size with left-aligned titles and years directly underneath the rendered title, without reserving an empty second title line.
+The shared Captions setting offers Title & Year (the default), Title Only and Artwork Only across Home, Search, Movies, Series and For You; episode cards retain episode information instead of a year, including with Title Only.
+Artwork Only hides it, except that Continue Watching stills, and Next Up stills on Emby and Jellyfin, always keep their series title and episode line.
+The Downloads page uses glass storage and transfer cards, live byte and speed progress, and locally fetched movie or main-series posters.
+Mobile headings use 30-point rounded bold text and smaller section labels; TV headings stay at 40 points, or 50 in Apple TV Settings.
 
 ### Navigation and saved lists
 
-The bottom bar is one continuous glass capsule, centred and capped at 420 points so it does not stretch across iPad. On iPad in landscape the same capsule stands vertically on the right, centred, and pages lay out beside it while rows scroll under it. Beside the iPhone Duo's side status bar it stands vertically in the strip instead; see [iPhone Duo](#iphone-duo). Icons occupy fixed, evenly spaced slots with a white selected pill; they do not expand into text labels or scroll sideways. Search and the signed-in profile sit outside the main destinations, separated by dividers. The bottom bar hides on downward scrolling and returns when scrolling upward; the vertical iPad and iPhone Duo bars stay put. Hidden built-in destinations can be restored using the Show controls in Tab Bar settings. Tab Bar configuration uses the same component and icon definitions, provides a grey “Swap Search and Profile” button, and includes Downloads and Calendar visibility controls. Downloads appears immediately when enabled, without waiting for a server capability response. Download permissions still apply when the page opens. Calendar is on by default and always sits just before Downloads.
+The bottom bar is one continuous glass capsule, centred and capped at 420 points so it does not stretch across iPad.
+On iPad in landscape the same capsule stands vertically on the right, centred, and pages lay out beside it while rows scroll under it.
+Beside the iPhone Duo's side status bar it stands vertically in the strip instead; see [iPhone Duo](#iphone-duo).
+Icons occupy fixed, evenly spaced slots with a white selected pill; they do not expand into text labels or scroll sideways.
+Search and the signed-in profile sit outside the main destinations, separated by dividers.
+The bottom bar hides on downward scrolling and returns when scrolling upward; the vertical iPad and iPhone Duo bars stay put.
+Hidden built-in destinations can be restored using the Show controls in Tab Bar settings.
+Tab Bar configuration uses the same component and icon definitions, provides a grey “Swap Search and Profile” button, and includes Downloads and Calendar visibility controls.
+Downloads appears immediately when enabled, without waiting for a server capability response.
+Download permissions still apply when the page opens.
+Calendar is on by default and always sits just before Downloads.
 
-Search and Profile/Settings are full-screen themed pages that slide up from the bottom and slide down when closed. Each has one round glass X at the top left. Dragging down closes Search or the Settings overview; Settings subpages keep their own back navigation. Both pages remain portrait on iPhone. iPad Search and Settings support portrait and landscape. On the iPhone Duo the X moves to the side strip or the top corner, and the inner screen rotates in both pages; see [iPhone Duo](#iphone-duo). Search opens its keyboard only after the search bar is tapped and resigns it as dismissal begins. Movie and series results open above the retained search page, as full-screen pages on iPhone and iPad. Playback opens immediately; closing playback leaves the detail page and previous search results in place without dismissing and reopening Search. Settings retains its own navigation stack. Accounts use manual server setup and username/password sign-in, [Quick Connect](cores/jellyfin.md#quick-connect) on Jellyfin servers that have it turned on, or [Emby Connect](cores/emby.md#emby-connect) on Emby.
+Search and Profile/Settings are full-screen themed pages that slide up from the bottom and slide down when closed.
+Each has one round glass X at the top left.
+Dragging down closes Search or the Settings overview; Settings subpages keep their own back navigation.
+Both pages remain portrait on iPhone. iPad Search and Settings support portrait and landscape.
+On the iPhone Duo the X moves to the side strip or the top corner, and the inner screen rotates in both pages; see [iPhone Duo](#iphone-duo).
+Search opens its keyboard only after the search bar is tapped and resigns it as dismissal begins.
+Movie and series results open above the retained search page, as full-screen pages on iPhone and iPad.
+Playback opens immediately; closing playback leaves the detail page and previous search results in place without dismissing and reopening Search.
+Settings retains its own navigation stack.
+Accounts use manual server setup and username/password sign-in, [Quick Connect](cores/jellyfin.md#quick-connect) on Jellyfin servers that have it turned on, or [Emby Connect](cores/emby.md#emby-connect) on Emby.
 
-For You switches in place between Watchlist, Favourites and Collections. Watchlist and Favourites combine movies and series in one view without Movie or Series pills. On iPhone and iPad their cards show the title and year in the same style as Home's posters. A Filter menu narrows either list: Show (All, Movies or Series), Original Language (one at a time, Silo only because Emby and Jellyfin do not report it) and Anime (Show everything, Only anime or Hide anime). Show, Original Language and A–Z are sent to the server. Anime is matched on the device from titles in libraries whose name includes "Anime", the Anime genre, or Japanese animation where the server reports the original language, so an Anime filter loads the whole list. On Apple TV the Filter menu sits beside A–Z in the sub-tab row; on iPhone and iPad it is a round button beside the sub-tabs, with A–Z inside the menu. Each list keeps its own filter. On Apple TV, an empty Watchlist or Favourites with a filter or an A–Z letter chosen says "No titles match these filters" (see [Apple TV Browsing](apple-tv-browsing.md)). On Silo, Collections has its own Filter menu with Source, matched on the device: All, Server (collections set up on the server), Shared (personal collections other profiles share into a library) or Mine (this profile's own). Mine includes the profile's own collections whether or not they are shared into a library. On Apple TV, iPhone and iPad, a Silo profile's Collections has two headed groups: User Collections (the profile's own and those shared into a library) above the server's Collections, each A to Z, skipping a leading The, A or An. A Source that matches only one kind leaves a single group, and Emby and Jellyfin show the Collections group alone. On iPhone and iPad, these cards show the collection's name in the same style as a movie or series name on Home (one line, semibold), with no type line under it (User collection, Collection, or a Silo type such as Smart), because the group heading already says whether it's a user collection or the server's. A collection listed by more than one library appears once. Opening one of the profile's own collections loads its titles through the catalogue, the same as a shared one. Emby and Jellyfin collections are all the server's, so Collections has no Filter there. Collections has no A–Z, because most collection names start with "Movies" or "TV Shows". A Source with nothing in it shows "No collections match these filters". The secondary tabs scroll with each list, including Collections. Collections combines personal collections with movie, series and mixed-library collections without a library dropdown. Cached collection sections appear first; library requests run together and publish each completed result instead of leaving the page empty for the slowest response. A library the profile can't see counts as empty, and one that fails to load leaves the rest on screen, so the page only shows an error when nothing loads: no library collections and none of the profile's own either. This is the same on Apple TV, iPhone and iPad. Recommendations are not a For You section. Libraries opens its catalogue directly, with native library-selection, Sort and Filter menus and an A–Z menu at the right of the same control row. The current library selector and its saved selection remain. Music and pinned library destinations are excluded from the Apple menu and its editor. The client no longer reads, caches or retries navigation-shortcut preferences; older cache entries are discarded while card settings and supported tab order remain. Emby also removes retired shortcut rows from the current account’s local settings without changing its playback preferences. Legacy Recommended/Library/Collections landing pages are removed; direct library links open the catalogue grid. iOS startup no longer fetches library-section landings, their artwork or the obsolete recommendations feed. The full Home cache, current Spotlight and normal browse-page caches remain. iOS Spotlight reads Emby metadata from the shared persistent Home cache, including parent-series metadata for episode slides. iOS episode lists no longer request unused per-episode favourite states; tvOS keeps those lookups for its current menus. Season-page caching remains unchanged.
+For You switches in place between Watchlist, Favourites and Collections.
+Watchlist and Favourites combine movies and series in one view without Movie or Series pills.
+On iPhone and iPad their cards show the title and year in the same style as Home's posters.
+A Filter menu narrows either list: Show (All, Movies or Series), Original Language (one at a time, Silo only because Emby and Jellyfin do not report it) and Anime (Show everything, Only anime or Hide anime).
+Show, Original Language and A–Z are sent to the server.
+Anime is matched on the device from titles in libraries whose name includes "Anime", the Anime genre, or Japanese animation where the server reports the original language, so an Anime filter loads the whole list.
+On Apple TV the Filter menu sits beside A–Z in the sub-tab row; on iPhone and iPad it is a round button beside the sub-tabs, with A–Z inside the menu.
+Each list keeps its own filter.
+On Apple TV, an empty Watchlist or Favourites with a filter or an A–Z letter chosen says "No titles match these filters" (see [Apple TV Browsing](apple-tv-browsing.md)).
+On Silo, Collections has its own Filter menu with Source, matched on the device: All, Server (collections set up on the server), Shared (personal collections other profiles share into a library) or Mine (this profile's own).
+Mine includes the profile's own collections whether or not they are shared into a library.
+On Apple TV, iPhone and iPad, a Silo profile's Collections has two headed groups: User Collections (the profile's own and those shared into a library) above the server's Collections, each A to Z, skipping a leading The, A or An.
+A Source that matches only one kind leaves a single group, and Emby and Jellyfin show the Collections group alone.
+On iPhone and iPad, these cards show the collection's name in the same style as a movie or series name on Home (one line, semibold), with no type line under it (User collection, Collection, or a Silo type such as Smart), because the group heading already says whether it's a user collection or the server's. A collection listed by more than one library appears once.
+Opening one of the profile's own collections loads its titles through the catalogue, the same as a shared one.
+Emby and Jellyfin collections are all the server's, so Collections has no Filter there.
+Collections has no A–Z, because most collection names start with "Movies" or "TV Shows".
+A Source with nothing in it shows "No collections match these filters".
+The secondary tabs scroll with each list, including Collections.
+Collections combines personal collections with movie, series and mixed-library collections without a library dropdown.
+Cached collection sections appear first; library requests run together and publish each completed result instead of leaving the page empty for the slowest response.
+A library the profile can't see counts as empty, and one that fails to load leaves the rest on screen, so the page only shows an error when nothing loads: no library collections and none of the profile's own either.
+This is the same on Apple TV, iPhone and iPad.
+Recommendations are not a For You section.
+Libraries opens its catalogue directly, with native library-selection, Sort and Filter menus and an A–Z menu at the right of the same control row.
+The current library selector and its saved selection remain.
+Music and pinned library destinations are excluded from the Apple menu and its editor.
+The client no longer reads, caches or retries navigation-shortcut preferences; older cache entries are discarded while card settings and supported tab order remain.
+Emby also removes retired shortcut rows from the current account’s local settings without changing its playback preferences.
+Legacy Recommended/Library/Collections landing pages are removed; direct library links open the catalogue grid. iOS startup no longer fetches library-section landings, their artwork or the obsolete recommendations feed.
+The full Home cache, current Spotlight and normal browse-page caches remain. iOS Spotlight reads Emby metadata from the shared persistent Home cache, including parent-series metadata for episode slides. iOS episode lists no longer request unused per-episode favourite states; tvOS keeps those lookups for its current menus.
+Season-page caching remains unchanged.
 
-Calendar, on iPhone and iPad, switches between Upcoming and Trending with the same glass control as For You. Upcoming lists new episodes of series from the profile's Continue Watching and Next Up, Watchlist and history for the next 90 days, grouped by day under a two-week strip whose dots mark days with episodes. Each row shows the series poster from the server, the season, episode and title, the air time and where the series came from, and opens the series. Air times come from TVmaze through Vivid's relay (see [TMDb Relay](tmdb-relay.md)) as UTC times and are shown in the device's time zone and locale, so a 9 pm US episode appears the next day in Australia. A streaming release with no set time keeps its listed day, and a series TVmaze doesn't know, or can't answer for at the time, uses TMDb's next air date, also without a time. Ended series are skipped, a show in two libraries is listed once, and each series shows at most six episodes. Each series' air dates are kept on the device for that profile and looked up again after 12 hours, or after 30 minutes when TVmaze or TMDb was busy, with the saved ones still showing meanwhile. Every visit still reads the profile's Continue Watching, Next Up, Watchlist and history and rebuilds the list from them, so a series added or removed shows or goes straight away, and only new or due series are looked up. If one of those reads fails, that source's series from the last visit stay rather than dropping out. Pulling down looks every series up again. Trending is kept on the device too and refreshes after 6 hours. The saved Calendar is in the app's caches, and deleting the saved account removes it. It starts again when Vivid's language or the device's time zone changes, because TMDb's episode names and Trending come in Vivid's language and the saved days are local. Trending shows TMDb's most popular series premiering and movies releasing in the next 60 days, with All, Movies and Series filters; tapping a title shows its poster, date and overview. The round calendar button opens a month view for the page it's on, with arrows through the months that page covers and the month and arrows in the sheet's bar, so a six-row month never pushes into the close button. Upcoming's month marks days with new episodes and jumps the list to a picked day. Trending's marks release days for the titles its filter shows and narrows Trending to the picked day, with Show all to go back. Calendar works the same on Silo, Emby and Jellyfin, because it only needs each series' TVDB, IMDb or TMDb ID. Apple TV has its own Calendar root after For You, described in [Apple TV Browsing](apple-tv-browsing.md).
+Calendar, on iPhone and iPad, switches between Upcoming and Trending with the same glass control as For You.
+Upcoming lists new episodes of series from the profile's Continue Watching and Next Up, Watchlist and history for the next 90 days, grouped by day under a two-week strip whose dots mark days with episodes.
+Each row shows the series poster from the server, the season, episode and title, the air time and where the series came from, and opens the series.
+Air times come from TVmaze through Vivid's relay (see [TMDb Relay](tmdb-relay.md)) as UTC times and are shown in the device's time zone and locale, so a 9 pm US episode appears the next day in Australia.
+A streaming release with no set time keeps its listed day, and a series TVmaze doesn't know, or can't answer for at the time, uses TMDb's next air date, also without a time.
+Ended series are skipped, a show in two libraries is listed once, and each series shows at most six episodes.
+Each series' air dates are kept on the device for that profile and looked up again after 12 hours, or after 30 minutes when TVmaze or TMDb was busy, with the saved ones still showing meanwhile.
+Every visit still reads the profile's Continue Watching, Next Up, Watchlist and history and rebuilds the list from them, so a series added or removed shows or goes straight away, and only new or due series are looked up.
+If one of those reads fails, that source's series from the last visit stay rather than dropping out.
+Pulling down looks every series up again.
+Trending is kept on the device too and refreshes after 6 hours.
+The saved Calendar is in the app's caches, and deleting the saved account removes it.
+It starts again when Vivid's language or the device's time zone changes, because TMDb's episode names and Trending come in Vivid's language and the saved days are local.
+Trending shows TMDb's most popular series premiering and movies releasing in the next 60 days, with All, Movies and Series filters; tapping a title shows its poster, date and overview.
+The round calendar button opens a month view for the page it's on, with arrows through the months that page covers and the month and arrows in the sheet's bar, so a six-row month never pushes into the close button.
+Upcoming's month marks days with new episodes and jumps the list to a picked day.
+Trending's marks release days for the titles its filter shows and narrows Trending to the picked day, with Show all to go back.
+Calendar works the same on Silo, Emby and Jellyfin, because it only needs each series' TVDB, IMDb or TMDb ID.
+Apple TV has its own Calendar root after For You, described in [Apple TV Browsing](apple-tv-browsing.md).
 
-Search, Libraries and For You keep three posters per row on iPhone, filling each available cell rather than capping posters at 120 points. iPad grids adapt to the current window width. Search uses smaller, readable result captions with truncation for long titles; this does not change Home poster preferences. Poster widths fit their grid cells so orientation and Split View do not overlap cards. Watchlist and Favourites retain three columns on iPhone. The iPhone Duo's inner screen shows six posters across in landscape and four in portrait in all of these grids; see [iPhone Duo](#iphone-duo). On iPad, Search, Libraries, Watchlist, Favourites and collection poster grids use the available window width to fit evenly sized posters with small gaps in portrait, landscape and Split View.
+Search, Libraries and For You keep three posters per row on iPhone, filling each available cell rather than capping posters at 120 points. iPad grids adapt to the current window width.
+Search uses smaller, readable result captions with truncation for long titles; this does not change Home poster preferences.
+Poster widths fit their grid cells so orientation and Split View do not overlap cards.
+Watchlist and Favourites retain three columns on iPhone.
+The iPhone Duo's inner screen shows six posters across in landscape and four in portrait in all of these grids; see [iPhone Duo](#iphone-duo).
+On iPad, Search, Libraries, Watchlist, Favourites and collection poster grids use the available window width to fit evenly sized posters with small gaps in portrait, landscape and Split View.
 
 ### Home spotlight
 
-Home uses full-width artwork from the configured spotlight sections. An episode slide shows its series background when one is known, the same as Home's Continue Watching and Next Up cards. Sharp artwork reaches the top; there is no separate top blur or sampled-colour band. Home, For You and all settings pages explicitly hide the system’s top scroll-edge effect on iOS 26 and later; settings retain their navigation controls without a full-width glass bar. The logo is bottom-aligned above a centred line of slim year and genre pills (up to two genres) followed by the outlined age rating chip, when available, with no star rating or description. The line never wraps; the last genre is dropped when it does not fit. The logo and metadata sit just above the page indicators near the first row heading. On iPhone and iPad the background scrolls more slowly than the foreground, using the shared detail artwork component. The decorative fade geometry is computed once and reused; its blur, parallax and appearance are retained. An opaque blurred artwork layer sits beneath the sharp image. On iPhone, the sharp image blends into it over a broad transition near the logo, then the softened colour extends behind the first row before an uneven fade reaches black. On iPad, a faint blend reaches the carousel dots, softens into the first row and fades gradually to black. It does not tint the entire page.
+Home uses full-width artwork from the configured spotlight sections.
+An episode slide shows its series background when one is known, the same as Home's Continue Watching and Next Up cards.
+Sharp artwork reaches the top; there is no separate top blur or sampled-colour band.
+Home, For You and all settings pages explicitly hide the system’s top scroll-edge effect on iOS 26 and later; settings retain their navigation controls without a full-width glass bar.
+The logo is bottom-aligned above a centred line of slim year and genre pills (up to two genres) followed by the outlined age rating chip, when available, with no star rating or description.
+The line never wraps; the last genre is dropped when it does not fit.
+The logo and metadata sit just above the page indicators near the first row heading.
+On iPhone and iPad the background scrolls more slowly than the foreground, using the shared detail artwork component.
+The decorative fade geometry is computed once and reused; its blur, parallax and appearance are retained.
+An opaque blurred artwork layer sits beneath the sharp image.
+On iPhone, the sharp image blends into it over a broad transition near the logo, then the softened colour extends behind the first row before an uneven fade reaches black.
+On iPad, a faint blend reaches the carousel dots, softens into the first row and fades gradually to black.
+It does not tint the entire page.
 
-The whole spotlight slide opens the featured movie or series detail page when tapped, including the artwork around the logo. Swiping still pages the carousel; the indicator buttons select slides separately. The carousel wraps in both directions using duplicate boundary pages and an unanimated reset after the transition. Its active indicator expands and fills over six seconds, matching TV timing. Reduce Motion disables automatic rotation and progress animation. Continue Watching has no play icon in its heading. Watched posters show a small translucent pill with a white circled tick in the top-right corner. Episode cards and Continue Watching movies show the same tick in the bottom-left runtime pill, beside the resume bar. Wide stills outside Continue Watching and the Apple TV episode rail keep green circles with white ticks. The Movie and Series pills on Favourites and Watchlist use the same borderless translucent capsule, tinted blue or purple. Continue Watching and Emby/Jellyfin Next Up identify the episode beneath the series title. Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`. Partly watched Home thumbnails and series-detail episode cards share an inset white resume bar on a grey track.
+The whole spotlight slide opens the featured movie or series detail page when tapped, including the artwork around the logo.
+Swiping still pages the carousel; the indicator buttons select slides separately.
+The carousel wraps in both directions using duplicate boundary pages and an unanimated reset after the transition.
+Its active indicator expands and fills over six seconds, matching TV timing.
+Reduce Motion disables automatic rotation and progress animation.
+Continue Watching has no play icon in its heading.
+Watched posters show a small translucent pill with a white circled tick in the top-right corner.
+Episode cards and Continue Watching movies show the same tick in the bottom-left runtime pill, beside the resume bar.
+Wide stills outside Continue Watching and the Apple TV episode rail keep green circles with white ticks.
+The Movie and Series pills on Favourites and Watchlist use the same borderless translucent capsule, tinted blue or purple.
+Continue Watching and Emby/Jellyfin Next Up identify the episode beneath the series title.
+Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`.
+Partly watched Home thumbnails and series-detail episode cards share an inset white resume bar on a grey track.
 
 ### Studios & Networks
 
-iPhone and iPad Home pin a Studios & Networks row directly under the spotlight, without a heading. Logo tiles are half the width of a Continue Watching still at Home's Large poster size and scroll like the other rows. The row stays when the spotlight is turned off. Each opens a brand page with the logo as its title, Popular TV Shows and Popular Movies rows and an All in Your Library grid, using the same matching, time windows, caching and saved picks as [Apple TV](apple-tv-browsing.md#studios--networks). The grid's filter menu is a chip at the end of its heading row, in the library's Sort and Filter chip style, with the same type, sort and genre choices. In Settings → General → Studios & Networks, touch and hold a preview tile to make the tiles wobble and keep dragging to move it, as with saved profile cards. While the tiles wobble, a short hold picks one up again, the order saves when you let go, and − removes a tile; VoiceOver offers Move earlier and Move later. The wobble honours Reduce Motion.
+iPhone and iPad Home pin a Studios & Networks row directly under the spotlight, without a heading.
+Logo tiles are half the width of a Continue Watching still at Home's Large poster size and scroll like the other rows.
+The row stays when the spotlight is turned off.
+Each opens a brand page with the logo as its title, Popular TV Shows and Popular Movies rows and an All in Your Library grid, using the same matching, time windows, caching and saved picks as [Apple TV](apple-tv-browsing.md#studios--networks).
+The grid's filter menu is a chip at the end of its heading row, in the library's Sort and Filter chip style, with the same type, sort and genre choices.
+In Settings → General → Studios & Networks, touch and hold a preview tile to make the tiles wobble and keep dragging to move it, as with saved profile cards.
+While the tiles wobble, a short hold picks one up again, the order saves when you let go, and − removes a tile; VoiceOver offers Move earlier and Move later.
+The wobble honours Reduce Motion.
 
 ### Collections
 
-iPhone and iPad Home pin a Collections row below the last server row, outside the six-row limit, with the same Large posters, captions, heading and spacing as the other rows. As on Apple TV, it only shows when Home has another row or a Spotlight; otherwise Home shows its empty state. Each poster opens the collection's page. The list, automatic choice, caching and saved choices are the same as on [Apple TV](apple-tv-browsing.md#collections-row). Settings > General > Collections has a Show on Home toggle, a preview of the chosen posters five across, the collections A to Z, skipping a leading The, A or An (on Silo, the profile's own first) in scrolling carousels of 20 small posters (posters only; VoiceOver reads each name), and Reset to Automatic. Tap a carousel poster to add it or remove it. Touch and hold a preview poster to make the posters wobble and keep dragging to move it, as with Studios & Networks; − removes a poster while they wobble, and VoiceOver offers Move earlier and Move later. The wobble honours Reduce Motion.
+iPhone and iPad Home pin a Collections row below the last server row, outside the six-row limit, with the same Large posters, captions, heading and spacing as the other rows.
+As on Apple TV, it only shows when Home has another row or a Spotlight; otherwise Home shows its empty state.
+Each poster opens the collection's page.
+The list, automatic choice, caching and saved choices are the same as on [Apple TV](apple-tv-browsing.md#collections-row).
+Settings > General > Collections has a Show on Home toggle, a preview of the chosen posters five across, the collections A to Z, skipping a leading The, A or An (on Silo, the profile's own first) in scrolling carousels of 20 small posters (posters only; VoiceOver reads each name), and Reset to Automatic.
+Tap a carousel poster to add it or remove it.
+Touch and hold a preview poster to make the posters wobble and keep dragging to move it, as with Studios & Networks; − removes a poster while they wobble, and VoiceOver offers Move earlier and Move later.
+The wobble honours Reduce Motion.
 
 ### Mobile player
 
-Quality, Audio, Subtitles and Chapters each have a separate round glass button above the playback bar and open scrollable anchored popovers. An open popover pins the controls, and the mobile presentation host stays mounted during buffering and quality reloads. Quality changes use the existing position-preserving reload path. Chapters and subtitles come from the media; chapter ticks are absent from the timeline. Rotate, Lock, PiP and AirPlay remain separate round buttons. All control groups appear together on tap; PiP keeps its place while disabled during source preparation. The left brightness and right system-volume capsules appear with the controls; vertical drags adjust their levels and suspend auto-hide until release. Player unlock uses physical orientation when available. On iPhone, closing landscape playback restores portrait browsing without rotating the outgoing player. iPad retains its portrait and landscape browsing policy, including Search and Settings. On the iPhone Duo, closing the player only re-checks the supported orientations, so the inner screen keeps the video's orientation, and half folded the player uses its own control deck without Rotate and Lock; see [iPhone Duo](#iphone-duo).
+Quality, Audio, Subtitles and Chapters each have a separate round glass button above the playback bar and open scrollable anchored popovers.
+An open popover pins the controls, and the mobile presentation host stays mounted during buffering and quality reloads.
+Quality changes use the existing position-preserving reload path.
+Chapters and subtitles come from the media; chapter ticks are absent from the timeline.
+Rotate, Lock, PiP and AirPlay remain separate round buttons.
+All control groups appear together on tap; PiP keeps its place while disabled during source preparation.
+The left brightness and right system-volume capsules appear with the controls; vertical drags adjust their levels and suspend auto-hide until release.
+Player unlock uses physical orientation when available.
+On iPhone, closing landscape playback restores portrait browsing without rotating the outgoing player. iPad retains its portrait and landscape browsing policy, including Search and Settings.
+On the iPhone Duo, closing the player only re-checks the supported orientations, so the inner screen keeps the video's orientation, and half folded the player uses its own control deck without Rotate and Lock; see [iPhone Duo](#iphone-duo).
 
-Next Up uses a top-right preview and bottom-left episode information and actions. Play Now is the Apple TV detail pages' glass Play pill on every device (the 280-point pill itself on Apple TV, the same tinted glass capsule with its bright rim on iPhone and iPad) with the countdown beside it, followed by a round glass X that closes the player. There are no Keep Watching or Back buttons: tapping the preview returns to the episode full screen, or closes the player when there is no playback left to return to (an autoplay failure can end it). The series logo (the movie's logo for a movie) takes the place of the name, falling back to the name as text when there's no logo or it hasn't loaded; on Apple TV an episode keeps its heading above the logo (Up Next, or Playing Next once the episode has ended) and its details below, while iPhone and iPad have no heading and show the episode line under the logo. A movie shows the logo alone. Behind everything is the series or movie background, decoded small, blurred once in the image pipeline and covered by a flat dark layer, so nothing is blurred live while the preview plays. When the catalogue lists no background or can't be reached, Next Up uses the next episode's still, then the first On Deck item's artwork, then black. A listed background that then fails to download stays black rather than trying the others. The preview has a bright edge and a deep shadow so it stands off the artwork. The updated menus were device-tested on iPhone 16 Pro Max. iPad layout and route-specific PiP/AirPlay operation have not been separately verified for this change.
+Next Up uses a top-right preview and bottom-left episode information and actions.
+Play Now is the Apple TV detail pages' glass Play pill on every device (the 280-point pill itself on Apple TV, the same tinted glass capsule with its bright rim on iPhone and iPad) with the countdown beside it, followed by a round glass X that closes the player.
+There are no Keep Watching or Back buttons: tapping the preview returns to the episode full screen, or closes the player when there is no playback left to return to (an autoplay failure can end it).
+The series logo (the movie's logo for a movie) takes the place of the name, falling back to the name as text when there's no logo or it hasn't loaded; on Apple TV an episode keeps its heading above the logo (Up Next, or Playing Next once the episode has ended) and its details below, while iPhone and iPad have no heading and show the episode line under the logo.
+A movie shows the logo alone.
+Behind everything is the series or movie background, decoded small, blurred once in the image pipeline and covered by a flat dark layer, so nothing is blurred live while the preview plays.
+When the catalogue lists no background or can't be reached, Next Up uses the next episode's still, then the first On Deck item's artwork, then black.
+A listed background that then fails to download stays black rather than trying the others.
+The preview has a bright edge and a deep shadow so it stands off the artwork.
+The updated menus were device-tested on iPhone 16 Pro Max. iPad layout and route-specific PiP/AirPlay operation have not been separately verified for this change.
 
-Emby and Jellyfin have separate Combine Continue Watching and Next Up preferences. When enabled, Home retains resume metadata and removes duplicate items from Next Up. Spotlight offers the same combined Continue Watching choice, interleaving resumable and next episodes within its existing ten-item limit. Silo’s section behaviour is unchanged.
+Emby and Jellyfin have separate Combine Continue Watching and Next Up preferences.
+When enabled, Home retains resume metadata and removes duplicate items from Next Up.
+Spotlight offers the same combined Continue Watching choice, interleaving resumable and next episodes within its existing ten-item limit.
+Silo’s section behaviour is unchanged.
 
 ### Settings and startup
 
-Startup hands off in two sequential fades on the same saved-theme canvas: the loading logo fades out before the profile picker or destination fades in. The full handoff remains 550 ms (200 ms with Reduce Motion), split 40% for the logo and 60% for the destination. The profile-return animation uses the same sequence. Controls remain disabled until the handoff finishes so the initial profile focus is applied after the reveal. The logo assembly animation and profile layout are unchanged.
+Startup hands off in two sequential fades on the same saved-theme canvas: the loading logo fades out before the profile picker or destination fades in.
+The full handoff remains 550 ms (200 ms with Reduce Motion), split 40% for the logo and 60% for the destination.
+The profile-return animation uses the same sequence.
+Controls remain disabled until the handoff finishes so the initial profile focus is applied after the reveal.
+The logo assembly animation and profile layout are unchanged.
 
-The Settings overview separates Profiles from Settings. On iPhone, iPad and Apple TV, Profiles is one joined panel above the joined category panel. Its first row is the signed-in profile, larger than the rest: its picture, its name (a Silo profile shows its Silo profile name, Emby and Jellyfin their usernames), its role and server (“Admin · Silo”, “User · Emby”) and a line saying what its page holds (PIN, household for Silo, and sign out); selecting it opens that page. Next, Profiles shows the other saved profiles' pictures overlapping, up to three, with their names, adding the server when two share a name; it opens Settings > Profiles. Add Profile comes last, with a plus in the same icon tile as the categories, and is hidden at the limit. The three rows' pictures sit in one column as wide as the signed-in profile's, so their text starts on one line. Settings > Profiles lists every saved profile as a row with its role and server (or Signed out), a tick on the signed-in one, and Add Profile at the end. On Apple TV both panels use continuous rounded corners matching the iOS treatment; secondary controls use the same panel colour and rounding. A server name given to a profile from the Server row in Settings > Servers replaces either label for that profile only (see [Rename Server](server-connections.md#saved-accounts-on-apple-tv-iphone-and-ipad)). The main page shares the secondary pages' header, grouped surface and content width. Settings menus use the same grouped panel colour throughout, including Playback, Subtitles, About and Downloads. Apple TV retains its native focus and selection highlights. Apple TV centres the copyright footer beneath the panel. Profile rows use an explicit editor destination: the signed-in or a signed-out profile opens that saved account, while Add Profile opens a new-account form. Selecting another signed-in profile in Settings > Profiles switches to it, after its PIN if it has one. Mobile account pages show the saved server address for Silo, Emby and Jellyfin, and centre Sign Out and Delete Profile in one shared group, separated by a divider with the same inset margins as the other Settings groups. The short server label below each avatar is separate from that address. Account isolation is unchanged.
+The Settings overview separates Profiles from Settings.
+On iPhone, iPad and Apple TV, Profiles is one joined panel above the joined category panel.
+Its first row is the signed-in profile, larger than the rest: its picture, its name (a Silo profile shows its Silo profile name, Emby and Jellyfin their usernames), its role and server (“Admin · Silo”, “User · Emby”) and a line saying what its page holds (PIN, household for Silo, and sign out); selecting it opens that page.
+Next, Profiles shows the other saved profiles' pictures overlapping, up to three, with their names, adding the server when two share a name; it opens Settings > Profiles.
+Add Profile comes last, with a plus in the same icon tile as the categories, and is hidden at the limit.
+The three rows' pictures sit in one column as wide as the signed-in profile's, so their text starts on one line.
+Settings > Profiles lists every saved profile as a row with its role and server (or Signed out), a tick on the signed-in one, and Add Profile at the end.
+On Apple TV both panels use continuous rounded corners matching the iOS treatment; secondary controls use the same panel colour and rounding.
+A server name given to a profile from the Server row in Settings > Servers replaces either label for that profile only (see [Rename Server](server-connections.md#saved-accounts-on-apple-tv-iphone-and-ipad)).
+The main page shares the secondary pages' header, grouped surface and content width.
+Settings menus use the same grouped panel colour throughout, including Playback, Subtitles, About and Downloads.
+Apple TV retains its native focus and selection highlights.
+Apple TV centres the copyright footer beneath the panel.
+Profile rows use an explicit editor destination: the signed-in or a signed-out profile opens that saved account, while Add Profile opens a new-account form.
+Selecting another signed-in profile in Settings > Profiles switches to it, after its PIN if it has one.
+Mobile account pages show the saved server address for Silo, Emby and Jellyfin, and centre Sign Out and Delete Profile in one shared group, separated by a divider with the same inset margins as the other Settings groups.
+The short server label below each avatar is separate from that address.
+Account isolation is unchanged.
 
-Every mobile download sheet works the same way on Silo, Emby and Jellyfin: Choose Version, then Quality, then the Download rows. Download Options for a movie or a single episode (on an episode page, Download → Download This Episode) has Choose Version on its own page with the edition, version and included media, and a Quality menu with the size per hour. The series download sheet and Choose Episodes have the same two controls. Their Choose Version page lists the versions found among the episodes' files, named like a movie's (for example "2160p · HEVC · HDR" or "1080p · H.264"), with how many episodes have each and roughly how much they'd download, after Auto (each episode uses the server's usual file). Episode lists don't say which HDR format a file uses, so season versions read "HDR" rather than Dolby Vision. Quality is Original or a smaller copy of the chosen version: a 4K version only offers 4K transcodes, a smaller version offers every lower bitrate, and Auto offers everything. Changing to a version that can't make the chosen quality moves Quality to the highest one it can, and Quality is hidden for a version with no smaller copy on that server. On an Emby account that can only use Emby's conversion service, Emby chooses the source for a smaller download, so Choose Version is unavailable while a smaller quality is picked. Choosing a version registers each episode with its matching file: the same resolution and HDR range, otherwise another file at that resolution, and an episode with no file at that resolution uses the server's usual pick. Auto at Original, or at a smaller quality the server takes for season requests, uses one season or series request; anything else goes one episode at a time, and transfers wait until the whole list is registered. Silo and Jellyfin list every version in their season episode lists; Emby lists one per episode, so on Emby the sheet reads each episode's files from the episode itself (the first episode of every season, then the rest of the selected season, and the rest when Choose Version opens), and a version download checks any other episode's files as it registers it. Silo refuses a download once an account has as many in progress as the server allows, counting every device, and doesn't tell apps the limit. When a list reaches it, the rest wait in Downloads as "Waiting for your server" with the series poster, and are asked for again every 20 seconds (less often while Silo keeps refusing, up to every two minutes), when the app comes back or refreshes in the background, and shortly after a download is removed. A waiting episode keeps the file and quality it was chosen at and is dropped rather than downloaded at another quality. Adding them needs the app open or a background refresh. Version and quality are chosen on each download; Settings → Downloads has no download quality default. Download settings stay on the device. Each smaller quality is labelled with the highest resolution its bitrate allows, never above the source's (for example "4K · 20 Mbps" or "720p · 2 Mbps"; Silo's own reported resolution where it gives one) and an approximate size per hour. Smaller-file choices follow the active server's download capabilities, separately from playback quality. Silo retains its existing prepared-download API and only offers smaller qualities when the server has Downloads → Advanced → "Prepare device-friendly copies" on and the account's access group allows transcoded downloads; Emby and Jellyfin use the server's playback transcoder, with Emby's conversion service as a fallback. Where an account can't download, the download control stays in place with an X through it and explains why when tapped. While Silo prepares a smaller download, its row shows the server's progress and time left (or its place in the queue), the poster, and an estimate of the converted size until the real size is known. In-progress downloads offer Cancel All, and the series download sheet can cancel that series' unfinished downloads, including any waiting; finished ones are kept.
+Every mobile download sheet works the same way on Silo, Emby and Jellyfin: Choose Version, then Quality, then the Download rows.
+Download Options for a movie or a single episode (on an episode page, Download → Download This Episode) has Choose Version on its own page with the edition, version and included media, and a Quality menu with the size per hour.
+The series download sheet and Choose Episodes have the same two controls.
+Their Choose Version page lists the versions found among the episodes' files, named like a movie's (for example "2160p · HEVC · HDR" or "1080p · H.264"), with how many episodes have each and roughly how much they'd download, after Auto (each episode uses the server's usual file).
+Episode lists don't say which HDR format a file uses, so season versions read "HDR" rather than Dolby Vision.
+Quality is Original or a smaller copy of the chosen version: a 4K version only offers 4K transcodes, a smaller version offers every lower bitrate, and Auto offers everything.
+Changing to a version that can't make the chosen quality moves Quality to the highest one it can, and Quality is hidden for a version with no smaller copy on that server.
+On an Emby account that can only use Emby's conversion service, Emby chooses the source for a smaller download, so Choose Version is unavailable while a smaller quality is picked.
+Choosing a version registers each episode with its matching file: the same resolution and HDR range, otherwise another file at that resolution, and an episode with no file at that resolution uses the server's usual pick.
+Auto at Original, or at a smaller quality the server takes for season requests, uses one season or series request; anything else goes one episode at a time, and transfers wait until the whole list is registered.
+Silo and Jellyfin list every version in their season episode lists; Emby lists one per episode, so on Emby the sheet reads each episode's files from the episode itself (the first episode of every season, then the rest of the selected season, and the rest when Choose Version opens), and a version download checks any other episode's files as it registers it.
+Silo refuses a download once an account has as many in progress as the server allows, counting every device, and doesn't tell apps the limit.
+When a list reaches it, the rest wait in Downloads as "Waiting for your server" with the series poster, and are asked for again every 20 seconds (less often while Silo keeps refusing, up to every two minutes), when the app comes back or refreshes in the background, and shortly after a download is removed.
+A waiting episode keeps the file and quality it was chosen at and is dropped rather than downloaded at another quality.
+Adding them needs the app open or a background refresh.
+Version and quality are chosen on each download; Settings → Downloads has no download quality default.
+Download settings stay on the device.
+Each smaller quality is labelled with the highest resolution its bitrate allows, never above the source's (for example "4K · 20 Mbps" or "720p · 2 Mbps"; Silo's own reported resolution where it gives one) and an approximate size per hour.
+Smaller-file choices follow the active server's download capabilities, separately from playback quality.
+Silo retains its existing prepared-download API and only offers smaller qualities when the server has Downloads → Advanced → "Prepare device-friendly copies" on and the account's access group allows transcoded downloads; Emby and Jellyfin use the server's playback transcoder, with Emby's conversion service as a fallback.
+Where an account can't download, the download control stays in place with an X through it and explains why when tapped.
+While Silo prepares a smaller download, its row shows the server's progress and time left (or its place in the queue), the poster, and an estimate of the converted size until the real size is known.
+In-progress downloads offer Cancel All, and the series download sheet can cancel that series' unfinished downloads, including any waiting; finished ones are kept.
 
-Settings groups are General, Playback, Subtitles, Servers, Plugins, Seerr, Metadata, Diagnostics and About, with connected menu rows and shared icons. General contains Themes (Appearance on Apple TV), Spotlight row selection (labelled Home Screen on iPhone and iPad), Studios & Networks, Home Sections, Collections, Poster Configuration, Tab Bar and mobile Downloads settings. Plugins contains TMDb (trailers, ratings, Studios & Networks, collection rows, the Calendar's Trending and any air dates TVmaze doesn't have), OpenSubtitles, then a Watchlists group with MDBList completed-watch export and two-way watchlist settings, and Simkl sign-in, completed-watch export and Plan to Watch settings (shown only in builds with Vivid's Simkl registration).
+Settings groups are General, Playback, Subtitles, Servers, Plugins, Seerr, Metadata, Diagnostics and About, with connected menu rows and shared icons.
+General contains Themes (Appearance on Apple TV), Spotlight row selection (labelled Home Screen on iPhone and iPad), Studios & Networks, Home Sections, Collections, Poster Configuration, Tab Bar and mobile Downloads settings.
+Plugins contains TMDb (trailers, ratings, Studios & Networks, collection rows, the Calendar's Trending and any air dates TVmaze doesn't have), OpenSubtitles, then a Watchlists group with MDBList completed-watch export and two-way watchlist settings, and Simkl sign-in, completed-watch export and Plan to Watch settings (shown only in builds with Vivid's Simkl registration).
 
-The MDBList page opens with a short connection and ongoing-sync explanation, one centred row of small symbol-only integration tiles and the note “Current watches and resume points stay untouched.” on iOS and tvOS, with the connection controls directly below the note. The Simkl page follows the same layout without integration tiles. While signing in it shows Waiting for approval, the code in a large monospaced face with a line about approving on Simkl, and Cancel. On iPhone and iPad the code and its two lines are centred, with Open Simkl (which opens the approval page, with the code filled in when Simkl sends that link) and Cancel centred below, and nothing opens until Open Simkl is chosen. Apple TV adds a QR code for the approval link beside the code. Home posters are always Large, so Poster Configuration in Settings > General only chooses captions, which apply across the shared browsing cards. These preferences remain scoped per server/profile. Native switches use green; section labels and secondary actions use neutral grey while titles stay white. Intro & Credit Skipper remains a native toggle, and Episodes ends with the Hide Episode Spoilers toggle described in [Playback](playback/README.md). An Audio section between Streaming and Episodes holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue). On iPhone and iPad, Audio Language, Boost Level and Show Next Up open their own pages in the Settings theme, like Quality, rather than a plain pushed list, and choosing an option returns to Playback as before; Apple TV keeps its native menus. Playback offers Auto, Original Quality and three capped choices with a one-time buffering fallback; see [Quality controls](playback/README.md#quality-controls). Descriptions stay on one line inside the open picker, not beneath the closed Quality row. Existing Original and custom preferences are preserved. Reset Playback Settings and account Sign Out are centred. Auto-Skip Intros & Recaps and Auto-Skip Credits explicitly describe automatic skipping.
+The MDBList page opens with a short connection and ongoing-sync explanation, one centred row of small symbol-only integration tiles and the note “Current watches and resume points stay untouched.” on iOS and tvOS, with the connection controls directly below the note.
+The Simkl page follows the same layout without integration tiles.
+While signing in it shows Waiting for approval, the code in a large monospaced face with a line about approving on Simkl, and Cancel.
+On iPhone and iPad the code and its two lines are centred, with Open Simkl (which opens the approval page, with the code filled in when Simkl sends that link) and Cancel centred below, and nothing opens until Open Simkl is chosen.
+Apple TV adds a QR code for the approval link beside the code.
+Home posters are always Large, so Poster Configuration in Settings > General only chooses captions, which apply across the shared browsing cards.
+These preferences remain scoped per server/profile.
+Native switches use green; section labels and secondary actions use neutral grey while titles stay white.
+Intro & Credit Skipper remains a native toggle, and Episodes ends with the Hide Episode Spoilers toggle described in [Playback](playback/README.md).
+An Audio section between Streaming and Episodes holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+On iPhone and iPad, Audio Language, Boost Level and Show Next Up open their own pages in the Settings theme, like Quality, rather than a plain pushed list, and choosing an option returns to Playback as before; Apple TV keeps its native menus.
+Playback offers Auto, Original Quality and three capped choices with a one-time buffering fallback; see [Quality controls](playback/README.md#quality-controls).
+Descriptions stay on one line inside the open picker, not beneath the closed Quality row.
+Existing Original and custom preferences are preserved.
+Reset Playback Settings and account Sign Out are centred.
+Auto-Skip Intros & Recaps and Auto-Skip Credits explicitly describe automatic skipping.
 
 The mobile Home tab bar ignores keyboard insets from the player; search and settings utility pages retain keyboard avoidance.
 
-Subtitles contains embedded-track language, backup language and behaviour preferences plus an appearance preview. The backup language is used when full subtitles would play but the title has none in the main language. Choosing the backup's language as the main language clears the backup. Device Accessibility settings can control caption selection and appearance; local overrides expose size, colour, background and position. Preferences remain on the device for the current profile. The optional OpenSubtitles plugin adds manual search and download from the player’s subtitle picker. Downloaded tracks remain temporary and use the existing subtitle renderer; translation is not offered. Servers contains registered connections and Manage Servers; Sign Out remains in account settings. About sits directly below Diagnostics in the main Settings selection on mobile and TV, and opens its own page with the circled-info SVG, Vivid mark, version/build, the source commit it was built from (on iPhone and iPad, a link to its source downloads on vividapp.co), Acknowledgements, Open Source Licences, Privacy Policy and Contact. Open Source Licences is a list: "Source for this build" with that commit's source link, "Overview and provenance", then each library with its version and licence, and a Licence texts section with each shared licence text once. Each row opens its own page with the entry's notice and its full licence text; on Apple TV the text is split into blocks the remote scrolls through. iPhone and iPad also link to the same texts at vividapp.co/licences. TMDb attribution appears in Acknowledgements and on the TMDb plugin page, without a duplicate About-page block. Below its introduction, Acknowledgements also says in English that Vivid is independent and isn't made, endorsed or supported by Silo, Emby or Jellyfin, whose names and logos belong to their owners. Mobile Contact prepares a message for Mail; Apple TV offers an email QR code. No logs or account data are attached automatically. The footer is “© 2026 Vivid™”.
+Subtitles contains embedded-track language, backup language and behaviour preferences plus an appearance preview.
+The backup language is used when full subtitles would play but the title has none in the main language.
+Choosing the backup's language as the main language clears the backup.
+Device Accessibility settings can control caption selection and appearance; local overrides expose size, colour, background and position.
+Preferences remain on the device for the current profile.
+The optional OpenSubtitles plugin adds manual search and download from the player’s subtitle picker.
+Downloaded tracks remain temporary and use the existing subtitle renderer; translation is not offered.
+Servers contains registered connections and Manage Servers; Sign Out remains in account settings.
+About sits directly below Diagnostics in the main Settings selection on mobile and TV, and opens its own page with the circled-info SVG, Vivid mark, version/build, the source commit it was built from (on iPhone and iPad, a link to its source downloads on vividapp.co), Acknowledgements, Open Source Licences, Privacy Policy and Contact.
+Open Source Licences is a list: "Source for this build" with that commit's source link, "Overview and provenance", then each library with its version and licence, and a Licence texts section with each shared licence text once.
+Each row opens its own page with the entry's notice and its full licence text; on Apple TV the text is split into blocks the remote scrolls through. iPhone and iPad also link to the same texts at vividapp.co/licences.
+TMDb attribution appears in Acknowledgements and on the TMDb plugin page, without a duplicate About-page block.
+Below its introduction, Acknowledgements also says in English that Vivid is independent and isn't made, endorsed or supported by Silo, Emby or Jellyfin, whose names and logos belong to their owners.
+Mobile Contact prepares a message for Mail; Apple TV offers an email QR code.
+No logs or account data are attached automatically.
+The footer is “© 2026 Vivid™”.
 
-The signed-in account has a ring around its saved-account avatar on Who’s watching, on mobile and Apple TV, and a tick in Settings > Profiles. iPhone, iPad and Apple TV allow eight saved accounts and hide Add Profile at the limit. Every card shows its name with the server underneath on Who’s watching, and every Settings row its name with its role and server (only the server until that profile's session is next saved); a Silo card shows its viewing profile's name in Silo, the primary profile included, and Emby and Jellyfin cards their usernames (see [Silo household profiles](server-connections.md#silo-household-profiles)). Apple TV retains its horizontal profile row. On iPhone and iPad, Who’s watching keeps the original row for one or two accounts, places Add Profile beneath three accounts, and uses a two-by-two layout for four. Five to eight use rows of three with the last row centred and Add Profile in the next place, under a smaller logo, and scroll only on a screen too short for them all. Each account keeps separate local metadata caches and playback/subtitle preferences. Saved account cards, login sessions and optional Vivid PIN records share a private iCloud vault across the three platforms. Sign Out clears the saved session while retaining its card. In Settings > Profiles, iPhone and iPad rearrange with Edit, and Apple TV by holding a profile to pick it up, moving it up or down, then pressing centre to drop and save (Back cancels). On iPhone and iPad Who’s watching, tap a profile to select it. Hold and drag to rearrange: the held card follows the finger and the other profiles move aside as it passes over them. Release within the profile row to save the previewed order; releasing outside the profiles cancels the move. VoiceOver also offers Move earlier and Move later actions. On Apple TV Who’s watching, hold a profile to pick it up, move left or right, then press centre to drop and save; Back cancels. Rearranging keeps the profile row at its normal height, without Done or delete buttons. Delete Profile is inside the profile’s account settings and still requires confirmation. The visible profile selector, and the Settings profile rows and Profiles page, refresh iCloud every ten seconds while active and no move is in progress. Apple TV wobble honours Reduce Motion. Both surfaces use the same saved order, which syncs through iCloud. Deletion removes the saved connection across iCloud devices and removes its saved server only when no other profile uses it. It does not delete the actual media-server account or library.
+The signed-in account has a ring around its saved-account avatar on Who’s watching, on mobile and Apple TV, and a tick in Settings > Profiles. iPhone, iPad and Apple TV allow eight saved accounts and hide Add Profile at the limit.
+Every card shows its name with the server underneath on Who’s watching, and every Settings row its name with its role and server (only the server until that profile's session is next saved); a Silo card shows its viewing profile's name in Silo, the primary profile included, and Emby and Jellyfin cards their usernames (see [Silo household profiles](server-connections.md#silo-household-profiles)).
+Apple TV retains its horizontal profile row.
+On iPhone and iPad, Who’s watching keeps the original row for one or two accounts, places Add Profile beneath three accounts, and uses a two-by-two layout for four.
+Five to eight use rows of three with the last row centred and Add Profile in the next place, under a smaller logo, and scroll only on a screen too short for them all.
+Each account keeps separate local metadata caches and playback/subtitle preferences.
+Saved account cards, login sessions and optional Vivid PIN records share a private iCloud vault across the three platforms.
+Sign Out clears the saved session while retaining its card.
+In Settings > Profiles, iPhone and iPad rearrange with Edit, and Apple TV by holding a profile to pick it up, moving it up or down, then pressing centre to drop and save (Back cancels).
+On iPhone and iPad Who’s watching, tap a profile to select it.
+Hold and drag to rearrange: the held card follows the finger and the other profiles move aside as it passes over them.
+Release within the profile row to save the previewed order; releasing outside the profiles cancels the move.
+VoiceOver also offers Move earlier and Move later actions.
+On Apple TV Who’s watching, hold a profile to pick it up, move left or right, then press centre to drop and save; Back cancels.
+Rearranging keeps the profile row at its normal height, without Done or delete buttons.
+Delete Profile is inside the profile’s account settings and still requires confirmation.
+The visible profile selector, and the Settings profile rows and Profiles page, refresh iCloud every ten seconds while active and no move is in progress.
+Apple TV wobble honours Reduce Motion.
+Both surfaces use the same saved order, which syncs through iCloud.
+Deletion removes the saved connection across iCloud devices and removes its saved server only when no other profile uses it.
+It does not delete the actual media-server account or library.
 
-Saved profile order, Home sections, spotlight choices, Studios & Networks choices, Collections choices, card captions and sizes, navigation and metadata preferences, and Seerr, MDBList and OpenSubtitles credentials travel through the encrypted private vault. On Silo, the top menu, card captions and sizes, library page state and the other interface preferences belong to Vivid: they are never read from or saved to the Silo server, so a menu or card size saved in Silo's own apps doesn't change Vivid, and Vivid's choices don't change those apps. Other synced values are saved on the server; if it permanently rejects one, the device keeps the server's value instead of sending it again on every launch. Playback and subtitle settings remain device-specific, as do downloaded media and metadata caches.
+Saved profile order, Home sections, spotlight choices, Studios & Networks choices, Collections choices, card captions and sizes, navigation and metadata preferences, and Seerr, MDBList and OpenSubtitles credentials travel through the encrypted private vault.
+On Silo, the top menu, card captions and sizes, library page state and the other interface preferences belong to Vivid: they are never read from or saved to the Silo server, so a menu or card size saved in Silo's own apps doesn't change Vivid, and Vivid's choices don't change those apps.
+Other synced values are saved on the server; if it permanently rejects one, the device keeps the server's value instead of sending it again on every launch.
+Playback and subtitle settings remain device-specific, as do downloaded media and metadata caches.
 
-Fresh iPhone/iPad installs attempt the initial vault fetch and fall through to manual setup if restoration fails or takes longer than about five seconds (a session restore that has already started by then is allowed to finish first); a late restore never moves the person off setup (see [Saved accounts](server-connections.md#saved-accounts-on-apple-tv-iphone-and-ipad)). A fresh Apple TV opens server choices immediately, with optional iCloud restoration and Back/Try Again controls. One saved profile opens directly when its session is valid and no PIN is required; multiple profiles retain the saved selector order. Server-backed preferences reconcile after the matching session is restored. Changes sync after local edits and on foreground entry; delivery depends on iCloud and server availability. Home metadata is stored on disk per server/profile, with up to 20 items per row and 10 spotlight candidates. Metadata shows cache state and clear controls. Hiding a Home row removes its row-cache entry, while that section remains eligible for spotlight selection.
+Fresh iPhone/iPad installs attempt the initial vault fetch and fall through to manual setup if restoration fails or takes longer than about five seconds (a session restore that has already started by then is allowed to finish first); a late restore never moves the person off setup (see [Saved accounts](server-connections.md#saved-accounts-on-apple-tv-iphone-and-ipad)).
+A fresh Apple TV opens server choices immediately, with optional iCloud restoration and Back/Try Again controls.
+One saved profile opens directly when its session is valid and no PIN is required; multiple profiles retain the saved selector order.
+Server-backed preferences reconcile after the matching session is restored.
+Changes sync after local edits and on foreground entry; delivery depends on iCloud and server availability.
+Home metadata is stored on disk per server/profile, with up to 20 items per row and 10 spotlight candidates.
+Metadata shows cache state and clear controls.
+Hiding a Home row removes its row-cache entry, while that section remains eligible for spotlight selection.
 
-Apple TV Top Shelf shows Continue Watching and Next Up for the current native user’s active saved profile, however many saved profiles or Silo viewing profiles exist. The saved profile must be signed in with no PIN, Vivid must still remember the viewing profile (the profile launch behaviour doesn't ask on every launch and its time-away lock hasn't expired), and on Silo the viewing profile must have no PIN. Anything else shows static Vivid artwork, including a Silo account whose profile list Vivid has not saved yet; the list is saved whenever the app reads it, which every signed-in launch does. See [server connections](server-connections.md) for the full rule. Silo uses its existing Home endpoint; Emby and Jellyfin fetch their own native resume and Next Up rows. Each row keeps the server's order, so the next episode of a show in progress sits where the server put it rather than behind started films. Episode cards use the main series poster: Emby and Jellyfin whenever the episode names a series, and Silo when its series lookup returns one, otherwise keeping the episode's own image, and retain their exact episode and resume position. Account, viewing-profile and profile launch setting changes request a system refresh, as does Vivid leaving the screen.
+Apple TV Top Shelf shows Continue Watching and Next Up for the current native user’s active saved profile, however many saved profiles or Silo viewing profiles exist.
+The saved profile must be signed in with no PIN, Vivid must still remember the viewing profile (the profile launch behaviour doesn't ask on every launch and its time-away lock hasn't expired), and on Silo the viewing profile must have no PIN.
+Anything else shows static Vivid artwork, including a Silo account whose profile list Vivid has not saved yet; the list is saved whenever the app reads it, which every signed-in launch does.
+See [server connections](server-connections.md) for the full rule.
+Silo uses its existing Home endpoint; Emby and Jellyfin fetch their own native resume and Next Up rows.
+Each row keeps the server's order, so the next episode of a show in progress sits where the server put it rather than behind started films.
+Episode cards use the main series poster: Emby and Jellyfin whenever the episode names a series, and Silo when its series lookup returns one, otherwise keeping the episode's own image, and retain their exact episode and resume position.
+Account, viewing-profile and profile launch setting changes request a system refresh, as does Vivid leaving the screen.
 
-Home reconciles server-owned watched and resume state using the platform/provider rules in [Home refresh](server-connections.md#home-refresh). Successful watched-state and final playback-progress writes request a refresh; this is separate from private iCloud account sync.
+Home reconciles server-owned watched and resume state using the platform/provider rules in [Home refresh](server-connections.md#home-refresh).
+Successful watched-state and final playback-progress writes request a refresh; this is separate from private iCloud account sync.
 
 ### Detail pages and validation
 
-On 12 September 2026, blurbery accepted the Settings and profile refinements after testing on iPhone and Apple TV. The final mobile account divider and profile selection fixes passed signed device builds. The [download regression run](https://github.com/blurbery/vivid/actions/runs/34677477571) passed before the later visual refinements. This does not establish complete converted-download or offline-playback coverage for Emby.
+On 12 September 2026, blurbery accepted the Settings and profile refinements after testing on iPhone and Apple TV.
+The final mobile account divider and profile selection fixes passed signed device builds.
+The [download regression run](https://github.com/blurbery/vivid/actions/runs/34677477571) passed before the later visual refinements.
+This does not establish complete converted-download or offline-playback coverage for Emby.
 
 Series details expose Episode, Season and Series watched actions in that order. iOS uses the Watched menu; tvOS places them in the three-dot More menu.
 
-Cast and crew pages use Home-sized filmography posters (three columns on iPhone and compact iPad) and the shared, left-aligned title/year caption settings. Cached person metadata appears on reopening while fresh metadata and filmography load concurrently. On iOS, iPadOS and tvOS, the shared person formatter displays Emby birth/death timestamps as calendar dates, including timestamps with seven fractional digits. It preserves the source day, validates date and time/offset ranges and hides malformed values instead of showing raw numbers. This applies to cached metadata too. First-time missing metadata still depends on server enrichment.
+Cast and crew pages use Home-sized filmography posters (three columns on iPhone and compact iPad) and the shared, left-aligned title/year caption settings.
+Cached person metadata appears on reopening while fresh metadata and filmography load concurrently.
+On iOS, iPadOS and tvOS, the shared person formatter displays Emby birth/death timestamps as calendar dates, including timestamps with seven fractional digits.
+It preserves the source day, validates date and time/offset ranges and hides malformed values instead of showing raw numbers.
+This applies to cached metadata too.
+First-time missing metadata still depends on server enrichment.
 
-Movie and series detail pages place TMDb Trailers before Cast & Crew, followed by server-only More Like This and Media Information on iOS and tvOS. Movie pages add a row for the movie's TMDb collection (for example Scream Collection) between More Like This and Media Information. Movie and series pages also show the TMDb user score after the quality badges on Apple TV, beside the age rating under the metadata pills on iPhone, and at the end of the technical row after the quality badges on iPad, as TMDb's Primary Short logo followed by the score to one decimal; it is hidden without a signed-in account and profile, without a TMDb match, or when nobody has rated the title. It needs a signed-in account and profile, lists only titles in the library in release order, includes the current movie, and is hidden when the movie has no collection or is the only one from it in the library. Titles are matched against the library list Studios & Networks saves each day, so the row never searches the server, stays hidden until that list exists and picks up newly added films after the next daily refresh. Selecting the current movie's card keeps the page in place. Cast & Crew uses portrait posters at the same size as More Like This: the shared card size on iPhone and iPad, and Home's Large poster size on Apple TV. Directors come first, then writers and creators (anyone already shown as director is left out), then the cast in the server's billing order, each later group after a thin divider with a rotated WRITERS or CAST label. Emby connections do not read crew, so Emby titles show only the cast. Tapping an actor’s biography on iOS opens the full text in a scrollable sheet with a Done button. On tvOS, the biography preview is selectable with the same focus ring as movie and series descriptions. Selecting it opens the shared Liquid Glass reading panel titled Biography, with scrolling for long text and Back to dismiss. The panels show the selected file’s available technical metadata, not invented values; series identify the selected episode. Video/file bitrates display in Mbps, with Silo’s kbps and Emby’s bps normalised before formatting. Audio retains kbps for sub-Mbps values.
+Movie and series detail pages place TMDb Trailers before Cast & Crew, followed by server-only More Like This and Media Information on iOS and tvOS.
+Movie pages add a row for the movie's TMDb collection (for example Scream Collection) between More Like This and Media Information.
+Movie and series pages also show the TMDb user score after the quality badges on Apple TV, beside the age rating under the metadata pills on iPhone, and at the end of the technical row after the quality badges on iPad, as TMDb's Primary Short logo followed by the score to one decimal; it is hidden without a signed-in account and profile, without a TMDb match, or when nobody has rated the title.
+It needs a signed-in account and profile, lists only titles in the library in release order, includes the current movie, and is hidden when the movie has no collection or is the only one from it in the library.
+Titles are matched against the library list Studios & Networks saves each day, so the row never searches the server, stays hidden until that list exists and picks up newly added films after the next daily refresh.
+Selecting the current movie's card keeps the page in place.
+Cast & Crew uses portrait posters at the same size as More Like This: the shared card size on iPhone and iPad, and Home's Large poster size on Apple TV.
+Directors come first, then writers and creators (anyone already shown as director is left out), then the cast in the server's billing order, each later group after a thin divider with a rotated WRITERS or CAST label.
+Emby connections do not read crew, so Emby titles show only the cast.
+Tapping an actor’s biography on iOS opens the full text in a scrollable sheet with a Done button.
+On tvOS, the biography preview is selectable with the same focus ring as movie and series descriptions.
+Selecting it opens the shared Liquid Glass reading panel titled Biography, with scrolling for long text and Back to dismiss.
+The panels show the selected file’s available technical metadata, not invented values; series identify the selected episode.
+Video/file bitrates display in Mbps, with Silo’s kbps and Emby’s bps normalised before formatting.
+Audio retains kbps for sub-Mbps values.
 
-Movie and series detail logos on iPhone and iPad align to the bottom of their artwork area, directly above the metadata, matching Home across different logo proportions. The year, runtime or season count and genres are separate slim pills on one line that never wraps; the last genre is dropped when it does not fit. On iPhone and compact-width iPad windows (Slide Over and one-third Split View) the outlined age rating and TMDb score sit on a second row beneath the pills. Regular-width iPad windows use the Apple TV-style hero instead, with the age rating in the heading and the TMDb score in the technical row; see [Responsive layout validation](#responsive-layout-validation). The Play button is a 12-point rounded rectangle. Compact iPhone movie and series details retain the blurred artwork background while sharp artwork moves upwards at roughly half the metadata’s speed. Pulling down keeps artwork attached to the card’s top. The full-screen iPhone presentation uses the system’s interactive zoom to return to its source card; the artwork’s parent does not clip its top-edge compensation. Nested actor pages use Back, with pull-to-dismiss disabled.
+Movie and series detail logos on iPhone and iPad align to the bottom of their artwork area, directly above the metadata, matching Home across different logo proportions.
+The year, runtime or season count and genres are separate slim pills on one line that never wraps; the last genre is dropped when it does not fit.
+On iPhone and compact-width iPad windows (Slide Over and one-third Split View) the outlined age rating and TMDb score sit on a second row beneath the pills.
+Regular-width iPad windows use the Apple TV-style hero instead, with the age rating in the heading and the TMDb score in the technical row; see [Responsive layout validation](#responsive-layout-validation).
+The Play button is a 12-point rounded rectangle.
+Compact iPhone movie and series details retain the blurred artwork background while sharp artwork moves upwards at roughly half the metadata’s speed.
+Pulling down keeps artwork attached to the card’s top.
+The full-screen iPhone presentation uses the system’s interactive zoom to return to its source card; the artwork’s parent does not clip its top-edge compensation.
+Nested actor pages use Back, with pull-to-dismiss disabled.
 
-Reduce Motion disables parallax and Reduce Transparency disables the blurred artwork surface; on iPad the blur below the hero becomes a solid dark fill. Home retains its separate parallax. Playback readouts remain compact equal-width glass pills. Long descriptions open separately; mobile movie and series pages have no extra More button. Downloads retain their progress rings and main-series artwork. Retry states use the shared glass treatment; cancelled or stale detail requests do not flash an error while closing.
+Reduce Motion disables parallax and Reduce Transparency disables the blurred artwork surface; on iPad the blur below the hero becomes a solid dark fill.
+Home retains its separate parallax.
+Playback readouts remain compact equal-width glass pills.
+Long descriptions open separately; mobile movie and series pages have no extra More button.
+Downloads retain their progress rings and main-series artwork.
+Retry states use the shared glass treatment; cancelled or stale detail requests do not flash an error while closing.
 
-Series selectors publish the selected episode’s catalogue file and audio metadata without waiting for the slower watch response. Cached metadata stays visible during refresh. Only the two adjacent episodes are warmed after the active selection is ready; other-season warming waits behind that work. Account/profile and request-identity checks reject stale results, and late responses preserve manual version and track choices. Subtitle inventory still follows the [detail reader’s media-based rules](playback/architecture.md#tracks-subtitles-and-previews).
+Series selectors publish the selected episode’s catalogue file and audio metadata without waiting for the slower watch response.
+Cached metadata stays visible during refresh.
+Only the two adjacent episodes are warmed after the active selection is ready; other-season warming waits behind that work.
+Account/profile and request-identity checks reject stale results, and late responses preserve manual version and track choices.
+Subtitle inventory still follows the [detail reader’s media-based rules](playback/architecture.md#tracks-subtitles-and-previews).
 
-The September 2026 iPhone detail update passed the [iOS test suite and tvOS build](https://github.com/blurbery/vivid/actions/runs/35821654660). After the final series-loading fix was installed on iPhone 16 Pro Max, blurbery reported that media information appeared instantly. This is device feedback, not a guarantee for every server or a new physical iPad check.
+The September 2026 iPhone detail update passed the [iOS test suite and tvOS build](https://github.com/blurbery/vivid/actions/runs/35821654660).
+After the final series-loading fix was installed on iPhone 16 Pro Max, blurbery reported that media information appeared instantly.
+This is device feedback, not a guarantee for every server or a new physical iPad check.
 
-On 16 September 2026, blurbery confirmed the installed Lucid playback and subtitle updates worked on iPhone and Apple TV. The iOS Settings overview was subsequently accepted with separate Profiles and Settings sections and joined native settings rows. Both playback builds and 26 focused language-preference checks passed. These observations do not establish every media format, output route or physical iPad behaviour.
+On 16 September 2026, blurbery confirmed the installed Lucid playback and subtitle updates worked on iPhone and Apple TV.
+The iOS Settings overview was subsequently accepted with separate Profiles and Settings sections and joined native settings rows.
+Both playback builds and 26 focused language-preference checks passed.
+These observations do not establish every media format, output route or physical iPad behaviour.
 
-On iPhone and iPad, Home’s spotlight surface fades to transparency over the selected theme. Its artwork remains mounted while scrolling beyond the carousel so the extended fade does not disappear with a lazy row; poster shelves remain lazy, and offscreen spotlight rotation pauses. On iPad, Home’s sharp artwork blends into a soft blur at the carousel dots and into the first row. This preserves the iPhone fade and tvOS presentation. Local signed build `0.14.3 (19)` passed and opened on the Mac as Designed for iPad; Home was visually inspected and the owner accepted the final layout. Adaptive grid arithmetic filled all 22 checked width/spacing combinations. Physical iPad rotation has not been verified. The same application sources were subsequently uploaded as iPhone/iPad TestFlight `0.14.3 (16)`; see the [build record](release/versioning.md#recorded-apple-builds).
+On iPhone and iPad, Home’s spotlight surface fades to transparency over the selected theme.
+Its artwork remains mounted while scrolling beyond the carousel so the extended fade does not disappear with a lazy row; poster shelves remain lazy, and offscreen spotlight rotation pauses.
+On iPad, Home’s sharp artwork blends into a soft blur at the carousel dots and into the first row.
+This preserves the iPhone fade and tvOS presentation.
+Local signed build `0.14.3 (19)` passed and opened on the Mac as Designed for iPad; Home was visually inspected and the owner accepted the final layout.
+Adaptive grid arithmetic filled all 22 checked width/spacing combinations.
+Physical iPad rotation has not been verified.
+The same application sources were subsequently uploaded as iPhone/iPad TestFlight `0.14.3 (16)`; see the [build record](release/versioning.md#recorded-apple-builds).
 
 ### iPhone Duo
 
-Vivid lays itself out for both iPhone Duo screens: the 466 × 678-point cover screen and the 669 × 951-point inner screen. Every Duo change keys off the Duo's model identifier, through `PhoneDuo.isDuo` or the `onDuo` modifier, which applies a Duo-only change on the Duo and leaves the view exactly as it was elsewhere, so other iPhones, iPads and Apple TV are unchanged. The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDetail` modifier also switch on for iPad, which shares the Duo's detail parallax and artwork glass under its own Apple TV-style hero. `PhoneDuoSafeguardTests`, which CI runs on an iPhone that isn't a Duo, check that the gate stays off there and that the shared detail actions keep their usual sizes, gaps and stacking.
+Vivid lays itself out for both iPhone Duo screens: the 466 × 678-point cover screen and the 669 × 951-point inner screen.
+Every Duo change keys off the Duo's model identifier, through `PhoneDuo.isDuo` or the `onDuo` modifier, which applies a Duo-only change on the Duo and leaves the view exactly as it was elsewhere, so other iPhones, iPads and Apple TV are unchanged.
+The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDetail` modifier also switch on for iPad, which shares the Duo's detail parallax and artwork glass under its own Apple TV-style hero.
+`PhoneDuoSafeguardTests`, which CI runs on an iPhone that isn't a Duo, check that the gate stays off there and that the shared detail actions keep their usual sizes, gaps and stacking.
 
-- **Orientation:** the cover screen browses in portrait like other iPhones. The inner screen rotates while browsing, Search and Settings included. Folding or unfolding only asks iOS to re-check the supported orientations; Vivid sends no rotation request, because iOS replays one after the next unfold and pins the inner screen in portrait.
-- **Side status bar:** on the cover screen, and on the inner screen in landscape, iOS runs the status bar down an 84-point strip on one side. The tab bar stands vertically in that strip, below the status icons and on their line; on the cover it ends where the page tabs begin. For You, Search and Calendar move their page tabs to the bottom, keeping their portrait width. The scrolling glass strip at the top of Home, For You and Libraries is off there. Home's spotlight artwork runs under the strip, and keeps its slower-moving parallax on the inner screen.
-- **X and back:** whenever the tab bar is hidden, a page's X or back button stands under the connectivity icon, centred on the status icons' line 48 points in from the screen's edge: in the strip on the cover and in landscape, and in the top corner in portrait. This covers detail and actor pages, Search, Settings, Settings pages and pages opened from the tabs. Vivid keeps edge swipe back on pages whose back button moved; that hasn't been tested yet.
-- **Status bar widgets:** iOS 27.1 reports the band it keeps clear at the top of the strip, or of the top corner in portrait, for the camera, the status icons and any widgets added there. With just the time and connectivity icons it ends 170 points down on the cover, 120 in the inner screen's landscape strip and 82 in its portrait corner, and the layouts above are placed for that. When widgets make it longer, the X and back buttons and the Settings avatar bar move down by the same amount, and so does the top of the tab bar, which gets shorter so its bottom stays put. Builds without the iOS 27.1 SDK keep the usual positions.
-- **Grids:** Libraries, Search, For You and collection grids fit posters to the inner screen like Apple TV: six across in landscape and four in portrait. The cover keeps three.
-- **Detail pages:** the inner screen keeps the iPhone portrait design in both orientations, with its parallax and artwork glass, and no glass bar or title fading in while scrolling. Play shares a row with Favourite, Watchlist, Watched, Shuffle and Download (Shuffle on series only), whose circles match Play's height with even gaps; the row, synopsis, credits and playback selectors sit in one 560-point column centred under the logo, and the season chips are centred. In landscape a Studios & Networks logo is centred on the whole screen.
-- **Settings:** beside the side status bar the overview shows the profiles as a glass bar of avatars in the strip under the X, with the same taps as the profile cards. The Profiles section then holds just a Profiles row when there's more than one profile, which opens Settings > Profiles to switch, sign in or rearrange them; with one profile the section is hidden.
-- **Half folded:** folded like a laptop with the inner screen in portrait, Search focuses its field so the keyboard opens on the lower half (not while a detail page, the player or a pushed page covers it), and the player moves the video above the crease with a control deck below it (see the [playback guide](playback/README.md#iphone-and-ipad-controls)). This reads the hinge and the crease with iOS 27.1 APIs, which only build with the iOS 27.1 SDK; CI builds with Xcode 26 and leaves the half-fold behaviour out.
+- **Orientation:** the cover screen browses in portrait like other iPhones.
+  The inner screen rotates while browsing, Search and Settings included.
+  Folding or unfolding only asks iOS to re-check the supported orientations; Vivid sends no rotation request, because iOS replays one after the next unfold and pins the inner screen in portrait.
+- **Side status bar:** on the cover screen, and on the inner screen in landscape, iOS runs the status bar down an 84-point strip on one side.
+  The tab bar stands vertically in that strip, below the status icons and on their line; on the cover it ends where the page tabs begin.
+  For You, Search and Calendar move their page tabs to the bottom, keeping their portrait width.
+  The scrolling glass strip at the top of Home, For You and Libraries is off there.
+  Home's spotlight artwork runs under the strip, and keeps its slower-moving parallax on the inner screen.
+- **X and back:** whenever the tab bar is hidden, a page's X or back button stands under the connectivity icon, centred on the status icons' line 48 points in from the screen's edge: in the strip on the cover and in landscape, and in the top corner in portrait.
+  This covers detail and actor pages, Search, Settings, Settings pages and pages opened from the tabs.
+  Vivid keeps edge swipe back on pages whose back button moved; that hasn't been tested yet.
+- **Status bar widgets:** iOS 27.1 reports the band it keeps clear at the top of the strip, or of the top corner in portrait, for the camera, the status icons and any widgets added there.
+  With just the time and connectivity icons it ends 170 points down on the cover, 120 in the inner screen's landscape strip and 82 in its portrait corner, and the layouts above are placed for that.
+  When widgets make it longer, the X and back buttons and the Settings avatar bar move down by the same amount, and so does the top of the tab bar, which gets shorter so its bottom stays put.
+  Builds without the iOS 27.1 SDK keep the usual positions.
+- **Grids:** Libraries, Search, For You and collection grids fit posters to the inner screen like Apple TV: six across in landscape and four in portrait.
+  The cover keeps three.
+- **Detail pages:** the inner screen keeps the iPhone portrait design in both orientations, with its parallax and artwork glass, and no glass bar or title fading in while scrolling.
+  Play shares a row with Favourite, Watchlist, Watched, Shuffle and Download (Shuffle on series only), whose circles match Play's height with even gaps; the row, synopsis, credits and playback selectors sit in one 560-point column centred under the logo, and the season chips are centred.
+  In landscape a Studios & Networks logo is centred on the whole screen.
+- **Settings:** beside the side status bar the overview shows the profiles as a glass bar of avatars in the strip under the X, with the same taps as the profile cards.
+  The Profiles section then holds just a Profiles row when there's more than one profile, which opens Settings > Profiles to switch, sign in or rearrange them; with one profile the section is hidden.
+- **Half folded:** folded like a laptop with the inner screen in portrait, Search focuses its field so the keyboard opens on the lower half (not while a detail page, the player or a pushed page covers it), and the player moves the video above the crease with a control deck below it (see the [playback guide](playback/README.md#iphone-and-ipad-controls)).
+  This reads the hinge and the crease with iOS 27.1 APIs, which only build with the iOS 27.1 SDK; CI builds with Xcode 26 and leaves the half-fold behaviour out.
 - **Launch:** the starting logo is centred on the whole screen rather than beside the strip.
 
-blurbery checked these layouts in the iPhone Duo simulator (iOS 27.1, Xcode 27.1), folding and turning it with Device Hub, including the half-folded player and Search. No physical iPhone Duo has been tested. Edge swipe back, the player's motion-based rotation on the inner screen, real hinge angles and the PiP and AirPlay buttons in the half-folded deck, which the simulator can't show working, still need a device. Moving down for widgets was checked on the inner screen in landscape by making the band 40 points longer in a test build; adding a real widget hasn't been tried yet.
+blurbery checked these layouts in the iPhone Duo simulator (iOS 27.1, Xcode 27.1), folding and turning it with Device Hub, including the half-folded player and Search.
+No physical iPhone Duo has been tested.
+Edge swipe back, the player's motion-based rotation on the inner screen, real hinge angles and the PiP and AirPlay buttons in the half-folded deck, which the simulator can't show working, still need a device.
+Moving down for widgets was checked on the inner screen in landscape by making the band 40 points longer in a test build; adding a real widget hasn't been tried yet.
 
 ## Diagnostics reports
 
-Vivid keeps crash, freeze and problem reports on the device so testers can send them without anyone having to notice or describe a problem. Nothing is uploaded automatically. Reports leave the device only when someone chooses to send them.
+Vivid keeps crash, freeze and problem reports on the device so testers can send them without anyone having to notice or describe a problem.
+Nothing is uploaded automatically.
+Reports leave the device only when someone chooses to send them.
 
 | Source | Platforms | What it records |
 | --- | --- | --- |
@@ -180,64 +567,188 @@ Vivid keeps crash, freeze and problem reports on the device so testers can send 
 | App errors | iPhone, iPad, Apple TV | Essential-tier error log lines that point at the app, such as unreadable server responses. |
 | Download failures | iPhone, iPad | A download that failed for good: the stage (registration, preparing, transfer, saving or the server's own preparation), server type, HTTP status or `URLError` code, an error token, the quality preset, whether it was part of a season or series download, and how many retries it used. No titles, item or download IDs, file names or error text. |
 
-Each report keeps what the app was doing (opening, browsing or playback, the play method, how many minutes playback had run, memory warnings, and the app's memory use, peak and remaining headroom, sampled every 30 seconds and at each memory warning) and about the last 40 essential app events. Those events come from the existing `DiagTrace` lines, which use fixed messages and state tokens; they go through the diagnostics redactor, and playback session IDs and the per-launch run ID are removed. The redactor replaces each server host with a `[host:…]` token, a short SHA-256 of the host mixed with random bytes made at launch and kept only in memory, so one host keeps the same token across a launch's events but tokens can't be matched between launches or checked against a guessed domain. MetricKit call stacks are allow-listed rather than redacted, because their binary UUIDs and offsets are needed for symbolication. No titles, item IDs, server addresses or account details are recorded.
+Each report keeps what the app was doing (opening, browsing or playback, the play method, how many minutes playback had run, memory warnings, and the app's memory use, peak and remaining headroom, sampled every 30 seconds and at each memory warning) and about the last 40 essential app events.
+Those events come from the existing `DiagTrace` lines, which use fixed messages and state tokens; they go through the diagnostics redactor, and playback session IDs and the per-launch run ID are removed.
+The redactor replaces each server host with a `[host:…]` token, a short SHA-256 of the host mixed with random bytes made at launch and kept only in memory, so one host keeps the same token across a launch's events but tokens can't be matched between launches or checked against a guessed domain.
+MetricKit call stacks are allow-listed rather than redacted, because their binary UUIDs and offsets are needed for symbolication.
+No titles, item IDs, server addresses or account details are recorded.
 
-Server reachability enters the report context only when it changes. Recording it on every response rewrote the exit marker each time, and because any settings write wakes iCloud preference sync, a signed-in Apple TV re-read its server settings every two to three seconds, including during playback.
+Server reachability enters the report context only when it changes.
+Recording it on every response rewrote the exit marker each time, and because any settings write wakes iCloud preference sync, a signed-in Apple TV re-read its server settings every two to three seconds, including during playback.
 
-The exit marker and the background context are kept in their own settings store, which iCloud preference sync ignores. The marker is still rewritten every 30 seconds and after every freeze. While it shared the standard store, each write woke the sync's capture, which reads Keychain and both settings stores on the main thread. A capture that took a second or more would freeze the app, and that freeze's marker write would start the next capture 2 seconds later. This is the likely cause of an iPad report of six freezes in 22 seconds during playback, but it was inferred from the code, not reproduced. A capture that takes 250 ms or longer now adds `preference capture slow` to the recent events, with its duration only, so a freeze report can confirm or rule it out. The line times only the capture's own reads on the main thread, not the server settings request or iCloud sync that may follow.
+The exit marker and the background context are kept in their own settings store, which iCloud preference sync ignores.
+The marker is still rewritten every 30 seconds and after every freeze.
+While it shared the standard store, each write woke the sync's capture, which reads Keychain and both settings stores on the main thread.
+A capture that took a second or more would freeze the app, and that freeze's marker write would start the next capture 2 seconds later.
+This is the likely cause of an iPad report of six freezes in 22 seconds during playback, but it was inferred from the code, not reproduced.
+A capture that takes 250 ms or longer now adds `preference capture slow` to the recent events, with its duration only, so a freeze report can confirm or rule it out.
+The line times only the capture's own reads on the main thread, not the server settings request or iCloud sync that may follow.
 
-To avoid false reports, nothing is recorded while a debugger or the test runner is attached, after an app update or after a device restart. Network errors only count when they point at the app; connectivity, timeouts, TLS, server 5xx, and 401, 403, 404, 408 and 429 responses do not. Cancelled playback, and network failures while the device is offline or the server is unreachable, are not playback failures. Likewise, cancelled or paused downloads, revoked downloads, an account or profile switch, a season with nothing left to download, connectivity, timeout and TLS failures (a background transfer can't tell whether the server was down), and other network failures while offline are not download failures, and at most 10 are recorded per launch. Only Vivid's own quality presets are recorded; anything else is recorded as `other`. A signal the app survives is cleared when it next goes to the background, and a watchdog answer delayed by the process being suspended is ignored. On iPhone and iPad, a MetricKit crash from the same process is merged into the existing crash report rather than listed twice. Freeze tracking stops in the background. tvOS has no `sigaltstack`, so a main-thread stack overflow there appears as an unexpected exit.
+To avoid false reports, nothing is recorded while a debugger or the test runner is attached, after an app update or after a device restart.
+Network errors only count when they point at the app; connectivity, timeouts, TLS, server 5xx, and 401, 403, 404, 408 and 429 responses do not.
+Cancelled playback, and network failures while the device is offline or the server is unreachable, are not playback failures.
+Likewise, cancelled or paused downloads, revoked downloads, an account or profile switch, a season with nothing left to download, connectivity, timeout and TLS failures (a background transfer can't tell whether the server was down), and other network failures while offline are not download failures, and at most 10 are recorded per launch.
+Only Vivid's own quality presets are recorded; anything else is recorded as `other`.
+A signal the app survives is cleared when it next goes to the background, and a watchdog answer delayed by the process being suspended is ignored.
+On iPhone and iPad, a MetricKit crash from the same process is merged into the existing crash report rather than listed twice.
+Freeze tracking stops in the background. tvOS has no `sigaltstack`, so a main-thread stack overflow there appears as an unexpected exit.
 
-Reports have plain-English titles such as “Crashed during playback: invalid memory access”, “Froze while browsing”, “Server rejected a settings change” or “Couldn't start a download”, with the technical code (for example `SIGSEGV`, `HTTP 422 · PUT /api/v2/settings/values/{id}` or `transfer · URLError -3003`) underneath. Each also has an issue ID such as `VD-3F9A2C`, derived only from the kind, title, stable code and, when present, the top stack frame or the failing request, so the same problem matches across devices, days and app versions. App errors include the request method and its templated path (IDs and setting keys become `{id}`), so two different failing requests get different IDs while the same request keeps one. Similar reports are grouped into one row.
+Reports have plain-English titles such as “Crashed during playback: invalid memory access”, “Froze while browsing”, “Server rejected a settings change” or “Couldn't start a download”, with the technical code (for example `SIGSEGV`, `HTTP 422 · PUT /api/v2/settings/values/{id}` or `transfer · URLError -3003`) underneath.
+Each also has an issue ID such as `VD-3F9A2C`, derived only from the kind, title, stable code and, when present, the top stack frame or the failing request, so the same problem matches across devices, days and app versions.
+App errors include the request method and its templated path (IDs and setting keys become `{id}`), so two different failing requests get different IDs while the same request keeps one.
+Similar reports are grouped into one row.
 
-App errors, playback failures, download failures and watchdog freezes often repeat on every launch, and a season download can fail episode by episode. A repeat of the same issue from the same source within 24 hours of the first report is counted on that report rather than added as a new one, so the list shows “happened 12 times” instead of 12 rows. Each report keeps the details and recent events from its first occurrence, plus how many times it happened and when it last happened. A repeat after 24 hours starts a new report. Crashes, unexpected exits and MetricKit reports are always kept separately, since each one carries its own details. On Apple TV the QR summary's count includes these repeats.
+App errors, playback failures, download failures and watchdog freezes often repeat on every launch, and a season download can fail episode by episode.
+A repeat of the same issue from the same source within 24 hours of the first report is counted on that report rather than added as a new one, so the list shows “happened 12 times” instead of 12 rows.
+Each report keeps the details and recent events from its first occurrence, plus how many times it happened and when it last happened.
+A repeat after 24 hours starts a new report.
+Crashes, unexpected exits and MetricKit reports are always kept separately, since each one carries its own details.
+On Apple TV the QR summary's count includes these repeats.
 
-The store keeps at most 20 reports for 14 days, with a 2 MB cap on iPhone and iPad and 1 MB on Apple TV, where the files live in Caches. When space runs out, app errors go first, then performance reports, so a burst of errors cannot push out a crash. App errors also have their own cap of five, with per-session limits on every source. On iOS the folder is excluded from backups.
+The store keeps at most 20 reports for 14 days, with a 2 MB cap on iPhone and iPad and 1 MB on Apple TV, where the files live in Caches.
+When space runs out, app errors go first, then performance reports, so a burst of errors cannot push out a crash.
+App errors also have their own cap of five, with per-session limits on every source.
+On iOS the folder is excluded from backups.
 
-On iPhone and iPad, Settings → Diagnostics sits between Metadata and About. Its row shows how many reports have not been sent. Send posts only the unsent reports, exactly as the detail pages show them, to the [diagnostics relay](diagnostics-relay.md), which emails them to `diagnostics@vividapp.co` through Resend and keeps a copy for 30 days; each group and each report can also be sent on its own. A report counts as sent only when the relay confirms it with a reference such as `VR-7K2M9Q`, which is shown under the button so the person can quote it, and it counts as unsent again if the same problem repeats afterwards, so those occurrences are sent next time. If the send fails, the button explains why: offline, too many sends (with the wait), the service busy, or a report the service refused, which can't be retried. Other Options sends the file with Mail, marking the reports sent when Mail reports them sent, or with the share sheet. Apple TV has the same list and report pages and the same sent tracking. Send to Vivid opens a page listing what will be sent, with Send first; Show QR Code is the fallback, a `mailto:` summary of each problem: issue ID, title, code, count and date, a line of facts (what was happening, memory use and likely cause), then as many of the app events that led up to it as fit. It stays under 1.8 KB so it scans easily, so the full report is still on the Apple TV. Delete All Reports is on both platforms.
+On iPhone and iPad, Settings → Diagnostics sits between Metadata and About.
+Its row shows how many reports have not been sent.
+Send posts only the unsent reports, exactly as the detail pages show them, to the [diagnostics relay](diagnostics-relay.md), which emails them to `diagnostics@vividapp.co` through Resend and keeps a copy for 30 days; each group and each report can also be sent on its own.
+A report counts as sent only when the relay confirms it with a reference such as `VR-7K2M9Q`, which is shown under the button so the person can quote it, and it counts as unsent again if the same problem repeats afterwards, so those occurrences are sent next time.
+If the send fails, the button explains why: offline, too many sends (with the wait), the service busy, or a report the service refused, which can't be retried.
+Other Options sends the file with Mail, marking the reports sent when Mail reports them sent, or with the share sheet.
+Apple TV has the same list and report pages and the same sent tracking.
+Send to Vivid opens a page listing what will be sent, with Send first; Show QR Code is the fallback, a `mailto:` summary of each problem: issue ID, title, code, count and date, a line of facts (what was happening, memory use and likely cause), then as many of the app events that led up to it as fit.
+It stays under 1.8 KB so it scans easily, so the full report is still on the Apple TV.
+Delete All Reports is on both platforms.
 
 ### Latest playback
 
-Settings → Diagnostics also keeps one record of the latest playback, for problems that don't end in a failure, such as choppy video, audio dropouts or lip-sync drift. Each new video replaces it; reloading the same video (audio recovery, a sign-in refresh) continues it. It records the setup (audio output and channels, display HDR formats and refresh rate, Match Content, server type and play method), the media as decoded and as output (codecs, resolution, dynamic range, frame rate, passthrough or decoded audio), totals for dropped, decoder-dropped and late frames, worst A/V sync, rebuffering, seeks, display switches, reloads, audio output changes and audio faults, how playback ended (including the failure type), and a per-minute timeline covering every played minute, with the app's memory use and anything that went wrong in it. Apple TV's When it happened list shows only the minutes that had a problem.
+Settings → Diagnostics also keeps one record of the latest playback, for problems that don't end in a failure, such as choppy video, audio dropouts or lip-sync drift.
+Each new video replaces it; reloading the same video (audio recovery, a sign-in refresh) continues it.
+It records the setup (audio output and channels, display HDR formats and refresh rate, Match Content, server type and play method), the media as decoded and as output (codecs, resolution, dynamic range, frame rate, passthrough or decoded audio), totals for dropped, decoder-dropped and late frames, worst A/V sync, rebuffering, seeks, display switches, reloads, audio output changes and audio faults, how playback ended (including the failure type), and a per-minute timeline covering every played minute, with the app's memory use and anything that went wrong in it.
+Apple TV's When it happened list shows only the minutes that had a problem.
 
-On iPhone and iPad it also counts how often the player controls appeared and the shortest time they stayed. When they go away within 1.5 seconds of appearing, it records what showed them and what hid them as fixed tokens, such as `video_tap>background_tap` or `control>new_load`, with a count for each pair and the last 10 with how long the controls stayed. The controls normally stay 5 seconds after the last tap, so these catch the controls vanishing straight after a tap. A background tap within 1.5 seconds of the controls appearing keeps them up rather than hiding them, so `>background_tap` early hides only appear in records from builds before that change. If a tester sees that happen but the record shows no early hides, the controls stayed on in the player's state and the overlay disappeared on screen instead. The controls the player shows by itself when a video ends aren't counted, because Next Up hides them straight away. The summary shows these as Player controls and Controls hid early, and the headline mentions any early hides. Apple TV doesn't record them, because pressing Menu dismisses the controls at once by design.
+On iPhone and iPad it also counts how often the player controls appeared and the shortest time they stayed.
+When they go away within 1.5 seconds of appearing, it records what showed them and what hid them as fixed tokens, such as `video_tap>background_tap` or `control>new_load`, with a count for each pair and the last 10 with how long the controls stayed.
+The controls normally stay 5 seconds after the last tap, so these catch the controls vanishing straight after a tap.
+A background tap within 1.5 seconds of the controls appearing keeps them up rather than hiding them, so `>background_tap` early hides only appear in records from builds before that change.
+If a tester sees that happen but the record shows no early hides, the controls stayed on in the player's state and the overlay disappeared on screen instead.
+The controls the player shows by itself when a video ends aren't counted, because Next Up hides them straight away.
+The summary shows these as Player controls and Controls hid early, and the headline mentions any early hides.
+Apple TV doesn't record them, because pressing Menu dismisses the controls at once by design.
 
-Played time only counts while video is on screen, so opening, buffering before the first frame, pauses and seeks are not playback. The 5 seconds after starting, seeking, resuming, recovering from buffering, a display switch starting or ending, a speed change or an audio track switch are warm-up: dropped frames there are counted separately, late and decoder drops and A/V sync readings are ignored, and buffering that begins then isn't a rebuffer. That buffering is still recorded as waiting to load, with the total and the longest single wait, so playback that got stuck after a seek shows up; a wait of 10 seconds or more is named in the headline. Paused time after playback starts is recorded too, so the gaps between played time and a session's length are accounted for. While the app plays audio in the background on iPhone or iPad, video frame drops and A/V sync aren't counted; picture in picture still counts.
+Played time only counts while video is on screen, so opening, buffering before the first frame, pauses and seeks are not playback.
+The 5 seconds after starting, seeking, resuming, recovering from buffering, a display switch starting or ending, a speed change or an audio track switch are warm-up: dropped frames there are counted separately, late and decoder drops and A/V sync readings are ignored, and buffering that begins then isn't a rebuffer.
+That buffering is still recorded as waiting to load, with the total and the longest single wait, so playback that got stuck after a seek shows up; a wait of 10 seconds or more is named in the headline.
+Paused time after playback starts is recorded too, so the gaps between played time and a session's length are accounted for.
+While the app plays audio in the background on iPhone or iPad, video frame drops and A/V sync aren't counted; picture in picture still counts.
 
-Every played minute also records Vivid's highest memory use in that minute, as the system counts it against the app's limit, so a session the system closed for low memory shows how fast memory climbed. The timeline stops at 240 minutes, so after four hours of playback its last minute keeps the highest reading of all the time after it. The summary gives the first and highest readings, and on Apple TV each problem minute shows its reading. The summary also says whether the display refresh is a whole multiple of the video's frame rate, with both rates; when it isn't, motion can look uneven even with no dropped frames. That's expected on fixed 60 Hz phone screens and something Match Content can fix on Apple TV. The record also counts stalls: the playhead not moving for 2 seconds or more in steady playback without buffering. This catches a stalled audio clock, which A/V sync can't show, because video waits for the audio clock and the drift stays near zero. Startup is split into the time to the first frame and the time until the playhead first moves; until then a shown first frame is held and isn't played time. Each audio route is recorded with its reported output latency, Apple's reported rendering mode and the channels the output port negotiated, as counts and tokens only, never port or device names. On iPhone and iPad it also notes whether video is on an external screen.
+Every played minute also records Vivid's highest memory use in that minute, as the system counts it against the app's limit, so a session the system closed for low memory shows how fast memory climbed.
+The timeline stops at 240 minutes, so after four hours of playback its last minute keeps the highest reading of all the time after it.
+The summary gives the first and highest readings, and on Apple TV each problem minute shows its reading.
+The summary also says whether the display refresh is a whole multiple of the video's frame rate, with both rates; when it isn't, motion can look uneven even with no dropped frames.
+That's expected on fixed 60 Hz phone screens and something Match Content can fix on Apple TV.
+The record also counts stalls: the playhead not moving for 2 seconds or more in steady playback without buffering.
+This catches a stalled audio clock, which A/V sync can't show, because video waits for the audio clock and the drift stays near zero.
+Startup is split into the time to the first frame and the time until the playhead first moves; until then a shown first frame is held and isn't played time.
+Each audio route is recorded with its reported output latency, Apple's reported rendering mode and the channels the output port negotiated, as counts and tokens only, never port or device names.
+On iPhone and iPad it also notes whether video is on an external screen.
 
-On AirPlay, Lucid's audio clock comes from Apple's audio output: AVPlayer for compressed AC-3 and E-AC-3, the sample-buffer renderer's synchroniser for PCM. On HomePod with compressed audio, device traces show AVPlayer's clock stays parked until the speakers play, about the route's 2.0 s reported latency, and blurbery confirmed audio in sync on that route, so A/V sync there is measured against what is heard. Before the anchor-start fix that parked clock ran video 2.4 s ahead of the sound while A/V sync read near zero; the stall and startup counts now show that case. The PCM path over AirPlay hasn't been verified on a device: the driver doesn't add the reported latency, so its A/V sync is only correct if Apple's synchroniser clock already follows the speakers. Apple's rendering mode is a read-only result, and Vivid has seen it report not applicable while Atmos content was playing on HomePod, so it isn't proof either way. AirPlay receivers don't report which formats they decode. A value the player didn't report is listed under Not measured instead of showing zero; on AirPlay the receiver's formats are always unknown. Values come from properties the player already publishes, plus a read of two frame counters and the app's memory footprint (one cheap system call) once a second and of bitrate and display rate every 10 seconds, off the render path. Apart from that memory read, the main thread only updates counts; Apple's audio-route and HDR queries, JSON encoding and file writes run on a background queue, the writes in order; codec and format names are kept only when they are short tokens, so no free text, addresses or titles reach the record. The record stays under 64 KB however long the video, and is saved when playback stops, when the app goes to the background and once a minute. Launch with `-vividDisableSessionRecorder` to turn recording off for comparison.
+On AirPlay, Lucid's audio clock comes from Apple's audio output: AVPlayer for compressed AC-3 and E-AC-3, the sample-buffer renderer's synchroniser for PCM.
+On HomePod with compressed audio, device traces show AVPlayer's clock stays parked until the speakers play, about the route's 2.0 s reported latency, and blurbery confirmed audio in sync on that route, so A/V sync there is measured against what is heard.
+Before the anchor-start fix that parked clock ran video 2.4 s ahead of the sound while A/V sync read near zero; the stall and startup counts now show that case.
+The PCM path over AirPlay hasn't been verified on a device: the driver doesn't add the reported latency, so its A/V sync is only correct if Apple's synchroniser clock already follows the speakers.
+Apple's rendering mode is a read-only result, and Vivid has seen it report not applicable while Atmos content was playing on HomePod, so it isn't proof either way.
+AirPlay receivers don't report which formats they decode.
+A value the player didn't report is listed under Not measured instead of showing zero; on AirPlay the receiver's formats are always unknown.
+Values come from properties the player already publishes, plus a read of two frame counters and the app's memory footprint (one cheap system call) once a second and of bitrate and display rate every 10 seconds, off the render path.
+Apart from that memory read, the main thread only updates counts; Apple's audio-route and HDR queries, JSON encoding and file writes run on a background queue, the writes in order; codec and format names are kept only when they are short tokens, so no free text, addresses or titles reach the record.
+The record stays under 64 KB however long the video, and is saved when playback stops, when the app goes to the background and once a minute.
+Launch with `-vividDisableSessionRecorder` to turn recording off for comparison.
 
-On every device the Latest Playback page has Send Latest Playback, which posts the record to the diagnostics relay and shows the reference or the reason it failed. Above Send, an optional What happened? field lets the tester describe the problem in up to 500 characters; it's added only to the copy that's sent (never to the saved record), trimmed, with control and text-direction characters removed, and the relay puts it in the email body. The problem-report Send on iPhone and iPad and Send to Vivid on Apple TV have the same field. On iPhone and iPad, Other Options (Mail or the share sheet) attaches the same file Send would, note included. Sending a single group or report from its own page doesn't carry the note, and on Apple TV Show QR Code opens an email on the phone, where the tester can write instead. On iPhone and iPad the page also shows exactly what is sent and Other Options (Mail or the share sheet). On Apple TV it shows the summary and the problem minutes, with focus starting on Send.
+On every device the Latest Playback page has Send Latest Playback, which posts the record to the diagnostics relay and shows the reference or the reason it failed.
+Above Send, an optional What happened? field lets the tester describe the problem in up to 500 characters; it's added only to the copy that's sent (never to the saved record), trimmed, with control and text-direction characters removed, and the relay puts it in the email body.
+The problem-report Send on iPhone and iPad and Send to Vivid on Apple TV have the same field.
+On iPhone and iPad, Other Options (Mail or the share sheet) attaches the same file Send would, note included.
+Sending a single group or report from its own page doesn't carry the note, and on Apple TV Show QR Code opens an email on the phone, where the tester can write instead.
+On iPhone and iPad the page also shows exactly what is sent and Other Options (Mail or the share sheet).
+On Apple TV it shows the summary and the problem minutes, with focus starting on Send.
 
-Debug builds accept `-healthHangTest` and `-healthCrashTest` to block the main thread or crash shortly after launch; launch without a debugger so the monitor is active. MetricKit payloads only arrive on devices, or through Xcode's Simulate MetricKit Payloads.
+Debug builds accept `-healthHangTest` and `-healthCrashTest` to block the main thread or crash shortly after launch; launch without a debugger so the monitor is active.
+MetricKit payloads only arrive on devices, or through Xcode's Simulate MetricKit Payloads.
 
 ## Responsive layout validation
 
-The results below belong to the stated development revisions. For current TestFlight availability and exact build source mappings, use App Store Connect. The [recorded Apple builds](release/versioning.md#recorded-apple-builds) preserve historical validation.
+The results below belong to the stated development revisions.
+For current TestFlight availability and exact build source mappings, use App Store Connect.
+The [recorded Apple builds](release/versioning.md#recorded-apple-builds) preserve historical validation.
 
-The [complete iOS CI suite](https://github.com/blurbery/vivid/actions/runs/34210945327) passed at `d6f5eef`: 836 tests passed, two optional live-fixture tests skipped, zero failures. The [tvOS simulator build](https://github.com/blurbery/vivid/actions/runs/34209587128/job/102007142684) passed at `ed4734b`; the application source is identical between those revisions. CI required explicit numeric/collection conversions for Xcode 26.3 and corrections to two stale test expectations, without changing the tested behaviour. The skipped checks require `VIVID_LIVE_FIXTURE_PATH` and `VIVID_EMBEDDED_FIXTURE_URL`; their absence is not playback coverage. The isolated TMDb checks passed too. Documentation-only commits made on top of that revision reused these results rather than rebuilding unchanged app code.
+The [complete iOS CI suite](https://github.com/blurbery/vivid/actions/runs/34210945327) passed at `d6f5eef`: 836 tests passed, two optional live-fixture tests skipped, zero failures.
+The [tvOS simulator build](https://github.com/blurbery/vivid/actions/runs/34209587128/job/102007142684) passed at `ed4734b`; the application source is identical between those revisions.
+CI required explicit numeric/collection conversions for Xcode 26.3 and corrections to two stale test expectations, without changing the tested behaviour.
+The skipped checks require `VIVID_LIVE_FIXTURE_PATH` and `VIVID_EMBEDDED_FIXTURE_URL`; their absence is not playback coverage.
+The isolated TMDb checks passed too.
+Documentation-only commits made on top of that revision reused these results rather than rebuilding unchanged app code.
 
-The mobile platforms share features and styling, with adaptive grid columns where iPad has room. Movie, series and actor details open full-screen. iPhone and iPad use native interactive zoom for catalogue details, retaining X and returning to the tapped poster when a matching source is available. Spotlight and source-less routes use the system’s centred zoom. Each detail stays on the title that was opened, with no sideways paging between titles. On iPad, in a regular-width window, movie, series and season details copy the Apple TV hero in both orientations; Slide Over and one-third Split View keep the iPhone layout. Sharp artwork stays fixed on screen while the page scrolls over it. In landscape the hero fills the screen; in portrait it ends about three quarters down so the seasons and the first row show. The logo, a heading (Movie, or Series and the season count, then genres and the outlined age rating; season pages show the episode count and genres), the synopsis, the credit and a technical row (year, runtime, quality badges such as 4K, DV P8.1 and CC, and the TMDb score) sit at the bottom left. Below them, a solid white Play sits beside icon-only circles for Audio and Subtitles (plus Version or Edition when there's a choice), Watchlist, Download and More. More holds Favourite and the Watched actions, plus Start Over on movies and episodes with progress, and Shuffle first on a series. A blurred, darkened copy of the same fixed artwork eases in from just above the seasons, or the first supporting row, and is opaque just below them. It slides up over the sharp artwork as the page scrolls and covers the whole screen once its soft edge has passed the top. The contrast shade behind the hero text fades out under that edge at the same darkness, so only sharpness changes across it. With Reduce Transparency on, the blur is a solid dark fill, so the edge also darkens. The season tabs sit at the left edge. Actor pages use Back within the retained detail stack; dragging down does not navigate back.
+The mobile platforms share features and styling, with adaptive grid columns where iPad has room.
+Movie, series and actor details open full-screen. iPhone and iPad use native interactive zoom for catalogue details, retaining X and returning to the tapped poster when a matching source is available.
+Spotlight and source-less routes use the system’s centred zoom.
+Each detail stays on the title that was opened, with no sideways paging between titles.
+On iPad, in a regular-width window, movie, series and season details copy the Apple TV hero in both orientations; Slide Over and one-third Split View keep the iPhone layout.
+Sharp artwork stays fixed on screen while the page scrolls over it.
+In landscape the hero fills the screen; in portrait it ends about three quarters down so the seasons and the first row show.
+The logo, a heading (Movie, or Series and the season count, then genres and the outlined age rating; season pages show the episode count and genres), the synopsis, the credit and a technical row (year, runtime, quality badges such as 4K, DV P8.1 and CC, and the TMDb score) sit at the bottom left.
+Below them, a solid white Play sits beside icon-only circles for Audio and Subtitles (plus Version or Edition when there's a choice), Watchlist, Download and More.
+More holds Favourite and the Watched actions, plus Start Over on movies and episodes with progress, and Shuffle first on a series.
+A blurred, darkened copy of the same fixed artwork eases in from just above the seasons, or the first supporting row, and is opaque just below them.
+It slides up over the sharp artwork as the page scrolls and covers the whole screen once its soft edge has passed the top.
+The contrast shade behind the hero text fades out under that edge at the same darkness, so only sharpness changes across it.
+With Reduce Transparency on, the blur is a solid dark fill, so the edge also darkens.
+The season tabs sit at the left edge.
+Actor pages use Back within the retained detail stack; dragging down does not navigate back.
 
-Detail controls sit inside the top safe area. On iPhone, the scroll-driven glass title background extends to the top screen edge; iPad and the iPhone Duo have no glass title bar. The native top scroll-edge blur is hidden. Returning from an actor or nested detail preserves the iPhone title bar at the retained scroll position; opening another title starts fresh. Home pauses its spotlight and progress indicator until detail dismissal completes, then resumes the remaining slide time. The covered source page does not accept touches or accessibility focus.
+Detail controls sit inside the top safe area.
+On iPhone, the scroll-driven glass title background extends to the top screen edge; iPad and the iPhone Duo have no glass title bar.
+The native top scroll-edge blur is hidden.
+Returning from an actor or nested detail preserves the iPhone title bar at the retained scroll position; opening another title starts fresh.
+Home pauses its spotlight and progress indicator until detail dismissal completes, then resumes the remaining slide time.
+The covered source page does not accept touches or accessibility focus.
 
-iPad Search uses a centred field capped at 640 points; its filters and For You tabs are capped at 520 points, above full-width content. Settings subpages keep their content centred within 760 points, tightening for narrower windows. Search and Settings support iPad rotation, although the earlier Mac layout check did not verify physical iPad rotation. Horizontal Home and detail shelves intentionally scroll; they are not full-page grids.
+iPad Search uses a centred field capped at 640 points; its filters and For You tabs are capped at 520 points, above full-width content.
+Settings subpages keep their content centred within 760 points, tightening for narrower windows.
+Search and Settings support iPad rotation, although the earlier Mac layout check did not verify physical iPad rotation.
+Horizontal Home and detail shelves intentionally scroll; they are not full-page grids.
 
-The spotlight tap-area fix, three-column iPhone Search and Home-only poster settings were build-checked, installed over the existing iPhone app and launched. Their installation is not a claim that the owner completed every interaction check.
+The spotlight tap-area fix, three-column iPhone Search and Home-only poster settings were build-checked, installed over the existing iPhone app and launched.
+Their installation is not a claim that the owner completed every interaction check.
 
-Four `MobilePosterLayoutTests` checks passed on an iPad Pro 13-inch (M5) simulator running iOS 26.5. The focused checks exercise actual SwiftUI poster-card sizing across 320–1366-point widths, compact and regular grid densities, all poster scales, and width changes: 240 poster configurations and 40 tab-bar configurations. The tab bar remains at most 420 points wide and tightens its spacing when a narrow window requires it. An unconstrained-card control reproduces the narrow-window overflow that fitted widths prevent. These checks do not establish authenticated, end-to-end verification of every page.
+Four `MobilePosterLayoutTests` checks passed on an iPad Pro 13-inch (M5) simulator running iOS 26.5.
+The focused checks exercise actual SwiftUI poster-card sizing across 320–1366-point widths, compact and regular grid densities, all poster scales, and width changes: 240 poster configurations and 40 tab-bar configurations.
+The tab bar remains at most 420 points wide and tightens its spacing when a narrow window requires it.
+An unconstrained-card control reproduces the narrow-window overflow that fitted widths prevent.
+These checks do not establish authenticated, end-to-end verification of every page.
 
-No physical iPad verification is recorded for this revision. Real-device browsing, rotation, multitasking, playback and external routes remain unverified; earlier observations do not validate the current revision. The simulator layout checks cover mobile sizing only; Apple TV results are recorded in the [TV guide](apple-tv-browsing.md#validation).
+No physical iPad verification is recorded for this revision.
+Real-device browsing, rotation, multitasking, playback and external routes remain unverified; earlier observations do not validate the current revision.
+The simulator layout checks cover mobile sizing only; Apple TV results are recorded in the [TV guide](apple-tv-browsing.md#validation).
 
 ## Interaction
 
-Use native touch, keyboard and Siri Remote behaviour for each platform. Keep focus targets stable while images load or leave memory. Prefer existing component ownership over adding another gesture or focus handler.
+Use native touch, keyboard and Siri Remote behaviour for each platform.
+Keep focus targets stable while images load or leave memory.
+Prefer existing component ownership over adding another gesture or focus handler.
 
-For TV layout, read [browsing guidance](apple-tv-browsing.md) and [focus guidance](apple-tv-focus.md). Exercise slow clicks, rapid movement, reversals and return navigation on a physical Apple TV when changing those paths.
+For TV layout, read [browsing guidance](apple-tv-browsing.md) and [focus guidance](apple-tv-focus.md).
+Exercise slow clicks, rapid movement, reversals and return navigation on a physical Apple TV when changing those paths.
 
 The design is Vivid's. Server names identify connections and capabilities, not the app's branding.
 
-On iPhone, iPad and Apple TV, long-pressing a season opens its native watched/unwatched menu. The closed ranges on the Apple TV season pill (for example S13 - S29) stand for several seasons and have no menu. Series menus order watched actions as Episode, Season, then Series, targeting the Play/Resume episode. Season writes reuse the existing optimistic episode updates and rollback on failure. On tvOS, browsing episodes leaves the main resume target unchanged. The series menu does not include Show Series Info. Episode advancement waits for an unloaded season rather than skipping it, and the movie page responds to the remote Play/Pause button.
+On iPhone, iPad and Apple TV, long-pressing a season opens its native watched/unwatched menu.
+The closed ranges on the Apple TV season pill (for example S13 - S29) stand for several seasons and have no menu.
+Series menus order watched actions as Episode, Season, then Series, targeting the Play/Resume episode.
+Season writes reuse the existing optimistic episode updates and rollback on failure.
+On tvOS, browsing episodes leaves the main resume target unchanged.
+The series menu does not include Show Series Info.
+Episode advancement waits for an unloaded season rather than skipping it, and the movie page responds to the remote Play/Pause button.
 
 On tvOS, Manage Servers uses the shared settings content width and a centred column, matching the other settings pages.

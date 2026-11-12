@@ -1,16 +1,26 @@
 # Contributing
 
-Vivid is an independent Apple media client developed in this repository. Open issues, using the bug report or feature request form, and pull requests against `blurbery/vivid`. Report security problems privately as described in the [security policy](SECURITY.md), never in a public issue, and ask questions in the [Vivid Discord](https://discord.gg/3jcxk3vJ4X).
+Vivid is an independent Apple media client developed in this repository.
+Open issues, using the bug report or feature request form, and pull requests against `blurbery/vivid`.
+Report security problems privately as described in the [security policy](SECURITY.md), never in a public issue, and ask questions in the [Vivid Discord](https://discord.gg/3jcxk3vJ4X).
 
 ## Development
 
-Use the local setup below and read [the docs](docs/README.md) and [AGENTS.md](AGENTS.md) for code guidance. Generate the Xcode project from the platform-specific spec: `iosApp/project-ios.yml` for iPhone/iPad or `iosApp/project.yml` for Apple TV. The current Xcode scheme names are listed below. The included VS Code tasks generate the selected platform spec before building or testing; there is no native macOS app target.
+Use the local setup below and read [the docs](docs/README.md) and [AGENTS.md](AGENTS.md) for code guidance.
+Generate the Xcode project from the platform-specific spec: `iosApp/project-ios.yml` for iPhone/iPad or `iosApp/project.yml` for Apple TV.
+The current Xcode scheme names are listed below.
+The included VS Code tasks generate the selected platform spec before building or testing; there is no native macOS app target.
 
-Preserve the working browsing, focus and playback behaviour. Validate changes with focused tests, relevant Apple builds and simulator, emulator or physical-device checks appropriate to the change. State exactly what was tested and disclose any gaps; never treat an earlier device benchmark as a measurement of a new revision.
+Preserve the working browsing, focus and playback behaviour.
+Validate changes with focused tests, relevant Apple builds and simulator, emulator or physical-device checks appropriate to the change.
+State exactly what was tested and disclose any gaps; never treat an earlier device benchmark as a measurement of a new revision.
 
 ## Local setup
 
-Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen). CI uses Xcode 26.3 with XcodeGen 2.43.0; recent signed releases use Xcode 27.0. The pinned Lucid Engine package provides arm64 simulator slices. Generate the project for the platform you are building:
+Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+CI uses Xcode 26.3 with XcodeGen 2.43.0; recent signed releases use Xcode 27.0.
+The pinned Lucid Engine package provides arm64 simulator slices.
+Generate the project for the platform you are building:
 
 ```sh
 cd iosApp
@@ -19,11 +29,20 @@ xcodegen generate --spec project-ios.yml
 open Vivid.xcodeproj
 ```
 
-For Apple TV, run `xcodegen generate --spec project.yml` instead. Both specs write `Vivid.xcodeproj`, so regenerate when switching platforms; a generated project does not contain both app schemes.
+For Apple TV, run `xcodegen generate --spec project.yml` instead.
+Both specs write `Vivid.xcodeproj`, so regenerate when switching platforms; a generated project does not contain both app schemes.
 
-Lucid Engine provides iPhone, iPad and Apple TV playback with the same pinned package. Keep the package pin and the third-party notices together. The [Lucid Engine guide](docs/cores/player-engine.md#builds) describes the package and how its libraries are built. The engine's build pipeline, its upstream pins and Vivid's engine patches live in `engine/`: read the [Lucid Engine build guide](docs/cores/lucid-engine-build.md), the [Lucid Engine architecture](docs/cores/lucid-engine-architecture.md) and the [patch specification](docs/playback/lucid-engine-patch-spec.md) before changing them. The Lucid Engine build workflow builds and checks every pull request that changes `engine/` or the workflow, or that can't be compared with its base commit; a package release and the app's pin change are separate steps. Source changes do not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
+Lucid Engine provides iPhone, iPad and Apple TV playback with the same pinned package.
+Keep the package pin and the third-party notices together.
+The [Lucid Engine guide](docs/cores/player-engine.md#builds) describes the package and how its libraries are built.
+The engine's build pipeline, its upstream pins and Vivid's engine patches live in `engine/`: read the [Lucid Engine build guide](docs/cores/lucid-engine-build.md), the [Lucid Engine architecture](docs/cores/lucid-engine-architecture.md) and the [patch specification](docs/playback/lucid-engine-patch-spec.md) before changing them.
+The Lucid Engine build workflow builds and checks every pull request that changes `engine/` or the workflow, or that can't be compared with its base commit; a package release and the app's pin change are separate steps.
+Source changes do not authorise an Apple binary release.
+Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
 
-Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or generate and build the TV target without signing from `iosApp/`:
+Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV.
+These are the current build identifiers.
+Choose an installed simulator in Xcode, or generate and build the TV target without signing from `iosApp/`:
 
 ```sh
 xcodegen generate --spec project.yml
@@ -31,104 +50,173 @@ xcodebuild build -project Vivid.xcodeproj -scheme VividTV \
   -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
 
-For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use `blurbery` and its GitHub noreply address for maintainer commits. Public reports should identify the relevant hardware, OS and revision without personal names, private device labels, server addresses, account identifiers or local upload times. Preserve third-party licence and copyright notices. Current-file edits do not remove disclosures from Git history; history changes need separate owner approval. Use a running server for the provider being checked: Silo, Emby or Jellyfin. Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps. Generated media fixtures cover focused engine checks without a server.
+For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample).
+Keep credentials and personal signing details out of Git.
+Use `blurbery` and its GitHub noreply address for maintainer commits.
+Public reports should identify the relevant hardware, OS and revision without personal names, private device labels, server addresses, account identifiers or local upload times.
+Preserve third-party licence and copyright notices.
+Current-file edits do not remove disclosures from Git history; history changes need separate owner approval.
+Use a running server for the provider being checked: Silo, Emby or Jellyfin.
+Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps.
+Generated media fixtures cover focused engine checks without a server.
 
-The release tooling in `package.json` needs Node.js 24.10 or later; its checks are listed under [release validation](docs/release/versioning.md#validation). The action pin check (`scripts/ci/check-action-pins.py`) parses workflows with the `ruby` command, which GitHub's runners include; to run it locally, have `ruby` on your `PATH`.
+The release tooling in `package.json` needs Node.js 24.10 or later; its checks are listed under [release validation](docs/release/versioning.md#validation).
+The action pin check (`scripts/ci/check-action-pins.py`) parses workflows with the `ruby` command, which GitHub's runners include; to run it locally, have `ruby` on your `PATH`.
 
 ## Pull requests and repository control
 
 Contributors are welcome to open pull requests from branches in their own forks.
 
 > [!IMPORTANT]
-> **Only blurbery controls merges, direct updates to `main`, and branch creation in `blurbery/vivid`.** A contribution or review does not grant permission to perform those actions. Owner approval for design changes is still required before implementation.
+> **Only blurbery controls merges, direct updates to `main`, and branch creation in `blurbery/vivid`.**
+> A contribution or review does not grant permission to perform those actions.
+> Owner approval for design changes is still required before implementation.
 
-Pull requests are squash-merged; merge commits and rebase merging are turned off. The PR title becomes the commit subject on `main`, so write it as a Conventional Commit and put `[skip release]` in it for documentation-only and housekeeping changes. The squash commit body starts blank: when merging an app change, add its `Release-Notes:` block there, following the [release notes format](docs/release/versioning.md#github-release-note-format). GitHub deletes the head branch after the merge. Branches in this repository are named `<type>/<short-description>`, where `<type>` is a Conventional Commit type, `release` for an App Store hotfix branch or `experiment` for long-running engine work, for example `fix/row-focus`. The `revert-<number>-...` branches GitHub's Revert button creates are accepted too. The [PR checks](docs/release/versioning.md#validation) workflow checks the title, the branch name and that every section of the PR template is filled in; editing the PR runs it again. Branches in forks aren't checked, and bot PRs such as Dependabot's skip the branch and description checks but not the title check. Merge with the title as it stands: a subject changed in the merge dialog skips the check. Pin every workflow action and reusable workflow from another repository to a full commit SHA with its version in a trailing comment (`uses: actions/checkout@<sha> # v4`); the `Action pins` job in PR checks fails a workflow that doesn't. Local `./` actions and `docker://` images are exempt. Branch protection on `main` requires `PR checks result`, `PR title, branch and description`, `Docs`, `No previous player code, engine pin`, `Player regression result` and `Lucid Engine result` to pass and every conversation to be resolved; the branch doesn't have to be up to date with `main` (see [Validation](docs/release/versioning.md#validation)). On a pull request from an outside contributor's fork, the checks wait until blurbery approves its workflow runs. The release workflow creates the release tags (`v*`), and the `Release tags` repository ruleset stops them being moved or deleted.
+Pull requests are squash-merged; merge commits and rebase merging are turned off.
+The PR title becomes the commit subject on `main`, so write it as a Conventional Commit and put `[skip release]` in it for documentation-only and housekeeping changes.
+The squash commit body starts blank: when merging an app change, add its `Release-Notes:` block there, following the [release notes format](docs/release/versioning.md#github-release-note-format).
+GitHub deletes the head branch after the merge.
+Branches in this repository are named `<type>/<short-description>`, where `<type>` is a Conventional Commit type, `release` for an App Store hotfix branch or `experiment` for long-running engine work, for example `fix/row-focus`.
+The `revert-<number>-...` branches GitHub's Revert button creates are accepted too.
+The [PR checks](docs/release/versioning.md#validation) workflow checks the title, the branch name and that every section of the PR template is filled in; editing the PR runs it again.
+Branches in forks aren't checked, and bot PRs such as Dependabot's skip the branch and description checks but not the title check.
+Merge with the title as it stands: a subject changed in the merge dialog skips the check.
+Pin every workflow action and reusable workflow from another repository to a full commit SHA with its version in a trailing comment (`uses: actions/checkout@<sha> # v4`); the `Action pins` job in PR checks fails a workflow that doesn't. Local `./` actions and `docker://` images are exempt.
+Branch protection on `main` requires `PR checks result`, `PR title, branch and description`, `Docs`, `No previous player code, engine pin`, `Player regression result` and `Lucid Engine result` to pass and every conversation to be resolved; the branch doesn't have to be up to date with `main` (see [Validation](docs/release/versioning.md#validation)).
+On a pull request from an outside contributor's fork, the checks wait until blurbery approves its workflow runs.
+The release workflow creates the release tags (`v*`), and the `Release tags` repository ruleset stops them being moved or deleted.
 
 ## Commits and reviews
 
-Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). The workflow treats every commit without the marker, including `docs:` and `chore:`, as at least a patch release, so documentation-only and housekeeping commits must include `[skip release]`, including the PR title, which becomes the squash commit subject. They must not create a version bump or source release. This marker does not skip required validation. Keep app release bullets factual and user-facing.
+Use Conventional Commits and follow the [release notes format](docs/release/versioning.md).
+The workflow treats every commit without the marker, including `docs:` and `chore:`, as at least a patch release, so documentation-only and housekeeping commits must include `[skip release]`, including the PR title, which becomes the squash commit subject.
+They must not create a version bump or source release.
+This marker does not skip required validation.
+Keep app release bullets factual and user-facing.
 
-For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice. Use short change bullets for GitHub, App Store and TestFlight release notes. Avoid em dashes and unnecessary formal sections. Include only relevant evidence and limitations, and keep the required AI disclosure brief.
+For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice.
+Use short change bullets for GitHub, App Store and TestFlight release notes.
+Avoid em dashes and unnecessary formal sections.
+Include only relevant evidence and limitations, and keep the required AI disclosure brief.
 
 Give reviewers enough detail to reproduce the problem and assess the change without a private conversation:
 
 - Explain the symptoms, reproduction steps, expected behaviour and root cause when known.
 - Describe what changed, why you chose that approach, affected providers/platforms and compatibility or recovery risks.
 - Include regression coverage where appropriate, exact test commands or CI links, the tested revision, results and any failed, skipped or untested cases.
-- Support performance claims with measured results and the workload/environment. If no benchmark was run, say so.
-- Keep the explanation focused, but do not leave out information needed to review the work. Update it when follow-up changes alter the scope.
+- Support performance claims with measured results and the workload/environment.
+  If no benchmark was run, say so.
+- Keep the explanation focused, but do not leave out information needed to review the work.
+  Update it when follow-up changes alter the scope.
 
-Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md). Credit AI assistance accurately and distinguish your direction, review and physical testing from generated work or someone else’s checks.
+Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
+Credit AI assistance accurately and distinguish your direction, review and physical testing from generated work or someone else’s checks.
 
-Pull requests from branches in `blurbery/vivid` also get an automated Claude review from `.github/workflows/claude-code-review.yml`, except drafts and Markdown-only changes. Pull requests from forks do not, because GitHub withholds the review key from them. Check its comments against the source like any other review; they are not an approval.
+Pull requests from branches in `blurbery/vivid` also get an automated Claude review from `.github/workflows/claude-code-review.yml`, except drafts and Markdown-only changes.
+Pull requests from forks do not, because GitHub withholds the review key from them.
+Check its comments against the source like any other review; they are not an approval.
 
 ## Testing status
 
-Ask whether the change has been tested if that is not already confirmed in the conversation. Accept testing on physical devices, simulators or emulators; physical Apple hardware is not mandatory. Do not ask again when blurbery has already confirmed testing.
+Ask whether the change has been tested if that is not already confirmed in the conversation.
+Accept testing on physical devices, simulators or emulators; physical Apple hardware is not mandatory.
+Do not ask again when blurbery has already confirmed testing.
 
-Record the test environment, checks and results that are known. Clearly distinguish builds, automated tests, simulator/emulator checks and physical-device feedback. State failures or untested behaviour honestly, without inventing details or claiming another person’s testing as your own.
+Record the test environment, checks and results that are known.
+Clearly distinguish builds, automated tests, simulator/emulator checks and physical-device feedback.
+State failures or untested behaviour honestly, without inventing details or claiming another person’s testing as your own.
 
-Testing status is informational, not a draft or review gate. Missing, failed or simulator-only testing does not require a draft PR and must not prevent opening or marking a PR ready for review. Report failures and limitations so blurbery can decide whether to merge; do not automatically block or merge based on this rule. Required CI checks are separate: branch protection still needs them to pass before a merge. Update the recorded results after relevant follow-up changes.
+Testing status is informational, not a draft or review gate.
+Missing, failed or simulator-only testing does not require a draft PR and must not prevent opening or marking a PR ready for review.
+Report failures and limitations so blurbery can decide whether to merge; do not automatically block or merge based on this rule.
+Required CI checks are separate: branch protection still needs them to pass before a merge.
+Update the recorded results after relevant follow-up changes.
 
 Documentation-only changes may state “Not applicable, documentation-only change”.
 
 ## Design ownership
 
 > [!IMPORTANT]
-> **Vivid’s design is controlled exclusively by blurbery. No design changes without blurbery’s prior, explicit approval.** Contributors, reviewers and AI tools cannot approve design changes on the owner’s behalf.
+> **Vivid’s design is controlled exclusively by blurbery.
+> No design changes without blurbery’s prior, explicit approval.**
+> Contributors, reviewers and AI tools cannot approve design changes on the owner’s behalf.
 
-This covers layout, navigation and interaction design, focus behaviour, colours, typography, spacing, icons, artwork, branding, animations and transitions across every Apple platform. Documentation branding and the README’s visual layout are also controlled by blurbery.
+This covers layout, navigation and interaction design, focus behaviour, colours, typography, spacing, icons, artwork, branding, animations and transitions across every Apple platform.
+Documentation branding and the README’s visual layout are also controlled by blurbery.
 
-- Discuss the proposed change and obtain approval from blurbery before implementing it. Approval for one change does not authorise a broader redesign.
+- Discuss the proposed change and obtain approval from blurbery before implementing it.
+  Approval for one change does not authorise a broader redesign.
 - Include a link or reference to that approval in the PR and keep the implementation within the approved scope.
-- Bug fixes and refactors must preserve the approved design. If a fix would alter it, request approval first; do not introduce a redesign under the label of cleanup, accessibility, performance or consistency work.
+- Bug fixes and refactors must preserve the approved design.
+  If a fix would alter it, request approval first; do not introduce a redesign under the label of cleanup, accessibility, performance or consistency work.
 - PRs containing unapproved design changes are not ready for review and must not be merged, even if tests pass or another reviewer approves.
 
 ## Documentation
 
-Documentation changes do not require separate approval from blurbery. Keep relevant existing docs accurate when behaviour, setup or release processes change, and describe documentation impact in the PR.
+Documentation changes do not require separate approval from blurbery.
+Keep relevant existing docs accurate when behaviour, setup or release processes change, and describe documentation impact in the PR.
 
 > [!IMPORTANT]
-> **Every pull request must keep the docs up to date.** Update each doc the change affects in the same PR: the README, guides under `docs/`, release docs, `THIRD_PARTY_NOTICES.md` and the in-app licences when dependencies change, and the privacy policy (`website/public/privacy.html`) with the in-app privacy text when what the app sends or stores changes. List the docs you updated under **Documentation impact**, or write “No documentation changes” with the reason. A PR that leaves docs saying something the code no longer does is not ready to merge. The automated Claude review also checks for docs a change has left out of date.
+> **Every pull request must keep the docs up to date.**
+> Update each doc the change affects in the same PR: the README, guides under `docs/`, release docs, `THIRD_PARTY_NOTICES.md` and the in-app licences when dependencies change, and the privacy policy (`website/public/privacy.html`) with the in-app privacy text when what the app sends or stores changes.
+> List the docs you updated under **Documentation impact**, or write “No documentation changes” with the reason.
+> A PR that leaves docs saying something the code no longer does is not ready to merge.
+> The automated Claude review also checks for docs a change has left out of date.
 
 - Review factual claims, validation evidence, links, Australian English and the existing document structure.
-- The `Docs` job in [PR checks](docs/release/versioning.md#validation) fails a PR that breaks a relative link or anchor, leaves a doc naming in inline code a path it removed or renamed, names a missing path in inline code on a line it adds (only paths inside a top-level folder are checked), adds an em dash to a Markdown or HTML file or an issue template, or changes a mapped area without its doc. If a mapped change needs no doc update, say why under **Documentation impact** and ask blurbery to add the `docs-not-needed` label.
+- In Markdown docs, put each sentence on its own line.
+  GitHub renders them the same, and it lets several PRs edit the same paragraph without conflicting.
+- The `Docs` job in [PR checks](docs/release/versioning.md#validation) fails a PR that breaks a relative link or anchor, leaves a doc naming in inline code a path it removed or renamed, names a missing path in inline code on a line it adds (only paths inside a top-level folder are checked), adds an em dash to a Markdown or HTML file or an issue template, or changes a mapped area without its doc.
+  If a mapped change needs no doc update, say why under **Documentation impact** and ask blurbery to add the `docs-not-needed` label.
 - Keep updates within the task scope and preserve applicable copyright and licence notices.
 - Design and publishing permissions still apply to their respective operations.
 
 ## AI-assisted contributions
 
-For blurbery’s own Vivid PRs, use one accurate disclosure sentence: “Implemented these changes with Astra as a tool.” Use that wording only when Astra was actually used; otherwise name the tool actually used. This replaces the multi-field breakdown for the owner’s work. Other contributors should use the detailed disclosure guidance below.
+For blurbery’s own Vivid PRs, use one accurate disclosure sentence: “Implemented these changes with Astra as a tool.”
+Use that wording only when Astra was actually used; otherwise name the tool actually used.
+This replaces the multi-field breakdown for the owner’s work.
+Other contributors should use the detailed disclosure guidance below.
 
-AI tools are welcome. You remain responsible for understanding, reviewing and validating everything you submit, including generated code, tests and documentation. No particular tool is required; agents must follow [AGENTS.md](AGENTS.md).
+AI tools are welcome.
+You remain responsible for understanding, reviewing and validating everything you submit, including generated code, tests and documentation.
+No particular tool is required; agents must follow [AGENTS.md](AGENTS.md).
 
 > [!IMPORTANT]
-> **AI disclosure is required in every pull request.** Complete the PR template’s **AI disclosure** section. A PR without a completed disclosure is not ready for review and must not be merged.
+> **AI disclosure is required in every pull request.**
+> Complete the PR template’s **AI disclosure** section.
+> A PR without a completed disclosure is not ready for review and must not be merged.
 
 - If AI was used, name every tool or assistant, include the model when known, and explain what it helped with: code, tests, documentation, review or other work.
-- Describe the contributor’s direction, review and validation. Do not present AI-generated work or unperformed testing as manual work.
-- If no AI was used, explicitly state **“No AI assistance was used for this pull request.”** Leaving the section blank is not a disclosure.
-- If a model label is unavailable, say so; do not guess. Update the disclosure when further AI-assisted changes are added to the PR.
-- Disclose substantial AI assistance in issues and review reports as well. Authorised direct commits without a PR must include the disclosure in the commit body. Generated documentation can be disclosed in its accompanying contribution rather than repeating a notice on every page.
+- Describe the contributor’s direction, review and validation.
+  Do not present AI-generated work or unperformed testing as manual work.
+- If no AI was used, explicitly state **“No AI assistance was used for this pull request.”**
+  Leaving the section blank is not a disclosure.
+- If a model label is unavailable, say so; do not guess.
+  Update the disclosure when further AI-assisted changes are added to the PR.
+- Disclose substantial AI assistance in issues and review reports as well.
+  Authorised direct commits without a PR must include the disclosure in the commit body.
+  Generated documentation can be disclosed in its accompanying contribution rather than repeating a notice on every page.
 
-Review the changes you submit and explain what you tested. Keep credentials and private data out of prompts, commits and reports. AI output needs the same code review and validation as any other contribution.
+Review the changes you submit and explain what you tested.
+Keep credentials and private data out of prompts, commits and reports.
+AI output needs the same code review and validation as any other contribution.
 
 ## Licensing of contributions
 
-Vivid’s own source code is licensed under [GPL-3.0-only](LICENSE) with the
-[Apple distribution permission](LICENSE-APPLE-EXCEPTION).
+Vivid’s own source code is licensed under [GPL-3.0-only](LICENSE) with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION).
 
-Unless you explicitly state otherwise, a contribution intentionally submitted
-for inclusion in Vivid is licensed under GPL-3.0-only with that additional
-permission. Submit only material you have the right to license on those
-terms, and identify any exceptions before submission. Third-party code must
-retain its applicable licence and attribution; identify any such code in the
-contribution so its terms can be reviewed.
+Unless you explicitly state otherwise, a contribution intentionally submitted for inclusion in Vivid is licensed under GPL-3.0-only with that additional permission.
+Submit only material you have the right to license on those terms, and identify any exceptions before submission.
+Third-party code must retain its applicable licence and attribution; identify any such code in the contribution so its terms can be reviewed.
 
-Preserve the [Vivid attribution and origin terms](ATTRIBUTION.md) when reusing material covered by that notice. They apply only where blurbery holds copyright or has express authority; they do not claim ownership of independently authored contributions or third-party code.
+Preserve the [Vivid attribution and origin terms](ATTRIBUTION.md) when reusing material covered by that notice.
+They apply only where blurbery holds copyright or has express authority; they do not claim ownership of independently authored contributions or third-party code.
 
 You retain copyright in your contribution; no assignment is requested.
 
 ## Notices
 
-Retain existing copyright, licence and dependency notices. Update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when dependencies change; PR checks fail a `Package.resolved` change that doesn't also update it and the in-app licences, unless blurbery adds the `docs-not-needed` label. Read [Apple TV focus guidance](docs/apple-tv-focus.md) before changing TV navigation.
+Retain existing copyright, licence and dependency notices.
+Update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when dependencies change; PR checks fail a `Package.resolved` change that doesn't also update it and the in-app licences, unless blurbery adds the `docs-not-needed` label.
+Read [Apple TV focus guidance](docs/apple-tv-focus.md) before changing TV navigation.

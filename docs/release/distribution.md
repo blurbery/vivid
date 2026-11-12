@@ -8,7 +8,13 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. App Store Connect is the source of truth for uploaded builds, processing, review and tester availability. Its beta description maps each available platform/version/build to its immutable source. The [dated build records](versioning.md#recorded-apple-builds) preserve earlier validation and are not a current upload ledger. GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public [App Store submission](#app-store-submission).
+Vivid uses TestFlight for Apple beta distribution.
+Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities.
+App Store Connect is the source of truth for uploaded builds, processing, review and tester availability.
+Its beta description maps each available platform/version/build to its immutable source.
+The [dated build records](versioning.md#recorded-apple-builds) preserve earlier validation and are not a current upload ledger.
+GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight.
+TestFlight distribution is separate from public [App Store submission](#app-store-submission).
 
 ## What is ready
 
@@ -29,94 +35,123 @@ Check [Apple’s submission requirements](https://developer.apple.com/app-store/
 
 ## Verify Vivid’s existing Apple setup
 
-1. Confirm Apple Developer Program membership and the existing Vivid app and extension registrations. Reuse the configured signing team, identifiers and existing iOS/tvOS App Store Connect record. The bundle ID must match the uploaded build. [Apple’s distribution preparation guide](https://help.apple.com/xcode/mac/current/en.lproj/dev91fe7130a.html) explains why this needs to be settled before the first upload.
-2. Map all four targets: `Vivid`, `VividDownloadsActivity`, `VividTV` and `VividTVTopShelf`. Each extension needs its own identifier and provisioning profile. Configure the intended App Group, shared Keychain access and `iCloud.com.blurbery.vivid` CloudKit container; check the tvOS user-management entitlement as well. [Deploy the `VividAccountVault` record schema](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema) to CloudKit’s production environment before a TestFlight build relies on account restoration.
-3. Keep the registered release identifiers aligned across the signing configuration, entitlements, Info.plists and `SharedStorage`. The committed app defaults use `com.blurbery.vivid`, with `group.com.blurbery.vivid` for shared defaults and `com.blurbery.vivid.shared` for Keychain access. Extensions use the matching app prefix. The release identifiers, iCloud container and current Production schema are registered with Apple. For future schema changes, inspect the Development-to-Production diff and obtain deployment authorisation; deployment does not copy saved records between environments. The ignored `Signing/Local.xcconfig` retains development overrides. Install maintainer device updates in place, preserving accounts, Keychain and app data. Do not uninstall, reset, change identifiers or clean retained incremental caches as an update step. A clean install removes local preferences, metadata caches and download storage. On its first launch it clears any surviving Vivid Keychain entries, then can restore saved accounts and sessions from the user’s private iCloud vault. Watch history saved on the media server stays there.
-4. Keep the approved Apple marketing version (`1.1`) for routine TestFlight updates until Apple approves `1.1` for the App Store (after that, the next upload needs a higher version that blurbery approves; see [Versioning & Releases](versioning.md)), and set each platform’s build number to its latest `1.1` upload in App Store Connect plus exactly 1, ignoring local test numbers. Paired uploads can use different build numbers when the platforms have different upload histories; every embedded extension must match its app. Don't reset the counter within a version or copy a GitHub release version into the Apple version automatically; a new marketing version can start again at build 1, as `1.1` did. Changing the Apple marketing version requires explicit approval from blurbery. Record the exact pushed source commit and check both finished archives before upload. See [Versioning & Releases](versioning.md).
+1. Confirm Apple Developer Program membership and the existing Vivid app and extension registrations.
+   Reuse the configured signing team, identifiers and existing iOS/tvOS App Store Connect record.
+   The bundle ID must match the uploaded build.
+   [Apple’s distribution preparation guide](https://help.apple.com/xcode/mac/current/en.lproj/dev91fe7130a.html) explains why this needs to be settled before the first upload.
+2. Map all four targets: `Vivid`, `VividDownloadsActivity`, `VividTV` and `VividTVTopShelf`.
+   Each extension needs its own identifier and provisioning profile.
+   Configure the intended App Group, shared Keychain access and `iCloud.com.blurbery.vivid` CloudKit container; check the tvOS user-management entitlement as well.
+   [Deploy the `VividAccountVault` record schema](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema) to CloudKit’s production environment before a TestFlight build relies on account restoration.
+3. Keep the registered release identifiers aligned across the signing configuration, entitlements, Info.plists and `SharedStorage`.
+   The committed app defaults use `com.blurbery.vivid`, with `group.com.blurbery.vivid` for shared defaults and `com.blurbery.vivid.shared` for Keychain access.
+   Extensions use the matching app prefix.
+   The release identifiers, iCloud container and current Production schema are registered with Apple.
+   For future schema changes, inspect the Development-to-Production diff and obtain deployment authorisation; deployment does not copy saved records between environments.
+   The ignored `Signing/Local.xcconfig` retains development overrides.
+   Install maintainer device updates in place, preserving accounts, Keychain and app data.
+   Do not uninstall, reset, change identifiers or clean retained incremental caches as an update step.
+   A clean install removes local preferences, metadata caches and download storage.
+   On its first launch it clears any surviving Vivid Keychain entries, then can restore saved accounts and sessions from the user’s private iCloud vault.
+   Watch history saved on the media server stays there.
+4. Keep the approved Apple marketing version (`1.1`) for routine TestFlight updates until Apple approves `1.1` for the App Store (after that, the next upload needs a higher version that blurbery approves; see [Versioning & Releases](versioning.md)), and set each platform’s build number to its latest `1.1` upload in App Store Connect plus exactly 1, ignoring local test numbers.
+   Paired uploads can use different build numbers when the platforms have different upload histories; every embedded extension must match its app.
+   Don't reset the counter within a version or copy a GitHub release version into the Apple version automatically; a new marketing version can start again at build 1, as `1.1` did.
+   Changing the Apple marketing version requires explicit approval from blurbery.
+   Record the exact pushed source commit and check both finished archives before upload.
+   See [Versioning & Releases](versioning.md).
 
-Check that Production contains `VividAccountVault` with encrypted `payload`, separately from inspecting signed entitlements. Test restoration using an existing configured installation and another device. See [restore troubleshooting](../server-connections.md#restore-and-troubleshooting); do not uninstall the only populated copy to test sync.
+Check that Production contains `VividAccountVault` with encrypted `payload`, separately from inspecting signed entitlements.
+Test restoration using an existing configured installation and another device.
+See [restore troubleshooting](../server-connections.md#restore-and-troubleshooting); do not uninstall the only populated copy to test sync.
 
-Uploads can use Xcode Organizer or the equivalent signed `xcodebuild -exportArchive` flow. New upload automation is optional and must use Vivid’s registered app identity. Keep credentials and signing material out of this repository.
+Uploads can use Xcode Organizer or the equivalent signed `xcodebuild -exportArchive` flow.
+New upload automation is optional and must use Vivid’s registered app identity.
+Keep credentials and signing material out of this repository.
 
 ## Check the distribution archive
 
-Archive Release builds for the authorised platforms from the exact source revision intended for testing. The pinned Lucid Engine package already contains Vivid's audio and video outputs, so archive with the package as resolved; see [Lucid Engine builds](../cores/player-engine.md#builds). The app pins release `0.1.0`, which Vivid's pipeline in `engine/` built from pinned upstream sources with Vivid's patches; the only prebuilt part is the Rust standard library inside libdovi, from the Rust project's pinned `rust-std` archives. A new engine release is built by the [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) and published by hand from one green run with `engine/publish_package.py` (see [Publishing the package](../cores/lucid-engine-build.md#publishing-the-package)); publishing it and moving the app's pin are separate authorised steps, and an archive that should ship it is made only after the new pin is on a pushed commit. Validate the archives in Xcode Organizer before upload. Check the embedded extensions, signed frameworks, icons, minimum OS, entitlements and version/build values in the archive. Development build success does not prove distribution signing or Apple validation will pass.
+Archive Release builds for the authorised platforms from the exact source revision intended for testing.
+The pinned Lucid Engine package already contains Vivid's audio and video outputs, so archive with the package as resolved; see [Lucid Engine builds](../cores/player-engine.md#builds).
+The app pins release `0.1.0`, which Vivid's pipeline in `engine/` built from pinned upstream sources with Vivid's patches; the only prebuilt part is the Rust standard library inside libdovi, from the Rust project's pinned `rust-std` archives.
+A new engine release is built by the [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) and published by hand from one green run with `engine/publish_package.py` (see [Publishing the package](../cores/lucid-engine-build.md#publishing-the-package)); publishing it and moving the app's pin are separate authorised steps, and an archive that should ship it is made only after the new pin is on a pushed commit.
+Validate the archives in Xcode Organizer before upload.
+Check the embedded extensions, signed frameworks, icons, minimum OS, entitlements and version/build values in the archive.
+Development build success does not prove distribution signing or Apple validation will pass.
 
-Generate and review the archive’s privacy report. The app and Top Shelf have privacy manifests; the downloads Live Activity uses no required-reason API. Check every embedded executable, including Top Shelf, which compiles `iosApp/iosApp/Shared` and so can pick up required-reason APIs such as `systemUptime`. Verify the final embedded dependencies and required-reason API declarations too. Review App Store Connect’s privacy answers for the server, account, profile and session data Vivid stores through CloudKit, and for diagnostics reports people choose to send from Settings > Diagnostics, through the [diagnostics relay](../diagnostics-relay.md) or by email (crash, performance and other diagnostic data, a short log of recent app events and any note the person writes). Keep the data types and linked-to-identity answers in the privacy manifest, App Store Connect and the privacy policy the same, as listed in [App Privacy answers](#app-privacy-answers); Apple’s [App Privacy guidance](https://developer.apple.com/app-store/app-privacy-details/) distinguishes data collected by the app through Apple frameworks from data Apple collects itself. Both app Info.plists currently declare `ITSAppUsesNonExemptEncryption = NO`. Confirm that answer against the finished build and complete any questions Apple presents; see [export compliance for beta builds](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-export-compliance-information-for-beta-builds/).
+Generate and review the archive’s privacy report.
+The app and Top Shelf have privacy manifests; the downloads Live Activity uses no required-reason API.
+Check every embedded executable, including Top Shelf, which compiles `iosApp/iosApp/Shared` and so can pick up required-reason APIs such as `systemUptime`.
+Verify the final embedded dependencies and required-reason API declarations too.
+Review App Store Connect’s privacy answers for the server, account, profile and session data Vivid stores through CloudKit, and for diagnostics reports people choose to send from Settings > Diagnostics, through the [diagnostics relay](../diagnostics-relay.md) or by email (crash, performance and other diagnostic data, a short log of recent app events and any note the person writes).
+Keep the data types and linked-to-identity answers in the privacy manifest, App Store Connect and the privacy policy the same, as listed in [App Privacy answers](#app-privacy-answers); Apple’s [App Privacy guidance](https://developer.apple.com/app-store/app-privacy-details/) distinguishes data collected by the app through Apple frameworks from data Apple collects itself.
+Both app Info.plists currently declare `ITSAppUsesNonExemptEncryption = NO`.
+Confirm that answer against the finished build and complete any questions Apple presents; see [export compliance for beta builds](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-export-compliance-information-for-beta-builds/).
 
-Keep [third-party notices](../../THIRD_PARTY_NOTICES.md) matched to the exact packaged libraries. Vivid uses GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION). Lucid Engine’s third-party components retain their upstream licences; see the linked notices for exact sources and revisions. This does not relicense FFmpeg or FriBidi. At the pinned package revision, mpv, FFmpeg and the subtitle, font and rendering libraries are static libraries linked into the app executable; check the Release archive before describing relinking materials. Before external distribution, verify the corresponding-source and replacement/relinking materials available to recipients. Use immutable public source revisions matched to the delivered build; a moving `main` link alone does not identify the shipped source. Each build records its commit (Settings > About and the first Open Source Licences section), so archive only from a pushed commit with no local changes: a build marked `(modified)` doesn't have public source. A Release build from a modified tree, or from a commit no fetched `origin` branch contains, prints a build warning; treat it as an upload blocker.
+Keep [third-party notices](../../THIRD_PARTY_NOTICES.md) matched to the exact packaged libraries.
+Vivid uses GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION).
+Lucid Engine’s third-party components retain their upstream licences; see the linked notices for exact sources and revisions.
+This does not relicense FFmpeg or FriBidi.
+At the pinned package revision, mpv, FFmpeg and the subtitle, font and rendering libraries are static libraries linked into the app executable; check the Release archive before describing relinking materials.
+Before external distribution, verify the corresponding-source and replacement/relinking materials available to recipients.
+Use immutable public source revisions matched to the delivered build; a moving `main` link alone does not identify the shipped source.
+Each build records its commit (Settings > About and the first Open Source Licences section), so archive only from a pushed commit with no local changes: a build marked `(modified)` doesn't have public source.
+A Release build from a modified tree, or from a commit no fetched `origin` branch contains, prints a build warning; treat it as an upload blocker.
 
 ## Licence and source delivery
 
-Use Apple's standard EULA for the Apple-delivered binary. App Store Connect
-was checked on 12 September 2026 and showed Apple’s Standard License
-Agreement in the app-wide information shared by all platforms. No Apple
-metadata was changed during this licence update. Vivid's GPLv3
-[additional permission](../../LICENSE-APPLE-EXCEPTION) accommodates Apple's
-distribution restrictions without removing source rights. Do not paste the
-GPL alone as a custom App Store EULA. Apple's [standard EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/)
-and [custom EULA minimum terms](https://www.apple.com/legal/internet-services/itunes/dev/minterms/)
-remain separate from the source licence.
+Use Apple's standard EULA for the Apple-delivered binary.
+App Store Connect was checked on 12 September 2026 and showed Apple’s Standard License Agreement in the app-wide information shared by all platforms.
+No Apple metadata was changed during this licence update.
+Vivid's GPLv3 [additional permission](../../LICENSE-APPLE-EXCEPTION) accommodates Apple's distribution restrictions without removing source rights.
+Do not paste the GPL alone as a custom App Store EULA.
+Apple's [standard EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) and [custom EULA minimum terms](https://www.apple.com/legal/internet-services/itunes/dev/minterms/) remain separate from the source licence.
 
 Before conveying any new GPL-covered binary, including through TestFlight:
 
-- Publish and retain the exact source revision, dependency sources and
-  patches, build instructions and required replacement/relinking materials.
-  For Lucid Engine that is `engine/` at the commit the pinned release was
-  built from, which the package's README and NOTICE and the app's Open
-  Source Licences name; keep that commit reachable on GitHub.
-  Provide a no-charge source download matching each delivered binary under
-  an applicable GPLv3 section 6 method; retain it for that method's required
-  duration. A moving `main` URL alone is insufficient.
-- In the app, the commit under the version in Settings > About and the
-  "Source for this build" page in Open Source Licences point to
-  `https://vividapp.co/source?commit=<commit>`, not to the GitHub repository
-  page: as links on iPhone and iPad, and as the address in the page's text
-  on Apple TV. The website Worker (`website/worker.mjs`) fills in
-  `website/public/source.html` only when `commit` is exactly 40 hexadecimal
-  characters: it then offers that commit's GitHub `.tar.gz` and `.zip`
-  archives as direct downloads, the GPL-3.0-only licence with the Apple
-  permission (linked to [vividapp.co/licences](https://vividapp.co/licences)),
-  and Lucid Engine's corresponding source. A missing or invalid `commit`
-  shows the same page with a link to the GitHub releases page instead. The
-  page names Lucid Engine 0.1.0's source as the `lucid-engine-0.1.0-source`
-  tag (commit `fcb6782121e72c6ed755336be913c036f4679ddb`); update it in the
-  same pull request as any change to the engine pin. Deploy the website
-  before uploading a build that links to the page, and check that a build's
-  link opens with working downloads. Builds made before this change link to
-  the GitHub repository instead. The `(modified)` label and its notice are
-  unchanged: such a build links to the commit it started from.
-- Before enabling a build, update the TestFlight beta description with its
-  platform, marketing version and build number, mapped to the exact public
-  immutable source archive and media dependency sources/build instructions.
-  Preserve the app introduction, localisations and mappings for all still-available
-  builds. Check link access and read back the saved description. Keep What to
-  Test limited to change bullets. If the description limit prevents preserving
-  source access, obtain authority before creating a new public source index.
-- Check the app's bundled Open Source Licences includes GPLv3, the Apple permission, applicable
-  [Vivid attribution terms](../../ATTRIBUTION.md), earlier Apache notices, the
-  Silo Apple notice with its AGPL-3.0 text and App Store exception, and all
-  packaged third-party licences. The portions derived from Silo Apple are
-  AGPL-3.0-or-later, so the same published source revision also serves as their
-  corresponding source. The bundled overview carries the full
-  attribution terms; keep them aligned with `ATTRIBUTION.md`.
-- Preserve LGPL rights independently. Vivid's Apple permission applies to
-  its authorised code; it cannot waive conditions on FFmpeg, FriBidi or
-  other third-party components. Keep their corresponding source and
-  replacement/relinking materials available with the app sources.
+- Publish and retain the exact source revision, dependency sources and patches, build instructions and required replacement/relinking materials.
+  For Lucid Engine that is `engine/` at the commit the pinned release was built from, which the package's README and NOTICE and the app's Open Source Licences name; keep that commit reachable on GitHub.
+  Provide a no-charge source download matching each delivered binary under an applicable GPLv3 section 6 method; retain it for that method's required duration.
+  A moving `main` URL alone is insufficient.
+- In the app, the commit under the version in Settings > About and the "Source for this build" page in Open Source Licences point to `https://vividapp.co/source?commit=<commit>`, not to the GitHub repository page: as links on iPhone and iPad, and as the address in the page's text on Apple TV.
+  The website Worker (`website/worker.mjs`) fills in `website/public/source.html` only when `commit` is exactly 40 hexadecimal characters: it then offers that commit's GitHub `.tar.gz` and `.zip` archives as direct downloads, the GPL-3.0-only licence with the Apple permission (linked to [vividapp.co/licences](https://vividapp.co/licences)), and Lucid Engine's corresponding source.
+  A missing or invalid `commit` shows the same page with a link to the GitHub releases page instead.
+  The page names Lucid Engine 0.1.0's source as the `lucid-engine-0.1.0-source` tag (commit `fcb6782121e72c6ed755336be913c036f4679ddb`); update it in the same pull request as any change to the engine pin.
+  Deploy the website before uploading a build that links to the page, and check that a build's link opens with working downloads.
+  Builds made before this change link to the GitHub repository instead.
+  The `(modified)` label and its notice are unchanged: such a build links to the commit it started from.
+- Before enabling a build, update the TestFlight beta description with its platform, marketing version and build number, mapped to the exact public immutable source archive and media dependency sources/build instructions.
+  Preserve the app introduction, localisations and mappings for all still-available builds.
+  Check link access and read back the saved description.
+  Keep What to Test limited to change bullets.
+  If the description limit prevents preserving source access, obtain authority before creating a new public source index.
+- Check the app's bundled Open Source Licences includes GPLv3, the Apple permission, applicable [Vivid attribution terms](../../ATTRIBUTION.md), earlier Apache notices, the Silo Apple notice with its AGPL-3.0 text and App Store exception, and all packaged third-party licences.
+  The portions derived from Silo Apple are AGPL-3.0-or-later, so the same published source revision also serves as their corresponding source.
+  The bundled overview carries the full attribution terms; keep them aligned with `ATTRIBUTION.md`.
+- Preserve LGPL rights independently.
+  Vivid's Apple permission applies to its authorised code; it cannot waive conditions on FFmpeg, FriBidi or other third-party components.
+  Keep their corresponding source and replacement/relinking materials available with the app sources.
 - Verify the app's actual EULA setting and packaged notices before upload.
-  The permission is a licensing provision, not an Apple approval or a
-  guarantee of compliance with unrelated API, privacy or review rules.
+  The permission is a licensing provision, not an Apple approval or a guarantee of compliance with unrelated API, privacy or review rules.
 
 ## TestFlight information
 
-The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList and Simkl completed-watch exports and watchlists, Simkl's per-device sign-in, OpenSubtitles, both timestamp services, on-device diagnostics reports, the service providers that handle data for Vivid and the steps for deleting the iCloud vault. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory. The homepage screenshots and clips in `website/public/media` are too large to build into the Worker, so Wrangler uploads them as Workers static assets and the Worker serves them through its `ASSETS` binding with the same security headers as every other page. When you replace or add a homepage image or an App Store screenshot that uses someone else's artwork, update `website/media-credits.json`; the build publishes it under Images on this website and in the App Store at the end of the licences page.
+The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy).
+Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList and Simkl completed-watch exports and watchlists, Simkl's per-device sign-in, OpenSubtitles, both timestamp services, on-device diagnostics reports, the service providers that handle data for Vivid and the steps for deleting the iCloud vault.
+Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload.
+Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
+The homepage screenshots and clips in `website/public/media` are too large to build into the Worker, so Wrangler uploads them as Workers static assets and the Worker serves them through its `ASSETS` binding with the same security headers as every other page.
+When you replace or add a homepage image or an App Store screenshot that uses someone else's artwork, update `website/media-credits.json`; the build publishes it under Images on this website and in the App Store at the end of the licences page.
 
-Use `admin@vividapp.co` for feedback. For an uploaded build containing the Jellyfin integration, a starting beta description is:
+Use `admin@vividapp.co` for feedback.
+For an uploaded build containing the Jellyfin integration, a starting beta description is:
 
-> I’m building Vivid for watching your own media on iPhone, iPad and Apple TV. Connect to Silo, Emby or Jellyfin, browse your library and continue watching across your server accounts. Playback includes subtitles and chapters from your media and optional intro, recap and credits skips.
+> I’m building Vivid for watching your own media on iPhone, iPad and Apple TV.
+> Connect to Silo, Emby or Jellyfin, browse your library and continue watching across your server accounts.
+> Playback includes subtitles and chapters from your media and optional intro, recap and credits skips.
 
-For What to Test, use the [plain change-bullet format](versioning.md#testflight-note-format), with one blank line between bullets and no testing instructions or source links. Describe only changes present in that build and verify the saved line breaks in App Store Connect.
+For What to Test, use the [plain change-bullet format](versioning.md#testflight-note-format), with one blank line between bullets and no testing instructions or source links.
+Describe only changes present in that build and verify the saved line breaks in App Store Connect.
 
 For example, when the uploaded build contains these changes:
 
@@ -126,21 +161,44 @@ For example, when the uploaded build contains these changes:
 • Fixed interrupted MDBList syncs losing confirmed export progress.
 ```
 
-Ask for the affected device, OS, server type and reproduction steps when useful. Do not request passwords or private server addresses in public feedback.
+Ask for the affected device, OS, server type and reproduction steps when useful.
+Do not request passwords or private server addresses in public feedback.
 
-For each authorised upload, use the existing internal and external groups and verify availability separately, following the [test-group policy](versioning.md#testflight-test-groups). Do not create groups or invite new testers without separate approval. A tvOS-only update does not require an iOS upload. Supply Apple’s review contact details privately in App Store Connect. For external review, provide a working review server/account with authorised sample media and any required PIN; a media-client login screen alone does not let Apple exercise playback. Do not put those credentials in Git or public release notes. Apple documents the [test information](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-test-information/) and [external testing review](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/) requirements.
+For each authorised upload, use the existing internal and external groups and verify availability separately, following the [test-group policy](versioning.md#testflight-test-groups).
+Do not create groups or invite new testers without separate approval.
+A tvOS-only update does not require an iOS upload.
+Supply Apple’s review contact details privately in App Store Connect.
+For external review, provide a working review server/account with authorised sample media and any required PIN; a media-client login screen alone does not let Apple exercise playback.
+Do not put those credentials in Git or public release notes.
+Apple documents the [test information](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-test-information/) and [external testing review](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/) requirements.
 
-The uploaded TestFlight build and current source are separate revisions. A merge or GitHub source release does not update an uploaded binary or its review. Assess beta capabilities against the selected build, not the latest documentation or local development installation.
+The uploaded TestFlight build and current source are separate revisions.
+A merge or GitHub source release does not update an uploaded binary or its review.
+Assess beta capabilities against the selected build, not the latest documentation or local development installation.
 
-Current source uses Lucid Engine on iOS and tvOS, as described in the [Lucid Engine guide](../cores/player-engine.md). Lucid Engine uses compressed AC-3/E-AC-3 at normal speed and decoded PCM for other formats. Verify HDMI output, AirPlay, HDR, Dolby Vision, audible output and track switching on the selected build and device route. Recorded device tests do not establish every output configuration.
+Current source uses Lucid Engine on iOS and tvOS, as described in the [Lucid Engine guide](../cores/player-engine.md).
+Lucid Engine uses compressed AC-3/E-AC-3 at normal speed and decoded PCM for other formats.
+Verify HDMI output, AirPlay, HDR, Dolby Vision, audible output and track switching on the selected build and device route.
+Recorded device tests do not establish every output configuration.
 
-The preference-sync extension retains the existing encrypted `VividAccountVault.payload` field and adds optional values inside its encoded payload, without adding CloudKit schema fields. Existing vaults remain readable. Merge checks cover independent edits, deletion markers, deterministic conflict resolution and profile ordering. Apple TV restoration was confirmed after the [Production schema deployment](versioning.md#production-icloud-restoration). Fresh iPhone restoration, API-key removal, deletion propagation and device-specific playback/subtitle isolation still need separate verification against the selected build. Apple describes encrypted record fields in [Encrypting User Data](https://developer.apple.com/documentation/cloudkit/encrypting-user-data).
+The preference-sync extension retains the existing encrypted `VividAccountVault.payload` field and adds optional values inside its encoded payload, without adding CloudKit schema fields.
+Existing vaults remain readable.
+Merge checks cover independent edits, deletion markers, deterministic conflict resolution and profile ordering.
+Apple TV restoration was confirmed after the [Production schema deployment](versioning.md#production-icloud-restoration).
+Fresh iPhone restoration, API-key removal, deletion propagation and device-specific playback/subtitle isolation still need separate verification against the selected build.
+Apple describes encrypted record fields in [Encrypting User Data](https://developer.apple.com/documentation/cloudkit/encrypting-user-data).
 
-Remaining validation includes physical iPad behaviour, the remaining iCloud scenarios above, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md). External distribution requires the selected platform builds and any required Beta App Review to complete.
+Remaining validation includes physical iPad behaviour, the remaining iCloud scenarios above, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md).
+External distribution requires the selected platform builds and any required Beta App Review to complete.
 
 ## App Store submission
 
-Vivid 1.0 was submitted to the App Store on 7 November 2026 as iOS 1.0 (110) and tvOS 1.0 (102), both from `a99123027e21`. Apple approved the iOS version the same day. The tvOS version was still waiting for review on 10 November, when it was taken out of review and replaced by 1.0.1, as described under Version and price below. The App Store listing is [apps.apple.com/app/id6809770754](https://apps.apple.com/app/id6809770754). For each later version, TestFlight approval does not carry over to App Review, so check each item against the exact builds being submitted, on both platforms. Apple's [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and [upcoming requirements](https://developer.apple.com/news/upcoming-requirements/) are the source of truth; recheck them before each submission.
+Vivid 1.0 was submitted to the App Store on 7 November 2026 as iOS 1.0 (110) and tvOS 1.0 (102), both from `a99123027e21`.
+Apple approved the iOS version the same day.
+The tvOS version was still waiting for review on 10 November, when it was taken out of review and replaced by 1.0.1, as described under Version and price below.
+The App Store listing is [apps.apple.com/app/id6809770754](https://apps.apple.com/app/id6809770754).
+For each later version, TestFlight approval does not carry over to App Review, so check each item against the exact builds being submitted, on both platforms.
+Apple's [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and [upcoming requirements](https://developer.apple.com/news/upcoming-requirements/) are the source of truth; recheck them before each submission.
 
 | Item | What to check |
 | --- | --- |
@@ -160,7 +218,8 @@ Vivid 1.0 was submitted to the App Store on 7 November 2026 as iOS 1.0 (110) and
 
 ### App Privacy answers
 
-In App Store Connect's App Privacy section, say that Vivid collects data and declare these types. They match `iosApp/iosApp/PrivacyInfo.xcprivacy`; the Top Shelf extension's manifest declares nothing, because it doesn't compile the diagnostics code.
+In App Store Connect's App Privacy section, say that Vivid collects data and declare these types.
+They match `iosApp/iosApp/PrivacyInfo.xcprivacy`; the Top Shelf extension's manifest declares nothing, because it doesn't compile the diagnostics code.
 
 | Data type (App Store Connect category) | What it is | Purpose | Linked to the person | Tracking |
 | --- | --- | --- | --- | --- |
@@ -170,51 +229,80 @@ In App Store Connect's App Privacy section, say that Vivid collects data and dec
 | Product Interaction (Usage Data) | Screens opened and playback steps in that log, and on iPhone and iPad how the player controls were shown and hidden | App Functionality | No | No |
 | Customer Support (User Content) | The optional "What happened?" note sent with a report | App Functionality | No | No |
 
-Nothing is used for tracking or advertising, and nothing is sent until the person chooses to send it. Don't declare contact info, identifiers, location, contacts, browsing or search history, purchases, financial or health data, photos, videos or audio. Sign-in details, searches, library browsing and viewing history go only to the person's own media server; saved accounts and preferences go to their private iCloud database, which Vivid can't read; plugin data goes to services the person connects with their own key or sign-in; and Apple turns Apple TV voice searches into text under its own privacy policy.
+Nothing is used for tracking or advertising, and nothing is sent until the person chooses to send it.
+Don't declare contact info, identifiers, location, contacts, browsing or search history, purchases, financial or health data, photos, videos or audio.
+Sign-in details, searches, library browsing and viewing history go only to the person's own media server; saved accounts and preferences go to their private iCloud database, which Vivid can't read; plugin data goes to services the person connects with their own key or sign-in; and Apple turns Apple TV voice searches into text under its own privacy policy.
 
 > [!IMPORTANT]
-> "Not linked" rests on the relay: a report sent with Send carries no account, user or device identifier, and the relay keeps no address. The reports the app sends have no email field, and the relay emails each one from its own address to the fixed `diagnostics@vividapp.co` without a reply-to, so neither the app nor the relay asks for, receives or stores the person's email address.
+> "Not linked" rests on the relay: a report sent with Send carries no account, user or device identifier, and the relay keeps no address.
+> The reports the app sends have no email field, and the relay emails each one from its own address to the fixed `diagnostics@vividapp.co` without a reply-to, so neither the app nor the relay asks for, receives or stores the person's email address.
 >
-> Email Address (Contact Info) isn't declared. Every other way to reach Vivid goes through the person's own mail app, where they see their address and the whole message before they send it:
+> Email Address (Contact Info) isn't declared.
+> Every other way to reach Vivid goes through the person's own mail app, where they see their address and the whole message before they send it:
 >
 > - Contact (iPhone and iPad) opens Mail's compose sheet, or a `mailto:` link to `admin@vividapp.co` in their mail app, with no logs or account details attached.
 > - Diagnostics > Other Options (iPhone and iPad) opens Mail with the report attached, or the share sheet, where the person picks the app and the recipient.
-> - Contact and Show QR Code (Apple TV) show a QR code of a `mailto:` link, which opens a prefilled email on the person's phone. Show QR Code's email holds a short summary of each problem report.
+> - Contact and Show QR Code (Apple TV) show a QR code of a `mailto:` link, which opens a prefilled email on the person's phone.
+>   Show QR Code's email holds a short summary of each problem report.
 > - vividapp.co has no forms; its pages only link to `admin@vividapp.co`.
 >
-> These are infrequent, optional messages the person writes and sends themselves, so they fall under the optional disclosure in Apple's [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/) for user-initiated feedback, and the app collects nothing to send them. The privacy policy still says that email reaches an iCloud Mail inbox and is used only to reply or fix problems. If Vivid ever collects an address itself, for example a form that posts to the relay with a reply-to, declare `NSPrivacyCollectedDataTypeEmailAddress` (linked, not tracking, App Functionality), mark Customer Support as linked if those messages are tied to the address, and change the privacy manifest, App Store Connect, the privacy policy and the in-app privacy text together.
+> These are infrequent, optional messages the person writes and sends themselves, so they fall under the optional disclosure in Apple's [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/) for user-initiated feedback, and the app collects nothing to send them.
+> The privacy policy still says that email reaches an iCloud Mail inbox and is used only to reply or fix problems.
+> If Vivid ever collects an address itself, for example a form that posts to the relay with a reply-to, declare `NSPrivacyCollectedDataTypeEmailAddress` (linked, not tracking, App Functionality), mark Customer Support as linked if those messages are tied to the address, and change the privacy manifest, App Store Connect, the privacy policy and the in-app privacy text together.
 
 ### Review server
 
-App Review needs to sign in and play something; a login screen alone is not enough. Guideline 2.1(a) needs Apple's prior approval for a built-in demo mode, so Vivid uses a demo server and account instead.
+App Review needs to sign in and play something; a login screen alone is not enough.
+Guideline 2.1(a) needs Apple's prior approval for a built-in demo mode, so Vivid uses a demo server and account instead.
 
-- Use a Silo, Emby or Jellyfin server reachable from the internet at a public hostname, not an IP address, local name or VPN address. Reviewers can't join a VPN.
-- Serve it over HTTPS with a publicly trusted certificate, such as one from Let's Encrypt. App Transport Security only relaxes its rules for local addresses, and the player checks certificates against the system trust store, so a self-signed or private certificate stops sign-in and playback.
-- Make it reachable over IPv6, because App Review tests on IPv6-only networks. Give the hostname an AAAA record if you can, and check sign-in and playback from an IPv6-only network before submitting.
-- Use a review account that doesn't expire and has no PIN, or give the PIN in the review notes. For Silo, name the viewing profile to choose. Make sure the same account works on iPhone, iPad and Apple TV, and keep the server running until the review finishes.
+- Use a Silo, Emby or Jellyfin server reachable from the internet at a public hostname, not an IP address, local name or VPN address.
+  Reviewers can't join a VPN.
+- Serve it over HTTPS with a publicly trusted certificate, such as one from Let's Encrypt.
+  App Transport Security only relaxes its rules for local addresses, and the player checks certificates against the system trust store, so a self-signed or private certificate stops sign-in and playback.
+- Make it reachable over IPv6, because App Review tests on IPv6-only networks.
+  Give the hostname an AAAA record if you can, and check sign-in and playback from an IPv6-only network before submitting.
+- Use a review account that doesn't expire and has no PIN, or give the PIN in the review notes.
+  For Silo, name the viewing profile to choose.
+  Make sure the same account works on iPhone, iPad and Apple TV, and keep the server running until the review finishes.
 - Load only media that is in the public domain or openly licensed, such as the Blender open films: at least one film and one series with several episodes, with subtitles and chapters.
-- Turn on the server features a reviewer should see: allow downloads for the review account (downloads are on iPhone and iPad only) and, on Silo, AI description translation if the server offers it. Leave Seerr, and any request feature on the server, unconfigured for the review account.
+- Turn on the server features a reviewer should see: allow downloads for the review account (downloads are on iPhone and iPad only) and, on Silo, AI description translation if the server offers it.
+  Leave Seerr, and any request feature on the server, unconfigured for the review account.
 - Put the server address, username and password only in App Store Connect's sign-in fields and notes, never in Git, release notes or public text.
 
 ### Review notes
 
-App Review rejects generic notes, so the notes must say which card to choose first and name each feature that depends on the person's server. Start from this text, fill in the brackets, keep only the lines that apply to the review server, and add the server details in App Store Connect's sign-in fields:
+App Review rejects generic notes, so the notes must say which card to choose first and name each feature that depends on the person's server.
+Start from this text, fill in the brackets, keep only the lines that apply to the review server, and add the server details in App Store Connect's sign-in fields:
 
-> Vivid plays media from servers that people run themselves (Silo, Emby or Jellyfin). It doesn't sell or supply content, create accounts or offer in-app purchases. To sign in, choose the [Silo / Emby / Jellyfin] card, then enter the server address, username and password provided. [For Silo: then choose the [name] profile.] The sample titles are in the public domain or openly licensed.
+> Vivid plays media from servers that people run themselves (Silo, Emby or Jellyfin).
+> It doesn't sell or supply content, create accounts or offer in-app purchases.
+> To sign in, choose the [Silo / Emby / Jellyfin] card, then enter the server address, username and password provided.
+> [For Silo: then choose the [name] profile.] The sample titles are in the public domain or openly licensed.
 >
 > These features depend on the person's own server or accounts:
 >
-> - Downloads (iPhone and iPad): offline copies from the person's server, available only when the server allows downloads for that account. They're allowed for the review account. Vivid asks for notification permission the first time you download something or turn on Auto-download future episodes, for download notices only.
-> - Translated descriptions (Silo only): the person's Silo server translates a title's description when its operator turns this on. Vivid doesn't contact an AI service itself. [It's on for the review account / It's off on the review server.]
-> - Requests: an optional connection to Seerr, a request manager the person runs alongside their server. It isn't set up for the review account.
-> - Plugins: optional connections to MDBList and OpenSubtitles using the person's own free API key, and to Simkl, which the person signs in to with a short code they approve on Simkl's website. They need the person's own accounts, so they aren't set up for the review account. They don't download or run code.
+> - Downloads (iPhone and iPad): offline copies from the person's server, available only when the server allows downloads for that account.
+>   They're allowed for the review account.
+>   Vivid asks for notification permission the first time you download something or turn on Auto-download future episodes, for download notices only.
+> - Translated descriptions (Silo only): the person's Silo server translates a title's description when its operator turns this on.
+>   Vivid doesn't contact an AI service itself.
+>   [It's on for the review account / It's off on the review server.]
+> - Requests: an optional connection to Seerr, a request manager the person runs alongside their server.
+>   It isn't set up for the review account.
+> - Plugins: optional connections to MDBList and OpenSubtitles using the person's own free API key, and to Simkl, which the person signs in to with a short code they approve on Simkl's website.
+>   They need the person's own accounts, so they aren't set up for the review account.
+>   They don't download or run code.
 >
-> Trailers, ratings, the Calendar and Studios & Networks come from TMDb and TVmaze through Vivid's own server, with nothing to set up. Trailers open in the YouTube app, or the browser on iPhone and iPad; Vivid doesn't download them.
+> Trailers, ratings, the Calendar and Studios & Networks come from TMDb and TVmaze through Vivid's own server, with nothing to set up.
+> Trailers open in the YouTube app, or the browser on iPhone and iPad; Vivid doesn't download them.
 >
 > Diagnostics reports stay on the device unless the person chooses Send in Settings > Diagnostics, where they can see exactly what is sent.
 
 ## GitHub workflows
 
-The source-release workflow creates GitHub source releases only. The other workflows, listed under [release validation](versioning.md#validation), run checks or unsigned device builds; an active workflow is not proof that Apple distribution has been configured or validated. Use the existing standard runners for approved regression validation, without enabling paid capacity.
+The source-release workflow creates GitHub source releases only.
+The other workflows, listed under [release validation](versioning.md#validation), run checks or unsigned device builds; an active workflow is not proof that Apple distribution has been configured or validated.
+Use the existing standard runners for approved regression validation, without enabling paid capacity.
 
-Vivid's Apple beta builds are distributed through TestFlight only. The unsigned sideload IPA builds and their Fastlane lanes were removed, along with the Ruby tooling they needed.
+Vivid's Apple beta builds are distributed through TestFlight only.
+The unsigned sideload IPA builds and their Fastlane lanes were removed, along with the Ruby tooling they needed.

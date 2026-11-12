@@ -7,14 +7,22 @@
 
 How Vivid's player fits together, from the player screen down to the libraries inside Lucid Engine: the layers, how audio, video, subtitles, Dolby Vision metadata, TLS and logs move through them, which threads each part runs on, which tests guard each part, how the engine is built and shipped, and where to start when you change a part.
 
-Two specifications remain the contracts: the [player bridge specification](../playback/player-bridge-spec.md) for Vivid's Swift bridge, and the [Lucid Engine patch specification](../playback/lucid-engine-patch-spec.md) for Vivid's engine patches. This guide is a map of them. Where it and a specification differ, the specification wins. "Bridge 5.3" and "engine 4.16.6" below mean those sections of the two specifications.
+Two specifications remain the contracts: the [player bridge specification](../playback/player-bridge-spec.md) for Vivid's Swift bridge, and the [Lucid Engine patch specification](../playback/lucid-engine-patch-spec.md) for Vivid's engine patches.
+This guide is a map of them.
+Where it and a specification differ, the specification wins.
+"Bridge 5.3" and "engine 4.16.6" below mean those sections of the two specifications.
 
 > [!IMPORTANT]
-> The bridge and the engine patches were written clean-room. Before changing either, read the reading rules in bridge section 2 and engine section 1.4 and keep to them. They list sources that must never be opened, including the previous bridge's files in Git history.
+> The bridge and the engine patches were written clean-room.
+> Before changing either, read the reading rules in bridge section 2 and engine section 1.4 and keep to them.
+> They list sources that must never be opened, including the previous bridge's files in Git history.
 
 ## The engine the app links
 
-Both app targets pin release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (package commit `53ebeac`). It serves exactly what the pipeline built at `fcb6782` in run 38458337996, every library from upstream source apart from the Rust standard library inside libdovi, which comes from the Rust project's pinned `rust-std` archives. Before it, the app pinned the prerelease `0.1.0-interim.1` (since deleted), which had only some of the libraries built here. Keep the two apart when you read earlier results, notices or device reports.
+Both app targets pin release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (package commit `53ebeac`).
+It serves exactly what the pipeline built at `fcb6782` in run 38458337996, every library from upstream source apart from the Rust standard library inside libdovi, which comes from the Rust project's pinned `rust-std` archives.
+Before it, the app pinned the prerelease `0.1.0-interim.1` (since deleted), which had only some of the libraries built here.
+Keep the two apart when you read earlier results, notices or device reports.
 
 <table width="100%">
   <thead>
@@ -74,7 +82,9 @@ flowchart TB
 
 ### App screens and the player view model
 
-The player screen and its view model never call libmpv. They own product state (controls, queues, resume and Next Up, progress reporting and server sessions) and reach the engine through one controller. All of them run on the main actor.
+The player screen and its view model never call libmpv.
+They own product state (controls, queues, resume and Next Up, progress reporting and server sessions) and reach the engine through one controller.
+All of them run on the main actor.
 
 <table width="100%">
   <thead>
@@ -95,19 +105,37 @@ The player screen and its view model never call libmpv. They own product state (
 
 [`VividMPVPlayer`](../../iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift) (aliased as `VividEngine`) is a main-actor class that turns Vivid's load options into one engine session per load.
 
-- **One core per load.** Each load creates a `VividMPVCore`, a private subclass of the bridge's `VividPlayerCore`, sets its options, calls `initialize(in:hostView:)`, registers 21 property observations and issues `loadfile`. The previous core is disposed with `preserveDisplayCriteria: true`, so consecutive episodes of one format keep the TV's mode; the final stop disposes with `false` (bridge 8.13).
-- **Engine options.** Its options hook, `configurePlatformMpvOptions(mpv:)`, runs inside `initialize`, after the bridge's own options and before `mpv_initialize`: `ao=avfoundation`, `audio-spdif`, `ao-avfoundation-manage-audio-session=no`, `volume-gain` and `af` while Volume Boost or Enhanced Dialogue is on, the packet cache limits, `cache-secs` on tvOS, the six `ao-avfoundation-*` AirPlay options on tvOS, `http-header-fields` as a typed string list, `tls-verify` through `LucidTLS`, and the `vividstream` protocol when Vivid's managed reader is used (bridge 6.3, 6.19).
-- **Audio session.** Vivid owns `AVAudioSession`, not the engine. The adapter sets category playback, mode moviePlayback and long-form route sharing and activates the session before each load, retrying briefly while a new route settles. It deactivates it only after every retired core's `dispose` completion has left a shared `DispatchGroup`, and only while its own ownership token is still current.
-- **Events into state.** `file-loaded` marks the session ready and `playback-restart` the first picture. `end-file` either fails the load (it carries an `error`) or starts a 250 ms end-of-stream confirmation that a queued error, a stop, a new load or a seek can still cancel.
-- **Log matching.** `log-message` events are matched against fixed demuxer and audio output lines and become fault labels and trace fields (see [Logs and events](#logs-and-events)). `LucidLogDiagnostics.swift` holds the lines and the order they're checked in.
-- **Subtitle style.** `LucidSubtitleStyle.swift` works out the `sub-*` options from the overlay's own drawing (see [Subtitles](#subtitles)).
-- **Surface.** `VividMPVHostView`, one per adapter and kept across loads, calls the core's `updateFrame()` on every layout pass. The delegate proxy, `VividMPVDelegate`, passes each delivery on to the adapter through a main-actor `Task`.
-- **Silo HTTPS reads.** `VividManagedStream.swift` and `VividManagedStreamProtocol.swift` read Silo direct-play HTTPS streams with URLSession and serve them to libmpv through its stream callbacks.
-- **TLS.** `LucidTLS.swift` decides whether to turn on certificate checks for the streams Lucid reads itself (see [TLS](#tls)).
+- **One core per load.**
+  Each load creates a `VividMPVCore`, a private subclass of the bridge's `VividPlayerCore`, sets its options, calls `initialize(in:hostView:)`, registers 21 property observations and issues `loadfile`.
+  The previous core is disposed with `preserveDisplayCriteria: true`, so consecutive episodes of one format keep the TV's mode; the final stop disposes with `false` (bridge 8.13).
+- **Engine options.**
+  Its options hook, `configurePlatformMpvOptions(mpv:)`, runs inside `initialize`, after the bridge's own options and before `mpv_initialize`: `ao=avfoundation`, `audio-spdif`, `ao-avfoundation-manage-audio-session=no`, `volume-gain` and `af` while Volume Boost or Enhanced Dialogue is on, the packet cache limits, `cache-secs` on tvOS, the six `ao-avfoundation-*` AirPlay options on tvOS, `http-header-fields` as a typed string list, `tls-verify` through `LucidTLS`, and the `vividstream` protocol when Vivid's managed reader is used (bridge 6.3, 6.19).
+- **Audio session.**
+  Vivid owns `AVAudioSession`, not the engine.
+  The adapter sets category playback, mode moviePlayback and long-form route sharing and activates the session before each load, retrying briefly while a new route settles.
+  It deactivates it only after every retired core's `dispose` completion has left a shared `DispatchGroup`, and only while its own ownership token is still current.
+- **Events into state.**
+  `file-loaded` marks the session ready and `playback-restart` the first picture.
+  `end-file` either fails the load (it carries an `error`) or starts a 250 ms end-of-stream confirmation that a queued error, a stop, a new load or a seek can still cancel.
+- **Log matching.**
+  `log-message` events are matched against fixed demuxer and audio output lines and become fault labels and trace fields (see [Logs and events](#logs-and-events)).
+  `LucidLogDiagnostics.swift` holds the lines and the order they're checked in.
+- **Subtitle style.**
+  `LucidSubtitleStyle.swift` works out the `sub-*` options from the overlay's own drawing (see [Subtitles](#subtitles)).
+- **Surface.**
+  `VividMPVHostView`, one per adapter and kept across loads, calls the core's `updateFrame()` on every layout pass.
+  The delegate proxy, `VividMPVDelegate`, passes each delivery on to the adapter through a main-actor `Task`.
+- **Silo HTTPS reads.**
+  `VividManagedStream.swift` and `VividManagedStreamProtocol.swift` read Silo direct-play HTTPS streams with URLSession and serve them to libmpv through its stream callbacks.
+- **TLS.**
+  `LucidTLS.swift` decides whether to turn on certificate checks for the streams Lucid reads itself (see [TLS](#tls)).
 
 ### The bridge
 
-Vivid's own Swift layer between the adapter and libmpv, written from the bridge specification. It owns one mpv client context per load with its options, event loop and teardown; ordered delivery of properties and events to the main thread; asynchronous requests with exactly-once completions; the video surface; Match Content on Apple TV and EDR on iPhone and iPad; reactions to the app entering the background and returning; and video on an external screen on iPhone and iPad (bridge 1.1). It does not render frames, own the audio session, choose tracks (apart from one hook the adapter drives) or talk to any server. Every console line it prints starts with `[VividPlayerCore]`.
+Vivid's own Swift layer between the adapter and libmpv, written from the bridge specification.
+It owns one mpv client context per load with its options, event loop and teardown; ordered delivery of properties and events to the main thread; asynchronous requests with exactly-once completions; the video surface; Match Content on Apple TV and EDR on iPhone and iPad; reactions to the app entering the background and returning; and video on an external screen on iPhone and iPad (bridge 1.1).
+It does not render frames, own the audio session, choose tracks (apart from one hook the adapter drives) or talk to any server.
+Every console line it prints starts with `[VividPlayerCore]`.
 
 It is split into a centre and outer parts (bridge 17.1), all in [`iosApp/iosApp/Playback/MPV/`](../../iosApp/iosApp/Playback/MPV):
 
@@ -129,13 +157,20 @@ It is split into a centre and outer parts (bridge 17.1), all in [`iosApp/iosApp/
 
 ### libmpv's core
 
-Upstream mpv 0.41.0, built as a library (`-Dlibmpv=true`, `-Dcplayer=false`, `-Dgpl=false`, Lua and JavaScript off; [`engine/config/mpv-meson.txt`](../../engine/config/mpv-meson.txt)). The pipeline also builds it with `-Dcplugins=disabled`, without the C plugin loader, from the next engine release, which hasn't been published; release `0.1.0` still has the loader, unused. Vivid reaches it only through two of its public headers, `client.h` and `stream_cb.h` (the latter for the managed reader; bridge 2.1). The core demuxes and caches packets (up to 256 MiB ahead and 16 MiB behind, and on Apple TV at most 60 seconds ahead), decodes through FFmpeg, runs the audio filters and output chain, keeps video on the audio clock (mpv's default `video-sync=audio`), decodes subtitles and hands them to the video output as bitmaps, and drives the audio and video outputs. Anything the patch specification does not mention behaves as upstream (engine 1.2).
+Upstream mpv 0.41.0, built as a library (`-Dlibmpv=true`, `-Dcplayer=false`, `-Dgpl=false`, Lua and JavaScript off; [`engine/config/mpv-meson.txt`](../../engine/config/mpv-meson.txt)).
+The pipeline also builds it with `-Dcplugins=disabled`, without the C plugin loader, from the next engine release, which hasn't been published; release `0.1.0` still has the loader, unused.
+Vivid reaches it only through two of its public headers, `client.h` and `stream_cb.h` (the latter for the managed reader; bridge 2.1).
+The core demuxes and caches packets (up to 256 MiB ahead and 16 MiB behind, and on Apple TV at most 60 seconds ahead), decodes through FFmpeg, runs the audio filters and output chain, keeps video on the audio clock (mpv's default `video-sync=audio`), decodes subtitles and hands them to the video output as bitmaps, and drives the audio and video outputs.
+Anything the patch specification does not mention behaves as upstream (engine 1.2).
 
 Vivid's patches inside the core itself are small: mpv `0001` (upstream commit `1388a453`, unchanged: the S/PDIF muxer is recreated after a reset), `0010` (E-AC-3 passthrough at four times the stream's codec rate, engine 6.4), `0011` (the output chain is woken after a hard reset, so audio does not stall after an output reload or a passthrough fallback, engine 6.2) and `0040` (see [Decoder](#decoder)).
 
 ### Audio output
 
-`ao=avfoundation` (log prefix `ao/avfoundation`, options `ao-avfoundation-*`; engine 2.1, 2.2) is a pull-based driver: mpv's core calls `init`, `uninit`, `control`, `reset`, `start` and `set_pause`, and the driver reads audio with `ao_read_data` when its sink needs more. It has two sinks: the PCM sink (`AVSampleBufferAudioRenderer` with `AVSampleBufferRenderSynchronizer`) for decoded audio, and the compressed sink (`AVPlayer`, fed through an `AVAssetResourceLoader` delegate) for AC-3 and E-AC-3 passthrough. Any other S/PDIF format is refused at `init`, so mpv decodes it to PCM (engine 3.1). The patches add the pure C decisions first and the Objective-C bindings last, and each adds its own files to `meson.build`, so every stage of the series builds.
+`ao=avfoundation` (log prefix `ao/avfoundation`, options `ao-avfoundation-*`; engine 2.1, 2.2) is a pull-based driver: mpv's core calls `init`, `uninit`, `control`, `reset`, `start` and `set_pause`, and the driver reads audio with `ao_read_data` when its sink needs more.
+It has two sinks: the PCM sink (`AVSampleBufferAudioRenderer` with `AVSampleBufferRenderSynchronizer`) for decoded audio, and the compressed sink (`AVPlayer`, fed through an `AVAssetResourceLoader` delegate) for AC-3 and E-AC-3 passthrough.
+Any other S/PDIF format is refused at `init`, so mpv decodes it to PCM (engine 3.1).
+The patches add the pure C decisions first and the Objective-C bindings last, and each adds its own files to `meson.build`, so every stage of the series builds.
 
 <table width="100%">
   <thead>
@@ -153,7 +188,9 @@ Vivid's patches inside the core itself are small: mpv `0001` (upstream commit `1
 
 ### Video output
 
-Upstream mpv has no `avfoundation` video output; patch `0025` adds `vo=avfoundation` as the meson feature `vo-avfoundation`, registers it first in `video/out/vo.c` (ahead of `gpu-next`), adds the `avfoundation-*` options and registers a VideoToolbox device named `avfoundation`, so that `hwdec=videotoolbox` decodes straight into frames the output accepts (engine 2.1, 2.3). The output puts frames on the layer passed as `wid` as timed sample buffers, owns that layer's `controlTimebase`, adds a sibling subtitle layer, and never scales, tone-maps or re-renders the picture apart from the Picture in Picture subtitle composite (engine 4). Its modules come first in the series (`0020` to `0024`, which `meson.build` does not build until `0025`).
+Upstream mpv has no `avfoundation` video output; patch `0025` adds `vo=avfoundation` as the meson feature `vo-avfoundation`, registers it first in `video/out/vo.c` (ahead of `gpu-next`), adds the `avfoundation-*` options and registers a VideoToolbox device named `avfoundation`, so that `hwdec=videotoolbox` decodes straight into frames the output accepts (engine 2.1, 2.3).
+The output puts frames on the layer passed as `wid` as timed sample buffers, owns that layer's `controlTimebase`, adds a sibling subtitle layer, and never scales, tone-maps or re-renders the picture apart from the Picture in Picture subtitle composite (engine 4).
+Its modules come first in the series (`0020` to `0024`, which `meson.build` does not build until `0025`).
 
 <table width="100%">
   <thead>
@@ -169,11 +206,15 @@ Upstream mpv has no `avfoundation` video output; patch `0025` adds `vo=avfoundat
   </tbody>
 </table>
 
-The output has two presentation modes (engine 4.8). In `host` mode, used on Apple TV, the timebase follows the host clock and frames are presented at the times mpv schedules. In `media` mode, used on iPhone and iPad, the timebase follows media time through a rate servo, which Picture in Picture needs. The bridge sets `host` on Apple TV devices; the tvOS build's default gives the tvOS simulator `host` too.
+The output has two presentation modes (engine 4.8).
+In `host` mode, used on Apple TV, the timebase follows the host clock and frames are presented at the times mpv schedules.
+In `media` mode, used on iPhone and iPad, the timebase follows media time through a rate servo, which Picture in Picture needs.
+The bridge sets `host` on Apple TV devices; the tvOS build's default gives the tvOS simulator `host` too.
 
 ### Decoder
 
-Decoding is FFmpeg's, through mpv's `vd_lavc`, with VideoToolbox on devices (`hwdec=videotoolbox`, `hwdec-codecs=all`) and software decoding in the simulators and after a fallback. Vivid's changes:
+Decoding is FFmpeg's, through mpv's `vd_lavc`, with VideoToolbox on devices (`hwdec=videotoolbox`, `hwdec-codecs=all`) and software decoding in the simulators and after a fallback.
+Vivid's changes:
 
 <table width="100%">
   <thead>
@@ -190,11 +231,15 @@ Decoding is FFmpeg's, through mpv's `vd_lavc`, with VideoToolbox on devices (`hw
 
 ### libass and its series
 
-libass 0.17.5 renders text subtitles, on one thread, with FreeType, FriBidi, HarfBuzz and libunibreak. Its series gives static events today's change reports and font behaviour (engine 13.4; [build guide](lucid-engine-build.md)):
+libass 0.17.5 renders text subtitles, on one thread, with FreeType, FriBidi, HarfBuzz and libunibreak.
+Its series gives static events today's change reports and font behaviour (engine 13.4; [build guide](lucid-engine-build.md)):
 
-- `0001`: upstream libass commit `057a5334`, unchanged, with its upstream attribution. Symbol fonts given non-Latin text place their glyphs as before.
-- `0002`: upstream libass pull request #951 at `f96a521a`, unchanged, with its upstream attribution. The finished images of events that do not depend on time are cached within 32 MiB, so an unchanged sign or boxed line reports no change and repeats no font search.
-- `0010`: Vivid's own patch (ISC). Unresolved glyphs stay with their event, which finds its own cache entry first, and every entry a frame uses is kept until the next frame has been rendered, so a static event searches for them once per appearance however full the cache is, even when it draws nothing visible; a new fallback face renders such events once more, the event's Effect joins the cache key, the cache is emptied on every state change, and image clones keep their type.
+- `0001`: upstream libass commit `057a5334`, unchanged, with its upstream attribution.
+  Symbol fonts given non-Latin text place their glyphs as before.
+- `0002`: upstream libass pull request #951 at `f96a521a`, unchanged, with its upstream attribution.
+  The finished images of events that do not depend on time are cached within 32 MiB, so an unchanged sign or boxed line reports no change and repeats no font search.
+- `0010`: Vivid's own patch (ISC).
+  Unresolved glyphs stay with their event, which finds its own cache entry first, and every entry a frame uses is kept until the next frame has been rendered, so a static event searches for them once per appearance however full the cache is, even when it draws nothing visible; a new fallback face renders such events once more, the event's Effect joins the cache key, the cache is emptied on every state change, and image clones keep their type.
 
 ### The libraries
 
@@ -234,13 +279,28 @@ flowchart LR
   cmp -.->|"fallback: block the format, reload audio"| lavc
 ```
 
-- **Which path.** At 1x the adapter sets `audio-spdif=ac3,eac3` unless Volume Boost or Enhanced Dialogue is on, so AC-3 and E-AC-3 go to mpv's `ad_spdif`, which wraps them in IEC 61937 bursts, and everything else (DTS, TrueHD, AAC and the rest) is decoded to PCM. At any other speed, or while either of those is on, `audio-spdif` is empty and everything is PCM.
-- **PCM.** The sink asks `ao_read_data` for up to 100 ms at a time and enqueues timed sample buffers on the renderer; the end time of each read, measured on the synchroniser, becomes mpv's audio clock. On tvOS with an AirPlay route the adapter sets `ao-avfoundation-max-lookahead=4`, which selects the bounded mode: a 50 ms timer on the AO queue tops the renderer up to at most four seconds ahead, and every reset starts a fresh renderer (engine 3.3).
-- **Compressed.** The sink reads the bursts, unwraps them back into a plain AC-3 or E-AC-3 bitstream in its stream window, and serves the bytes to `AVPlayer` through the resource loader, under a custom URL scheme. The item's playhead is the compressed clock, from which the sink works out the end time of each read that mpv takes as its audio clock. On Apple TV only `AVPlayer` renders the Atmos objects in E-AC-3 (as Dolby MAT over HDMI), which is why passthrough goes through it (engine 3.1, 3.4).
-- **AirPlay start-up.** On an AirPlay route `AVPlayer`'s clock stays parked at start-up until the output's recovery seek. Supervision, the grace options and anchoring keep video waiting for the audio instead of running ahead (engine 3.4.10, 3.4.11).
-- **Fallback.** If passthrough cannot go on (it never engages, `AVPlayer` rejects the stream, or the stream loses its IEC 61937 sync or overflows the window), the sink blocks that format for the whole process and asks mpv to reload audio, which then opens the PCM sink; mpv `0011` wakes the output chain so the reload does not stall. A PCM `init` clears the block, so the next title tries passthrough again (engine 3.2.3, 3.4.13, 6.2).
-- **Speed changes.** Crossing 1x toggles `audio-spdif`, except while Volume Boost or Enhanced Dialogue is on, when it stays empty and the crossing swaps nothing and seeks nothing. Otherwise, on an AC-3 or E-AC-3 track that swaps passthrough and PCM, so mpv opens a new audio output, and the adapter first seeks `0 relative+exact` so audio queued for the old output is dropped. On any other track the same output is kept (engine 1.7, bridge 17.11).
-- **Audio session.** With `manage-audio-session=no` the output never sets the category or mode and never activates or deactivates the session, but it still declares multichannel content and sets the preferred channel count for PCM (engine 3.2.4).
+- **Which path.**
+  At 1x the adapter sets `audio-spdif=ac3,eac3` unless Volume Boost or Enhanced Dialogue is on, so AC-3 and E-AC-3 go to mpv's `ad_spdif`, which wraps them in IEC 61937 bursts, and everything else (DTS, TrueHD, AAC and the rest) is decoded to PCM.
+  At any other speed, or while either of those is on, `audio-spdif` is empty and everything is PCM.
+- **PCM.**
+  The sink asks `ao_read_data` for up to 100 ms at a time and enqueues timed sample buffers on the renderer; the end time of each read, measured on the synchroniser, becomes mpv's audio clock.
+  On tvOS with an AirPlay route the adapter sets `ao-avfoundation-max-lookahead=4`, which selects the bounded mode: a 50 ms timer on the AO queue tops the renderer up to at most four seconds ahead, and every reset starts a fresh renderer (engine 3.3).
+- **Compressed.**
+  The sink reads the bursts, unwraps them back into a plain AC-3 or E-AC-3 bitstream in its stream window, and serves the bytes to `AVPlayer` through the resource loader, under a custom URL scheme.
+  The item's playhead is the compressed clock, from which the sink works out the end time of each read that mpv takes as its audio clock.
+  On Apple TV only `AVPlayer` renders the Atmos objects in E-AC-3 (as Dolby MAT over HDMI), which is why passthrough goes through it (engine 3.1, 3.4).
+- **AirPlay start-up.**
+  On an AirPlay route `AVPlayer`'s clock stays parked at start-up until the output's recovery seek.
+  Supervision, the grace options and anchoring keep video waiting for the audio instead of running ahead (engine 3.4.10, 3.4.11).
+- **Fallback.**
+  If passthrough cannot go on (it never engages, `AVPlayer` rejects the stream, or the stream loses its IEC 61937 sync or overflows the window), the sink blocks that format for the whole process and asks mpv to reload audio, which then opens the PCM sink; mpv `0011` wakes the output chain so the reload does not stall.
+  A PCM `init` clears the block, so the next title tries passthrough again (engine 3.2.3, 3.4.13, 6.2).
+- **Speed changes.**
+  Crossing 1x toggles `audio-spdif`, except while Volume Boost or Enhanced Dialogue is on, when it stays empty and the crossing swaps nothing and seeks nothing.
+  Otherwise, on an AC-3 or E-AC-3 track that swaps passthrough and PCM, so mpv opens a new audio output, and the adapter first seeks `0 relative+exact` so audio queued for the old output is dropped.
+  On any other track the same output is kept (engine 1.7, bridge 17.11).
+- **Audio session.**
+  With `manage-audio-session=no` the output never sets the category or mode and never activates or deactivates the session, but it still declares multichannel content and sets the preferred channel count for PCM (engine 3.2.4).
 
 ### Video frames
 
@@ -259,20 +319,35 @@ flowchart LR
   sl --> out
 ```
 
-- **Hardware frames.** VideoToolbox decodes into Metal-compatible, IOSurface-backed `CVPixelBuffer`s that keep the decoder's colour attachments. The output enqueues that same buffer and never tags it from mpv's parameters (engine 4.2).
+- **Hardware frames.**
+  VideoToolbox decodes into Metal-compatible, IOSurface-backed `CVPixelBuffer`s that keep the decoder's colour attachments.
+  The output enqueues that same buffer and never tags it from mpv's parameters (engine 4.2).
 - **Software frames** (the simulators, a fallback on a device, embedded cover art) are copied into `420v` or `x420` pool buffers and tagged from mpv's parameters (engine 4.3).
-- **Before each enqueue** the frame path applies, in order, the Picture in Picture composite when it is on, the pixel aspect, the Dolby Vision transfer repair, the cached format description and the sample (engine 4.9). The frame then waits until at most 4 ms before its target time for the layer to be ready, or is dropped and counted in `frame-drop-count` (engine 4.10). In media mode the timebase is anchored or slewed, and the subtitle sample, when one is due, is enqueued immediately before the video sample with the same presentation time.
-- **Display.** On Apple TV the bridge asks for the HDMI frame rate and dynamic range that suit mpv's reported stream properties; on iPhone and iPad it turns on EDR on the layer when the signal peak is above SDR white. The output does no tone mapping (bridge 7.2, 8; engine 4).
-- **Background and return.** Without Picture in Picture the bridge writes `vid=no` on entering the background, which destroys the video output (picture, subtitle layer and timebase control), and `vid=auto` on return, which builds a new one (bridge 6.18, engine 4.16.1).
+- **Before each enqueue** the frame path applies, in order, the Picture in Picture composite when it is on, the pixel aspect, the Dolby Vision transfer repair, the cached format description and the sample (engine 4.9).
+  The frame then waits until at most 4 ms before its target time for the layer to be ready, or is dropped and counted in `frame-drop-count` (engine 4.10).
+  In media mode the timebase is anchored or slewed, and the subtitle sample, when one is due, is enqueued immediately before the video sample with the same presentation time.
+- **Display.**
+  On Apple TV the bridge asks for the HDMI frame rate and dynamic range that suit mpv's reported stream properties; on iPhone and iPad it turns on EDR on the layer when the signal peak is above SDR white.
+  The output does no tone mapping (bridge 7.2, 8; engine 4).
+- **Background and return.**
+  Without Picture in Picture the bridge writes `vid=no` on entering the background, which destroys the video output (picture, subtitle layer and timebase control), and `vid=auto` on return, which builds a new one (bridge 6.18, engine 4.16.1).
 
 ### Subtitles
 
-- **Embedded text subtitles** (ASS, SSA, SubRip and others) and **ASS sidecars** (added with `sub-add`) go through mpv's subtitle decoder to libass. **Bitmap subtitles** such as PGS are decoded by mpv and FFmpeg. Either way the video output asks mpv for the frame's bitmaps with `osd_render`, accepting libass and BGRA bitmaps only (engine 4.14.4).
-- **External plain-text sidecars** (OpenSubtitles downloads and server text files) are parsed by the adapter, keeping SubRip and WebVTT bold, italic, underline, strike-through, `<font color>` and `{\anN}` alignment, and Vivid's overlay draws them. On iOS, once one is chosen, the adapter also gives the engine an unselected copy of it with `sub-add`, and selects the copy only while Picture in Picture runs, because Picture in Picture shows only the engine's pictures. The copy's temporary file is removed when the load ends.
-- **One canvas.** For every held image, the output draws every subtitle object with content (in Vivid, the primary and the secondary subtitle, later over earlier) into one BGRA canvas, and skips rendering when the objects and their change ids are the same as last time (engine 4.14.4, 7.3).
+- **Embedded text subtitles** (ASS, SSA, SubRip and others) and **ASS sidecars** (added with `sub-add`) go through mpv's subtitle decoder to libass. **Bitmap subtitles** such as PGS are decoded by mpv and FFmpeg.
+  Either way the video output asks mpv for the frame's bitmaps with `osd_render`, accepting libass and BGRA bitmaps only (engine 4.14.4).
+- **External plain-text sidecars** (OpenSubtitles downloads and server text files) are parsed by the adapter, keeping SubRip and WebVTT bold, italic, underline, strike-through, `<font color>` and `{\anN}` alignment, and Vivid's overlay draws them.
+  On iOS, once one is chosen, the adapter also gives the engine an unselected copy of it with `sub-add`, and selects the copy only while Picture in Picture runs, because Picture in Picture shows only the engine's pictures.
+  The copy's temporary file is removed when the load ends.
+- **One canvas.**
+  For every held image, the output draws every subtitle object with content (in Vivid, the primary and the secondary subtitle, later over earlier) into one BGRA canvas, and skips rendering when the objects and their change ids are the same as last time (engine 4.14.4, 7.3).
 - **Separate layer** (the default, every platform): the canvas is laid out in the layer's pixels against mpv's aspect-fit rectangle, and enqueued as a timed BGRA sample on the subtitle layer, a sibling of the host layer that shares its timebase.
 - **Picture in Picture** (iOS, while `avfoundation-pip-composite-osd=yes`): the canvas is laid out on the frame's own pixel grid and blended into the video sample, exactly once per presented image, with Core Image as the fallback (engine 4.14.7, 13.1).
-- **Styling.** The adapter writes the `sub-*` options for Vivid's appearance and delay settings, and keeps authored ASS styles (`sub-ass-override=no`; engine 1.7). `LucidSubtitleStyle` works the options out from the overlay's own drawing, so an embedded text track and an external file look the same: the same size (libass sizes a face by its line height, so the size is scaled by the face's usWinAscent and usWinDescent), place, wrap width, box padding, outline and edges. libass can't load Apple's SF, so bold Helvetica Neue, Times New Roman and Menlo stand in for the overlay's semibold system fonts, and `sub-font` is also the face libass falls back to for authored ASS whose fonts are missing. What libass can't draw stays different: rounded box and window corners, the soft drop shadow (a hard one stands in), an edge or shadow on the glyphs together with a box, separate horizontal and vertical box padding, the overlay's line breaks (libass balances lines and keeps its wrap style while `sub-ass-override=no`), a secondary subtitle with Top position, which libass draws in the primary's place, and text after a bold span in an embedded SubRip or WebVTT track, which comes out in the regular weight because FFmpeg closes the span with `\b0`. As in the overlay, a secondary subtitle sits a fixed 17% up (36% with Lower Third), so a primary of two lines or more can overlap it.
+- **Styling.**
+  The adapter writes the `sub-*` options for Vivid's appearance and delay settings, and keeps authored ASS styles (`sub-ass-override=no`; engine 1.7).
+  `LucidSubtitleStyle` works the options out from the overlay's own drawing, so an embedded text track and an external file look the same: the same size (libass sizes a face by its line height, so the size is scaled by the face's usWinAscent and usWinDescent), place, wrap width, box padding, outline and edges. libass can't load Apple's SF, so bold Helvetica Neue, Times New Roman and Menlo stand in for the overlay's semibold system fonts, and `sub-font` is also the face libass falls back to for authored ASS whose fonts are missing.
+  What libass can't draw stays different: rounded box and window corners, the soft drop shadow (a hard one stands in), an edge or shadow on the glyphs together with a box, separate horizontal and vertical box padding, the overlay's line breaks (libass balances lines and keeps its wrap style while `sub-ass-override=no`), a secondary subtitle with Top position, which libass draws in the primary's place, and text after a bold span in an embedded SubRip or WebVTT track, which comes out in the regular weight because FFmpeg closes the span with `\b0`.
+  As in the overlay, a secondary subtitle sits a fixed 17% up (36% with Lower Third), so a primary of two lines or more can overlap it.
 
 ### Dolby Vision metadata
 
@@ -290,10 +365,19 @@ flowchart LR
   prop --> crit["Bridge: Apple TV display criteria; adapter label"]
 ```
 
-- **Session.** The container's Dolby Vision record reaches FFmpeg as coded side data. A usable profile 5, 7 or 8 record opens a `dvh1` session with `hvcC` and a `dvcC` (profile 5) or `dvvC` (profile 8, and profile 7 presented as 8.1) atom, with colour extensions for HDR-compatible bases and the per-frame HDR metadata properties. VideoToolbox refusing a profile 7 or 8 session gives one plain HEVC retry; a refused profile 5 session goes to mpv's software fallback (engine 5.1 to 5.4).
-- **RPUs.** Each frame's RPU NAL units are appended after its slices. Profile 7's are converted to 8.1 by libdovi 3.3.2 (mode 2), after an exact guard that skips zero-filled or truncated RPUs; an RPU that cannot be appended or converted is skipped with warnings and the frame is still submitted (engine 5.5, 5.6, 5.9).
-- **Pixel buffers.** VideoToolbox attaches `DolbyVisionRPUData`. When the frame's colour system is Dolby Vision, that attachment is present and no transfer function is set, the video output adds the transfer (PQ). Profile 5 relies on this for its PQ tag (engine 4.4, 4.17).
-- **Frame metadata.** hevcdec still exports the source RPU as frame side data, and mpv hands every RPU to libplacebo, which parses it with libdovi. Vivid's libdovi patch makes a malformed RPU an error that is skipped, instead of a crash (engine 5.11, 5.13).
+- **Session.**
+  The container's Dolby Vision record reaches FFmpeg as coded side data.
+  A usable profile 5, 7 or 8 record opens a `dvh1` session with `hvcC` and a `dvcC` (profile 5) or `dvvC` (profile 8, and profile 7 presented as 8.1) atom, with colour extensions for HDR-compatible bases and the per-frame HDR metadata properties.
+  VideoToolbox refusing a profile 7 or 8 session gives one plain HEVC retry; a refused profile 5 session goes to mpv's software fallback (engine 5.1 to 5.4).
+- **RPUs.**
+  Each frame's RPU NAL units are appended after its slices.
+  Profile 7's are converted to 8.1 by libdovi 3.3.2 (mode 2), after an exact guard that skips zero-filled or truncated RPUs; an RPU that cannot be appended or converted is skipped with warnings and the frame is still submitted (engine 5.5, 5.6, 5.9).
+- **Pixel buffers.**
+  VideoToolbox attaches `DolbyVisionRPUData`.
+  When the frame's colour system is Dolby Vision, that attachment is present and no transfer function is set, the video output adds the transfer (PQ).
+  Profile 5 relies on this for its PQ tag (engine 4.4, 4.17).
+- **Frame metadata.** hevcdec still exports the source RPU as frame side data, and mpv hands every RPU to libplacebo, which parses it with libdovi.
+  Vivid's libdovi patch makes a malformed RPU an error that is skipped, instead of a crash (engine 5.11, 5.13).
 - **Display.** mpv reports `dolby-vision-profile` and `dolby-vision-level` from the container record, so profile 7 stays 7. The bridge requests Dolby Vision on Apple TV with profile 7 as 8.1, compatibility id 1, and the adapter labels it "DV Profile 8.1" (bridge 8.8, 8.11; engine 2.7).
 
 ### TLS
@@ -309,7 +393,8 @@ flowchart LR
   </tbody>
 </table>
 
-[`LucidTLS`](../../iosApp/iosApp/Playback/MPV/LucidTLS.swift) reads FFmpeg's `avformat_configuration()` by symbol name (the `Libavutil` module does not import, so `import Libavformat` cannot be used) and turns on `tls-verify` only when the string contains `--enable-securetransport`: an FFmpeg built with OpenSSL has no trust store on Apple platforms, so checks there would refuse every HTTPS stream. The pipeline guarantees the flag and the exported symbol, and `lucid.py check` also requires that no framework has OpenSSL symbols or references `_SecIdentityCreate` ([build guide](lucid-engine-build.md)).
+[`LucidTLS`](../../iosApp/iosApp/Playback/MPV/LucidTLS.swift) reads FFmpeg's `avformat_configuration()` by symbol name (the `Libavutil` module does not import, so `import Libavformat` cannot be used) and turns on `tls-verify` only when the string contains `--enable-securetransport`: an FFmpeg built with OpenSSL has no trust store on Apple platforms, so checks there would refuse every HTTPS stream.
+The pipeline guarantees the flag and the exported symbol, and `lucid.py check` also requires that no framework has OpenSSL symbols or references `_SecIdentityCreate` ([build guide](lucid-engine-build.md)).
 
 ### Logs and events
 
@@ -332,7 +417,8 @@ Which lines the app consumes (engine 2.8, 2.9):
 4. For `ao/avfoundation`, the remaining exact lines, seven anchored patterns (the PCM transport, trace edge, compressed clock engaged and resumed, flush time, heartbeat and item status lines) and then eleven fault substrings, in the order engine 2.9 gives.
 5. Every other prefix, including `vo/avfoundation` and `vd`, is ignored.
 
-The wording, number formats and level of every consumed line are part of the interface: moving a line to another level changes which builds receive it, and so both fault recording and log volume. `lucid.py check` requires all 25 audio output formats in `Libmpv`, and that no message added by the decoder patches contains a fault substring.
+The wording, number formats and level of every consumed line are part of the interface: moving a line to another level changes which builds receive it, and so both fault recording and log volume.
+`lucid.py check` requires all 25 audio output formats in `Libmpv`, and that no message added by the decoder patches contains a fault substring.
 
 Events the bridge delivers (bridge 4.6):
 
@@ -351,7 +437,9 @@ Events the bridge delivers (bridge 4.6):
   </tbody>
 </table>
 
-Property changes reach the adapter the same way. Four high-frequency properties (`time-pos`, `avsync`, `demuxer-cache-state` and `demuxer-cache-duration`) are coalesced, so a busy main thread gets their newest values once instead of a backlog; while the app is in the background only `duration`, `eof-reached`, `pause`, `paused-for-cache`, `seekable` and `time-pos` are delivered (bridge 6.10, 6.11). The bridge prints only its creation and initialisation failures and `checkError`'s lines, `[VividPlayerCore] MPV error: <message>`, with ` option=<name>` when the caller passed one and ` at <file>:<line>` (bridge 10.2).
+Property changes reach the adapter the same way.
+Four high-frequency properties (`time-pos`, `avsync`, `demuxer-cache-state` and `demuxer-cache-duration`) are coalesced, so a busy main thread gets their newest values once instead of a backlog; while the app is in the background only `duration`, `eof-reached`, `pause`, `paused-for-cache`, `seekable` and `time-pos` are delivered (bridge 6.10, 6.11).
+The bridge prints only its creation and initialisation failures and `checkError`'s lines, `[VividPlayerCore] MPV error: <message>`, with ` option=<name>` when the caller passed one and ` at <file>:<line>` (bridge 10.2).
 
 ## Threading
 
@@ -375,19 +463,28 @@ Property changes reach the adapter the same way. Four high-frequency properties 
 
 Rules between them:
 
-1. **Main never waits on mpv.** The video output blocks on main with synchronous hops at file start, every reconfiguration, every `vid=auto` and `vid=no`, option and geometry changes, recoveries, the first frame after any subtitle-layer resynchronisation and teardown, so no blocking libmpv call and no `mpv_terminate_destroy` may run on main, and main must not wait on a queue that is doing either. The one exception is a context that set-up created but never stored (bridge 5.3 rules 5 and 9, engine 4.16.7).
+1. **Main never waits on mpv.**
+   The video output blocks on main with synchronous hops at file start, every reconfiguration, every `vid=auto` and `vid=no`, option and geometry changes, recoveries, the first frame after any subtitle-layer resynchronisation and teardown, so no blocking libmpv call and no `mpv_terminate_destroy` may run on main, and main must not wait on a queue that is doing either.
+   The one exception is a context that set-up created but never stored (bridge 5.3 rules 5 and 9, engine 4.16.7).
 2. **Blocking mpv calls run only on the event queue**, never while the liveness guard is held: copy the handle under the guard, then call (bridge 5.3 rule 5).
-3. **Lock order.** The source-transition exclusion is taken before the cache guard; the platform display write runs with the exclusion held and the cache guard released; the liveness guard is never held together with the cache or coalescing guard; request registration happens inside the liveness guard (bridge 5.3, 17.2). In the code the liveness and coalescing guards are `livenessLock` and `coalescingLock` in `VividPlayerCoreBase`, the source-transition exclusion and cache guard are `transitionLock` and `inputsLock` in `VividPlayerDisplayCriteria`, and the request table, the pause tracker and the wakeup relay each have a leaf lock of their own.
-4. **One hop per delivery.** Exactly one `DispatchQueue.main.async` per ordered delivery, never a `Task` or a second hop inside the bridge (bridge 5.4).
-5. **Disposal captures no core.** Nothing `dispose` enqueues refers to the core, strongly or weakly, because disposal can run inside `deinit` (bridge 6.17.2).
-6. **Shared state is small.** In the bridge only the Apple TV display criteria identity and the iOS external display's active core are process-wide, both main-only (bridge 5.6); in the engine, the audio output's passthrough block (engine 3.2.3).
+3. **Lock order.**
+   The source-transition exclusion is taken before the cache guard; the platform display write runs with the exclusion held and the cache guard released; the liveness guard is never held together with the cache or coalescing guard; request registration happens inside the liveness guard (bridge 5.3, 17.2).
+   In the code the liveness and coalescing guards are `livenessLock` and `coalescingLock` in `VividPlayerCoreBase`, the source-transition exclusion and cache guard are `transitionLock` and `inputsLock` in `VividPlayerDisplayCriteria`, and the request table, the pause tracker and the wakeup relay each have a leaf lock of their own.
+4. **One hop per delivery.**
+   Exactly one `DispatchQueue.main.async` per ordered delivery, never a `Task` or a second hop inside the bridge (bridge 5.4).
+5. **Disposal captures no core.**
+   Nothing `dispose` enqueues refers to the core, strongly or weakly, because disposal can run inside `deinit` (bridge 6.17.2).
+6. **Shared state is small.**
+   In the bridge only the Apple TV display criteria identity and the iOS external display's active core are process-wide, both main-only (bridge 5.6); in the engine, the audio output's passthrough block (engine 3.2.3).
 7. **Audio output teardown** cancels timers and invalidates the resource loader on the AO queue before releasing them (engine 3.5).
 
 ## Which tests guard which part
 
 ### Bridge and app tests
 
-XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) compiles every file there; `VividTVTests` (tvOS) compiles the files listed in `iosApp/project.yml`, marked "both" below. The simulator suites link the pinned package's simulator slices, so they exercise the engine's audio and video outputs with software decoding, but not VideoToolbox, HDMI, AirPlay, Match Content or Dolby Vision output.
+XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests).
+`VividTests` (iOS) compiles every file there; `VividTVTests` (tvOS) compiles the files listed in `iosApp/project.yml`, marked "both" below.
+The simulator suites link the pinned package's simulator slices, so they exercise the engine's audio and video outputs with software decoding, but not VideoToolbox, HDMI, AirPlay, Match Content or Dolby Vision output.
 
 <table width="100%">
   <thead>
@@ -410,9 +507,12 @@ XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) co
 
 ### App CI
 
-The [player regression workflow](../../.github/workflows/player-regression.yml) starts on every pull request, on pushes to `main` that change anything under `iosApp/` (the apps, their extensions, resources, entitlements and tests, the project specs and `Package.resolved`) or `scripts/xcode/`, the test and check scripts it runs from `scripts/tests/` and `scripts/ci/`, or the workflow, and on manual runs. On a pull request its `changes` job skips the build and test jobs unless one of those paths changed or it can't compare the pull request with its base commit, and `Player regression result` always runs and fails when any job failed or was cancelled. The build and test jobs use `macos-15` with Xcode 26.3.
+The [player regression workflow](../../.github/workflows/player-regression.yml) starts on every pull request, on pushes to `main` that change anything under `iosApp/` (the apps, their extensions, resources, entitlements and tests, the project specs and `Package.resolved`) or `scripts/xcode/`, the test and check scripts it runs from `scripts/tests/` and `scripts/ci/`, or the workflow, and on manual runs.
+On a pull request its `changes` job skips the build and test jobs unless one of those paths changed or it can't compare the pull request with its base commit, and `Player regression result` always runs and fails when any job failed or was cancelled.
+The build and test jobs use `macos-15` with Xcode 26.3.
 
-Before building, the `validate`, `tvos-tests` and `device-builds` jobs download XcodeGen with up to five retries, then resolve Swift packages, including Lucid Engine's binary targets, with up to three attempts, clearing the runner's SwiftPM artifact cache and the job's Swift packages before each one so a failed attempt can't leave the binaries recorded as downloaded. The build then uses those resolved packages from the same derived data path.
+Before building, the `validate`, `tvos-tests` and `device-builds` jobs download XcodeGen with up to five retries, then resolve Swift packages, including Lucid Engine's binary targets, with up to three attempts, clearing the runner's SwiftPM artifact cache and the job's Swift packages before each one so a failed attempt can't leave the binaries recorded as downloaded.
+The build then uses those resolved packages from the same derived data path.
 
 <table width="100%">
   <thead>
@@ -432,7 +532,11 @@ The [player code checks workflow](../../.github/workflows/player-code-checks.yml
 
 ### Engine host tests and checks
 
-The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on every pull request. A `changes` job on `ubuntu-latest` skips the macOS jobs unless `engine/` or the workflow changed, or it can't compare the pull request with its base commit. Those jobs run on `macos-26` with Xcode 26.6: `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for the other three. `Lucid Engine result` always runs and fails when any job failed or was cancelled. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
+The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on every pull request.
+A `changes` job on `ubuntu-latest` skips the macOS jobs unless `engine/` or the workflow changed, or it can't compare the pull request with its base commit.
+Those jobs run on `macos-26` with Xcode 26.6: `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for the other three.
+`Lucid Engine result` always runs and fails when any job failed or was cancelled.
+The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
 
 <table width="100%">
   <thead>
@@ -476,27 +580,50 @@ app pin                          -> iosApp/project-ios.yml, iosApp/project.yml, 
 
 ### Pins, series and checksums
 
-- **Pins.** [`engine/pins.ini`](../../engine/pins.ini) lists every input with its exact URL, version or commit, and SHA-256: the 16 upstream source archives (`[source:*]`), the archives some trees are assembled from (`[part:*]`), the build tools (`[tool:*]`), Rust 1.98.0 (`[rust:*]`) and the toolchain settings (`[toolchain]`). `lucid.py fetch` refuses a file whose hash differs and compares the commit each GitHub archive embeds with the pinned one; libdovi's crates are fetched and checked against its pinned `Cargo.lock`, and its build runs offline. `lucid.py check-allowlist` refuses any other fetch.
-- **Series.** Each library has `engine/patches/<library>/series`, listing its patches in order with each file's SHA-256. The build applies them to the pristine source with `patch -p1 -F0` (no fuzz), refuses a patch whose hash differs, and fails if the files a series changes differ from the files its patches name. There are no in-place source edits: every change to a source tree is a patch in a series.
-- **Checksums out.** Each slice's provenance report records the toolchain, every archive and part with its hash and embedded commit, every applied patch with its hash, the pristine and patched tree digests, and each dependency's configuration and cache key. `SHA256SUMS` gives each packaged zip's SHA-256, which is also its SwiftPM checksum.
+- **Pins.**
+  [`engine/pins.ini`](../../engine/pins.ini) lists every input with its exact URL, version or commit, and SHA-256: the 16 upstream source archives (`[source:*]`), the archives some trees are assembled from (`[part:*]`), the build tools (`[tool:*]`), Rust 1.98.0 (`[rust:*]`) and the toolchain settings (`[toolchain]`).
+  `lucid.py fetch` refuses a file whose hash differs and compares the commit each GitHub archive embeds with the pinned one; libdovi's crates are fetched and checked against its pinned `Cargo.lock`, and its build runs offline.
+  `lucid.py check-allowlist` refuses any other fetch.
+- **Series.**
+  Each library has `engine/patches/<library>/series`, listing its patches in order with each file's SHA-256.
+  The build applies them to the pristine source with `patch -p1 -F0` (no fuzz), refuses a patch whose hash differs, and fails if the files a series changes differ from the files its patches name.
+  There are no in-place source edits: every change to a source tree is a patch in a series.
+- **Checksums out.**
+  Each slice's provenance report records the toolchain, every archive and part with its hash and embedded commit, every applied patch with its hash, the pristine and patched tree digests, and each dependency's configuration and cache key.
+  `SHA256SUMS` gives each packaged zip's SHA-256, which is also its SwiftPM checksum.
 
 ### Building a slice
 
-The four slices are `ios-arm64`, `ios-arm64-simulator`, `tvos-arm64` and `tvos-arm64-simulator`, arm64 only. A slice builds libdovi first, then the eleven dependencies, then dav1d, libass, FFmpeg and libmpv, with minimum OS 14.0 for Vivid's own libraries and each dependency's own as before. `ZERO_AR_DATE=1` and a fixed `SOURCE_DATE_EPOCH` make unchanged inputs give byte-identical binaries.
+The four slices are `ios-arm64`, `ios-arm64-simulator`, `tvos-arm64` and `tvos-arm64-simulator`, arm64 only.
+A slice builds libdovi first, then the eleven dependencies, then dav1d, libass, FFmpeg and libmpv, with minimum OS 14.0 for Vivid's own libraries and each dependency's own as before.
+`ZERO_AR_DATE=1` and a fixed `SOURCE_DATE_EPOCH` make unchanged inputs give byte-identical binaries.
 
-**Per-slice dependency caches.** `lucid.py build --cache` gives every dependency a key: the SHA-256 of its pins, its series, its option files, the code that builds it and the keys of the libraries it builds against. A cached build is reused only when its key is equal. The workflow restores the slice's cache with `actions/cache` (an exact key, or else the slice's latest entry) and saves it whenever the run built a dependency, even when a later step fails; `lucid.py cache-key --slice <slice>` prints a slice's key. The checks run on reused builds exactly as on new ones.
+**Per-slice dependency caches.**
+`lucid.py build --cache` gives every dependency a key: the SHA-256 of its pins, its series, its option files, the code that builds it and the keys of the libraries it builds against.
+A cached build is reused only when its key is equal.
+The workflow restores the slice's cache with `actions/cache` (an exact key, or else the slice's latest entry) and saves it whenever the run built a dependency, even when a later step fails; `lucid.py cache-key --slice <slice>` prints a slice's key.
+The checks run on reused builds exactly as on new ones.
 
 ### Packaging and release assets
 
 The `package` job turns the four slices into `<Name>.xcframework.zip` for each of the 21 frameworks and for `libMoltenVK.a`, with fixed timestamps and ordering, packages them twice and fails unless both sets are identical, and uploads them with `SHA256SUMS` and the provenance reports as the artefact `lucid-engine-xcframeworks` (kept for three days).
 
-The Lucid Engine build workflow does not publish anything, and the package repository has no workflow of its own. [`engine/publish_package.py`](../../engine/publish_package.py) prepares each package release from one green run: it checks the run and its artefact, writes `Package.swift`, `README.md`, `NOTICE`, `LICENSE` and `LICENSES/` in a checkout of the package, stages the assets and prints the release command ([build guide](lucid-engine-build.md#publishing-the-package)). The earlier prerelease `v0.1.0-interim.1` (package commit [`11d60dc`](https://github.com/blurbery/lucid-engine/tree/11d60dc20a28e946677eb15ff832e7135603e92b)) was published separately from run 38400124717 at `10faa2a` and has since been deleted, with its tag, because it still named interim third-party binaries. Release [`v0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) (package commit `53ebeac`) was prepared by the tool from run 38458337996 at `fcb6782`: its 31 assets are the 22 zips (the 21 frameworks and MoltenVK), `SHA256SUMS` and the four slices' provenance reports.
+The Lucid Engine build workflow does not publish anything, and the package repository has no workflow of its own.
+[`engine/publish_package.py`](../../engine/publish_package.py) prepares each package release from one green run: it checks the run and its artefact, writes `Package.swift`, `README.md`, `NOTICE`, `LICENSE` and `LICENSES/` in a checkout of the package, stages the assets and prints the release command ([build guide](lucid-engine-build.md#publishing-the-package)).
+The earlier prerelease `v0.1.0-interim.1` (package commit [`11d60dc`](https://github.com/blurbery/lucid-engine/tree/11d60dc20a28e946677eb15ff832e7135603e92b)) was published separately from run 38400124717 at `10faa2a` and has since been deleted, with its tag, because it still named interim third-party binaries.
+Release [`v0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) (package commit `53ebeac`) was prepared by the tool from run 38458337996 at `fcb6782`: its 31 assets are the 22 zips (the 21 frameworks and MoltenVK), `SHA256SUMS` and the four slices' provenance reports.
 
 ### The package and the app's pin
 
-- **`Package.swift`** at release `0.1.0` (package commit `53ebeac`) declares 22 binary targets, the 21 frameworks and MoltenVK, each with its release asset's URL and checksum, and names no other URL; at `0.1.0-interim.1` (`11d60dc`) it declared eleven, plus the eleven interim binaries by URL and SHA-256. Its `LucidEngine` library product is a small wrapper target, which links exactly the system frameworks and libraries of [`engine/config/app-link.txt`](../../engine/config/app-link.txt), plus every binary target. Platforms are iOS 14 and tvOS 14. The package's `NOTICE` and `LICENSES` folder list every library with its version, upstream commit and licence text, and its `LICENSE` puts the package's own files under LGPL-2.1-or-later.
-- **The app's pin.** `iosApp/project-ios.yml` and `iosApp/project.yml` each declare the package `LucidEngine` with `url: https://github.com/blurbery/lucid-engine` and `revision:` the full commit, and their app targets depend on the `LucidEngine` product. The tracked `Package.resolved` (under `iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/`) pins identity `lucid-engine` at the same revision. `check-engine-package-pin.py` enforces all of this, and the player regression workflow's `device-builds` job builds both apps whenever the pin changes.
-- **Authorisation.** Publishing a package release and changing the app's pin are separate actions that need blurbery's authorisation; so is any Apple upload of a build that links them.
+- **`Package.swift`** at release `0.1.0` (package commit `53ebeac`) declares 22 binary targets, the 21 frameworks and MoltenVK, each with its release asset's URL and checksum, and names no other URL; at `0.1.0-interim.1` (`11d60dc`) it declared eleven, plus the eleven interim binaries by URL and SHA-256.
+  Its `LucidEngine` library product is a small wrapper target, which links exactly the system frameworks and libraries of [`engine/config/app-link.txt`](../../engine/config/app-link.txt), plus every binary target.
+  Platforms are iOS 14 and tvOS 14. The package's `NOTICE` and `LICENSES` folder list every library with its version, upstream commit and licence text, and its `LICENSE` puts the package's own files under LGPL-2.1-or-later.
+- **The app's pin.**
+  `iosApp/project-ios.yml` and `iosApp/project.yml` each declare the package `LucidEngine` with `url: https://github.com/blurbery/lucid-engine` and `revision:` the full commit, and their app targets depend on the `LucidEngine` product.
+  The tracked `Package.resolved` (under `iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/`) pins identity `lucid-engine` at the same revision.
+  `check-engine-package-pin.py` enforces all of this, and the player regression workflow's `device-builds` job builds both apps whenever the pin changes.
+- **Authorisation.**
+  Publishing a package release and changing the app's pin are separate actions that need blurbery's authorisation; so is any Apple upload of a build that links them.
 
 ### Licences and corresponding source
 
@@ -517,12 +644,16 @@ The Lucid Engine build workflow does not publish anything, and the package repos
   </tbody>
 </table>
 
-Corresponding source for an engine build is the Vivid commit it was built from: `engine/` holds the pipeline, the pins, the configuration and every patch, and `pins.ini` names each upstream archive by URL, commit and SHA-256. The package release adds the provenance reports, `NOTICE` and `LICENSES`. In the app, Settings → About → Open Source Licences starts with "Source for this build", the exact source commit, and its Lucid media engine entry links the package commit and the pipeline commit; [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) lists the same.
+Corresponding source for an engine build is the Vivid commit it was built from: `engine/` holds the pipeline, the pins, the configuration and every patch, and `pins.ini` names each upstream archive by URL, commit and SHA-256.
+The package release adds the provenance reports, `NOTICE` and `LICENSES`.
+In the app, Settings → About → Open Source Licences starts with "Source for this build", the exact source commit, and its Lucid media engine entry links the package commit and the pipeline commit; [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) lists the same.
 
 ## Changing a part safely
 
-- **Read the rules first.** Keep to the clean-room reading rules (bridge 2, engine 1.4).
-- **Engine patches** are built and checked by the build workflow on any pull request that changes `engine/` or the workflow, and on pushes to `main` and `experiment/lucid-engine-*` branches that do. Write each patch against the pristine source plus the series before it, add its SHA-256 and file name to the end of the series, use the header form of the existing patches (author `blurbery` with the account's noreply address, a plain description and a licence paragraph), and keep to the number ranges: audio output mpv `0010` to `0019`, video output `0020` to `0039`, decoder work mpv `0040` to `0049` and FFmpeg `0010` to `0029`, libass upstream changes `0001` to `0009` and Vivid's own from `0010`.
+- **Read the rules first.**
+  Keep to the clean-room reading rules (bridge 2, engine 1.4).
+- **Engine patches** are built and checked by the build workflow on any pull request that changes `engine/` or the workflow, and on pushes to `main` and `experiment/lucid-engine-*` branches that do.
+  Write each patch against the pristine source plus the series before it, add its SHA-256 and file name to the end of the series, use the header form of the existing patches (author `blurbery` with the account's noreply address, a plain description and a licence paragraph), and keep to the number ranges: audio output mpv `0010` to `0019`, video output `0020` to `0039`, decoder work mpv `0040` to `0049` and FFmpeg `0010` to `0029`, libass upstream changes `0001` to `0009` and Vivid's own from `0010`.
 - **The frozen interface** (engine 2, bridge 6.19 and 7) changes only with both specifications updated together and the adapter matched; a changed log line, option or property is a regression even if playback looks the same.
 - **Documents** change in the same change: the build guide's patch table and "Still to do", the [Lucid Engine guide](player-engine.md), `THIRD_PARTY_NOTICES.md` and the in-app licences when what the app links changes, and this guide.
 
@@ -548,8 +679,13 @@ Corresponding source for an engine build is the Vivid commit it was built from: 
 
 ## Open items
 
-- **Device checks.** None of Vivid's engine patches has been checked on a device, and the bridge has not been played on physical devices yet; both checklists above are outstanding.
-- **Decoder test still to write.** An end-to-end host test of mpv `0040`, which needs host builds of libplacebo and libmpv (engine 12.6). The host test of engine 13.2 (a failed creation of the Dolby Vision configuration record) is now part of `vt_glue_tests`.
-- **libass on one thread.** Engine 9.5 check 46 decides whether single-threaded rendering is acceptable for heavy styled subtitles.
-- **External displays.** Whether iOS ever gives Vivid an external-display scene is unverified (bridge 9.2).
+- **Device checks.**
+  None of Vivid's engine patches has been checked on a device, and the bridge has not been played on physical devices yet; both checklists above are outstanding.
+- **Decoder test still to write.**
+  An end-to-end host test of mpv `0040`, which needs host builds of libplacebo and libmpv (engine 12.6).
+  The host test of engine 13.2 (a failed creation of the Dolby Vision configuration record) is now part of `vt_glue_tests`.
+- **libass on one thread.**
+  Engine 9.5 check 46 decides whether single-threaded rendering is acceptable for heavy styled subtitles.
+- **External displays.**
+  Whether iOS ever gives Vivid an external-display scene is unverified (bridge 9.2).
 - **FFmpeg `0001`'s header** has no licence paragraph of its own; the notices cover Vivid's engine patches as LGPL-2.1-or-later.

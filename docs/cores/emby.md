@@ -5,30 +5,68 @@
 
 ---
 
-Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translates its library, media sources and user state into Vivid's screens and local player. Its current feature and verification limits are listed below.
+Emby is available on iPhone, iPad and Apple TV.
+It connects to Emby and translates its library, media sources and user state into Vivid's screens and local player.
+Its current feature and verification limits are listed below.
 
 > [!IMPORTANT]
-> Emby playback and account switching have been device-tested on iPhone and Apple TV. The adapter still has the limits listed below. Physical iPad coverage and a complete format/transcoding matrix remain outstanding.
+> Emby playback and account switching have been device-tested on iPhone and Apple TV.
+> The adapter still has the limits listed below.
+> Physical iPad coverage and a complete format/transcoding matrix remain outstanding.
 
 ## Provider boundary
 
-Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting. Silo keeps its existing connection and Protocol V3 path. Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged. Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
+Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting.
+Silo keeps its existing connection and Protocol V3 path.
+Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged.
+Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
 
-More Like This on iPhone, iPad and Apple TV uses Emby’s native similar-items endpoint with browse fields only and retains results in the existing account-scoped cache. iPhone and iPad pass the detail page's own item, so the movie isn't fetched again. Emby item artwork shares in-flight image bytes across display, crop and palette sizes, with one retry for a timeout or lost connection; prefetching does not retry HTTP failures. On iOS and tvOS, the shared artwork view adds up to three recovery attempts after 2, 5 and 15 seconds for temporary transport failures and HTTP 408/500/502/503/504 responses. Each round retains the existing single transport retry, for at most eight transport attempts or four HTTP attempts per uninterrupted view task. This applies to Silo, Emby and Jellyfin. Missing artwork, authentication errors, rate limits, decoding failures and cancellation are not retried by this recovery policy. Cancelling the view task stops its recovery, and successful cached images retain their existing behaviour. A longer outage can still leave placeholders until the view loads again. This artwork recovery policy doesn't change how recommendations are requested.
+More Like This on iPhone, iPad and Apple TV uses Emby’s native similar-items endpoint with browse fields only and retains results in the existing account-scoped cache. iPhone and iPad pass the detail page's own item, so the movie isn't fetched again.
+Emby item artwork shares in-flight image bytes across display, crop and palette sizes, with one retry for a timeout or lost connection; prefetching does not retry HTTP failures.
+On iOS and tvOS, the shared artwork view adds up to three recovery attempts after 2, 5 and 15 seconds for temporary transport failures and HTTP 408/500/502/503/504 responses.
+Each round retains the existing single transport retry, for at most eight transport attempts or four HTTP attempts per uninterrupted view task.
+This applies to Silo, Emby and Jellyfin.
+Missing artwork, authentication errors, rate limits, decoding failures and cancellation are not retried by this recovery policy.
+Cancelling the view task stops its recovery, and successful cached images retain their existing behaviour.
+A longer outage can still leave placeholders until the view loads again.
+This artwork recovery policy doesn't change how recommendations are requested.
 
-Server addresses and account credentials are supplied at setup, not embedded in the build. Tokens remain in Keychain under Vivid's current storage identity and can be copied between the user’s devices through Vivid’s private iCloud account vault. The entered password is not retained. Account changes invalidate obsolete requests, and Emby credentials are not sent to TMDb or IntroDB.
+Server addresses and account credentials are supplied at setup, not embedded in the build.
+Tokens remain in Keychain under Vivid's current storage identity and can be copied between the user’s devices through Vivid’s private iCloud account vault.
+The entered password is not retained.
+Account changes invalidate obsolete requests, and Emby credentials are not sent to TMDb or IntroDB.
 
 ## Setup and browsing
 
-Rows and messages Vivid writes itself, such as Continue Watching, Next Up, Latest and error text, follow Vivid's language; titles and other metadata come from Emby in the server's metadata language. See [Localisation](../localisation.md).
+Rows and messages Vivid writes itself, such as Continue Watching, Next Up, Latest and error text, follow Vivid's language; titles and other metadata come from Emby in the server's metadata language.
+See [Localisation](../localisation.md).
 
-On iPhone, iPad and Apple TV, the Emby provider card opens the existing native server and login form. Setup probes `/System/Info/Public`; login uses `/Users/AuthenticateByName`. An explicitly entered HTTPS address keeps HTTPS during Emby discovery. Saved sessions retain the native Emby user ID. The current user's details come from `/Users/{userId}`, and its `Policy.IsAdministrator` becomes the Admin or User shown on the profile in Settings.
+On iPhone, iPad and Apple TV, the Emby provider card opens the existing native server and login form.
+Setup probes `/System/Info/Public`; login uses `/Users/AuthenticateByName`.
+An explicitly entered HTTPS address keeps HTTPS during Emby discovery.
+Saved sessions retain the native Emby user ID.
+The current user's details come from `/Users/{userId}`, and its `Policy.IsAdministrator` becomes the Admin or User shown on the profile in Settings.
 
 ### Emby Connect
 
-Emby users linked to an [Emby Connect](https://emby.media/connect.html) account can sign in without their server password. The sign-in form shows Use Emby Connect on iPhone, iPad and Apple TV, and Add Profile, Sign In and Update Login on an Emby profile offer it too. Vivid asks Emby's own service for a PIN (`POST https://connect.emby.media/service/pin`, with Vivid's generated Emby device ID and an `X-Application: Vivid/<version>` header) and shows it. The user enters it at emby.media/pin with their Emby Connect email and password, which Vivid never sees. Vivid checks the PIN every five seconds (`GET /service/pin`), exchanges it for an Emby Connect token (`POST /service/pin/authenticate`) and lists that account's linked servers (`GET /service/servers`). It picks the server whose `SystemId` matches this server's `/System/Info/Public` ID, then calls this server's `/Connect/Exchange` with that server's access key, which returns the linked local user's access token; the username comes from `/Users/{id}`. Only the address the user set up is contacted; the addresses Emby Connect reports are ignored. The Emby Connect token and server list are used once and not stored, and the saved session is an ordinary Emby session, as after a password sign-in. Update Login still refuses an Emby Connect account linked to a different local user. An account not linked to this server shows "This Emby Connect account isn't linked to a user on this server". A PIN the service no longer knows (404 or 410), or ten minutes without approval, offers a new PIN. A temporary failure while waiting (no connection, a timeout, rate limiting or a server error) keeps waiting, the steps after approval are tried up to three times, and once the PIN is approved the code screen can't be cancelled or replaced with a new PIN while the session is saved. Local-only users with no Emby Connect link still sign in with their password. Emby itself has no Quick Connect.
+Emby users linked to an [Emby Connect](https://emby.media/connect.html) account can sign in without their server password.
+The sign-in form shows Use Emby Connect on iPhone, iPad and Apple TV, and Add Profile, Sign In and Update Login on an Emby profile offer it too.
+Vivid asks Emby's own service for a PIN (`POST https://connect.emby.media/service/pin`, with Vivid's generated Emby device ID and an `X-Application: Vivid/<version>` header) and shows it.
+The user enters it at emby.media/pin with their Emby Connect email and password, which Vivid never sees.
+Vivid checks the PIN every five seconds (`GET /service/pin`), exchanges it for an Emby Connect token (`POST /service/pin/authenticate`) and lists that account's linked servers (`GET /service/servers`).
+It picks the server whose `SystemId` matches this server's `/System/Info/Public` ID, then calls this server's `/Connect/Exchange` with that server's access key, which returns the linked local user's access token; the username comes from `/Users/{id}`.
+Only the address the user set up is contacted; the addresses Emby Connect reports are ignored.
+The Emby Connect token and server list are used once and not stored, and the saved session is an ordinary Emby session, as after a password sign-in.
+Update Login still refuses an Emby Connect account linked to a different local user.
+An account not linked to this server shows "This Emby Connect account isn't linked to a user on this server".
+A PIN the service no longer knows (404 or 410), or ten minutes without approval, offers a new PIN.
+A temporary failure while waiting (no connection, a timeout, rate limiting or a server error) keeps waiting, the steps after approval are tried up to three times, and once the PIN is approved the code screen can't be cancelled or replaced with a new PIN while the session is saved.
+Local-only users with no Emby Connect link still sign in with their password.
+Emby itself has no Quick Connect.
 
-PIN creation and the waiting screen were checked on the iPad simulator against Emby's live service, with a local stand-in for the Emby server. Approval, the server list and `/Connect/Exchange` are covered by a request test only: a full sign-in with a real Emby Connect account hasn't been run yet. Apple TV builds, but its Emby Connect screens haven't been run.
+PIN creation and the waiting screen were checked on the iPad simulator against Emby's live service, with a local stand-in for the Emby server.
+Approval, the server list and `/Connect/Exchange` are covered by a request test only: a full sign-in with a real Emby Connect account hasn't been run yet.
+Apple TV builds, but its Emby Connect screens haven't been run.
 
 <table width="100%">
   <thead><tr><th align="left">Area</th><th align="left" width="10000">Current implementation</th></tr></thead>
@@ -42,63 +80,213 @@ PIN creation and the waiting screen were checked on the iPad simulator against E
   </tbody>
 </table>
 
-Library browsing and search request card metadata without cast, chapters, taglines, media sources or streams; Home rows add media sources, which carry their own streams, for format badges; detail and playback requests retain the full fields. Home rows load up to three at a time and are still shown in the server's order; if a row fails, the earliest failing row's error is reported as before. Each row's result is matched to its own row by index. Optimised builds before iOS/iPadOS 0.14.3 (51) and tvOS 0.14.3 (49) filed every result under the first row, so Continue Watching could show another row's items while the other rows stayed empty; the iOS suite now also runs optimised in CI after each merge to main to catch this kind of fault. Native library-ID mappings are reused for five minutes and the server version for ten, partitioned by server, Emby user and login epoch. The collection list timings in the Collections row are the only measurements recorded for these Emby changes, and they are single simulator runs.
+Library browsing and search request card metadata without cast, chapters, taglines, media sources or streams; Home rows add media sources, which carry their own streams, for format badges; detail and playback requests retain the full fields.
+Home rows load up to three at a time and are still shown in the server's order; if a row fails, the earliest failing row's error is reported as before.
+Each row's result is matched to its own row by index.
+Optimised builds before iOS/iPadOS 0.14.3 (51) and tvOS 0.14.3 (49) filed every result under the first row, so Continue Watching could show another row's items while the other rows stayed empty; the iOS suite now also runs optimised in CI after each merge to main to catch this kind of fault.
+Native library-ID mappings are reused for five minutes and the server version for ten, partitioned by server, Emby user and login epoch.
+The collection list timings in the Collections row are the only measurements recorded for these Emby changes, and they are single simulator runs.
 
-Continue Watching and Next Up identify the episode beneath the series title. Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`. Partly watched cards use the same inset white progress bar as episode cards on series details. Removing items from Continue Watching is a Silo feature, so Emby cards don't offer it. On Home, episode cards in these two rows show the episode's backdrop, which Emby fills with the series background (`ParentBackdropItemId`) when the episode has no backdrop of its own, as is usual, so no extra request is made. The Home spotlight shows the same background.
+Continue Watching and Next Up identify the episode beneath the series title.
+Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`.
+Partly watched cards use the same inset white progress bar as episode cards on series details.
+Removing items from Continue Watching is a Silo feature, so Emby cards don't offer it.
+On Home, episode cards in these two rows show the episode's backdrop, which Emby fills with the series background (`ParentBackdropItemId`) when the episode has no backdrop of its own, as is usual, so no extra request is made.
+The Home spotlight shows the same background.
 
-TV Shows libraries sort by Date Last Episode Released with `SortBy=LastContentPremiereDate,SortName` and by Date Last Episode Added with `DateLastContentAdded,SortName`, the values Emby's own web app sends for series. Emby's web app only offers the first from Emby 4.9.0.17, so on older servers Vivid sends `DateLastContentAdded,SortName` for it instead, using the cached server version; if the version check fails, that page fails and can be retried. Both mappings and the version fallback are covered by provider tests.
+TV Shows libraries sort by Date Last Episode Released with `SortBy=LastContentPremiereDate,SortName` and by Date Last Episode Added with `DateLastContentAdded,SortName`, the values Emby's own web app sends for series.
+Emby's web app only offers the first from Emby 4.9.0.17, so on older servers Vivid sends `DateLastContentAdded,SortName` for it instead, using the cached server version; if the version check fails, that page fails and can be retried.
+Both mappings and the version fallback are covered by provider tests.
 
-The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable. Emby's own client gates it at 4.10.0.4. Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.
+The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable.
+Emby's own client gates it at 4.10.0.4.
+Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.
 
-Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You. Poster cards display the returned year when **Title & Year** is selected, and series cards in poster grids show a span built from `Status` and `EndDate` instead ("2021 - Present", "2005 - 2017"); **Title Only** and **Artwork Only** retain their existing behaviour. The year arrives in the existing list response, without additional per-poster metadata requests. Items without a server-provided year have no year caption.
+Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You.
+Poster cards display the returned year when **Title & Year** is selected, and series cards in poster grids show a span built from `Status` and `EndDate` instead ("2021 - Present", "2005 - 2017"); **Title Only** and **Artwork Only** retain their existing behaviour.
+The year arrives in the existing list response, without additional per-poster metadata requests.
+Items without a server-provided year have no year caption.
 
 ## Playback and settings
 
-`EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Lucid Engine. Its device profile comes from the shared [decode capabilities](../../iosApp/iosApp/Shared/AppleDecodeCapabilities.swift) and is named `Vivid` in the request, the same as Jellyfin's. On Apple TV 4K, iPhone and iPad it offers direct play of H.264, HEVC, AV1, MPEG-2 and VP9 with no device resolution limit, and Lucid Engine chooses hardware or software decoding when the file loads. On Apple TV HD and the simulators the request has an overall 1920×1080 ceiling and only offers the codecs VideoToolbox decodes in hardware (H.264 on Apple TV HD's A8, which has no hardware HEVC decoder) plus three software decoders, each kept within the limits Vivid's test files cover: AV1 (Main profile, up to 10-bit) and VP9 (Profile 0, 8-bit) up to 1080p at 30 fps and 3 Mbps, and MPEG-2 (Main profile, 8-bit) up to 720×480 at 31 fps and 7 Mbps. H.264 is limited to 8-bit at up to 60 fps. Anything outside those limits, including 4K, HEVC, 10-bit H.264 and PAL DVD video, is left for Emby to transcode to H.264 HLS at 1080p or lower. If the account can't transcode, or Emby returns no transcoding URL, that title won't play on Apple TV HD. These limits are covered by request tests only; they haven't been checked on Apple TV HD hardware or against a live Emby server. Until a new item (or a Play from Beginning) reaches its first frame, or audio-only playback starts, it only keeps the session alive with `/Sessions/Playing/Ping`, so a failed or abandoned load never starts a watch-progress session and sends no stop. From then on it sends the real position in start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`. Positions convert between seconds and Emby ticks. Vivid adds no viewing threshold of its own to progress: Emby's own per-library resume settings decide which positions it keeps as resume points (Emby's server is closed source, so Vivid hasn't checked their exact behaviour). Vivid's separate completion policy still marks a title played at 90%, at a credits marker or on a natural end. Transcoded-session cleanup uses Emby's active-encoding endpoint. The player's Stream badge on Apple TV reads each video stream's `ExtendedVideoType` and `ExtendedVideoSubtype` (for example `DoviProfile81`) to show the Dolby Vision profile (DV P8.1), HDR10+, HDR10 or HLG, and falls back to `VideoRange` on servers that don't send them. Detail pages, version pickers and Continue Watching in the Apple TV Home focus info show the same label.
+`EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Lucid Engine.
+Its device profile comes from the shared [decode capabilities](../../iosApp/iosApp/Shared/AppleDecodeCapabilities.swift) and is named `Vivid` in the request, the same as Jellyfin's. On Apple TV 4K, iPhone and iPad it offers direct play of H.264, HEVC, AV1, MPEG-2 and VP9 with no device resolution limit, and Lucid Engine chooses hardware or software decoding when the file loads.
+On Apple TV HD and the simulators the request has an overall 1920×1080 ceiling and only offers the codecs VideoToolbox decodes in hardware (H.264 on Apple TV HD's A8, which has no hardware HEVC decoder) plus three software decoders, each kept within the limits Vivid's test files cover: AV1 (Main profile, up to 10-bit) and VP9 (Profile 0, 8-bit) up to 1080p at 30 fps and 3 Mbps, and MPEG-2 (Main profile, 8-bit) up to 720×480 at 31 fps and 7 Mbps.
+H.264 is limited to 8-bit at up to 60 fps.
+Anything outside those limits, including 4K, HEVC, 10-bit H.264 and PAL DVD video, is left for Emby to transcode to H.264 HLS at 1080p or lower.
+If the account can't transcode, or Emby returns no transcoding URL, that title won't play on Apple TV HD.
+These limits are covered by request tests only; they haven't been checked on Apple TV HD hardware or against a live Emby server.
+Until a new item (or a Play from Beginning) reaches its first frame, or audio-only playback starts, it only keeps the session alive with `/Sessions/Playing/Ping`, so a failed or abandoned load never starts a watch-progress session and sends no stop.
+From then on it sends the real position in start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`.
+Positions convert between seconds and Emby ticks.
+Vivid adds no viewing threshold of its own to progress: Emby's own per-library resume settings decide which positions it keeps as resume points (Emby's server is closed source, so Vivid hasn't checked their exact behaviour).
+Vivid's separate completion policy still marks a title played at 90%, at a credits marker or on a natural end.
+Transcoded-session cleanup uses Emby's active-encoding endpoint.
+The player's Stream badge on Apple TV reads each video stream's `ExtendedVideoType` and `ExtendedVideoSubtype` (for example `DoviProfile81`) to show the Dolby Vision profile (DV P8.1), HDR10+, HDR10 or HLG, and falls back to `VideoRange` on servers that don't send them.
+Detail pages, version pickers and Continue Watching in the Apple TV Home focus info show the same label.
 
-Vivid’s Emby preferences are scoped per server and native user. Eligible shared preferences can sync through the private iCloud vault; playback and subtitle settings stay device-local. These are Vivid preferences, not a claim that Emby synchronises them between its own clients. The shared player exposes embedded subtitles, text subtitle files Emby keeps beside the media (SRT, VTT, ASS and SSA) and device-local caption preferences. Those files are fetched with the account's request headers, and redirects are refused so credentials never follow them elsewhere. When Emby transcodes, its text subtitle streams are offered the same way. PGS, VobSub and DVB tracks can't travel beside a transcode, so on a transcode they're listed after the others and Emby draws the chosen one into the video: choosing one, or Auto choosing one, reloads playback at the same point with Emby burning it in, and choosing anything else reloads without it. Vivid only plays that burn-in once Emby's transcode URL confirms it (`SubtitleMethod=Encode` for that stream). If Emby answers without confirming it, or the burned-in stream itself won't open, playback carries on without subtitles, a notice says so and that track isn't offered again until another title plays. If the burn-in request fails (a dropped connection, a timeout or an HTTP error), or the stream fails for a network, sign-in or rate-limit reason, only that attempt is affected. Subtitle style and delay don't change a burned-in track. Direct play is unchanged, as Lucid Engine draws these tracks itself. The burn-in request and its fallback are covered by request tests; the URL fields were read from a live Emby 4.10 server's logs, but playback with a burned-in track hasn't been checked on a device. The detail-page subtitle menus list the same files beside the embedded tracks, and a choice made there is applied when playback starts. Connecting OpenSubtitles in Plugins also enables manual subtitle search and temporary SRT downloads on iOS and tvOS. Arbitrary file imports and subtitle translation are not offered. The five shared [quality choices](../playback/README.md#quality-controls) feed native PlaybackInfo negotiation: Vivid’s kbps ceiling converts to Emby’s bps, and each mode keeps its resolution ceiling. An eligible one-time buffering fallback reloads the selected source at the current position through the same bridge. Auto and Original are not enrolled. Detail Media Information likewise converts Emby’s bps before display. On Apple TV HD the selected resolution and the device's 1080p limit combine, and the lower one applies. This does not establish live throttled-playback coverage.
+Vivid’s Emby preferences are scoped per server and native user.
+Eligible shared preferences can sync through the private iCloud vault; playback and subtitle settings stay device-local.
+These are Vivid preferences, not a claim that Emby synchronises them between its own clients.
+The shared player exposes embedded subtitles, text subtitle files Emby keeps beside the media (SRT, VTT, ASS and SSA) and device-local caption preferences.
+Those files are fetched with the account's request headers, and redirects are refused so credentials never follow them elsewhere.
+When Emby transcodes, its text subtitle streams are offered the same way.
+PGS, VobSub and DVB tracks can't travel beside a transcode, so on a transcode they're listed after the others and Emby draws the chosen one into the video: choosing one, or Auto choosing one, reloads playback at the same point with Emby burning it in, and choosing anything else reloads without it.
+Vivid only plays that burn-in once Emby's transcode URL confirms it (`SubtitleMethod=Encode` for that stream).
+If Emby answers without confirming it, or the burned-in stream itself won't open, playback carries on without subtitles, a notice says so and that track isn't offered again until another title plays.
+If the burn-in request fails (a dropped connection, a timeout or an HTTP error), or the stream fails for a network, sign-in or rate-limit reason, only that attempt is affected.
+Subtitle style and delay don't change a burned-in track.
+Direct play is unchanged, as Lucid Engine draws these tracks itself.
+The burn-in request and its fallback are covered by request tests; the URL fields were read from a live Emby 4.10 server's logs, but playback with a burned-in track hasn't been checked on a device.
+The detail-page subtitle menus list the same files beside the embedded tracks, and a choice made there is applied when playback starts.
+Connecting OpenSubtitles in Plugins also enables manual subtitle search and temporary SRT downloads on iOS and tvOS.
+Arbitrary file imports and subtitle translation are not offered.
+The five shared [quality choices](../playback/README.md#quality-controls) feed native PlaybackInfo negotiation: Vivid’s kbps ceiling converts to Emby’s bps, and each mode keeps its resolution ceiling.
+An eligible one-time buffering fallback reloads the selected source at the current position through the same bridge.
+Auto and Original are not enrolled.
+Detail Media Information likewise converts Emby’s bps before display.
+On Apple TV HD the selected resolution and the device's 1080p limit combine, and the lower one applies.
+This does not establish live throttled-playback coverage.
 
-TMDb works through Vivid's [TMDb relay](../tmdb-relay.md), with no personal key. Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby path can resolve an IMDb ID through TMDb. IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb. Both use season/episode numbers through the shared Intro & Credit Skipper toggle and separate automatic-skip switches. Live Emby playback with these integrations still needs verification.
+TMDb works through Vivid's [TMDb relay](../tmdb-relay.md), with no personal key.
+Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby path can resolve an IMDb ID through TMDb.
+IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb.
+Both use season/episode numbers through the shared Intro & Credit Skipper toggle and separate automatic-skip switches.
+Live Emby playback with these integrations still needs verification.
 
-Original-file downloads use the existing download manager with native Emby authentication and the server's download policy. Their detail-page progress ring, poster artwork and Downloads cards use the shared mobile presentation. On iPhone and iPad, an account allowed to download and to transcode playback (`EnableVideoPlaybackTranscoding`, on by default) can also download a smaller file: Vivid saves the server's playback transcode of `/Videos/{Id}/stream.mp4` (H.264 with its video bitrate capped to the chosen preset, stereo AAC at 128 or 192 kbps on top, in MP4, with a height cap) through the background session, so it keeps downloading with the app closed and needs no Emby Premiere. An account that may only use sync transcoding falls back to Emby's native conversion jobs, when the service advertises conversion options for this device. Emby builds those options from the items being synced and answers `/Sync/Options` with HTTP 500 when no `ItemIds` are named, so registration names the item it will convert and the capability check names one movie or episode from the library. Emby's [Downloads and Sync feature](https://emby.media/support/articles/Sync-Introduction.html) requires Emby Premiere. Download Season and Download All Episodes register each present episode with a media file in one request, skipping missing or virtual episodes and episodes already downloaded, in Original or the chosen smaller quality (one conversion job per episode on the fallback). Emby's season episode lists report only one media source per episode, even when the item has several versions, so the series download sheet and Choose Episodes read each episode's sources from the item itself (`/Users/{UserId}/Items/{Id}`): the first episode of every season and the rest of the selected season when the sheet opens. That gives them the same original-file versions as Silo, such as 4K HDR and 1080p. Choosing a version registers each episode on its own with its matching source, reading any episode not yet checked just before it registers. A 1080p version of a whole season and a 2 Mbps transcode of a single episode were checked against a live Emby 4.9 server from the iOS simulator. Episode downloads, whether picked on their own or part of a season, are recorded against the series they were requested from, so that series' download menu can list and cancel them even when Emby files the episode under another series item for the same show. Single episodes registered by earlier versions of Vivid keep their original record and aren't migrated, so they can be missing from that menu. Monitoring remains unsupported. Downloads take their watched state from Emby as well as from offline playback: when Vivid comes to the foreground and when the Downloads tab opens, it reads the played state and resume position of every downloaded item from `/Users/{UserId}/Items?Ids=…`, so an episode watched by streaming, in Vivid or another app, shows as watched and is offered by Free up space. Progress from offline playback goes to Emby at the next download sync as a playback stop report (`/Sessions/Playing/Stopped` with only `ItemId` and `PositionTicks`), so Emby's per-library resume settings are expected to decide what is kept, as for a streamed play, rather than a direct `UserData` write that would bypass them. That rests on Emby's last open-source server: how current Emby handles a stop with no prior start is unverified. The report carries no `PlaySessionId`, so it can't end a transcode, and no `MediaSourceId`, so it updates the downloaded item itself. Emby's own apps have reported offline plays through its sync service (`/Sync/OfflineActions`), which in Emby's last open-source server ran the same resume calculation and kept the original play time; Vivid doesn't use it because it belongs to Emby's Downloads and Sync feature and couldn't be confirmed to work without Emby Premiere. Offline completion still follows with the separate watched write; if that fails, retries repeat only the watched write, not a stop Emby has acknowledged once Vivid has saved that acknowledgement. A stop whose answer never arrived, or whose acknowledgement wasn't saved before the app closed, stays queued and can be sent again. A stop Emby refuses outright (a 4xx other than 401, 408 or 429) is reported back as an error, so it doesn't hold up the rest of the queue and leaves it after the usual retries, unless the item was watched to the end. Offline progress still waiting to be sent keeps its local state, and marking an item unwatched on the server clears it on the device. Because monitoring is unsupported, the Delete watched episodes default has no effect on Emby and nothing is deleted automatically. Reading a downloaded episode's state was checked against a live Emby server from the iOS simulator; an episode played on the server reaching the device is covered by provider and merge tests only, as no watched state was changed on the server. Sending offline progress as a stop report is covered by a provider test of its request shape and hasn't been checked against a live Emby server.
+Original-file downloads use the existing download manager with native Emby authentication and the server's download policy.
+Their detail-page progress ring, poster artwork and Downloads cards use the shared mobile presentation.
+On iPhone and iPad, an account allowed to download and to transcode playback (`EnableVideoPlaybackTranscoding`, on by default) can also download a smaller file: Vivid saves the server's playback transcode of `/Videos/{Id}/stream.mp4` (H.264 with its video bitrate capped to the chosen preset, stereo AAC at 128 or 192 kbps on top, in MP4, with a height cap) through the background session, so it keeps downloading with the app closed and needs no Emby Premiere.
+An account that may only use sync transcoding falls back to Emby's native conversion jobs, when the service advertises conversion options for this device.
+Emby builds those options from the items being synced and answers `/Sync/Options` with HTTP 500 when no `ItemIds` are named, so registration names the item it will convert and the capability check names one movie or episode from the library.
+Emby's [Downloads and Sync feature](https://emby.media/support/articles/Sync-Introduction.html) requires Emby Premiere.
+Download Season and Download All Episodes register each present episode with a media file in one request, skipping missing or virtual episodes and episodes already downloaded, in Original or the chosen smaller quality (one conversion job per episode on the fallback).
+Emby's season episode lists report only one media source per episode, even when the item has several versions, so the series download sheet and Choose Episodes read each episode's sources from the item itself (`/Users/{UserId}/Items/{Id}`): the first episode of every season and the rest of the selected season when the sheet opens.
+That gives them the same original-file versions as Silo, such as 4K HDR and 1080p.
+Choosing a version registers each episode on its own with its matching source, reading any episode not yet checked just before it registers.
+A 1080p version of a whole season and a 2 Mbps transcode of a single episode were checked against a live Emby 4.9 server from the iOS simulator.
+Episode downloads, whether picked on their own or part of a season, are recorded against the series they were requested from, so that series' download menu can list and cancel them even when Emby files the episode under another series item for the same show.
+Single episodes registered by earlier versions of Vivid keep their original record and aren't migrated, so they can be missing from that menu.
+Monitoring remains unsupported.
+Downloads take their watched state from Emby as well as from offline playback: when Vivid comes to the foreground and when the Downloads tab opens, it reads the played state and resume position of every downloaded item from `/Users/{UserId}/Items?Ids=…`, so an episode watched by streaming, in Vivid or another app, shows as watched and is offered by Free up space.
+Progress from offline playback goes to Emby at the next download sync as a playback stop report (`/Sessions/Playing/Stopped` with only `ItemId` and `PositionTicks`), so Emby's per-library resume settings are expected to decide what is kept, as for a streamed play, rather than a direct `UserData` write that would bypass them.
+That rests on Emby's last open-source server: how current Emby handles a stop with no prior start is unverified.
+The report carries no `PlaySessionId`, so it can't end a transcode, and no `MediaSourceId`, so it updates the downloaded item itself.
+Emby's own apps have reported offline plays through its sync service (`/Sync/OfflineActions`), which in Emby's last open-source server ran the same resume calculation and kept the original play time; Vivid doesn't use it because it belongs to Emby's Downloads and Sync feature and couldn't be confirmed to work without Emby Premiere.
+Offline completion still follows with the separate watched write; if that fails, retries repeat only the watched write, not a stop Emby has acknowledged once Vivid has saved that acknowledgement.
+A stop whose answer never arrived, or whose acknowledgement wasn't saved before the app closed, stays queued and can be sent again.
+A stop Emby refuses outright (a 4xx other than 401, 408 or 429) is reported back as an error, so it doesn't hold up the rest of the queue and leaves it after the usual retries, unless the item was watched to the end.
+Offline progress still waiting to be sent keeps its local state, and marking an item unwatched on the server clears it on the device.
+Because monitoring is unsupported, the Delete watched episodes default has no effect on Emby and nothing is deleted automatically.
+Reading a downloaded episode's state was checked against a live Emby server from the iOS simulator; an episode played on the server reaching the device is covered by provider and merge tests only, as no watched state was changed on the server.
+Sending offline progress as a stop report is covered by a provider test of its request shape and hasn't been checked against a live Emby server.
 
-A smaller download is a playback transcode of the chosen source, and a 4K version only offers 4K transcodes. On an account that can only use the conversion service, Emby chooses the source for a smaller download, so Choose Version is unavailable while a smaller quality is picked.
+A smaller download is a playback transcode of the chosen source, and a 4K version only offers 4K transcodes.
+On an account that can only use the conversion service, Emby chooses the source for a smaller download, so Choose Version is unavailable while a smaller quality is picked.
 
-Smaller downloads offer 20, 10, 5, 2 and 1 Mbps caps. Streamed transcodes follow Silo's bitrate ladder: up to 4K at 20 Mbps, 1080p at 10 and 5 Mbps, 720p at 2 Mbps and 480p at 1 Mbps, never above the source. The conversion fallback sets only the bitrate, so Emby chooses its resolution. Each choice is labelled with that resolution, for example "1080p · 10 Mbps". A streamed transcode has no length until it finishes, so progress uses an estimate from the bitrate and runtime. An interrupted transfer resumes only if Apple's downloader has usable resume data, which a server can't normally offer for a transcode it's still producing, so it usually starts again. Embedded text subtitles aren't carried in the transcoded file, so they're saved beside it as subtitle files, and the same goes for a converted file, whether it's a single item or part of a season or series. On the conversion fallback, Emby chooses the source version and prepares a complete file before Vivid starts its background transfer, and a job cancelled on the server counts as a failed download; Vivid keeps the converted file's metadata, retries transfer acknowledgements and retains pending cleanup while offline, without restoring deleted downloads. These controls are mobile-only. Native routes and original-file byte ranges were checked against Emby 4.9.5.0. A 1 Mbps streamed episode download was checked end to end against a live Emby 4.9 server from the iOS simulator with the app in the background; the conversion fallback's job creation, progress, transfer and cleanup still require verification with an account that can only use sync transcoding.
+Smaller downloads offer 20, 10, 5, 2 and 1 Mbps caps.
+Streamed transcodes follow Silo's bitrate ladder: up to 4K at 20 Mbps, 1080p at 10 and 5 Mbps, 720p at 2 Mbps and 480p at 1 Mbps, never above the source.
+The conversion fallback sets only the bitrate, so Emby chooses its resolution.
+Each choice is labelled with that resolution, for example "1080p · 10 Mbps".
+A streamed transcode has no length until it finishes, so progress uses an estimate from the bitrate and runtime.
+An interrupted transfer resumes only if Apple's downloader has usable resume data, which a server can't normally offer for a transcode it's still producing, so it usually starts again.
+Embedded text subtitles aren't carried in the transcoded file, so they're saved beside it as subtitle files, and the same goes for a converted file, whether it's a single item or part of a season or series.
+On the conversion fallback, Emby chooses the source version and prepares a complete file before Vivid starts its background transfer, and a job cancelled on the server counts as a failed download; Vivid keeps the converted file's metadata, retries transfer acknowledgements and retains pending cleanup while offline, without restoring deleted downloads.
+These controls are mobile-only.
+Native routes and original-file byte ranges were checked against Emby 4.9.5.0.
+A 1 Mbps streamed episode download was checked end to end against a live Emby 4.9 server from the iOS simulator with the app in the background; the conversion fallback's job creation, progress, transfer and cleanup still require verification with an account that can only use sync transcoding.
 
-The watchlist is stored locally in Vivid and can sync additions and removals through the optional MDBList or Simkl connection. MDBList and Simkl export newly completed or explicitly marked watches after Emby confirms the write. They don't import watched history or override Emby resume positions. Eligible shared preferences and plugin credentials use the private iCloud vault, while native favourites and playback progress use Emby. See [plugin behaviour and import safeguards](../server-connections.md#plugins-on-iphone-ipad-and-apple-tv). Collection editing, realtime events and other unmapped features must not be advertised as complete.
+The watchlist is stored locally in Vivid and can sync additions and removals through the optional MDBList or Simkl connection.
+MDBList and Simkl export newly completed or explicitly marked watches after Emby confirms the write.
+They don't import watched history or override Emby resume positions.
+Eligible shared preferences and plugin credentials use the private iCloud vault, while native favourites and playback progress use Emby.
+See [plugin behaviour and import safeguards](../server-connections.md#plugins-on-iphone-ipad-and-apple-tv).
+Collection editing, realtime events and other unmapped features must not be advertised as complete.
 
-In General → Home Screen, **Combine Next Up with Continue Watching** puts Emby resume items first, followed by Next Up episodes without duplicate content IDs. The combined row is titled Continue Watching and replaces the separate Next Up row while enabled. This Vivid setting is saved per server/profile, participates in the existing private iCloud preference sync, defaults to off and is available for Emby on iPhone, iPad and Apple TV. Jellyfin has a separate provider-scoped preference for the same combined-row behaviour. The combined row retains the Continue Watching row’s identity and position when that row exists. If the optional Next Up request fails, loaded Home rows remain available; cancellation and account changes still stop the request. Turning it off restores Emby’s usual rows. It does not change server watch history or resume positions.
+In General → Home Screen, **Combine Next Up with Continue Watching** puts Emby resume items first, followed by Next Up episodes without duplicate content IDs.
+The combined row is titled Continue Watching and replaces the separate Next Up row while enabled.
+This Vivid setting is saved per server/profile, participates in the existing private iCloud preference sync, defaults to off and is available for Emby on iPhone, iPad and Apple TV.
+Jellyfin has a separate provider-scoped preference for the same combined-row behaviour.
+The combined row retains the Continue Watching row’s identity and position when that row exists.
+If the optional Next Up request fails, loaded Home rows remain available; cancellation and account changes still stop the request.
+Turning it off restores Emby’s usual rows.
+It does not change server watch history or resume positions.
 
-On iPhone, iPad and Apple TV, Emby Movies and Series filter options come from Emby’s `/Genres` and `/OfficialRatings` endpoints, scoped to the selected library. These routes are confirmed in Emby 4.9.5.0’s own API schema; the obsolete `/Items/Filters` routes return 404 on that version. Genre, content rating, decade and watch status use native Emby queries; mixed libraries also offer media type. Different filter categories are combined with AND, with multiple values within a category matched with OR. Genre is single-select on every provider: choosing another genre replaces the previous one. Unsupported technical facets and the Match Any switch are not offered on this Emby path. A–Z uses Emby’s native name-prefix query, with # using its pre-A sort range and All removing the prefix. Saved unsupported Emby facets are cleared when restored. Filter-option requests stop after 10,000 rows or 100 pages per endpoint, and iOS offers Retry in the filter menu after a loading failure. Silo filtering retains its existing behaviour. On 12 September 2026, the owner confirmed that both Movies and Series filter menus opened and genre filtering worked on Apple TV. Both platform builds passed, and the owner subsequently confirmed that iOS and tvOS device tests passed.
+On iPhone, iPad and Apple TV, Emby Movies and Series filter options come from Emby’s `/Genres` and `/OfficialRatings` endpoints, scoped to the selected library.
+These routes are confirmed in Emby 4.9.5.0’s own API schema; the obsolete `/Items/Filters` routes return 404 on that version.
+Genre, content rating, decade and watch status use native Emby queries; mixed libraries also offer media type.
+Different filter categories are combined with AND, with multiple values within a category matched with OR.
+Genre is single-select on every provider: choosing another genre replaces the previous one.
+Unsupported technical facets and the Match Any switch are not offered on this Emby path.
+A–Z uses Emby’s native name-prefix query, with # using its pre-A sort range and All removing the prefix.
+Saved unsupported Emby facets are cleared when restored.
+Filter-option requests stop after 10,000 rows or 100 pages per endpoint, and iOS offers Retry in the filter menu after a loading failure.
+Silo filtering retains its existing behaviour.
+On 12 September 2026, the owner confirmed that both Movies and Series filter menus opened and genre filtering worked on Apple TV.
+Both platform builds passed, and the owner subsequently confirmed that iOS and tvOS device tests passed.
 
 ## Compatible audio
 
-Initial audio selection uses Emby’s existing track metadata. Vivid prefers a compatible non-commentary track in the selected language, maps its ordinal to the source stream index, and then requests PlaybackInfo. It preserves an explicit manual choice and falls back to the original choice when no same-language alternative exists. No separate media probe is added. The selected language is Settings > Playback > Audio Language, or the language of a track picked earlier in the viewing; Emby's own default audio stream and Vivid's old per-series audio picks are no longer used, and picks aren't saved. Progress reports (`/Sessions/Playing`, `/Sessions/Playing/Progress` and the stop) send the stream indexes of the audio and subtitles playing: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file. On a transcode, the audio (its single track can't be matched to the file's) and an embedded subtitle keep the indexes the session started with; a server subtitle file, Off and an OpenSubtitles file are still reported as they are. Whether Emby keeps these for its other clients hasn't been checked against a live server.
+Initial audio selection uses Emby’s existing track metadata.
+Vivid prefers a compatible non-commentary track in the selected language, maps its ordinal to the source stream index, and then requests PlaybackInfo.
+It preserves an explicit manual choice and falls back to the original choice when no same-language alternative exists.
+No separate media probe is added.
+The selected language is Settings > Playback > Audio Language, or the language of a track picked earlier in the viewing; Emby's own default audio stream and Vivid's old per-series audio picks are no longer used, and picks aren't saved.
+Progress reports (`/Sessions/Playing`, `/Sessions/Playing/Progress` and the stop) send the stream indexes of the audio and subtitles playing: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file.
+On a transcode, the audio (its single track can't be matched to the file's) and an embedded subtitle keep the indexes the session started with; a server subtitle file, Off and an OpenSubtitles file are still reported as they are.
+Whether Emby keeps these for its other clients hasn't been checked against a live server.
 
-Compatible AC-3 selection and TrueHD 7.1 source playback have been verified with Emby in development builds. See the [player engine core](player-engine.md#audio-support) for supported formats and output limits. This does not guarantee every channel layout or packaged audio-switching route. Emby Direct Play describes server delivery; local FFmpeg decoding to PCM can still be used.
+Compatible AC-3 selection and TrueHD 7.1 source playback have been verified with Emby in development builds.
+See the [player engine core](player-engine.md#audio-support) for supported formats and output limits.
+This does not guarantee every channel layout or packaged audio-switching route.
+Emby Direct Play describes server delivery; local FFmpeg decoding to PCM can still be used.
 
 ## Apple TV Top Shelf
 
-Top Shelf loads Continue Watching and Next Up directly from this provider’s native endpoints, independently of the in-app combined-row setting. It preserves the exact episode ID and resume progress, uses the main series poster for episodes, and keeps the existing detail and direct-play actions. Credentials come from the selected native Apple TV user’s saved account; the account, native user and credential epoch are checked again before returning the response. Silo retains its existing Top Shelf request path. Personalised content is shown for the active saved profile, however many are saved, when it is signed in with no PIN, Vivid still remembers its profile, the profile launch behaviour doesn't ask on every launch, its time-away lock hasn't expired and no profile choice is pending; otherwise Top Shelf shows static Vivid artwork. Account changes request a system refresh. See [server connections](../server-connections.md) for the full rule.
+Top Shelf loads Continue Watching and Next Up directly from this provider’s native endpoints, independently of the in-app combined-row setting.
+It preserves the exact episode ID and resume progress, uses the main series poster for episodes, and keeps the existing detail and direct-play actions.
+Credentials come from the selected native Apple TV user’s saved account; the account, native user and credential epoch are checked again before returning the response.
+Silo retains its existing Top Shelf request path.
+Personalised content is shown for the active saved profile, however many are saved, when it is signed in with no PIN, Vivid still remembers its profile, the profile launch behaviour doesn't ask on every launch, its time-away lock hasn't expired and no profile choice is pending; otherwise Top Shelf shows static Vivid artwork.
+Account changes request a system refresh.
+See [server connections](../server-connections.md) for the full rule.
 
-Focused native Top Shelf request/mapping checks and the tvOS extension build passed. The only live read-only check was against Jellyfin, not Emby: it returned both rows and a credential-free series poster URL returned HTTP 200. Live Emby Top Shelf responses and presentation on the Apple TV Home Screen still need device verification. This implementation is included in the published source; TestFlight availability is tracked in App Store Connect and its beta source mappings.
+Focused native Top Shelf request/mapping checks and the tvOS extension build passed.
+The only live read-only check was against Jellyfin, not Emby: it returned both rows and a credential-free series poster URL returned HTTP 200.
+Live Emby Top Shelf responses and presentation on the Apple TV Home Screen still need device verification.
+This implementation is included in the published source; TestFlight availability is tracked in App Store Connect and its beta source mappings.
 
 ## Validation
 
-The app changes published through `v0.13.0` (`2ee9005c`) include the device-tested Emby setup and account selection, episode labels, resume bars, compatible-audio selection and serialised manual audio changes. Device checks covered the iPhone compatible-audio path, Next Up labels and shared episode-card changes. Apple TV checks confirmed account switching after the initial add-account crash was addressed. That confirmation does not prove the cause of the original crash or cover every account-transition failure.
+The app changes published through `v0.13.0` (`2ee9005c`) include the device-tested Emby setup and account selection, episode labels, resume bars, compatible-audio selection and serialised manual audio changes.
+Device checks covered the iPhone compatible-audio path, Next Up labels and shared episode-card changes.
+Apple TV checks confirmed account switching after the initial add-account crash was addressed.
+That confirmation does not prove the cause of the original crash or cover every account-transition failure.
 
-Earlier automated checks covered Emby mapping, identity boundaries, local preferences, quality limits, Home-row filtering, collections, seasons and resolution labels. Separate TMDb and IntroDB checks covered request isolation and metadata mapping. Those checks passed on their recorded development revisions; they are not a new full-suite run against `v0.13.0`.
+Earlier automated checks covered Emby mapping, identity boundaries, local preferences, quality limits, Home-row filtering, collections, seasons and resolution labels.
+Separate TMDb and IntroDB checks covered request isolation and metadata mapping.
+Those checks passed on their recorded development revisions; they are not a new full-suite run against `v0.13.0`.
 
-On 8 September 2026, read-only inspection confirmed that an Emby season had a custom title and season number 4. The adapter now labels it Season 4 on both platforms without altering the server. Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles. The existing season regression test includes this custom-title case. Both device builds passed, were installed, and device checks confirmed the completed update on iPhone and Apple TV. This does not expand the untested integration and format coverage below.
+On 8 September 2026, read-only inspection confirmed that an Emby season had a custom title and season number 4. The adapter now labels it Season 4 on both platforms without altering the server.
+Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles.
+The existing season regression test includes this custom-title case.
+Both device builds passed, were installed, and device checks confirmed the completed update on iPhone and Apple TV.
+This does not expand the untested integration and format coverage below.
 
-On 13 September 2026, intermittent missing artwork was reproduced on Apple TV and reported in other Emby clients. Read-only server checks confirmed that three affected cached item references matched the Emby database, while their local image endpoints timed out both with and without cache tags. Sampled source image files remained readable. The internal server cause is unconfirmed; the tvOS request coalescing and bounded retry changes do not establish that this server issue is fixed. No server configuration was changed.
+On 13 September 2026, intermittent missing artwork was reproduced on Apple TV and reported in other Emby clients.
+Read-only server checks confirmed that three affected cached item references matched the Emby database, while their local image endpoints timed out both with and without cache tags.
+Sampled source image files remained readable.
+The internal server cause is unconfirmed; the tvOS request coalescing and bounded retry changes do not establish that this server issue is fixed.
+No server configuration was changed.
 
-Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when planning further TestFlight checks.
+Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding.
+Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks.
+Use these limits when planning further TestFlight checks.
 
 ## Source ownership
 
-- [EmbyProvider](../../iosApp/iosApp/Networking/EmbyProvider.swift): connection, sign-in, Emby Connect and the library directory. The API translation is in [EmbyProvider+Items](../../iosApp/iosApp/Networking/EmbyProvider+Items.swift) (items, versions and tracks), [EmbyProvider+Home](../../iosApp/iosApp/Networking/EmbyProvider+Home.swift) (Home) and [EmbyProvider+Routes](../../iosApp/iosApp/Networking/EmbyProvider+Routes.swift) (collections, seasons, metadata and the routes it answers).
+- [EmbyProvider](../../iosApp/iosApp/Networking/EmbyProvider.swift): connection, sign-in, Emby Connect and the library directory.
+  The API translation is in [EmbyProvider+Items](../../iosApp/iosApp/Networking/EmbyProvider+Items.swift) (items, versions and tracks), [EmbyProvider+Home](../../iosApp/iosApp/Networking/EmbyProvider+Home.swift) (Home) and [EmbyProvider+Routes](../../iosApp/iosApp/Networking/EmbyProvider+Routes.swift) (collections, seasons, metadata and the routes it answers).
 - [EmbyLocalPreferences](../../iosApp/iosApp/Networking/EmbyLocalPreferences.swift): account-scoped Vivid preferences.
 - [EmbyPlayback](../../iosApp/iosApp/Screens/Player/EmbyPlayback.swift): source negotiation and session reporting.
 - [EmbyDownloads](../../iosApp/iosApp/Downloads/EmbyDownloads.swift): original-file downloads, season and series batches, conversion jobs and offline manifests.
