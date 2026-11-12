@@ -30,19 +30,48 @@ final class Requests: @unchecked Sendable {
 @main struct Check {
     static func main() async throws {
         let account: [String: Any] = ["id":"saved", "serverID":"server", "requiresLogin":false]
-        func allowed(_ rows: [[String:Any]], active: String = "saved", server: String = "server", pin: Bool = false) throws -> Bool {
-            TopShelfProfilePolicy.allowsSavedAccountContent(accountsData:try JSONSerialization.data(withJSONObject:rows),
+        let other: [String: Any] = ["id":"other", "serverID":"elsewhere", "requiresLogin":true, "pinEnabled":true]
+        func saved(_ rows: [[String:Any]], active: String? = "saved", server: String = "server", pin: Bool = false) -> TopShelfAccess.Refusal? {
+            TopShelfAccess.savedProfileRefusal(accountsData:try! JSONSerialization.data(withJSONObject:rows),
                 activeAccountID:active, serverID:server, hasStoredPIN:{_ in pin})
         }
-        let policyResults = try [allowed([account]), !allowed([]), !allowed([account,account]),
-            !allowed([account],active:"other"), !allowed([account],server:"other"), !allowed([account],pin:true),
-            !allowed([account.merging(["pinEnabled":true]) {_,v in v}]),
-            !allowed([account.merging(["requiresLogin":true]) {_,v in v}])]
-        assert(policyResults.allSatisfy { $0 })
-        assert(!TopShelfProfilePolicy.allowsSavedAccountContent(accountsData:nil,activeAccountID:"saved",serverID:"server",hasStoredPIN:{_ in false}))
-        assert(!TopShelfProfilePolicy.allowsSavedAccountContent(accountsData:Data("invalid".utf8),activeAccountID:"saved",serverID:"server",hasStoredPIN:{_ in false}))
+        assert(saved([account]) == nil)
+        // Other saved profiles don't matter, whatever state they're in.
+        assert(saved([other, account, account.merging(["id":"third"]) {_,v in v}]) == nil)
+        assert(saved([account.merging(["name":"ignored", "extra":["nested":1]]) {_,v in v}]) == nil)
+        assert(saved([]) == .savedProfileMissing)
+        assert(saved([account], active:"missing") == .savedProfileMissing)
+        assert(saved([account], active:nil) == .savedProfileMissing)
+        assert(saved([account], server:"other") == .savedProfileMissing)
+        assert(saved([account.merging(["requiresLogin":true]) {_,v in v}]) == .savedProfileSignedOut)
+        assert(saved([account], pin:true) == .savedProfileLocked)
+        assert(saved([account.merging(["pinEnabled":true]) {_,v in v}]) == .savedProfileLocked)
+        assert(saved([account.merging(["pinEnabled":false]) {_,v in v}]) == nil)
+        for data in [nil, Data("invalid".utf8)] {
+            assert(TopShelfAccess.savedProfileRefusal(accountsData:data, activeAccountID:"saved", serverID:"server",
+                hasStoredPIN:{_ in false}) == .savedProfileMissing)
+        }
+
+        let records = try JSONSerialization.data(withJSONObject:["server":
+            ["accountEpoch":"epoch", "profileIDs":["one","two","three"], "lockedProfileIDs":["two"]]])
+        func viewing(_ data: Data?, server: String = "server", profile: String = "one", epoch: String? = "epoch") -> TopShelfAccess.Refusal? {
+            TopShelfAccess.viewingProfileRefusal(recordsData:data, serverID:server, profileID:profile, accountEpoch:epoch)
+        }
+        // Any number of viewing profiles is fine, as long as this one has no PIN.
+        assert(viewing(records) == nil && viewing(records, profile:"three") == nil)
+        assert(viewing(records, profile:"two") == .viewingProfileLocked)
+        assert(viewing(records, profile:"unknown") == .viewingProfilesUnknown)
+        assert(viewing(records, server:"other") == .viewingProfilesUnknown)
+        assert(viewing(records, epoch:"newer") == .viewingProfilesUnknown)
+        assert(viewing(records, epoch:nil) == .viewingProfilesUnknown)
+        assert(viewing(nil) == .viewingProfilesUnknown)
+        assert(viewing(Data("invalid".utf8)) == .viewingProfilesUnknown)
+        // Emby and Jellyfin have no Silo viewing profiles to check.
+        assert(TopShelfAccess.isNativeServer("emby:one") && TopShelfAccess.isNativeServer("jellyfin:one"))
+        assert(!TopShelfAccess.isNativeServer("server"))
+        assert(viewing(nil, server:"emby:one", epoch:nil) == nil && viewing(nil, server:"jellyfin:one", epoch:nil) == nil)
         for count in 0...9 { assert(AccountLimitCheck(accounts:Array(repeating:0,count:count)).canAddAccount == (count < 8)) }
-        print("PASS saved-account isolation, single/multiple profiles, PINs, corrupt data and eight-profile capacity")
+        print("PASS saved profiles (several allowed, missing, other server, signed out, PINs, corrupt data), viewing profiles and eight-profile capacity")
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [Stub.self]
         let session = URLSession(configuration: config)
@@ -78,19 +107,21 @@ final class Requests: @unchecked Sendable {
                 }
                 return (200,["Items":[episode]])
             }
-            let result = try await client.fetchHomeSections()
-            assert(result.sections.map(\.sectionType) == ["continue_watching", "next_up"])
+            let feed = try await client.fetchHomeSections()
+            assert(feed.resume.count == 1 && feed.upNext.count == 1)
             assert(requests.snapshot().count == 2)
-            let item = result.sections[0].items[0]
-            assert(item.contentId == "episode-version" && item.seasonNumber == 2 && item.episodeNumber == 3)
-            assert(item.positionSeconds == 500 && item.playbackProgress == 0.25)
-            let artwork = URLComponents(string:item.posterUrl!)!
+            let entry = feed.resume[0]
+            assert(entry.id == "episode-version" && entry.kind == .episode && entry.title == "Episode")
+            assert(entry.seriesID == "series" && entry.seriesTitle == "Show" && entry.season == 2 && entry.episode == 3)
+            assert(entry.progress == 0.25)
+            assert(feed.upNext[0] == entry)
+            let artwork = URLComponents(url:entry.poster!, resolvingAgainstBaseURL:false)!
             assert(artwork.path.hasSuffix("/Items/series/Images/Primary"))
             assert(artwork.queryItems!.first { $0.name == "tag" }?.value == "poster")
-            assert(!item.posterUrl!.contains("test-token"))
+            assert(!entry.poster!.absoluteString.contains("test-token"))
             do { _ = try client.item(["Id":"../invalid", "Name":"Bad"]); fatalError("Invalid ID accepted") }
             catch TopShelfNativeClient.Failure.invalidItem {}
-            print("PASS", provider, "native routes, auth, both sections, exact episode, progress and main series poster")
+            print("PASS", provider, "native routes, auth, both rows, exact episode, progress and main series poster")
         }
         let jellyfin = TopShelfNativeClient(provider:.jellyfin,serverURL:"https://media.example.test/base",userID:"user-one",token:"test-token",session:session)
         let legacyRequests = Requests()
@@ -100,17 +131,30 @@ final class Requests: @unchecked Sendable {
             return (200,["Items":[]])
         }
         let legacy = try await jellyfin.fetchHomeSections()
-        assert(legacy.sections.allSatisfy { $0.items.isEmpty })
+        assert(legacy.isEmpty)
         assert(legacyRequests.snapshot().contains("/base/Users/user-one/Items/Resume"))
         let failedRequests = Requests()
         Stub.handler = { request in failedRequests.add(request.url!.path); return (401,[:]) }
         do { _ = try await jellyfin.fetchHomeSections(); fatalError("Unauthorised response accepted") }
         catch TopShelfNativeClient.Failure.status(let code) { assert(code == 401) }
         assert(!failedRequests.snapshot().contains { $0.contains("/Users/") })
+        // A film keeps its own poster, and rows keep the server's order, including entries never played.
+        func film(_ id: String, watched: String?) -> [String:Any] {
+            var data: [String:Any] = ["PlaybackPositionTicks":30_000_000_000]
+            if let watched { data["LastPlayedDate"] = watched }
+            return ["Id":id, "Type":"Movie", "Name":id, "RunTimeTicks":20_000_000_000, "UserData":data, "ImageTags":["Primary":"own"]]
+        }
+        Stub.handler = { _ in (200,["Items":[film("never",watched:nil), film("older",watched:"2026-01-01T00:00:00Z"),
+            film("newer",watched:"2026-02-01T00:00:00Z"), film("never-too",watched:nil), ["Id":"trailer", "Type":"Trailer", "Name":"Trailer"]]]) }
+        let films = try await jellyfin.fetchHomeSections().resume
+        assert(films.map(\.id) == ["never", "older", "newer", "never-too", "trailer"])
+        assert(films[2].kind == .movie && films[2].progress == 1 && films[4].kind == .other && films[4].progress == nil)
+        assert(films[2].poster!.path.hasSuffix("/Items/newer/Images/Primary") && films[2].poster!.query!.contains("tag=own"))
+        assert(ShelfEntry.progress(positionSeconds:10, durationSeconds:0) == nil && ShelfEntry.progress(positionSeconds:nil, durationSeconds:10) == nil)
         let emby = TopShelfNativeClient(provider:.emby,serverURL:"https://media.example.test/base/emby/",userID:"one",token:"secret")
         let embyURL = try emby.url("/Shows/NextUp",query:[:])
         assert(embyURL.path == "/base/emby/Shows/NextUp")
-        print("PASS Jellyfin legacy fallback, empty sections, no auth fallback, Emby base path")
+        print("PASS Jellyfin legacy fallback, empty rows, no auth fallback, server order, Emby base path")
     }
 }
 '''
@@ -119,8 +163,6 @@ with tempfile.TemporaryDirectory(prefix='vivid-topshelf-') as tmp:
     tmp = Path(tmp)
     test = tmp / 'Check.swift'
     test.write_text(swift)
-    policy = tmp / 'Policy.swift'
-    policy.write_text((root/'iosApp/iosApp/Shared/TopShelfProfilePolicy.swift').read_text().split('    static func allowsPersonalizedContent')[0] + '}')
     capacity = tmp / 'Capacity.swift'
     account_source = (root/'iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift').read_text()
     capacity_method = account_source.split('    var canAddAccount: Bool {',1)[1].split('    }',1)[0]
@@ -128,6 +170,7 @@ with tempfile.TemporaryDirectory(prefix='vivid-topshelf-') as tmp:
     capacity.write_text('struct AccountLimitCheck { let accounts: [Int]\n static let maximumAccounts = ' + capacity_limit
                         + '\n var canAddAccount: Bool {' + capacity_method + '}\n}')
     binary = tmp / 'check'
-    subprocess.run(['swiftc', '-parse-as-library', str(root/'iosApp/TopShelf/TopShelfModels.swift'),
-                    str(root/'iosApp/TopShelf/TopShelfNativeClient.swift'), str(policy), str(capacity), str(test), '-o',str(binary)], check=True)
+    subprocess.run(['swiftc', '-parse-as-library', str(root/'iosApp/TopShelf/ShelfFeed.swift'),
+                    str(root/'iosApp/TopShelf/TopShelfNativeClient.swift'),
+                    str(root/'iosApp/iosApp/Shared/TopShelfAccess.swift'), str(capacity), str(test), '-o',str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

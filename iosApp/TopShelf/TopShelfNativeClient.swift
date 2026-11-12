@@ -32,7 +32,7 @@ struct TopShelfNativeClient {
     private static let appVersion =
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
 
-    func fetchHomeSections() async throws -> TopShelfSectionsResponse {
+    func fetchHomeSections() async throws -> ShelfFeed {
         let user = try safeID(userID)
         let userResumePath = "/Users/\(user)/Items/Resume"
         let resumeRoute: (path: String, query: [String: String], fallback: String?)
@@ -46,16 +46,13 @@ struct TopShelfNativeClient {
             resumeRoute = ("/UserItems/Resume", [:], userResumePath)
             nextUpQuery = ["EnableResumable": "false"]
         }
-        async let resume = items(resumeRoute.path, query: resumeRoute.query, fallback: resumeRoute.fallback)
-        async let next = items("/Shows/NextUp", query: nextUpQuery)
-        return try await TopShelfSectionsResponse(sections: [
-            TopShelfSection(id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: resume),
-            TopShelfSection(id: "next_up", sectionType: "next_up", title: "Next Up", items: next),
-        ])
+        async let resume = entries(resumeRoute.path, query: resumeRoute.query, fallback: resumeRoute.fallback)
+        async let next = entries("/Shows/NextUp", query: nextUpQuery)
+        return try await ShelfFeed(resume: resume, upNext: next)
     }
 
     /// Fetches one row. A 404 retries once at `fallback` with the same query.
-    private func items(_ path: String, query: [String: String], fallback: String? = nil) async throws -> [TopShelfItem] {
+    private func entries(_ path: String, query: [String: String], fallback: String? = nil) async throws -> [ShelfEntry] {
         let base = [
             "UserId": userID,
             "Limit": "12",
@@ -79,7 +76,7 @@ struct TopShelfNativeClient {
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw Failure.status(0) }
         if http.statusCode == 404, let fallback {
-            return try await items(fallback, query: query)
+            return try await entries(fallback, query: query)
         }
         guard (200..<300).contains(http.statusCode) else { throw Failure.status(http.statusCode) }
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -88,35 +85,41 @@ struct TopShelfNativeClient {
         return try (object["Items"] as? [[String: Any]] ?? []).map(item)
     }
 
-    /// One server item as a Top Shelf item. An episode uses its series' poster.
-    func item(_ raw: [String: Any]) throws -> TopShelfItem {
+    /// One server item as a shelf entry. An episode uses its series' poster,
+    /// because its own image is a wide still that suits no poster tile.
+    func item(_ raw: [String: Any]) throws -> ShelfEntry {
         guard let id = raw["Id"] as? String, let name = raw["Name"] as? String else { throw Failure.invalidItem }
         _ = try safeID(id)
-        let type = (raw["Type"] as? String ?? "Movie").lowercased()
+        let kind: ShelfEntry.Kind
+        switch (raw["Type"] as? String ?? "Movie").lowercased() {
+        case "movie": kind = .movie
+        case "episode": kind = .episode
+        default: kind = .other
+        }
         let seriesID = raw["SeriesId"] as? String
         let imageTags = raw["ImageTags"] as? [String: String] ?? [:]
         let userData = raw["UserData"] as? [String: Any] ?? [:]
 
-        let poster: String
-        if type == "episode", let seriesID {
+        let poster: URL
+        if kind == .episode, let seriesID {
             poster = try imageURL(seriesID, kind: "Primary", tag: raw["SeriesPrimaryImageTag"] as? String)
         } else {
             poster = try imageURL(id, kind: "Primary", tag: imageTags["Primary"])
         }
 
-        return TopShelfItem(
-            contentId: id,
-            type: type,
+        return ShelfEntry(
+            id: id,
+            kind: kind,
             title: name,
-            seriesId: seriesID,
+            seriesID: seriesID,
             seriesTitle: raw["SeriesName"] as? String,
-            seasonNumber: raw["ParentIndexNumber"] as? Int,
-            episodeNumber: raw["IndexNumber"] as? Int,
-            positionSeconds: seconds(fromTicks: userData["PlaybackPositionTicks"]),
-            durationSeconds: seconds(fromTicks: raw["RunTimeTicks"]),
-            progressUpdatedAt: userData["LastPlayedDate"] as? String,
-            posterUrl: poster,
-            backdropUrl: nil
+            season: raw["ParentIndexNumber"] as? Int,
+            episode: raw["IndexNumber"] as? Int,
+            progress: ShelfEntry.progress(
+                positionSeconds: seconds(fromTicks: userData["PlaybackPositionTicks"]),
+                durationSeconds: seconds(fromTicks: raw["RunTimeTicks"])
+            ),
+            poster: poster
         )
     }
 
@@ -126,10 +129,10 @@ struct TopShelfNativeClient {
         return max(0, number.doubleValue / 10_000_000)
     }
 
-    private func imageURL(_ id: String, kind: String, tag: String?) throws -> String {
+    private func imageURL(_ id: String, kind: String, tag: String?) throws -> URL {
         var query = ["maxWidth": "780", "quality": "90"]
         if let tag, !tag.isEmpty { query["tag"] = tag }
-        return try url("/Items/\(safeID(id))/Images/\(kind)", query: query).absoluteString
+        return try url("/Items/\(safeID(id))/Images/\(kind)", query: query)
     }
 
     /// The ID itself when it's only ASCII letters, digits, `-` and `_`, so it

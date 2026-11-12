@@ -112,7 +112,7 @@ final class TVSavedAccountStore {
     // MARK: Storage
 
     private func sessionKey(_ id: String) -> String { "vivid.account.\(id).session.v1" }
-    private func pinKey(_ id: String) -> String { "vivid.account.\(id).pin.v1" }
+    private func pinKey(_ id: String) -> String { SharedStorage.savedProfilePINAccount(for: id) }
 
     private func saveSession(_ session: TVSavedAccountSession, id: String) throws {
         guard writeJSON(session, to: sessionKey(id)) else { throw ServerRegistryError.persistenceFailed }

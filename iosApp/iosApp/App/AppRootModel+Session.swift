@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+#if os(tvOS)
+import TVServices
+#endif
 
 /// Work tied to the signed-in session: what runs on sign-in, on a server or
 /// profile change and on each foreground and background.
@@ -93,6 +96,11 @@ extension AppRootModel {
             #endif
         case .background:
             savedAccounts.enteredBackground()
+            #if os(tvOS)
+            // The Home Screen is next on screen, so the Top Shelf reloads to
+            // show what was just watched.
+            TVTopShelfContentProvider.topShelfContentDidChange()
+            #endif
             #if os(iOS)
             VividImagePipeline.shared.prepareForMacSuspension()
             let downloads = DownloadManager.shared
