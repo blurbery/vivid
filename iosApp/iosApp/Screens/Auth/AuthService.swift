@@ -214,7 +214,7 @@ final class AuthService: @unchecked Sendable {
         #if os(tvOS)
         let requestIdentity = await TokenStore.shared.refreshAccountIdentity()
         let profiles = try await VividAPI.shared.listProfiles()
-        await TopShelfProfileCounts.record(profiles.count, for: requestIdentity)
+        await TopShelfViewingProfiles.record(profiles, for: requestIdentity)
         return profiles
         #else
         return try await VividAPI.shared.listProfiles()
