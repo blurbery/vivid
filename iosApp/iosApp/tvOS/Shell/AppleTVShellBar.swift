@@ -84,6 +84,10 @@ extension TVMainTabView {
         let onContentHandOff: () -> Void
         /// Present only away from Home: returns to Home in the bar.
         let onExit: (() -> Void)?
+        /// True while a page is pushed or the player is open. A chosen tab
+        /// whose page hasn't opened yet is dropped when this turns on, so
+        /// navigation from outside the bar, such as a Siri search, wins.
+        var isCovered = false
 
         @FocusState private var focus: Item?
         /// Lets the white highlight glide from one tab to the next.
@@ -131,6 +135,9 @@ extension TVMainTabView {
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
             )
+            .onChange(of: isCovered) {
+                if isCovered { cancelPendingOpen() }
+            }
             .onChange(of: effectivelySuppressed) {
                 if effectivelySuppressed { cancelPendingOpen() }
                 if effectivelySuppressed { focus = nil }

@@ -279,7 +279,8 @@ struct TVMainTabView: View {
             onSearch: openSearch,
             onProfile: openSettings,
             onContentHandOff: handOffToContent,
-            onExit: selectedRoot == .home ? nil : returnHomeInBar
+            onExit: selectedRoot == .home ? nil : returnHomeInBar,
+            isCovered: !router.path.isEmpty || router.presentedPlayer != nil
         )
     }
 
