@@ -53,8 +53,8 @@ struct TVTopMenuNotchChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, TVTopMenuNotchShape.flare + 16)
-            .padding(.top, 5)
-            .padding(.bottom, 7)
+            .padding(.top, 3)
+            .padding(.bottom, 5)
             .background(.ultraThinMaterial, in: TVTopMenuNotchShape())
             .background(TVTopMenuNotchShape().fill(Color.black.opacity(0.45)))
             .overlay(TVTopMenuNotchShape(open: true).stroke(Color.white.opacity(0.28), lineWidth: 1.5))
@@ -260,8 +260,8 @@ extension TVMainTabView {
                         .animation(fade(in: showsName)) { $0.opacity(showsName ? 1 : 0) }
                 }
                 .font(.system(size: 24, weight: .semibold))
-                .padding(.horizontal, showsName ? 24 : 18)
-                .padding(.vertical, 9)
+                .padding(.horizontal, showsName ? 22 : 16)
+                .padding(.vertical, 6)
                 .foregroundStyle(textColour)
                 .clipShape(Capsule())
                 .background(Capsule().fill(fill))
@@ -305,7 +305,7 @@ extension TVMainTabView {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(isItemFocused ? Color.vividBackground : Color.white.opacity(0.62))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 44, height: 42)
                     .background(Capsule().fill(isItemFocused ? Color.white : Color.clear))
                     .scaleEffect(isItemFocused && !reduceMotion ? 1.1 : 1)
                     .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isItemFocused)
@@ -330,14 +330,14 @@ extension TVMainTabView {
                     avatar: profile?.avatarEmoji,
                     imageUrl: profile?.avatarImageUrl,
                     name: profile?.name ?? "",
-                    size: 44,
+                    size: 40,
                     backgroundColor: Color.white.opacity(0.18),
                     textColor: .white
                 )
                 .overlay(Circle().strokeBorder(Color.white, lineWidth: isItemFocused ? 3 : 0))
                 .scaleEffect(isItemFocused && !reduceMotion ? 1.05 : 1)
                 .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isItemFocused)
-                .frame(width: 48, height: 48)
+                .frame(width: 44, height: 42)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
