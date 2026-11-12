@@ -8450,6 +8450,42 @@
         }
       }
     },
+    "Adaptive" : {
+      "comment" : "Apple TV theme mode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adaptiv"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adaptable"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adaptatif"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アダプティブ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自适应"
+          }
+        }
+      }
+    },
     "Add" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12672,6 +12708,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "均衡"
+          }
+        }
+      }
+    },
+    "Base Theme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basisdesign"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tema base"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thème de base"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ベーステーマ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基础主题"
           }
         }
       }
@@ -17510,7 +17581,7 @@
       }
     },
     "Colours Home’s background to match the Spotlight." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -17540,6 +17611,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "让主页背景的颜色与聚光灯相配。"
+          }
+        }
+      }
+    },
+    "Colours the background to match the Spotlight, or whatever has focus." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Färbt den Hintergrund passend zum Spotlight oder zum ausgewählten Element."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colorea el fondo a juego con Destacados o con lo que esté seleccionado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colore l’arrière-plan selon À la une ou l’élément sélectionné."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "背景をスポットライトや選択中の項目に合わせた色にします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让背景颜色与聚光灯或当前选中的项目相配。"
           }
         }
       }
@@ -59302,7 +59408,7 @@
       }
     },
     "Spotlight Gradient" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -59332,6 +59438,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "聚光灯渐变"
+          }
+        }
+      }
+    },
+    "Spotlight Only" : {
+      "comment" : "Apple TV theme mode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Spotlight"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo Destacados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À la une uniquement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スポットライトのみ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅聚光灯"
           }
         }
       }
@@ -62255,7 +62397,7 @@
       }
     },
     "THEMES" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65390,6 +65532,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主题"
+          }
+        }
+      }
+    },
+    "Theme Mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Designmodus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modo de tema"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode du thème"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマモード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题模式"
           }
         }
       }

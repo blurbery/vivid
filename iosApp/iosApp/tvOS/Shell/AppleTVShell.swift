@@ -136,6 +136,9 @@ struct TVMainTabView: View {
             isActive: scenePhase == .active && router.presentedPlayer == nil,
             onRepair: repairFocus
         ))
+        // Another profile or server starts on the base theme, even if it
+        // changed while the player was up.
+        .onChange(of: currentAuthority) { TVAdaptiveAmbience.shared.reset() }
         .task(id: currentAuthority) {
             let authority = currentAuthority
             await CurrentProfileStore.shared.refresh()
@@ -147,6 +150,9 @@ struct TVMainTabView: View {
             let authority = currentAuthority
             Task { await loadLibraries(for: authority) }
         }
+        .onChange(of: router.path.isEmpty, initial: true) {
+            TVAdaptiveAmbience.shared.isOnRootPage = router.path.isEmpty
+        }
         .onChange(of: router.path.isEmpty) { pathEmptinessChanged() }
         .onChange(of: router.path.count) { old, new in
             TVSpotlightLogoFlight.shared.pathCountChanged(from: old, to: new)
@@ -154,7 +160,12 @@ struct TVMainTabView: View {
         // The shell goes away with the profile picker, session expiry or
         // sign-in, in the same update as those, so the counter below never
         // reaches it then; anything opened from the Spotlight is gone too.
-        .onDisappear { TVSpotlightLogoFlight.shared.stackReplaced() }
+        .onDisappear {
+            TVSpotlightLogoFlight.shared.stackReplaced()
+            // Kept while the player covers the shell, so playback returns
+            // to the same colour.
+            if router.presentedPlayer == nil { TVAdaptiveAmbience.shared.reset() }
+        }
         .onChange(of: router.stackRootReplacements) {
             // The page the Spotlight opened was swapped out (Search replacing
             // the stack, say), so Back no longer returns to its card.
@@ -175,6 +186,9 @@ struct TVMainTabView: View {
     private var rootContent: some View {
         ZStack(alignment: .top) {
             TVAppBackdrop()
+            // Theme Mode Adaptive. Outside the page's identity, so it keeps
+            // the last colour across tab changes.
+            TVAdaptiveBackdrop()
             rootPage
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .id(selectedRoot)

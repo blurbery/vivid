@@ -160,6 +160,7 @@ struct TVCalendarView: View {
                                 TVUpcomingEpisodeCard(episode: episode)
                             }
                             .buttonStyle(.card)
+                            .tvAdaptiveFocusReport(episode.posterUrl)
                         }
                     }
                 }
@@ -348,6 +349,7 @@ private struct TVTrendingPoster: View {
             Button(action: action) { artwork }
                 .buttonStyle(.card)
                 .accessibilityLabel(spokenLabel)
+                .tvAdaptiveFocusReport(title.posterURL?.absoluteString)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.title)
                     .font(.system(size: 22, weight: .medium))

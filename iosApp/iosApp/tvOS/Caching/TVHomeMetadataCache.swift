@@ -42,6 +42,9 @@ final class TVHomeMetadataCache {
         var subject: CGRect?
         var cropPrepared = false
         var tint: [Double]?
+        /// Missing on tints saved before the main-colour sampling (an
+        /// average), which are worked out again.
+        var tintVersion: Int?
     }
 
     /// One entry on the Metadata settings page.
@@ -55,6 +58,7 @@ final class TVHomeMetadataCache {
     static let spotlightID = "vivid.cache.spotlight"
     nonisolated private static let maximumSnapshotBytes = 8 * 1024 * 1024
     nonisolated private static let currentCropVersion = 1
+    nonisolated private static let currentTintVersion = 2
 
     private(set) var snapshot = Snapshot()
     private(set) var storageError: String?
@@ -544,7 +548,8 @@ final class TVHomeMetadataCache {
     #if os(tvOS)
     /// A tint worked out earlier. Starts no work.
     func cachedSpotlightTint(for url: URL) -> Color? {
-        guard let rgb = preparedSpotlight[url.absoluteString]?.tint, rgb.count == 3 else { return nil }
+        guard let record = preparedSpotlight[url.absoluteString], record.tintVersion == Self.currentTintVersion,
+              let rgb = record.tint, rgb.count == 3 else { return nil }
         return Color(red: rgb[0], green: rgb[1], blue: rgb[2])
     }
 
@@ -586,7 +591,7 @@ final class TVHomeMetadataCache {
         if let existing = tintTasks[key] {
             task = existing
         } else {
-            task = Task { await HeroBackdropPalette.tintColor(for: url) }
+            task = Task { await HeroBackdropPalette.spotlightTintColor(for: url) }
             tintTasks[key] = task
         }
         let result = await task.value
@@ -595,7 +600,10 @@ final class TVHomeMetadataCache {
               !Task.isCancelled, expectedGeneration == generation, scope == loadedScope else { return nil }
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         if UIColor(tint).getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
-            updateSpotlightPreparation(url: key) { $0.tint = [Double(red), Double(green), Double(blue)] }
+            updateSpotlightPreparation(url: key) {
+                $0.tint = [Double(red), Double(green), Double(blue)]
+                $0.tintVersion = Self.currentTintVersion
+            }
         }
         return tint
     }
