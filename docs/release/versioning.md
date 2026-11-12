@@ -142,7 +142,7 @@ The `Docs` job in PR checks runs `scripts/ci/check-docs.py` and `scripts/tests/l
 
 The repository and its source releases are public. Apple beta distribution remains separate and available through TestFlight invitations or the public beta link, subject to places, eligibility and review.
 
-Each newly published source release also posts its version and update bullets to the Vivid Discord server's GitHub channel. The notification uses Vivid's silver-grey embed colour and ends with a direct link to the corresponding GitHub release. Its Discord webhook is stored only in the encrypted `DISCORD_RELEASE_WEBHOOK_URL` repository secret.
+Each newly published source release also posts its version and update bullets to the Vivid Discord server's GitHub channel. The notification uses Vivid's silver-grey embed colour and ends with a direct link to the corresponding GitHub release. The GitHub release body escapes `&`, `<` and `>` as HTML entities, which Discord doesn't decode, so the notification turns them back into the characters before posting, with a zero-width space after each `<` so it can't start Discord's angle-bracket syntax for timestamps, custom emoji, links or mentions. Its Discord webhook is stored only in the encrypted `DISCORD_RELEASE_WEBHOOK_URL` repository secret.
 
 ## Recorded Apple builds
 

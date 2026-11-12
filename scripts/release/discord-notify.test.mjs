@@ -25,6 +25,34 @@ describe("Discord release notifications", () => {
     );
   });
 
+  it("shows the characters the release body escapes as HTML entities", () => {
+    const payload = buildDiscordReleasePayload({
+      name: "1.5.0",
+      tag_name: "v1.5.0",
+      html_url: "https://github.com/blurbery/vivid/releases/tag/v1.5.0",
+      body: "- Added Theme Mode to Settings &gt; General &gt; Appearance.\n- Fixed Search &amp; Filters, not &amp;lt;b&amp;gt; tags.",
+    });
+
+    assert.equal(
+      payload.embeds[0].description,
+      "- Added Theme Mode to Settings > General > Appearance.\n- Fixed Search & Filters, not &lt;b&gt; tags.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v1.5.0)",
+    );
+  });
+
+  it("keeps a decoded < from opening Discord angle-bracket syntax", () => {
+    const payload = buildDiscordReleasePayload({
+      name: "1.5.1",
+      tag_name: "v1.5.1",
+      html_url: "https://github.com/blurbery/vivid/releases/tag/v1.5.1",
+      body: "- Shows &lt;t:1700000000&gt; and &lt;:vivid:123456789&gt; as text.",
+    });
+
+    assert.equal(
+      payload.embeds[0].description,
+      "- Shows <\u200bt:1700000000> and <\u200b:vivid:123456789> as text.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v1.5.1)",
+    );
+  });
+
   it("falls back to the GitHub link when no bullets are present", () => {
     const payload = buildDiscordReleasePayload({
       name: "",
