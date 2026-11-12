@@ -62,8 +62,10 @@ struct TVTopMenuNotchChrome: ViewModifier {
 }
 
 extension TVMainTabView {
-    /// Search, the root tabs and the profile avatar in one glass capsule.
-    /// It only takes focus when the shell hands it over, or while Home's
+    /// Search, the root tabs and the profile avatar in a notch hanging from
+    /// the top edge. Off focus it closes to Search, the selected tab and
+    /// the avatar; with focus the other tabs come back as symbols. It only
+    /// takes focus when the shell hands it over, or while Home's
     /// spotlight leaves it reachable.
     struct TopBar: View {
         let roots: [Root]
@@ -95,6 +97,8 @@ extension TVMainTabView {
         /// bar closes around it first and the page follows, because closing
         /// while the page was being built made the close stutter.
         @State private var pendingRoot: Root?
+        /// Opens `pendingRoot`. Cancelled if anything else happens first.
+        @State private var pendingOpen: DispatchWorkItem?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         enum Item: Hashable {
@@ -128,6 +132,7 @@ extension TVMainTabView {
                     .allowsHitTesting(false)
             )
             .onChange(of: effectivelySuppressed) {
+                if effectivelySuppressed { cancelPendingOpen() }
                 if effectivelySuppressed { focus = nil }
             }
             .onChange(of: focusResetRequest) { focus = nil }
@@ -135,6 +140,8 @@ extension TVMainTabView {
                 if !isFocused { focus = nil }
             }
             .onChange(of: focus) {
+                // Moving off the chosen tab before its page opens drops it.
+                if let pendingRoot, focus != .root(pendingRoot) { cancelPendingOpen() }
                 followFocus()
                 isFocused = focus != nil
                 if focus == nil { onContentHandOff() }
@@ -380,13 +387,29 @@ extension TVMainTabView {
             // before the page starts being built, where a spring's tail
             // was still settling.
             withAnimation(.easeOut(duration: 0.16)) { shownFocus = nil }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.19) { open(root) }
+            let work = DispatchWorkItem {
+                guard pendingRoot == root else { return }
+                open(root)
+            }
+            pendingOpen = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.19, execute: work)
         }
 
         private func open(_ root: Root) {
-            onSelect(root)
+            pendingOpen = nil
             pendingRoot = nil
+            onSelect(root)
             DispatchQueue.main.async { focus = nil }
+        }
+
+        /// Drops a chosen tab whose page hasn't opened yet, so a Menu press,
+        /// Search or the avatar in that gap isn't overridden by it.
+        private func cancelPendingOpen() {
+            guard pendingRoot != nil || pendingOpen != nil else { return }
+            pendingOpen?.cancel()
+            pendingOpen = nil
+            pendingRoot = nil
+            followFocus()
         }
 
         /// Focuses the selected tab, retrying shortly while the bar should
@@ -408,6 +431,7 @@ extension TVMainTabView {
         }
 
         private func handleMenuPress() {
+            cancelPendingOpen()
             if focus != .root(.home) {
                 if selectedRoot == .home {
                     focus = .root(.home)
