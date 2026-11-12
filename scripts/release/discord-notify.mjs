@@ -6,9 +6,11 @@ const MAX_NOTES_LENGTH = 3_800;
 
 // The release body escapes &, < and > as HTML entities for GitHub. Discord
 // doesn't decode entities, so turn them back into the characters; Discord
-// shows no HTML, and its markdown already reads the backslash escapes.
+// shows no HTML, and its markdown already reads the backslash escapes. A
+// zero-width space after each < keeps it from opening Discord's angle-bracket
+// syntax (timestamps, custom emoji, links, mentions), as notes.mjs does for @.
 function decodeEntities(text) {
-  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  return text.replace(/&lt;/g, "<\u200b").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
 function releaseBullets(body) {
