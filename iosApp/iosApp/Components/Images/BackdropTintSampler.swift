@@ -28,8 +28,10 @@ enum HeroBackdropPalette {
     }
 
     /// The artwork's main colour for the Apple TV Spotlight, at the same dim
-    /// level as `tintColor(for:)`. Uses the same small image load, but
-    /// isn't shared with the detail pages' cache.
+    /// level as `tintColor(for:)`, except that a dark saturated colour is
+    /// lifted only until its strongest channel reaches full, so it keeps its
+    /// hue. Uses the same small image load, but isn't shared with the detail
+    /// pages' cache.
     static func spotlightTintColor(for url: URL) async -> Color? {
         let request = PosterImageCache.paletteSampleRequest(for: url)
         guard let image = try? await VividImagePipeline.shared.image(for: request) else { return nil }
