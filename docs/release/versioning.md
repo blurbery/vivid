@@ -127,7 +127,8 @@ GitHub release notes and App Store notes retain their separate writing preferenc
 Documentation-only and housekeeping commits must include `[skip release]`.
 Put the marker in the PR title: pull requests are squash-merged, and the PR title becomes the squash commit subject.
 The release tooling drops every commit containing the marker, in any letter case, so such commits never change the version or the notes of any release.
-A push of only marked commits still starts the release workflow, which waits and then publishes nothing.
+A push of only marked commits still starts the release workflow and restarts the wait.
+It publishes nothing unless an earlier app change is still waiting to be released, in which case that change is released once the restarted window ends.
 Don't put the marker on an app change to hold it back for a later one: merge it normally and the release window batches it with anything merged soon after.
 Ordinary commits retain the normal versioning rules.
 
