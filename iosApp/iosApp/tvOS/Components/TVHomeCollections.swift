@@ -93,6 +93,7 @@ struct TVHomeCollectionsRow: View {
             guard let card else { return }
             lastCard = card
             onFocused()
+            TVAdaptiveAmbience.shared.focused(artwork: store.rowCollections.first { $0.id == card }?.collection.posterUrl)
         }
         .onChange(of: enterRequest) { _, _ in
             let ids = store.rowCollections.map(\.id)

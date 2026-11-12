@@ -11,7 +11,7 @@ extension TVSettingsView {
         @State private var reopenLanguage: VividAppLanguage = .system
         @State private var showsReopen = false
         @AppStorage(VividAppTheme.storageKey) private var theme: VividAppTheme = .graphite
-        @AppStorage(TVSpotlightGradientSetting.storageKey) private var spotlightGradient = TVSpotlightGradientSetting.defaultValue
+        @AppStorage(TVThemeMode.storageKey) private var themeMode = TVThemeMode.defaultValue
         @State private var preferences = UICustomizationPreferences.shared
         @State private var sections = HomeSectionPreferences.shared
         @State private var studios = StudiosNetworksStore.shared
@@ -51,20 +51,19 @@ extension TVSettingsView {
                         .focused(focus, equals: .generalLanguage)
                 }
                 TVSettingsFooter("A new choice takes effect after you close Vivid in the app switcher and open it again.")
-                TVSettingsSectionHeader("THEMES")
+                TVSettingsSectionHeader("APPEARANCE")
                 TVSettingsGroup {
-                    OptionMenu(title: "Theme", detail: "Sets the background across Vivid.", value: theme.title,
+                    OptionMenu(title: "Base Theme", detail: "Sets the background across Vivid.", value: theme.title,
                                options: VividAppTheme.allCases.map { MenuOption(id: $0.rawValue, label: $0.title) },
                                selection: theme.rawValue) { id in
                         if let choice = VividAppTheme(rawValue: id) { theme = choice }
                     }
                     .focused(focus, equals: .theme)
-                    OptionMenu(title: "Spotlight Gradient", detail: "Colours Home’s background to match the Spotlight.",
-                               value: String(localized: spotlightGradient ? "On" : "Off"),
-                               options: [MenuOption(id: "on", label: String(localized: "On")),
-                                         MenuOption(id: "off", label: String(localized: "Off"))],
-                               selection: spotlightGradient ? "on" : "off", symbol: "chevron.right") { id in
-                        spotlightGradient = id == "on"
+                    OptionMenu(title: "Theme Mode", detail: "Colours the background to match the Spotlight, or whatever has focus.",
+                               value: themeMode.title,
+                               options: TVThemeMode.allCases.map { MenuOption(id: $0.rawValue, label: $0.title) },
+                               selection: themeMode.rawValue, symbol: "chevron.right") { id in
+                        if let choice = TVThemeMode(rawValue: id) { themeMode = choice }
                     }
                 }
                 homeScreenGroup

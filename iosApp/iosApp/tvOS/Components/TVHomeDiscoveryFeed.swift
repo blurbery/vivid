@@ -58,10 +58,12 @@ struct TVHomeDiscoveryFeed: View {
                             onPositionChange: {
                                 rowFocusMemory.spotlightPosition = $0
                                 spotlightAmbience.position = $0
+                                if rowFocusMemory.spotlightFocused { reportSpotlightFocus(position: $0) }
                             },
                             onFocusChange: { focused in
                                 rowFocusMemory.spotlightFocused = focused
                                 if focused {
+                                    reportSpotlightFocus(position: rowFocusMemory.spotlightPosition)
                                     rowFocusOwnership.rowID = nil
                                     rowArtworkWindow.focus(index: 0)
                                 }
@@ -124,6 +126,7 @@ struct TVHomeDiscoveryFeed: View {
                                     rowArtworkWindow.focus(index: index)
                                     rowFocusMemory.items[section.id] = item.contentId
                                     if rowFocusOwnership.rowID != section.id { rowFocusOwnership.rowID = section.id }
+                                    TVAdaptiveAmbience.shared.focused(artwork: adaptiveArtwork(for: item, in: section))
                                 },
                                 cardWidth: VividTheme.Skyline.densePosterCardWidth,
                                 homeRowIndex: index,
@@ -197,9 +200,49 @@ struct TVHomeDiscoveryFeed: View {
         .environment(\.tvHomeFocusOwnership, rowFocusOwnership)
         .environment(\.tvHomeScrollDiagnostics, scrollDiagnostics.enabled ? scrollDiagnostics : nil)
         .onDisappear { rowArtworkWindow.stopPendingPreparation() }
+        // Theme Mode Adaptive: start on the Spotlight's colour when nothing
+        // has set one, even if focus is on the tab bar.
+        .onAppear { seedAdaptiveSpotlight() }
+        // A reload, or an episode's series background arriving after its
+        // slide first appeared, changes the current slide's artwork in place.
+        .onChange(of: currentSpotlightArtwork) {
+            if rowFocusMemory.spotlightFocused { reportSpotlightFocus(position: rowFocusMemory.spotlightPosition) }
+            else { seedAdaptiveSpotlight() }
+        }
         // Loads Studios & Networks, and again once TMDb is available for the account.
         .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
+    }
+
+    /// Theme Mode Adaptive: the Spotlight's colour while it has focus.
+    private func reportSpotlightFocus(position: Int) {
+        guard !slides.isEmpty else { return }
+        let slide = slides[((position % slides.count) + slides.count) % slides.count]
+        TVAdaptiveAmbience.shared.focused(artwork: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl,
+                                          source: .spotlight)
+    }
+
+    private func seedAdaptiveSpotlight() {
+        TVAdaptiveAmbience.shared.seedSpotlight(artwork: currentSpotlightArtwork)
+    }
+
+    /// The artwork of the slide the carousel last reported, as the Spotlight
+    /// Only backdrop works it out.
+    private var currentSpotlightArtwork: String? {
+        guard !slides.isEmpty else { return nil }
+        let position = rowFocusMemory.spotlightPosition
+        let slide = slides[((position % slides.count) + slides.count) % slides.count]
+        return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
+    }
+
+    /// The artwork a Home card shows, chosen as the artwork warm-up does:
+    /// a landscape row's series backdrop or thumbnail, otherwise the poster.
+    private func adaptiveArtwork(for item: SectionItem, in section: ResolvedSection) -> String? {
+        let wide = section.tvHomeUsesLandscapeArtwork
+        if wide && showsCollections && HomeSeriesBackdrops.applies(toSectionType: section.sectionType) {
+            return HomeSeriesBackdrops.shared.art(for: item).url
+        }
+        return wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl
     }
 
     private func enterSpotlight() {
@@ -754,10 +797,104 @@ private final class TVHomeArtworkWarmup {
     }
 }
 
-/// Settings > General > Spotlight Gradient, on Apple TV only.
-enum TVSpotlightGradientSetting {
-    static let storageKey = "vivid.tv.spotlightGradient"
-    static let defaultValue = true
+/// Settings > General > Appearance > Theme Mode, on Apple TV only: what
+/// colours the background over the base theme.
+enum TVThemeMode: String, CaseIterable, Identifiable {
+    /// Only the base theme.
+    case off
+    /// Home's first screen takes the Spotlight slide's colour.
+    case spotlightOnly
+    /// The root pages take the colour of whatever poster has focus.
+    case adaptive
+
+    static let storageKey = "vivid.tv.themeMode"
+    /// The On and Off setting this replaced. Off stays Off.
+    private static let legacyKey = "vivid.tv.spotlightGradient"
+
+    /// The value until one is chosen, carried over from the old setting.
+    static var defaultValue: TVThemeMode {
+        UserDefaults.standard.object(forKey: legacyKey) as? Bool == false ? .off : .spotlightOnly
+    }
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .off: String(localized: "Off")
+        case .spotlightOnly: String(localized: "Spotlight Only", comment: "Apple TV theme mode")
+        case .adaptive: String(localized: "Adaptive", comment: "Apple TV theme mode")
+        }
+    }
+}
+
+/// The Spotlight and Adaptive backdrops' shading, shared so both look the same.
+enum TVThemeWash {
+    /// Opaque shades of the slide's own hue, so the theme behind doesn't
+    /// show through: near black at the bottom left, lit at the top right.
+    /// Matte rather than glossy: the colour stays saturated all the way
+    /// down instead of greying out in the dark, the top right is a soft
+    /// lift rather than a sheen, and hues that look dim at the same
+    /// brightness (blue, red, purple) are lifted to match bright ones
+    /// (yellow, green), so no part reads paler than the colour.
+    static func gradient(_ tint: Color) -> LinearGradient {
+        gradient(shades: shades(tint))
+    }
+
+    /// The gradient's four colours, bottom left to top right.
+    static func gradient(shades: [Color]) -> LinearGradient {
+        LinearGradient(
+            stops: zip(shades, locations).map { Gradient.Stop(color: $0, location: $1) },
+            startPoint: .bottomLeading, endPoint: .topTrailing
+        )
+    }
+
+    private static let locations: [CGFloat] = [0, 0.45, 0.8, 1]
+
+    static func shades(_ tint: Color) -> [Color] {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(tint).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        // A neutral tint (black and white artwork) stays neutral; any real
+        // colour gets enough saturation to hold its hue in the dark.
+        let edge = min(1, max(0, (saturation - 0.06) / 0.14))
+        let lift = edge * edge * (3 - 2 * edge)
+        let rich = min(0.9, saturation * 1.25 + 0.12 * lift)
+        // How bright the hue looks at full brightness, from its linear
+        // luminance; dim hues get up to 30% more brightness.
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0
+        UIColor(hue: hue, saturation: rich, brightness: 1, alpha: 1).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        func linear(_ value: CGFloat) -> CGFloat {
+            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        let evenness = min(1.3, max(1, pow(1 / max(luminance, 0.01), 0.2)))
+        func shade(_ value: CGFloat, saturationBoost: CGFloat = 0) -> Color {
+            Color(hue: hue, saturation: min(0.95, rich + saturationBoost * lift), brightness: min(1, value * evenness))
+        }
+        return [
+            shade(0.035, saturationBoost: 0.08),
+            shade(0.075, saturationBoost: 0.05),
+            shade(0.15, saturationBoost: 0.02),
+            shade(0.21)
+        ]
+    }
+
+    static let grainTile: UIImage = {
+        let size = 128
+        var seed: UInt32 = 0x4D415454
+        var pixels = [UInt8](repeating: 0, count: size * size)
+        for index in pixels.indices {
+            seed = seed &* 1664525 &+ 1013904223
+            // 0 to 15% grey: at 4% that's at most 1.5 levels, enough to
+            // dither the ramp while barely lifting the darkest corner.
+            pixels[index] = UInt8(truncatingIfNeeded: (seed >> 24) * 38 / 255)
+        }
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let image = CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 8,
+                                  bytesPerRow: size, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
+                                  decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return UIImage() }
+        return UIImage(cgImage: image)
+    }()
 }
 
 /// The carousel's position, for the glow behind Home. Only the glow
@@ -781,8 +918,11 @@ private struct TVHomeSpotlightGlow: View {
     @State private var back: Color?
     @State private var frontOpacity: Double = 0
     @State private var run = 0
-    @AppStorage(TVSpotlightGradientSetting.storageKey) private var isEnabled = TVSpotlightGradientSetting.defaultValue
+    @AppStorage(TVThemeMode.storageKey) private var themeMode = TVThemeMode.defaultValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Adaptive draws its own backdrop behind every root page instead.
+    private var isEnabled: Bool { themeMode == .spotlightOnly }
 
     /// Solid for the whole first screen, then fading out below it.
     private static let height: CGFloat = 1620
@@ -793,6 +933,9 @@ private struct TVHomeSpotlightGlow: View {
             if isEnabled {
                 if let back { backdrop(back) }
                 if let front { backdrop(front).opacity(frontOpacity) }
+                if back != nil || front != nil {
+                    grain.opacity(back != nil ? 1 : frontOpacity)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -849,24 +992,31 @@ private struct TVHomeSpotlightGlow: View {
         }
     }
 
-    /// Opaque shades of the slide's own hue, so the theme behind doesn't
-    /// show through: near black at the bottom left, lit at the top right.
     private func wash(_ tint: Color) -> some View {
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        UIColor(tint).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        let rich = min(1, saturation * 1.25)
-        func shade(_ value: CGFloat) -> Color {
-            Color(hue: hue, saturation: rich, brightness: value)
-        }
-        return LinearGradient(
-            stops: [
-                .init(color: shade(0.02), location: 0),
-                .init(color: shade(0.07), location: 0.55),
-                .init(color: shade(0.26), location: 1)
-            ],
-            startPoint: .bottomLeading, endPoint: .topTrailing
-        )
+        TVThemeWash.gradient(tint)
     }
+
+    /// A fixed, faint grain over the colour that gives it a matte finish and
+    /// breaks up banding in the dark ramp. It's one small tile drawn once and
+    /// repeated, it never animates, and it's dark on average so it doesn't
+    /// grey out the colour under it.
+    /// Like the backdrop, only the strip below the first screen is masked.
+    private var grain: some View {
+        VStack(spacing: 0) {
+            grainTiles.frame(height: Self.solidHeight)
+            grainTiles
+                .frame(height: Self.height - Self.solidHeight)
+                .mask { LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom) }
+        }
+        .opacity(0.04)
+    }
+
+    private var grainTiles: some View {
+        Image(uiImage: TVThemeWash.grainTile)
+            .resizable(resizingMode: .tile)
+            .interpolation(.none)
+    }
+
 
     /// Fades the backdrop out to the theme.
     private func hide() {

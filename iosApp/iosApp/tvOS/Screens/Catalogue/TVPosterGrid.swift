@@ -176,6 +176,7 @@ struct TVCatalogGrid: View {
         .onChange(of: focusedId) {
             guard let focusedId, let index = itemIndex.index(of: focusedId, in: items) else { return }
             checkNearEnd(index)
+            TVAdaptiveAmbience.shared.focused(artwork: items[index].posterUrl)
         }
         .onChange(of: items.count) {
             guard let lowest = visibleRows.max() else { return }

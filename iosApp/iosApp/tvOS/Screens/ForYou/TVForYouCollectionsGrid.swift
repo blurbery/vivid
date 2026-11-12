@@ -417,7 +417,11 @@ private struct CollectionPosterCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityText)
             .accessibilityAddTraits(.isButton)
-            .onChange(of: isFocused) { if isFocused { onFocus() } }
+            .onChange(of: isFocused) {
+                guard isFocused else { return }
+                onFocus()
+                TVAdaptiveAmbience.shared.focused(artwork: collection.posterUrl)
+            }
 
             if caption.showsTitle {
                 VStack(spacing: 4) {
