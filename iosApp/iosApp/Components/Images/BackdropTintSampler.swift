@@ -125,7 +125,7 @@ enum HeroBackdropPalette {
         let averageGreen = sumGreen / Double(count)
         let averageBlue = sumBlue / Double(count)
         guard bestWeight > 0 else {
-            return dimmed(red: averageRed, green: averageGreen, blue: averageBlue)
+            return dimmedKeepingHue(red: averageRed, green: averageGreen, blue: averageBlue)
         }
         var red = 0.0, green = 0.0, blue = 0.0
         for offset in 0..<3 {
@@ -141,11 +141,25 @@ enum HeroBackdropPalette {
         let mixedRed = averageRed + (red - averageRed) * strength
         let mixedGreen = averageGreen + (green - averageGreen) * strength
         let mixedBlue = averageBlue + (blue - averageBlue) * strength
-        // Brighten to full first, so dimming a dark, saturated colour can't
-        // clip a channel and shift its hue.
-        let peak = max(mixedRed, mixedGreen, mixedBlue)
-        guard peak > 0.001 else { return dimmed(red: 0, green: 0, blue: 0) }
-        return dimmed(red: mixedRed / peak, green: mixedGreen / peak, blue: mixedBlue / peak)
+        return dimmedKeepingHue(red: mixedRed, green: mixedGreen, blue: mixedBlue)
+    }
+
+    /// `dimmed` at the same level, except that a dark colour is brightened
+    /// only as far as its strongest channel allows, so a deep blue or violet
+    /// keeps its hue instead of clipping towards magenta.
+    private static func dimmedKeepingHue(red: Double, green: Double, blue: Double) -> Color {
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        let peak = max(red, green, blue)
+        let target = 0.22
+        let scale: Double
+        if luminance <= 0.001 || peak <= 0.001 {
+            scale = 0
+        } else if luminance > target {
+            scale = target / luminance
+        } else {
+            scale = min(max(1, target / max(luminance, 0.05)), 1 / peak)
+        }
+        return Color(.sRGB, red: red * scale, green: green * scale, blue: blue * scale)
     }
 
     private static func key(scope: String, url: URL) -> String {

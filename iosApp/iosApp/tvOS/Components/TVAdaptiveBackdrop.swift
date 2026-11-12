@@ -114,7 +114,8 @@ final class TVAdaptiveAmbience {
     }
 
     private func colour(for url: URL, source: Source) async -> Color? {
-        let key = url.absoluteString
+        // The Spotlight and cards sample differently sized images.
+        let key = "\(source)|\(url.absoluteString)"
         if let known = tints[key] { return known }
         let colour: Color?
         switch source {

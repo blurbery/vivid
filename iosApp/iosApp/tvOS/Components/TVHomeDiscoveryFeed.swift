@@ -203,7 +203,12 @@ struct TVHomeDiscoveryFeed: View {
         // Theme Mode Adaptive: start on the Spotlight's colour when nothing
         // has set one, even if focus is on the tab bar.
         .onAppear { seedAdaptiveSpotlight() }
-        .onChange(of: slides.first?.id) { seedAdaptiveSpotlight() }
+        // A reload, or an episode's series background arriving after its
+        // slide first appeared, changes the current slide's artwork in place.
+        .onChange(of: currentSpotlightArtwork) {
+            if rowFocusMemory.spotlightFocused { reportSpotlightFocus(position: rowFocusMemory.spotlightPosition) }
+            else { seedAdaptiveSpotlight() }
+        }
         // Loads Studios & Networks, and again once TMDb is available for the account.
         .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
@@ -218,10 +223,16 @@ struct TVHomeDiscoveryFeed: View {
     }
 
     private func seedAdaptiveSpotlight() {
-        guard !slides.isEmpty else { return }
+        TVAdaptiveAmbience.shared.seedSpotlight(artwork: currentSpotlightArtwork)
+    }
+
+    /// The artwork of the slide the carousel last reported, as the Spotlight
+    /// Only backdrop works it out.
+    private var currentSpotlightArtwork: String? {
+        guard !slides.isEmpty else { return nil }
         let position = rowFocusMemory.spotlightPosition
         let slide = slides[((position % slides.count) + slides.count) % slides.count]
-        TVAdaptiveAmbience.shared.seedSpotlight(artwork: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl)
+        return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
     }
 
     /// The artwork a Home card shows, chosen as the artwork warm-up does:
