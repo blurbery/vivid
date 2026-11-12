@@ -825,6 +825,15 @@ enum TVThemeMode: String, CaseIterable, Identifiable {
         case .adaptive: String(localized: "Adaptive", comment: "Apple TV theme mode")
         }
     }
+
+    /// The one-line description under the Theme Mode row for this mode.
+    var detail: LocalizedStringResource {
+        switch self {
+        case .off: "The background stays on your Base Theme."
+        case .spotlightOnly: "The background matches the Spotlight’s colours."
+        case .adaptive: "The background matches whatever has focus."
+        }
+    }
 }
 
 /// The Spotlight and Adaptive backdrops' shading, shared so both look the same.
