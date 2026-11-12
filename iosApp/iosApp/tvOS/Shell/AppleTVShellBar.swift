@@ -220,6 +220,14 @@ extension TVMainTabView {
             reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.5))
         }
 
+        /// The one highlight the tabs and Search share.
+        private var highlightPill: some View {
+            Capsule()
+                .fill(Color.white.opacity(0.1))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 2.5))
+                .matchedGeometryEffect(id: "highlight", in: highlight)
+        }
+
         private var divider: some View {
             Rectangle()
                 .fill(Color.white.opacity(0.22))
@@ -271,10 +279,7 @@ extension TVMainTabView {
                     // and arrives on the next as a single moving shape.
                     if inverted {
                         // Outlined rather than filled, like the notch itself.
-                        Capsule()
-                            .fill(Color.white.opacity(0.1))
-                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 2.5))
-                            .matchedGeometryEffect(id: "highlight", in: highlight)
+                        highlightPill
                     }
                 }
                 .scaleEffect(scale)
@@ -300,15 +305,17 @@ extension TVMainTabView {
         }
 
         private var searchButton: some View {
-            let isItemFocused = focus == .search
+            let isItemFocused = shownFocus == .search
             return Button(action: onSearch) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isItemFocused ? Color.vividBackground : Color.white.opacity(0.62))
+                    .foregroundStyle(isItemFocused ? Color.white : Color.white.opacity(0.62))
                     .frame(width: 44, height: 42)
-                    .background(Capsule().fill(isItemFocused ? Color.white : Color.clear))
+                    .background {
+                        // The tabs' highlight, so it glides here too.
+                        if isItemFocused { highlightPill }
+                    }
                     .scaleEffect(isItemFocused && !reduceMotion ? 1.1 : 1)
-                    .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isItemFocused)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
