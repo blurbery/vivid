@@ -23,7 +23,7 @@ struct TVTopMenuGlassChrome: ViewModifier {
 /// A tab hanging from the top of the screen, like a notch: the sides flare
 /// out where they meet the top edge and the bottom corners are rounded.
 struct TVTopMenuNotchShape: Shape {
-    static let flare: CGFloat = 18
+    static let flare: CGFloat = 8
     /// Without the top edge, for the outline.
     var open = false
 
@@ -52,7 +52,7 @@ struct TVTopMenuNotchShape: Shape {
 struct TVTopMenuNotchChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, TVTopMenuNotchShape.flare + 12)
+            .padding(.horizontal, TVTopMenuNotchShape.flare + 16)
             .padding(.top, 5)
             .padding(.bottom, 7)
             .background(.ultraThinMaterial, in: TVTopMenuNotchShape())
