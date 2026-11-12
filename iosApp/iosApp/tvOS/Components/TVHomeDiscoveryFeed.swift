@@ -1219,7 +1219,7 @@ private struct TVHomeSpotlightCarousel: View {
                                         Color.clear
                                     }
                                 }
-                                .frame(width: cardWidth, height: 748)
+                                .frame(width: cardWidth, height: 775)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
                                 .overlay(alignment: .bottomTrailing) {
@@ -1299,7 +1299,7 @@ private struct TVHomeSpotlightCarousel: View {
                     onEnterFirstRow()
                 }
             }
-            .frame(height: 748)
+            .frame(height: 775)
         }
         .onChange(of: enterRequest, initial: true) { _, request in
             guard request > appliedEnterRequest else { return }

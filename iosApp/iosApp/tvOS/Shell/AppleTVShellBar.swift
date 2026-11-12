@@ -20,6 +20,47 @@ struct TVTopMenuGlassChrome: ViewModifier {
     }
 }
 
+/// A tab hanging from the top of the screen, like a notch: the sides flare
+/// out where they meet the top edge and the bottom corners are rounded.
+struct TVTopMenuNotchShape: Shape {
+    static let flare: CGFloat = 18
+    /// Without the top edge, for the outline.
+    var open = false
+
+    func path(in rect: CGRect) -> Path {
+        let flare = Self.flare
+        let radius = min(26, rect.height / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + flare, y: rect.minY + flare),
+                          control: CGPoint(x: rect.minX + flare, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + flare, y: rect.maxY - radius))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + flare + radius, y: rect.maxY),
+                          control: CGPoint(x: rect.minX + flare, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - flare - radius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - flare, y: rect.maxY - radius),
+                          control: CGPoint(x: rect.maxX - flare, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - flare, y: rect.minY + flare))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY),
+                          control: CGPoint(x: rect.maxX - flare, y: rect.minY))
+        if !open { path.closeSubpath() }
+        return path
+    }
+}
+
+/// The top bar's notch: dark glass with an outline on its sides and bottom.
+struct TVTopMenuNotchChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, TVTopMenuNotchShape.flare + 12)
+            .padding(.top, 5)
+            .padding(.bottom, 7)
+            .background(.ultraThinMaterial, in: TVTopMenuNotchShape())
+            .background(TVTopMenuNotchShape().fill(Color.black.opacity(0.45)))
+            .overlay(TVTopMenuNotchShape(open: true).stroke(Color.white.opacity(0.28), lineWidth: 1.5))
+    }
+}
+
 extension TVMainTabView {
     /// Search, the root tabs and the profile avatar in one glass capsule.
     /// It only takes focus when the shell hands it over, or while Home's
@@ -73,9 +114,8 @@ extension TVMainTabView {
                 centredCluster
                 scrollingCluster
             }
-            .frame(height: VividTheme.Skyline.barHeight)
+            .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
             .padding(.horizontal, VividTheme.Skyline.safeAreaX)
-            .padding(.top, VividTheme.Skyline.barTopInset)
             .frame(maxWidth: .infinity, alignment: .top)
             .ignoresSafeArea(edges: [.top, .horizontal])
             .focusSection()
@@ -117,9 +157,9 @@ extension TVMainTabView {
                 utility(swapsUtilities ? .search : .profile)
             }
             .fixedSize()
-            .modifier(TVTopMenuGlassChrome())
+            .modifier(TVTopMenuNotchChrome())
             .frame(maxWidth: .infinity)
-            .frame(height: VividTheme.Skyline.barHeight)
+            .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
             .animation(tabAnimation, value: selectedRoot)
         }
 
@@ -151,9 +191,10 @@ extension TVMainTabView {
                 divider
                 utility(swapsUtilities ? .search : .profile)
             }
-            .modifier(TVTopMenuGlassChrome())
+            .modifier(TVTopMenuNotchChrome())
             .padding(.horizontal, 150)
             .frame(maxWidth: .infinity)
+            .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
             .animation(tabAnimation, value: selectedRoot)
         }
 
@@ -194,7 +235,7 @@ extension TVMainTabView {
             let isItemFocused = shownFocus == .root(root)
             let inverted = isItemFocused || (isSelected && shownFocus == nil)
             let position = (roots.firstIndex(of: root) ?? 0) + 1
-            let textColour: Color = inverted ? .black : (isSelected ? .white : Color.white.opacity(0.62))
+            let textColour: Color = inverted || isSelected ? .white : Color.white.opacity(0.62)
             let fill: Color = !inverted && isSelected ? Color.white.opacity(0.14) : .clear
             let border: Color = !isItemFocused && isSelected ? .vividChromeSelectedBorder : .clear
             let scale: CGFloat = isItemFocused && !reduceMotion ? 1.1 : 1
@@ -229,8 +270,10 @@ extension TVMainTabView {
                     // One white pill for the whole bar: it leaves this tab
                     // and arrives on the next as a single moving shape.
                     if inverted {
+                        // Outlined rather than filled, like the notch itself.
                         Capsule()
-                            .fill(Color.white)
+                            .fill(Color.white.opacity(0.1))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 2.5))
                             .matchedGeometryEffect(id: "highlight", in: highlight)
                     }
                 }
@@ -326,8 +369,11 @@ extension TVMainTabView {
             }
             guard pendingRoot == nil else { return }
             pendingRoot = root
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.92)) { shownFocus = nil }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) { open(root) }
+            // A timed curve rather than a spring: it has fully stopped
+            // before the page starts being built, where a spring's tail
+            // was still settling.
+            withAnimation(.easeOut(duration: 0.16)) { shownFocus = nil }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.19) { open(root) }
         }
 
         private func open(_ root: Root) {
