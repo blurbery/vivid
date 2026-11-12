@@ -10,7 +10,8 @@
 
 Vivid uses `semantic-release` to publish a GitHub source release after updates reach `main`.
 Each push to `main` starts a 15-minute wait, and a newer push restarts it, so pull requests merged within 15 minutes of each other share one release.
-The release job then uses a standard Ubuntu runner, has a five-minute limit, and runs the release-rule checks before publishing.
+The release job then checks out the current tip of `main`, so it releases every commit merged so far, whichever run's wait finished.
+It uses a standard Ubuntu runner, has a five-minute limit, and runs the release-rule checks before publishing.
 Apple signing and distribution are not part of this workflow.
 
 ## Version policy

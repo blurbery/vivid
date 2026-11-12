@@ -16,7 +16,8 @@ jobs:
   wait:
     if: github.repository == 'blurbery/vivid' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Must stay longer than RELEASE_WINDOW_MINUTES, or a timed-out wait silently skips the release.
+    timeout-minutes: 25
     # A newer push cancels this wait, so a burst of merges leaves one run that releases them all.
     concurrency:
       group: vivid-release-wait
@@ -39,6 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The current tip, not the commit that started this run: whichever run's wait
+          # survives a burst of merges, it releases everything merged so far.
+          ref: main
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
