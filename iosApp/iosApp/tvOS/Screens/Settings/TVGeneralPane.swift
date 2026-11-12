@@ -59,7 +59,7 @@ extension TVSettingsView {
                         if let choice = VividAppTheme(rawValue: id) { theme = choice }
                     }
                     .focused(focus, equals: .theme)
-                    OptionMenu(title: "Theme Mode", detail: "Colours the background to match the Spotlight, or whatever has focus.",
+                    OptionMenu(title: "Theme Mode", detail: themeMode.detail,
                                value: themeMode.title,
                                options: TVThemeMode.allCases.map { MenuOption(id: $0.rawValue, label: $0.title) },
                                selection: themeMode.rawValue, symbol: "chevron.right") { id in
