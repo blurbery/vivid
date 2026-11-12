@@ -52,3 +52,11 @@ test("skipped changes cannot influence the next version or its notes", async () 
   assert.equal(await analyzeCommits({}, input), "patch");
   assert.equal(generateNotes({}, input), "- correct playback");
 });
+test("a batched release reads in merge order with one TestFlight line at the end", () => {
+  const tf = "- This release will be available on TestFlight soon.";
+  assert.equal(generateNotes({}, context(
+    `feat: second (#2)\n\nRelease-Notes:\n- Add the second change.\n${tf}`,
+    "docs: tidy [skip release]",
+    `fix: first (#1)\n\nRelease-Notes:\n- Fix the first change.\n${tf}`)),
+    `- Fix the first change.\n- Add the second change.\n${tf}`);
+});

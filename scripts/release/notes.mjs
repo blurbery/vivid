@@ -18,9 +18,13 @@ function plainText(value) {
     .replace(/@/g, "@\u200b");
 }
 
+const TESTFLIGHT_NOTE = "This release will be available on TestFlight soon.";
+
 export function generateNotes(_config, { commits }) {
   const notes = [];
-  for (const { message } of releaseCommits(commits)) {
+  let testFlight = false;
+  // semantic-release lists commits newest first; reverse them so a batch reads in merge order.
+  for (const { message } of [...releaseCommits(commits)].reverse()) {
     const lines = message.replace(/\r\n/g, "\n").split("\n");
     // Optional curated bullets avoid exposing internal commit bodies or trailers.
     const marker = lines.findIndex(line => line.trim() === "Release-Notes:");
@@ -34,8 +38,11 @@ export function generateNotes(_config, { commits }) {
     const subject = lines[0].replace(/^[a-z]+(?:\([^\n)]+\))?!?:\s*/i, "");
     for (const item of bullets.length ? bullets : [subject]) {
       const text = plainText(item);
-      if (text && !notes.includes(text)) notes.push(text);
+      // Each merged PR may end with the TestFlight line; keep one copy, last.
+      if (text === plainText(TESTFLIGHT_NOTE)) testFlight = true;
+      else if (text && !notes.includes(text)) notes.push(text);
     }
   }
+  if (testFlight) notes.push(plainText(TESTFLIGHT_NOTE));
   return notes.map(note => `- ${note}`).join("\n");
 }
