@@ -43,6 +43,13 @@ extension TVMainTabView {
         let onExit: (() -> Void)?
 
         @FocusState private var focus: Item?
+        /// Lets the white highlight glide from one tab to the next.
+        @Namespace private var highlight
+        /// The item the tabs draw as focused. It follows `focus` inside an
+        /// explicit animation: drawn straight from the focus state, the tab
+        /// gaining focus opened without one while the tab losing it closed
+        /// with one, so the bar jumped.
+        @State private var shownFocus: Item?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         enum Item: Hashable {
@@ -84,6 +91,7 @@ extension TVMainTabView {
                 if !isFocused { focus = nil }
             }
             .onChange(of: focus) {
+                withAnimation(tabAnimation) { shownFocus = focus }
                 isFocused = focus != nil
                 if focus == nil { onContentHandOff() }
             }
@@ -106,6 +114,7 @@ extension TVMainTabView {
             .modifier(TVTopMenuGlassChrome())
             .frame(maxWidth: .infinity)
             .frame(height: VividTheme.Skyline.barHeight)
+            .animation(tabAnimation, value: selectedRoot)
         }
 
         private var scrollingCluster: some View {
@@ -137,6 +146,19 @@ extension TVMainTabView {
             .modifier(TVTopMenuGlassChrome())
             .padding(.horizontal, 150)
             .frame(maxWidth: .infinity)
+            .animation(tabAnimation, value: selectedRoot)
+        }
+
+        /// One animation for every tab's width, the highlight and the lift,
+        /// so tabs that open and close on the same focus move stay in step.
+        private var tabAnimation: Animation? {
+            reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86)
+        }
+
+        /// A tab's symbol or name fading in late, or out early.
+        private func fade(in appearing: Bool) -> Animation? {
+            if reduceMotion { return nil }
+            return appearing ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
         }
 
         private var divider: some View {
@@ -151,29 +173,50 @@ extension TVMainTabView {
 
         private func rootTab(_ root: Root) -> some View {
             let isSelected = root == selectedRoot
-            let isItemFocused = focus == .root(root)
-            let inverted = isItemFocused || (isSelected && focus == nil)
+            let isItemFocused = shownFocus == .root(root)
+            let inverted = isItemFocused || (isSelected && shownFocus == nil)
             let position = (roots.firstIndex(of: root) ?? 0) + 1
             let textColour: Color = inverted ? .black : (isSelected ? .white : Color.white.opacity(0.62))
-            let fill: Color = inverted ? .white : (isSelected ? Color.white.opacity(0.14) : .clear)
+            let fill: Color = !inverted && isSelected ? Color.white.opacity(0.14) : .clear
             let border: Color = !isItemFocused && isSelected ? .vividChromeSelectedBorder : .clear
             let scale: CGFloat = isItemFocused && !reduceMotion ? 1.1 : 1
-            let focusAnimation: Animation? = reduceMotion ? nil : VividTheme.springAnimation
-            let selectionAnimation: Animation? = reduceMotion ? nil : .easeInOut(duration: 0.18)
+            // The name shows for the focused tab, or for the selected one
+            // while the bar doesn't have focus; the rest show their symbol.
+            let showsName = inverted
             return Button { select(root) } label: {
-                Text(verbatim: root.title)
-                    .font(.system(size: 24, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 260)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 9)
-                    .foregroundStyle(textColour)
-                    .background(Capsule().fill(fill))
-                    .overlay(Capsule().strokeBorder(border, lineWidth: 1))
-                    .scaleEffect(scale)
-                    .animation(focusAnimation, value: isItemFocused)
-                    .animation(selectionAnimation, value: isSelected)
+                // Both stay in the tree and crossfade, so the pill's width
+                // is the only thing that moves. `tabAnimation` on the
+                // cluster animates it together with the other tabs.
+                ZStack {
+                    // Whichever is leaving fades out before the other
+                    // fades in, so they never show on top of each other.
+                    Image(systemName: root.symbol)
+                        .animation(fade(in: !showsName)) { $0.opacity(showsName ? 0 : 1) }
+                    Text(verbatim: root.title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 260)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(width: showsName ? nil : 0)
+                        .animation(fade(in: showsName)) { $0.opacity(showsName ? 1 : 0) }
+                }
+                .font(.system(size: 24, weight: .semibold))
+                .padding(.horizontal, showsName ? 24 : 18)
+                .padding(.vertical, 9)
+                .foregroundStyle(textColour)
+                .clipShape(Capsule())
+                .background(Capsule().fill(fill))
+                .overlay(Capsule().strokeBorder(border, lineWidth: 1))
+                .background {
+                    // One white pill for the whole bar: it leaves this tab
+                    // and arrives on the next as a single moving shape.
+                    if inverted {
+                        Capsule()
+                            .fill(Color.white)
+                            .matchedGeometryEffect(id: "highlight", in: highlight)
+                    }
+                }
+                .scaleEffect(scale)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
