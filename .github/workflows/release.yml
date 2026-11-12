@@ -8,15 +8,32 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: vivid-release
-  cancel-in-progress: false
+env:
+  # Merges this close together share one release. Keep docs/release/versioning.md in step.
+  RELEASE_WINDOW_MINUTES: 15
 
 jobs:
+  wait:
+    if: github.repository == 'blurbery/vivid' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A newer push cancels this wait, so a burst of merges leaves one run that releases them all.
+    concurrency:
+      group: vivid-release-wait
+      cancel-in-progress: true
+    steps:
+      - name: Wait for more merges
+        if: github.event_name == 'push'
+        run: sleep "$((RELEASE_WINDOW_MINUTES * 60))"
+
   release:
-    if: github.repository == 'blurbery/vivid' && github.ref == 'refs/heads/main' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip release]'))
+    needs: wait
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Never cancelled, so a run can't stop between pushing its tag and publishing its release.
+    concurrency:
+      group: vivid-release
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

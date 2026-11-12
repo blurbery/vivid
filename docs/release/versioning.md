@@ -9,7 +9,8 @@
 ---
 
 Vivid uses `semantic-release` to publish a GitHub source release after updates reach `main`.
-The workflow uses a standard Ubuntu runner, has a five-minute limit, and runs the release-rule checks before publishing.
+Each push to `main` starts a 15-minute wait, and a newer push restarts it, so pull requests merged within 15 minutes of each other share one release.
+The release job then uses a standard Ubuntu runner, has a five-minute limit, and runs the release-rule checks before publishing.
 Apple signing and distribution are not part of this workflow.
 
 ## Version policy
@@ -125,9 +126,9 @@ GitHub release notes and App Store notes retain their separate writing preferenc
 
 Documentation-only and housekeeping commits must include `[skip release]`.
 Put the marker in the PR title: pull requests are squash-merged, and the PR title becomes the squash commit subject.
-Such commits neither trigger a release nor contribute to the version calculation or notes in a later release: the release job does not run when the pushed head commit (the squash commit) contains the marker, and the release tooling drops every commit containing it, in any letter case.
-A skipped app change appears in release notes only if a later releasing commit lists it in its `Release-Notes:` block.
-An app change can carry the marker on purpose when it should ship together with a later change; that later commit's `Release-Notes:` block must then list both.
+The release tooling drops every commit containing the marker, in any letter case, so such commits never change the version or the notes of any release.
+A push of only marked commits still starts the release workflow, which waits and then publishes nothing.
+Don't put the marker on an app change to hold it back for a later one: merge it normally and the release window batches it with anything merged soon after.
 Ordinary commits retain the normal versioning rules.
 
 Keep this format for every app release.
@@ -156,9 +157,12 @@ Release-Notes:
 Put `Release-Notes:` on its own line.
 Directly after it, start each bullet with `- ` at the beginning of the line and keep it to one line.
 A blank line or any other line ends the list.
-By convention, the releasing commit's block ends with “This release will be available on TestFlight soon.”
-The release tooling doesn't add it: it joins the bullets of every releasing commit in the release and keeps only the first copy of a repeated bullet.
-Each push to `main` normally releases one commit, so put it in that commit's block; when changes are batched with `[skip release]`, list them all in the final commit's block and end it with this bullet.
+Give every app change its own block when you merge it.
+The release workflow waits 15 minutes after each push to `main`, and a newer push restarts the wait, so pull requests merged within 15 minutes of each other become one release.
+That release takes the largest version increment among its commits and joins their bullets in merge order, keeping only the first copy of a repeated bullet.
+By convention each block ends with “This release will be available on TestFlight soon.”
+The release tooling doesn't add that line, but when any commit in the release has it, the notes show it once, at the end.
+To release before the wait ends, or when steady merges keep restarting it, run the release workflow manually (`gh workflow run release.yml` or the Actions tab): a manual run skips the wait.
 Write specific changes in plain language; do not describe planned integrations as delivered.
 Internal commit bodies and AI attribution trailers are not copied into release notes.
 
@@ -169,7 +173,7 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run test:release
 ```
 
-The tests cover major/minor/patch rules, ordinary commit messages, empty ranges, `[skip release]` exclusions, curated bullets, duplicate notes, markup escaping and the version-only title.
+The tests cover major/minor/patch rules, ordinary commit messages, empty ranges, `[skip release]` exclusions, curated bullets, duplicate notes, batched notes in merge order with one TestFlight line at the end, markup escaping and the version-only title.
 They validate release tooling, not the Apple app.
 For app changes, report relevant builds, tests, device checks and gaps under the contribution policy; blurbery controls publishing and merge decisions.
 
@@ -178,7 +182,7 @@ The `VIVID_GIT_NOREPLY_EMAIL` repository variable must hold `blurbery`'s GitHub 
 The workflow uses its scoped `GITHUB_TOKEN` and does not publish an npm package or comment on issues/PRs.
 
 Each workflow in `.github/workflows/` on main has its own triggers.
-The source-release workflow runs on pushes to main and on manual request.
+The source-release workflow runs on pushes to main, where it waits 15 minutes for further merges before releasing, and on manual request, where it releases straight away.
 Player regression runs on every pull request, on manual request and on pushes to main that change anything under `iosApp/` or `scripts/xcode/` (the app targets' build phases), its check scripts or the workflow.
 On a pull request its `changes` job first checks for changes to those same files and skips the build and test jobs when there are none, building everything when it can't compare the pull request with its base commit; its `Player regression result` job always runs and fails when any other job failed or was cancelled, and a skipped job counts as passed.
 Pull requests that change those files run the complete iOS suite as a normal Debug build, plus the `VividTVTests` suite on a tvOS simulator unless every changed app file is iOS-only (the iOS spec, `iosApp/DownloadsActivity/`, the iOS entitlements and signing files, and tests outside `VividTVTests`; source in `iOS/` folders still counts, because the tvOS target compiles it); docs, the check scripts and other files outside the app don't count towards the tvOS suite, but `scripts/xcode/` and the workflow itself do.
