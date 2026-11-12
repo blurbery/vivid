@@ -4,12 +4,20 @@ import { pathToFileURL } from "node:url";
 const VIVID_SILVER = 0xb1b0b0;
 const MAX_NOTES_LENGTH = 3_800;
 
+// The release body escapes &, < and > as HTML entities for GitHub. Discord
+// doesn't decode entities, so turn them back into the characters; Discord
+// shows no HTML, and its markdown already reads the backslash escapes.
+function decodeEntities(text) {
+  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
 function releaseBullets(body) {
   return body
     .replace(/\r\n/g, "\n")
     .split("\n")
     .map(line => line.match(/^\s*[-*•]\s+(.+?)\s*$/)?.[1])
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(decodeEntities);
 }
 
 function bulletDescription(body) {

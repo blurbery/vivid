@@ -25,6 +25,20 @@ describe("Discord release notifications", () => {
     );
   });
 
+  it("shows the characters the release body escapes as HTML entities", () => {
+    const payload = buildDiscordReleasePayload({
+      name: "1.5.0",
+      tag_name: "v1.5.0",
+      html_url: "https://github.com/blurbery/vivid/releases/tag/v1.5.0",
+      body: "- Added Theme Mode to Settings &gt; General &gt; Appearance.\n- Fixed Search &amp; Filters, not &amp;lt;b&amp;gt; tags.",
+    });
+
+    assert.equal(
+      payload.embeds[0].description,
+      "- Added Theme Mode to Settings > General > Appearance.\n- Fixed Search & Filters, not &lt;b&gt; tags.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v1.5.0)",
+    );
+  });
+
   it("falls back to the GitHub link when no bullets are present", () => {
     const payload = buildDiscordReleasePayload({
       name: "",
