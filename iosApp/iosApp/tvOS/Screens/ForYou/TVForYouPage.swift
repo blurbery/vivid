@@ -77,7 +77,7 @@ extension TVMainTabView {
                 .modifier(TVPersonalScrollAppearance())
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.top, VividTheme.Skyline.barTopInset + 92)
+            .padding(.top, VividTheme.Skyline.barTopInset + 82)
             .task(id: pageCacheKey) { await reload() }
             .onAppear(perform: applyFocusRequest)
             .onChange(of: focusRequest) { applyFocusRequest() }

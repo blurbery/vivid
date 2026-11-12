@@ -156,7 +156,7 @@ struct TVHomeDiscoveryFeed: View {
                     }
                 }
                 .environment(\.tvHomeStableRows, true)
-                .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 96 : 91))
+                .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 86 : 81))
                 .padding(.bottom, 80)
                 // Part of the scrolling content, so it leaves with the
                 // spotlight and has faded out by the first rows.
@@ -1219,7 +1219,7 @@ private struct TVHomeSpotlightCarousel: View {
                                         Color.clear
                                     }
                                 }
-                                .frame(width: cardWidth, height: 775)
+                                .frame(width: cardWidth, height: 785)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
                                 .overlay(alignment: .bottomTrailing) {
@@ -1299,7 +1299,7 @@ private struct TVHomeSpotlightCarousel: View {
                     onEnterFirstRow()
                 }
             }
-            .frame(height: 775)
+            .frame(height: 785)
         }
         .onChange(of: enterRequest, initial: true) { _, request in
             guard request > appliedEnterRequest else { return }
