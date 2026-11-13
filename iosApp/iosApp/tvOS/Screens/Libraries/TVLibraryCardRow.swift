@@ -48,10 +48,6 @@ extension TVMainTabView {
                 .focusSection()
                 .defaultFocus(focusedLibraryId, defaultLibraryId, priority: .userInitiated)
                 .animation(.easeInOut(duration: 0.2), value: libraries.map(\.id))
-                .onMoveCommand { direction in
-                    // A picked-up card stays in the row until it's dropped.
-                    if direction == .up, movingId == nil { onMoveUp() }
-                }
                 // Moving a picked-up card doesn't move focus, so the focus
                 // engine won't scroll; keep the card in view as it travels.
                 .onChange(of: libraries.map(\.id)) {
@@ -87,11 +83,14 @@ extension TVMainTabView {
                 .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                     isArranging = true
                 })
+                // The card's own handler is the one the remote reaches, so
+                // it also hands Up to the top menu. A picked-up card stays in
+                // the row until it's dropped.
                 .onMoveCommand { direction in
-                    guard isMoving else { return }
-                    switch direction {
-                    case .left: onMove(library, -1)
-                    case .right: onMove(library, 1)
+                    switch (direction, isMoving) {
+                    case (.left, true): onMove(library, -1)
+                    case (.right, true): onMove(library, 1)
+                    case (.up, false): onMoveUp()
                     default: break
                     }
                 }
