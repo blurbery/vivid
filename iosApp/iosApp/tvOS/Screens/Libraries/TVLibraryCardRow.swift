@@ -194,29 +194,32 @@ private struct LibraryCardButtonStyle: ButtonStyle {
     }
 }
 
-/// A gentle rocking while the Library row is being arranged. It only ever
-/// changes an angle, so the card it rocks keeps its identity and its focus
-/// when arranging starts and ends. Neighbours start in opposite directions.
+/// A gentle rocking while the Library row is being arranged. The angle is
+/// read from the clock on every frame rather than run as a repeating
+/// animation, which stopped whenever the row animated a card to a new place.
+/// The view's structure never changes, so the card it rocks keeps its
+/// identity and its focus when arranging starts and ends. Neighbours rock in
+/// opposite directions.
 private struct LibraryCardWobble: ViewModifier {
     let active: Bool
     let rocksLeftFirst: Bool
 
-    @State private var tilted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var angle: Double {
-        guard active, !reduceMotion else { return 0 }
-        return (tilted ? 1.2 : -1.2) * (rocksLeftFirst ? 1 : -1)
-    }
+    private static let degrees = 1.2
+    /// Seconds for one rock there and back.
+    private static let period = 0.26
 
     func body(content: Content) -> some View {
-        content
-            .rotationEffect(.degrees(angle))
-            .animation(
-                active ? .easeInOut(duration: 0.13).repeatForever(autoreverses: true) : .easeOut(duration: 0.13),
-                value: tilted
-            )
-            .onChange(of: active, initial: true) { tilted = active }
+        let rocks = active && !reduceMotion
+        TimelineView(.animation(paused: !rocks)) { timeline in
+            content.rotationEffect(.degrees(rocks ? angle(at: timeline.date) : 0))
+        }
+    }
+
+    private func angle(at date: Date) -> Double {
+        let phase = date.timeIntervalSinceReferenceDate / Self.period * 2 * .pi
+        return sin(phase) * Self.degrees * (rocksLeftFirst ? 1 : -1)
     }
 }
 
