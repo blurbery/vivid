@@ -1,17 +1,27 @@
 #if os(tvOS)
+import Observation
 import SwiftUI
 
 extension TVMainTabView {
     /// The Library tab's row of libraries: landscape cards the size of
     /// Home's Continue Watching cards, each with its library's name below.
+    ///
+    /// Holding a card starts arranging: every card rocks, Select picks one
+    /// up, Left and Right move it and Select drops it. Arranging lasts until
+    /// Menu, which the page handles because focus may have left the row.
     struct LibraryCardRow: View {
+        /// In the order shown.
         let libraries: [Library]
         let focusedLibraryId: FocusState<Int?>.Binding
         /// The card focus lands on when it enters the row from elsewhere.
         let defaultLibraryId: Int?
+        @Binding var isArranging: Bool
         let onOpen: (Library) -> Void
+        let onMove: (Library, Int) -> Void
         let onMoveUp: () -> Void
 
+        /// The picked-up library, by id.
+        @State private var movingId: Int?
         @State private var homeCards = TVHomeCardPreferences.shared
 
         private var cardSize: CGSize {
@@ -21,43 +31,98 @@ extension TVMainTabView {
 
         var body: some View {
             let size = cardSize
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 40) {
-                    ForEach(libraries) { library in
-                        card(library, size: size)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 40) {
+                        // Keyed by library so a picked-up card keeps its
+                        // identity, and its focus, as it changes place.
+                        ForEach(libraries) { library in
+                            card(library, size: size).id(library.id)
+                        }
                     }
+                    .padding(.horizontal, VividTheme.safePadding)
+                    .padding(.vertical, TVHomeRowGeometry.cardPadding)
                 }
-                .padding(.horizontal, VividTheme.safePadding)
-                .padding(.vertical, TVHomeRowGeometry.cardPadding)
+                .scrollIndicators(.hidden)
+                .scrollClipDisabled()
+                .focusSection()
+                .defaultFocus(focusedLibraryId, defaultLibraryId, priority: .userInitiated)
+                .animation(.easeInOut(duration: 0.2), value: libraries.map(\.id))
+                .onMoveCommand { direction in
+                    // A picked-up card stays in the row until it's dropped.
+                    if direction == .up, movingId == nil { onMoveUp() }
+                }
+                // Moving a picked-up card doesn't move focus, so the focus
+                // engine won't scroll; keep the card in view as it travels.
+                .onChange(of: libraries.map(\.id)) {
+                    guard let movingId else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(movingId) }
+                }
             }
-            .scrollIndicators(.hidden)
-            .scrollClipDisabled()
-            .focusSection()
-            .defaultFocus(focusedLibraryId, defaultLibraryId, priority: .userInitiated)
-            .onMoveCommand { direction in
-                if direction == .up { onMoveUp() }
+            .onChange(of: isArranging) {
+                if !isArranging { movingId = nil }
+            }
+            .onChange(of: focusedLibraryId.wrappedValue) { _, focused in
+                // Focus left the picked-up card: it stays where it is.
+                if let movingId, focused != movingId { self.movingId = nil }
             }
         }
 
         private func card(_ library: Library, size: CGSize) -> some View {
             let isFocused = focusedLibraryId.wrappedValue == library.id
+            let isMoving = movingId == library.id
             return VStack(alignment: .leading, spacing: 14) {
-                Button { onOpen(library) } label: {
+                // One button for every state: swapping it for another view
+                // when a card is picked up would tear down the focused view.
+                Button { select(library) } label: {
                     artwork(library, size: size)
+                        .opacity(movingId != nil && !isMoving ? 0.8 : 1)
+                        .modifier(ProfileArrangeWobble(active: isArranging))
                 }
                 .buttonStyle(.card)
                 .focused(focusedLibraryId, equals: library.id)
-                .accessibilityLabel(Text(verbatim: library.name))
-                .accessibilityHint(Text("Open library"))
-                Text(verbatim: LibraryNames.cardLabel(for: library, among: libraries))
+                .disabled(movingId != nil && !isMoving)
+                .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                    isArranging = true
+                })
+                .onMoveCommand { direction in
+                    guard isMoving else { return }
+                    switch direction {
+                    case .left: onMove(library, -1)
+                    case .right: onMove(library, 1)
+                    default: break
+                    }
+                }
+                .accessibilityLabel(accessibilityLabel(library, isMoving: isMoving))
+                .accessibilityHint(isArranging ? Text("Rearrange") : Text("Open library"))
+                .accessibilityAction(named: "Rearrange") {
+                    isArranging = true
+                    movingId = library.id
+                }
+                Text(verbatim: library.name)
                     .font(.vividPosterTitle)
-                    .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
+                    .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: size.width, alignment: .leading)
                     .accessibilityHidden(true)
             }
             .frame(width: size.width)
+        }
+
+        /// Opens the library, or while arranging picks it up or drops it.
+        private func select(_ library: Library) {
+            guard isArranging else {
+                onOpen(library)
+                return
+            }
+            movingId = movingId == library.id ? nil : library.id
+        }
+
+        private func accessibilityLabel(_ library: Library, isMoving: Bool) -> Text {
+            isMoving
+                ? Text("Move \(library.name). Move left or right, then press centre to drop.")
+                : Text(verbatim: library.name)
         }
 
         /// The library's own image, or its symbol on a plain tile when the
@@ -86,42 +151,43 @@ extension TVMainTabView {
                 : PrimaryMenuBuiltin.movies.navigationIcon
         }
     }
+}
 
-    /// Library names as cards and pages show them.
-    enum LibraryNames {
-        /// The shortened name, unless another library in the row shortens to
-        /// the same text; then the full name.
-        static func cardLabel(for library: Library, among libraries: [Library]) -> String {
-            let short = shortLabel(for: library)
-            let collides = libraries.contains { other in
-                other.id != library.id
-                    && shortLabel(for: other).localizedCaseInsensitiveCompare(short) == .orderedSame
-            }
-            return collides ? library.name : short
-        }
+/// The order each server and profile arranged its Library row in, kept on
+/// this Apple TV. Libraries it hasn't placed follow in the server's order.
+@Observable @MainActor
+final class TVLibraryOrderStore {
+    static let shared = TVLibraryOrderStore()
 
-        /// A series library drops a leading "TV Shows" and the like, a movie
-        /// library a leading "Movies"; a mixed library keeps its name.
-        static func shortLabel(for library: Library) -> String {
-            if library.isMixedLibrary {
-                return library.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return shortLabel(library.name, isSeriesPage: library.isSeriesLibrary)
-        }
+    private static let defaultsKey = "vivid.tv.libraryRowOrder"
 
-        /// Drops a leading "Movies", "TV Shows" and the like when a separator
-        /// follows it.
-        static func shortLabel(_ name: String, isSeriesPage: Bool) -> String {
-            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let words = isSeriesPage ? #"series|tv\s+shows?|shows?"# : #"movies?"#
-            let separators = "[\\s:\u{2013}\u{2014}_\\-]+"
-            guard let match = trimmed.range(
-                of: "^(?:\(words))\(separators)",
-                options: [.regularExpression, .caseInsensitive]
-            ) else { return trimmed }
-            let rest = trimmed[match.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
-            return rest.isEmpty ? trimmed : rest
-        }
+    /// Library ids by server and profile.
+    private var orders: [String: [Int]]
+
+    private init() {
+        orders = UserDefaults.standard.dictionary(forKey: Self.defaultsKey) as? [String: [Int]] ?? [:]
+    }
+
+    private var scope: String? {
+        guard let profile = ServerRegistry.shared.activeProfileId, !profile.isEmpty else { return nil }
+        return "\(ServerRegistry.shared.activeServerId ?? "default").\(profile)"
+    }
+
+    func ordered(_ libraries: [Library]) -> [Library] {
+        guard let scope, let saved = orders[scope], !saved.isEmpty else { return libraries }
+        let placed = saved.compactMap { id in libraries.first { $0.id == id } }
+        return placed + libraries.filter { !saved.contains($0.id) }
+    }
+
+    /// Moves a library one place within the row as shown.
+    func move(_ library: Library, by offset: Int, in shown: [Library]) {
+        guard let scope, let index = shown.firstIndex(of: library) else { return }
+        let target = index + offset
+        guard shown.indices.contains(target) else { return }
+        var ids = shown.map(\.id)
+        ids.swapAt(index, target)
+        orders[scope] = ids
+        UserDefaults.standard.set(orders, forKey: Self.defaultsKey)
     }
 }
 #endif

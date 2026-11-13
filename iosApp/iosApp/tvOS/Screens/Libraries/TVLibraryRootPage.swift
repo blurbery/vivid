@@ -26,7 +26,8 @@ extension TVMainTabView {
     /// Collections, each with its own filter and A–Z letter.
     struct LibraryRootPage: View {
         @Binding var tab: ForYouTab
-        /// The libraries the row shows, in order; Collections reads them too.
+        /// The libraries in the server's order. The row shows them in the
+        /// order arranged on this Apple TV; Collections reads them as given.
         let libraries: [Library]
         let focusRequest: Int
         let isTopMenuFocused: Bool
@@ -44,6 +45,9 @@ extension TVMainTabView {
         @State private var lastAppliedFocusRequest = 0
         /// The library card that last held focus, which entry returns to.
         @State private var lastLibraryId: Int?
+        /// The library row is being rearranged; Menu ends it.
+        @State private var isArrangingLibraries = false
+        @State private var libraryOrder = TVLibraryOrderStore.shared
         @FocusState private var focusedLibraryId: Int?
         @FocusState private var focusedTab: ForYouTab?
         @FocusState private var alphabetFocused: Bool
@@ -68,14 +72,19 @@ extension TVMainTabView {
         }
 
         var body: some View {
+            let shownLibraries = libraryOrder.ordered(libraries)
             VStack(alignment: .leading, spacing: 32) {
                 ScrollView(.vertical) {
                     if !libraries.isEmpty {
                         LibraryCardRow(
-                            libraries: libraries,
+                            libraries: shownLibraries,
                             focusedLibraryId: $focusedLibraryId,
                             defaultLibraryId: entryLibraryId,
+                            isArranging: $isArrangingLibraries,
                             onOpen: { router.navigate(to: .library(libraryId: $0.id, title: $0.name)) },
+                            onMove: { library, offset in
+                                libraryOrder.move(library, by: offset, in: shownLibraries)
+                            },
                             onMoveUp: handUpToTopMenu
                         )
                         .padding(.bottom, 16)
@@ -92,6 +101,9 @@ extension TVMainTabView {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, VividTheme.Skyline.barTopInset + 82)
             .task(id: pageCacheKey) { await reload() }
+            // Only while arranging; otherwise Menu stays the shell's.
+            .onExitCommand(perform: isArrangingLibraries ? { isArrangingLibraries = false } : nil)
+            .onDisappear { isArrangingLibraries = false }
             .onAppear(perform: applyFocusRequest)
             .onChange(of: focusRequest) { applyFocusRequest() }
             .onChange(of: isTopMenuFocused) {
@@ -219,7 +231,7 @@ extension TVMainTabView {
         /// first.
         private var entryLibraryId: Int? {
             if let lastLibraryId, libraries.contains(where: { $0.id == lastLibraryId }) { return lastLibraryId }
-            return libraries.first?.id
+            return libraryOrder.ordered(libraries).first?.id
         }
 
         private func handUpToTopMenu() {
