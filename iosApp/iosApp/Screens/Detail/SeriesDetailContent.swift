@@ -140,6 +140,9 @@ struct MobileSeriesPage: View {
 
     private var underOverview: some View {
         VStack(alignment: .center, spacing: 14) {
+            // Holds the place of the Translate button that used to sit here, so
+            // the stack keeps the spacing it had while that button was hidden.
+            Color.clear.frame(width: 0, height: 0)
             if nextUpEpisode != nil {
                 MobileSelectorsPlacement {
                     selectorSlot

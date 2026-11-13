@@ -359,29 +359,6 @@ class ItemDetailViewModel {
         }
     }
 
-    /// Publishes a re-fetched item (used by description translation). A
-    /// playable item keeps its playback metadata: the cached watch detail
-    /// when there is one, as a catalogue load does. Otherwise it keeps what
-    /// the page shows for the same title, and the watch detail is fetched
-    /// again and merged into the re-fetched item, since taking the turn
-    /// stopped any follow-up still waiting for it.
-    func publishRefetchedDetail(_ item: ItemDetail, contentId: String) {
-        let turn = takePublishTurn()
-        var published = item
-        if Self.isLeaf(item) {
-            if let watch = ResponseCache.shared.get(CacheKey.itemWatchDetail(contentId), as: WatchDetail.self) {
-                published = Self.merging(watch, into: item)
-            } else {
-                if (item.versions ?? []).isEmpty, let current = detail, current.contentId == contentId {
-                    published = Self.keepingPlayback(of: current, in: item)
-                }
-                startWatchDetailFollowUp(for: item, contentId: contentId, turn: turn, pooled: true)
-            }
-        }
-        detail = published
-        ResponseCache.shared.set(published, for: CacheKey.itemDetail(contentId))
-    }
-
     // MARK: - Follow-up by type
 
     /// Loads what the page needs beyond the catalogue item: the season list
@@ -453,8 +430,7 @@ class ItemDetailViewModel {
     }
 
     /// The catalogue item with its playback fields taken from the watch
-    /// detail. User data, translation state, overlays and trailers stay the
-    /// catalogue's.
+    /// detail. User data, overlays and trailers stay the catalogue's.
     nonisolated static func merging(_ watch: WatchDetail, into item: ItemDetail) -> ItemDetail {
         ItemDetail(
             contentId: item.contentId, type: item.type, status: item.status, title: item.title,
@@ -474,31 +450,6 @@ class ItemDetailViewModel {
             effectiveSubtitleMode: watch.effectiveSubtitleMode,
             effectiveShowForcedSubtitles: watch.effectiveShowForcedSubtitles,
             effectiveSubtitleTrackSignature: watch.effectiveSubtitleTrackSignature,
-            overlaySummary: item.overlaySummary,
-            videos: item.videos, extras: item.extras)
-    }
-
-    /// The catalogue item with the same seven playback fields taken from a
-    /// payload already shown for the title instead of a watch detail.
-    nonisolated static func keepingPlayback(of shown: ItemDetail, in item: ItemDetail) -> ItemDetail {
-        ItemDetail(
-            contentId: item.contentId, type: item.type, status: item.status, title: item.title,
-            sortTitle: item.sortTitle, originalTitle: item.originalTitle, originalLanguage: item.originalLanguage,
-            showStatus: item.showStatus, year: item.year, overview: item.overview, tagline: item.tagline,
-            runtime: item.runtime, contentRating: item.contentRating, genres: item.genres,
-            ratingTmdb: item.ratingTmdb, ratingRtCritic: item.ratingRtCritic,
-            ratingRtAudience: item.ratingRtAudience, imdbId: item.imdbId, tmdbId: item.tmdbId, tvdbId: item.tvdbId,
-            cast: item.cast, crew: item.crew, studios: item.studios, networks: item.networks,
-            countries: item.countries, releaseDate: item.releaseDate, firstAirDate: item.firstAirDate,
-            lastAirDate: item.lastAirDate, posterUrl: item.posterUrl, posterThumbhash: item.posterThumbhash,
-            backdropUrl: item.backdropUrl, backdropThumbhash: item.backdropThumbhash, logoUrl: item.logoUrl,
-            seasonCount: item.seasonCount, seriesId: item.seriesId, seriesTitle: item.seriesTitle,
-            seasonNumber: item.seasonNumber, episodeNumber: item.episodeNumber, episodeCount: item.episodeCount,
-            airDate: item.airDate, isSpecials: item.isSpecials, userData: item.userData,
-            versions: shown.versions, subtitles: shown.subtitles, intro: shown.intro, credits: shown.credits,
-            effectiveSubtitleMode: shown.effectiveSubtitleMode,
-            effectiveShowForcedSubtitles: shown.effectiveShowForcedSubtitles,
-            effectiveSubtitleTrackSignature: shown.effectiveSubtitleTrackSignature,
             overlaySummary: item.overlaySummary,
             videos: item.videos, extras: item.extras)
     }
