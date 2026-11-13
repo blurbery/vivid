@@ -48,7 +48,8 @@ struct TVTopMenuNotchShape: Shape {
     }
 }
 
-/// The top bar's notch: dark glass with an outline on its sides and bottom.
+/// The top bar's notch: dark glass with an outline on its sides and bottom
+/// that fades into the top edge.
 struct TVTopMenuNotchChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -57,7 +58,19 @@ struct TVTopMenuNotchChrome: ViewModifier {
             .padding(.bottom, 5)
             .background(.ultraThinMaterial, in: TVTopMenuNotchShape())
             .background(TVTopMenuNotchShape().fill(Color.black.opacity(0.45)))
-            .overlay(TVTopMenuNotchShape(open: true).stroke(Color.white.opacity(0.28), lineWidth: 1.5))
+            // The outline fades out as it reaches the top edge, so the notch
+            // grows out of the edge instead of stopping against it.
+            .overlay(TVTopMenuNotchShape(open: true).stroke(
+                LinearGradient(
+                    stops: [
+                        .init(color: Color.white.opacity(0), location: 0),
+                        .init(color: Color.white.opacity(0.28), location: 0.4),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 1.5
+            ))
     }
 }
 
