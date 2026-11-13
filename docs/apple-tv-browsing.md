@@ -424,6 +424,9 @@ The overview separates the joined Profiles panel from one joined category group;
 The TV retains its white focus highlight and existing control geometry.
 General's Customise Tab Bar editor saves changes automatically, uses readable move/hide controls, and has no Pin Libraries section or Done button.
 Its preview includes Search and Profile, which can swap ends without joining the main tab order, and Calendar in its fixed place.
+The preview is the tab bar's own notch, drawn with the same views, playing on a loop: it opens, moves to the next tab, chooses it and closes around it.
+With Reduce Motion it stays open on one tab.
+With only one tab there is nothing to open, so it stays closed.
 The crossed-out eye means a tab is hidden.
 Below the destinations, a Calendar section has its own eye, since Calendar isn't reordered with them.
 Crash and problem reports are covered in Diagnostics.

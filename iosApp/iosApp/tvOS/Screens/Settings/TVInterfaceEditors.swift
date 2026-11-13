@@ -206,6 +206,115 @@ extension TVSettingsView {
 
     // MARK: - Tab bar
 
+    /// The real tab bar's notch, hanging from the top of a small stage and
+    /// playing itself: it opens, moves to the next tab, chooses it and
+    /// closes around it, then carries on from there. Drawn with the bar's
+    /// own views, so it follows the bar's design. It never takes focus.
+    fileprivate struct TabBarPreview: View {
+        struct Tab: Hashable {
+            let id: String
+            let title: String
+            let symbol: String
+        }
+
+        let tabs: [Tab]
+        let swapsUtilities: Bool
+
+        @State private var selectedID: String?
+        /// The tab drawn as focused; nil while the bar is closed.
+        @State private var focusedID: String?
+        @Namespace private var highlight
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        private struct LoopKey: Hashable {
+            let ids: [String]
+            let swapsUtilities: Bool
+            let reduceMotion: Bool
+        }
+
+        private var selected: String? {
+            tabs.contains { $0.id == selectedID } ? selectedID : tabs.first?.id
+        }
+
+        /// With Reduce Motion the bar stays open on one tab, so every tab
+        /// and its place still show. With a single tab there is nothing to
+        /// open, so it stays closed either way.
+        private var shownFocus: String? {
+            guard tabs.count > 1 else { return nil }
+            return reduceMotion ? selected : focusedID
+        }
+
+        private var stage: RoundedRectangle {
+            RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(22), style: .continuous)
+        }
+
+        var body: some View {
+            let shownFocus = shownFocus
+            let selected = selected
+            HStack(spacing: VividTheme.Skyline.tabSpacing) {
+                utility(search: !swapsUtilities)
+                TVTopMenuDivider()
+                ForEach(tabs, id: \.id) { tab in
+                    if shownFocus != nil || tab.id == selected {
+                        TVTopMenuTabLabel(symbol: tab.symbol, title: tab.title,
+                                          isSelected: tab.id == selected,
+                                          isFocused: tab.id == shownFocus,
+                                          barHasFocus: shownFocus != nil,
+                                          highlight: highlight)
+                            .transition(TVTopMenuMotion.tabTransition(reduceMotion: reduceMotion))
+                    }
+                }
+                TVTopMenuDivider()
+                utility(search: swapsUtilities)
+            }
+            .fixedSize()
+            .modifier(TVTopMenuNotchChrome())
+            .frame(maxWidth: .infinity)
+            .frame(height: TVSettingsLayout.scaled(112), alignment: .top)
+            .background {
+                stage.fill(TVSettingsPalette.groupFill)
+                stage.strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1)
+            }
+            .clipShape(stage)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Tab bar preview")
+            .task(id: LoopKey(ids: tabs.map(\.id), swapsUtilities: swapsUtilities, reduceMotion: reduceMotion)) { await play() }
+        }
+
+        @ViewBuilder
+        private func utility(search: Bool) -> some View {
+            if search {
+                TVTopMenuSearchLabel(isFocused: false, highlight: highlight)
+            } else {
+                TVTopMenuProfileLabel(profile: CurrentProfileStore.shared.profile, isFocused: false)
+            }
+        }
+
+        /// Runs until the tabs or the Search and Profile ends change, or the
+        /// page goes away.
+        private func play() async {
+            focusedID = nil
+            guard !reduceMotion, tabs.count > 1 else { return }
+            let open = TVTopMenuMotion.tabs(reduceMotion: false)
+            do {
+                while true {
+                    try await Task.sleep(for: .seconds(1.2))
+                    guard let current = selected,
+                          let index = tabs.firstIndex(where: { $0.id == current }) else { return }
+                    withAnimation(open) { focusedID = current }
+                    try await Task.sleep(for: .seconds(1))
+                    let next = tabs[(index + 1) % tabs.count].id
+                    withAnimation(open) { focusedID = next }
+                    try await Task.sleep(for: .seconds(1.1))
+                    withAnimation(TVTopMenuMotion.close) {
+                        selectedID = next
+                        focusedID = nil
+                    }
+                }
+            } catch {}
+        }
+    }
+
     /// General > Customise Tab Bar on Apple TV.
     struct TabBarEditorPage: View {
         let libraries: [Library]
@@ -267,47 +376,17 @@ extension TVSettingsView {
 
         private var preview: some View {
             let visible = visibleItems
-            var tabs: [(id: String, title: String, isHome: Bool)] = visible.map { ($0.id, $0.title, $0.isHome) }
+            var tabs = visible.map { TabBarPreview.Tab(id: $0.id, title: $0.title, symbol: $0.navigationIcon) }
             if showsCalendar {
-                let calendar = (id: "vivid.calendar", title: AppTab.calendar.title, isHome: false)
+                let calendar = TabBarPreview.Tab(id: "vivid.calendar", title: AppTab.calendar.title,
+                                                 symbol: AppTab.calendar.icon)
                 if let forYou = visible.firstIndex(of: .builtin(.forYou)) {
                     tabs.insert(calendar, at: forYou + 1)
                 } else {
                     tabs.append(calendar)
                 }
             }
-            let shownTabs = tabs
-            return HStack(spacing: TVSettingsLayout.scaled(8)) {
-                Image(systemName: swapsUtilities ? "person.crop.circle.fill" : "magnifyingglass")
-                    .frame(width: TVSettingsLayout.scaled(42))
-                previewDivider
-                ForEach(shownTabs.indices, id: \.self) { index in
-                    let tab = shownTabs[index]
-                    Text(verbatim: tab.title)
-                        .font(.tvSettings(20, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .padding(.horizontal, TVSettingsLayout.scaled(12))
-                        .padding(.vertical, TVSettingsLayout.scaled(9))
-                        .foregroundStyle(tab.isHome ? Color.black : Color.white)
-                        .background(tab.isHome ? Color.white : Color.clear, in: Capsule())
-                }
-                previewDivider
-                Image(systemName: swapsUtilities ? "magnifyingglass" : "person.crop.circle.fill")
-                    .frame(width: TVSettingsLayout.scaled(42))
-            }
-            .font(.tvSettings(24))
-            .modifier(TVTopMenuGlassChrome())
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, TVSettingsLayout.scaled(28))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Tab bar preview")
-        }
-
-        private var previewDivider: some View {
-            Rectangle()
-                .fill(.white.opacity(0.22))
-                .frame(width: 1, height: TVSettingsLayout.scaled(24))
+            return TabBarPreview(tabs: tabs, swapsUtilities: swapsUtilities)
         }
 
         // MARK: Groups
