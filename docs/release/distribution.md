@@ -265,7 +265,7 @@ Guideline 2.1(a) needs Apple's prior approval for a built-in demo mode, so Vivid
   For Silo, name the viewing profile to choose.
   Make sure the same account works on iPhone, iPad and Apple TV, and keep the server running until the review finishes.
 - Load only media that is in the public domain or openly licensed, such as the Blender open films: at least one film and one series with several episodes, with subtitles and chapters.
-- Turn on the server features a reviewer should see: allow downloads for the review account (downloads are on iPhone and iPad only) and, on Silo, AI description translation if the server offers it.
+- Turn on the server features a reviewer should see: allow downloads for the review account (downloads are on iPhone and iPad only).
   Leave Seerr, and any request feature on the server, unconfigured for the review account.
 - Put the server address, username and password only in App Store Connect's sign-in fields and notes, never in Git, release notes or public text.
 
@@ -284,9 +284,6 @@ Start from this text, fill in the brackets, keep only the lines that apply to th
 > - Downloads (iPhone and iPad): offline copies from the person's server, available only when the server allows downloads for that account.
 >   They're allowed for the review account.
 >   Vivid asks for notification permission the first time you download something or turn on Auto-download future episodes, for download notices only.
-> - Translated descriptions (Silo only): the person's Silo server translates a title's description when its operator turns this on.
->   Vivid doesn't contact an AI service itself.
->   [It's on for the review account / It's off on the review server.]
 > - Requests: an optional connection to Seerr, a request manager the person runs alongside their server.
 >   It isn't set up for the review account.
 > - Plugins: optional connections to MDBList and OpenSubtitles using the person's own free API key, and to Simkl, which the person signs in to with a short code they approve on Simkl's website.

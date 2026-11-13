@@ -251,7 +251,6 @@ final class AuthService: @unchecked Sendable {
         await client.endIdentityTransition(lease)
 
         Task { @MainActor in
-            await AICapabilities.shared.refresh()
             await ImageSizeCapability.shared.refresh()
             await RequestsFeatureStore.shared.refresh()
             await CurrentProfileStore.shared.refresh(force: true)
@@ -483,7 +482,6 @@ final class AuthService: @unchecked Sendable {
     private func resetPreferenceStores() {
         OverlayPrefsStore.shared.clear()
         ProfilePrefsStore.shared.clear()
-        AICapabilities.shared.reset()
         ImageSizeCapability.shared.reset()
         RequestsFeatureStore.shared.reset()
         CurrentProfileStore.shared.reset()

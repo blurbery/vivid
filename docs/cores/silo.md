@@ -95,6 +95,7 @@ Silo shares those keys between every client of a device family, so reading them 
 Vivid never reads or writes them on the server.
 Home shows Silo's rows, but Vivid saves the order rows are first shown in, so reordering Home on the Silo server doesn't move them; new rows join the end.
 Metadata language stays a Silo profile setting, because Silo translates overviews on the server.
+Vivid doesn't offer Silo's on-view description translation or ask the server whether it's enabled, so a description shows in the language the server returns.
 Emby and Jellyfin have their own adapters.
 These client features do not alter Silo’s production configuration.
 Apple TV Top Shelf retains its Silo Home request path, with shared saved-account privacy rules: it shows personalised rows for the current native user’s active saved profile and viewing profile, however many of either exist, when the saved profile is signed in, neither has a PIN, Vivid still remembers the viewing profile, the profile launch behaviour doesn't ask on every launch, its time-away lock hasn't expired and no profile choice is pending (the full rule is in [server connections](../server-connections.md)).

@@ -140,8 +140,9 @@ struct MobileSeriesPage: View {
 
     private var underOverview: some View {
         VStack(alignment: .center, spacing: 14) {
-            DescriptionTranslationView(viewModel: model, contentId: detail.contentId)
-                .id(detail.contentId)
+            // A zero-size first child, so the stack puts its spacing above the
+            // selectors: part of the gap between the synopsis and them.
+            Color.clear.frame(width: 0, height: 0)
             if nextUpEpisode != nil {
                 MobileSelectorsPlacement {
                     selectorSlot

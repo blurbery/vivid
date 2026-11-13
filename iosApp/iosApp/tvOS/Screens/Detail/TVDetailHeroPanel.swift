@@ -276,14 +276,13 @@ struct TVDetailHeroBackdrop: View {
 
 /// Heading and synopsis on the native movie and series pages, below the
 /// space the logo used to fill (the logo now sits in the top-left corner).
-struct TVDetailCompactPrimary<Below: View>: View {
+struct TVDetailCompactPrimary: View {
     let headingTokens: [String]
     let genres: [String]
     let contentRating: String?
     let overview: String?
     let synopsisEnabled: Bool
     var focus: FocusState<TVDetailHeroFocus?>.Binding
-    @ViewBuilder let below: () -> Below
 
     @Environment(\.tvDetailHeroContentInset) private var contentInset
 
@@ -297,13 +296,10 @@ struct TVDetailCompactPrimary<Below: View>: View {
                 .padding(.top, 10)
                 .padding(.leading, contentInset)
 
-            VStack(alignment: .leading, spacing: 4) {
-                TVDetailSynopsisSlot(overview: overview, isCompact: true, isEnabled: synopsisEnabled, focus: focus)
-                below()
-            }
-            .frame(height: 140, alignment: .topLeading)
-            .padding(.top, 12)
-            .padding(.leading, contentInset)
+            TVDetailSynopsisSlot(overview: overview, isCompact: true, isEnabled: synopsisEnabled, focus: focus)
+                .frame(height: 140, alignment: .topLeading)
+                .padding(.top, 12)
+                .padding(.leading, contentInset)
         }
         .frame(width: TVDetailHeroLayout.editorialWidth + contentInset, height: 350, alignment: .topLeading)
     }
@@ -319,14 +315,13 @@ enum TVDetailTitleTreatment {
 
 /// Eyebrow, title, metadata and synopsis on the older layout and the season
 /// page.
-struct TVDetailStandardPrimary<Below: View>: View {
+struct TVDetailStandardPrimary: View {
     let eyebrow: String?
     let treatment: TVDetailTitleTreatment
     let metadata: TVDetailMetadataSlots
     let overview: String?
     let synopsisEnabled: Bool
     var focus: FocusState<TVDetailHeroFocus?>.Binding
-    @ViewBuilder let below: () -> Below
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -338,7 +333,9 @@ struct TVDetailStandardPrimary<Below: View>: View {
                 .padding(.top, eyebrow == nil ? 0 : 2)
             metadata
             TVDetailSynopsisSlot(overview: overview, isCompact: false, isEnabled: synopsisEnabled, focus: focus)
-            below()
+            // A zero-size last child, so the stack keeps the spacing it has
+            // always had after the synopsis.
+            Color.clear.frame(width: 0, height: 0)
         }
         .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .leading)
     }

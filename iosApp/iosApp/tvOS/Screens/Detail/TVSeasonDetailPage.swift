@@ -124,10 +124,7 @@ struct TVSeasonDetailPage: View {
                 overview: detail.overview,
                 synopsisEnabled: true,
                 focus: $heroFocus
-            ) {
-                DescriptionTranslationView(viewModel: viewModel, contentId: detail.contentId)
-                    .id(detail.contentId)
-            }
+            )
         } summary: {
             TVDetailPlaybackSummary(values: TVDetailPlaybackSummaryValues(version: currentVersion))
         } actions: {

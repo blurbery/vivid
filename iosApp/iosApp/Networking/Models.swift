@@ -428,11 +428,6 @@ struct ItemDetail: Codable {
     let effectiveShowForcedSubtitles: Bool?
     let effectiveSubtitleTrackSignature: SubtitleTrackSignature?
     let overlaySummary: OverlaySummary?
-    /// Set by the server (omitted when empty) when a description exists
-    /// but is not yet available in the viewer's resolved metadata
-    /// language. Drives the on-view "translate this description"
-    /// affordance; clears once the localized overview lands.
-    let pendingTranslationLanguage: String?
     /// Remote provider videos (YouTube trailers, teasers, …) for movies and
     /// series, pre-ordered by the server (trailers first, official first).
     /// Never populated for episodes.

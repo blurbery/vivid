@@ -31,8 +31,9 @@ struct MobileSeasonPage: View {
                 MobileDetailHero(content: heroContent) {
                     actions
                 } underOverview: {
-                    DescriptionTranslationView(viewModel: model, contentId: detail.contentId)
-                        .id(detail.contentId)
+                    // A zero-size view rather than nothing, so the hero still puts its
+                    // own spacing around this slot.
+                    Color.clear.frame(width: 0, height: 0)
                 }
                 belowFold
             }

@@ -10451,6 +10451,41 @@
         }
       }
     },
+    "App privacy information · Updated 13 November 2026" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzinformationen der App · Aktualisiert am 13. November 2026"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Información de privacidad de la app · Actualizada el 13 de noviembre de 2026"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidentialité de l’app · Mise à jour le 13 novembre 2026"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appのプライバシー情報 · 2026年11月13日更新"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 隐私信息 · 更新于 2026 年 11 月 13 日"
+          }
+        }
+      }
+    },
     "App privacy information · Updated 19 October 2026" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10522,7 +10557,7 @@
       }
     },
     "App privacy information · Updated 5 November 2026" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -68741,7 +68776,7 @@
       }
     },
     "Translate" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -68776,7 +68811,7 @@
       }
     },
     "Translating…" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
