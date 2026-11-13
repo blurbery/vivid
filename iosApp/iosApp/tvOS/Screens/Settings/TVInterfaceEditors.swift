@@ -206,7 +206,7 @@ extension TVSettingsView {
 
     // MARK: - Tab bar
 
-    /// The real tab bar's notch, hanging from the top of a small stage and
+    /// The real tab bar's island, floating at the top of a small stage and
     /// playing itself: it opens, moves to the next tab, chooses it and
     /// closes around it, then carries on from there. Drawn with the bar's
     /// own views, so it follows the bar's design. It never takes focus.
@@ -268,7 +268,7 @@ extension TVSettingsView {
                 utility(search: swapsUtilities)
             }
             .fixedSize()
-            .modifier(TVTopMenuNotchChrome())
+            .modifier(TVTopMenuIslandChrome())
             .frame(maxWidth: .infinity)
             .frame(height: TVSettingsLayout.scaled(112), alignment: .top)
             .background {
