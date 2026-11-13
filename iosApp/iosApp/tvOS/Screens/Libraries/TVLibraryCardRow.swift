@@ -77,9 +77,12 @@ extension TVMainTabView {
                 Button { select(library) } label: {
                     artwork(library, size: size)
                         .opacity(movingId != nil && !isMoving ? 0.8 : 1)
-                        .modifier(ProfileArrangeWobble(active: isArranging))
                 }
                 .buttonStyle(.card)
+                // The whole card rocks, platter included. Rocking only the
+                // artwork inside it left the card's light platter showing
+                // behind the corners.
+                .modifier(LibraryCardWobble(active: isArranging))
                 .focused(focusedLibraryId, equals: library.id)
                 .disabled(movingId != nil && !isMoving)
                 .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
@@ -150,6 +153,31 @@ extension TVMainTabView {
             return library.isSeriesLibrary ? PrimaryMenuBuiltin.series.navigationIcon
                 : PrimaryMenuBuiltin.movies.navigationIcon
         }
+    }
+}
+
+/// A gentle rocking while the Library row is being arranged. It only ever
+/// changes an angle, so the card it rocks keeps its identity and its focus
+/// when arranging starts and ends.
+private struct LibraryCardWobble: ViewModifier {
+    let active: Bool
+
+    @State private var tilted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var angle: Double {
+        guard active, !reduceMotion else { return 0 }
+        return tilted ? 1.8 : -1.8
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(angle))
+            .animation(
+                active ? .easeInOut(duration: 0.14).repeatForever(autoreverses: true) : .easeOut(duration: 0.14),
+                value: tilted
+            )
+            .onChange(of: active, initial: true) { tilted = active }
     }
 }
 
