@@ -31,8 +31,8 @@ struct MobileSeasonPage: View {
                 MobileDetailHero(content: heroContent) {
                     actions
                 } underOverview: {
-                    // Holds the place of the Translate button that used to sit here, so
-                    // the stack keeps the spacing it had while that button was hidden.
+                    // A zero-size view rather than nothing, so the hero still puts its
+                    // own spacing around this slot.
                     Color.clear.frame(width: 0, height: 0)
                 }
                 belowFold
