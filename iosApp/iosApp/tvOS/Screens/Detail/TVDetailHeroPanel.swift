@@ -333,8 +333,8 @@ struct TVDetailStandardPrimary: View {
                 .padding(.top, eyebrow == nil ? 0 : 2)
             metadata
             TVDetailSynopsisSlot(overview: overview, isCompact: false, isEnabled: synopsisEnabled, focus: focus)
-            // A zero-size last child, so the stack keeps its spacing after the
-            // synopsis and the flexible eyebrow above gets the same height.
+            // A zero-size last child, so the stack keeps the spacing it has
+            // always had after the synopsis.
             Color.clear.frame(width: 0, height: 0)
         }
         .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .leading)
