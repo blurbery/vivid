@@ -228,6 +228,7 @@ extension TVSettingsView {
 
         private struct LoopKey: Hashable {
             let ids: [String]
+            let swapsUtilities: Bool
             let reduceMotion: Bool
         }
 
@@ -236,8 +237,12 @@ extension TVSettingsView {
         }
 
         /// With Reduce Motion the bar stays open on one tab, so every tab
-        /// and its place still show.
-        private var shownFocus: String? { reduceMotion ? selected : focusedID }
+        /// and its place still show. With a single tab there is nothing to
+        /// open, so it stays closed either way.
+        private var shownFocus: String? {
+            guard tabs.count > 1 else { return nil }
+            return reduceMotion ? selected : focusedID
+        }
 
         private var stage: RoundedRectangle {
             RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(22), style: .continuous)
@@ -273,7 +278,7 @@ extension TVSettingsView {
             .clipShape(stage)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Tab bar preview")
-            .task(id: LoopKey(ids: tabs.map(\.id), reduceMotion: reduceMotion)) { await play() }
+            .task(id: LoopKey(ids: tabs.map(\.id), swapsUtilities: swapsUtilities, reduceMotion: reduceMotion)) { await play() }
         }
 
         @ViewBuilder
@@ -285,7 +290,8 @@ extension TVSettingsView {
             }
         }
 
-        /// Runs until the tabs change or the page goes away.
+        /// Runs until the tabs or the Search and Profile ends change, or the
+        /// page goes away.
         private func play() async {
             focusedID = nil
             guard !reduceMotion, tabs.count > 1 else { return }
