@@ -61,6 +61,151 @@ struct TVTopMenuNotchChrome: ViewModifier {
     }
 }
 
+/// The one highlight the notch's tabs and Search share. Drawn by whichever
+/// item holds it, so it leaves one and arrives on the next as a single
+/// moving shape. Outlined rather than filled, like the notch itself.
+struct TVTopMenuHighlightPill: View {
+    let namespace: Namespace.ID
+
+    var body: some View {
+        Capsule()
+            .fill(Color.white.opacity(0.1))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 2.5))
+            .matchedGeometryEffect(id: "highlight", in: namespace)
+    }
+}
+
+/// The hairline between the notch's utilities and its tabs.
+struct TVTopMenuDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.22))
+            .frame(width: 1, height: 26)
+            .padding(.horizontal, 6)
+            .accessibilityHidden(true)
+    }
+}
+
+/// How the notch's tabs, highlight and lift move, shared with the Tab Bar
+/// settings preview so the two stay in step.
+enum TVTopMenuMotion {
+    /// One animation for every tab's width, the highlight and the lift,
+    /// so tabs that open and close on the same focus move stay in step.
+    static func tabs(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86)
+    }
+
+    /// The bar closing around a chosen tab. A timed curve rather than a
+    /// spring: it has fully stopped before the page starts being built,
+    /// where a spring's tail was still settling.
+    static let close: Animation = .easeOut(duration: 0.16)
+
+    static func tabTransition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.5))
+    }
+}
+
+/// One tab in the notch: its symbol, or its name while it is focused or
+/// while it is the selected tab of a bar without focus.
+struct TVTopMenuTabLabel: View {
+    let symbol: String
+    let title: String
+    let isSelected: Bool
+    let isFocused: Bool
+    /// True while anything in the bar is drawn as focused.
+    let barHasFocus: Bool
+    let highlight: Namespace.ID
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let inverted = isFocused || (isSelected && !barHasFocus)
+        let textColour: Color = inverted || isSelected ? .white : Color.white.opacity(0.62)
+        let fill: Color = !inverted && isSelected ? Color.white.opacity(0.14) : .clear
+        let border: Color = !isFocused && isSelected ? .vividChromeSelectedBorder : .clear
+        let scale: CGFloat = isFocused && !reduceMotion ? 1.1 : 1
+        // The name shows for the focused tab, or for the selected one
+        // while the bar doesn't have focus; the rest show their symbol.
+        let showsName = inverted
+        // Both stay in the tree and crossfade, so the pill's width is the
+        // only thing that moves. The cluster's animation moves it together
+        // with the other tabs.
+        ZStack {
+            // Whichever is leaving fades out before the other fades in,
+            // so they never show on top of each other.
+            Image(systemName: symbol)
+                .animation(fade(in: !showsName)) { $0.opacity(showsName ? 0 : 1) }
+            Text(verbatim: title)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 260)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: showsName ? nil : 0)
+                .animation(fade(in: showsName)) { $0.opacity(showsName ? 1 : 0) }
+        }
+        .font(.system(size: 24, weight: .semibold))
+        .padding(.horizontal, showsName ? 22 : 16)
+        .padding(.vertical, 6)
+        .foregroundStyle(textColour)
+        .clipShape(Capsule())
+        .background(Capsule().fill(fill))
+        .overlay(Capsule().strokeBorder(border, lineWidth: 1))
+        .background {
+            if inverted { TVTopMenuHighlightPill(namespace: highlight) }
+        }
+        .scaleEffect(scale)
+    }
+
+    /// The symbol or name fading in late, or out early.
+    private func fade(in appearing: Bool) -> Animation? {
+        if reduceMotion { return nil }
+        return appearing ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
+    }
+}
+
+/// Search in the notch.
+struct TVTopMenuSearchLabel: View {
+    let isFocused: Bool
+    let highlight: Namespace.ID
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Image(systemName: "magnifyingglass")
+            .font(.system(size: 24, weight: .semibold))
+            .foregroundStyle(isFocused ? Color.white : Color.white.opacity(0.62))
+            .frame(width: 44, height: 42)
+            .background {
+                // The tabs' highlight, so it glides here too.
+                if isFocused { TVTopMenuHighlightPill(namespace: highlight) }
+            }
+            .scaleEffect(isFocused && !reduceMotion ? 1.1 : 1)
+    }
+}
+
+/// The profile avatar in the notch.
+struct TVTopMenuProfileLabel: View {
+    let profile: UserProfile?
+    let isFocused: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ProfileAvatarView(
+            avatar: profile?.avatarEmoji,
+            imageUrl: profile?.avatarImageUrl,
+            name: profile?.name ?? "",
+            size: 40,
+            backgroundColor: Color.white.opacity(0.18),
+            textColor: .white
+        )
+        .overlay(Circle().strokeBorder(Color.white, lineWidth: isFocused ? 3 : 0))
+        .scaleEffect(isFocused && !reduceMotion ? 1.05 : 1)
+        .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isFocused)
+        .frame(width: 44, height: 42)
+    }
+}
+
 extension TVMainTabView {
     /// Search, the root tabs and the profile avatar in a notch hanging from
     /// the top edge. Off focus it closes to Search, the selected tab and
@@ -212,16 +357,8 @@ extension TVMainTabView {
             .animation(tabAnimation, value: selectedRoot)
         }
 
-        /// One animation for every tab's width, the highlight and the lift,
-        /// so tabs that open and close on the same focus move stay in step.
         private var tabAnimation: Animation? {
-            reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86)
-        }
-
-        /// A tab's symbol or name fading in late, or out early.
-        private func fade(in appearing: Bool) -> Animation? {
-            if reduceMotion { return nil }
-            return appearing ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
+            TVTopMenuMotion.tabs(reduceMotion: reduceMotion)
         }
 
         /// While focus is below the bar it closes to Search, the selected
@@ -231,72 +368,22 @@ extension TVMainTabView {
         }
 
         private var tabTransition: AnyTransition {
-            reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.5))
+            TVTopMenuMotion.tabTransition(reduceMotion: reduceMotion)
         }
 
-        /// The one highlight the tabs and Search share.
-        private var highlightPill: some View {
-            Capsule()
-                .fill(Color.white.opacity(0.1))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 2.5))
-                .matchedGeometryEffect(id: "highlight", in: highlight)
-        }
-
-        private var divider: some View {
-            Rectangle()
-                .fill(Color.white.opacity(0.22))
-                .frame(width: 1, height: 26)
-                .padding(.horizontal, 6)
-                .accessibilityHidden(true)
-        }
+        private var divider: some View { TVTopMenuDivider() }
 
         // MARK: Items
 
         private func rootTab(_ root: Root) -> some View {
             let isSelected = root == displayedRoot
-            let isItemFocused = shownFocus == .root(root)
-            let inverted = isItemFocused || (isSelected && shownFocus == nil)
             let position = (roots.firstIndex(of: root) ?? 0) + 1
-            let textColour: Color = inverted || isSelected ? .white : Color.white.opacity(0.62)
-            let fill: Color = !inverted && isSelected ? Color.white.opacity(0.14) : .clear
-            let border: Color = !isItemFocused && isSelected ? .vividChromeSelectedBorder : .clear
-            let scale: CGFloat = isItemFocused && !reduceMotion ? 1.1 : 1
-            // The name shows for the focused tab, or for the selected one
-            // while the bar doesn't have focus; the rest show their symbol.
-            let showsName = inverted
             return Button { select(root) } label: {
-                // Both stay in the tree and crossfade, so the pill's width
-                // is the only thing that moves. `tabAnimation` on the
-                // cluster animates it together with the other tabs.
-                ZStack {
-                    // Whichever is leaving fades out before the other
-                    // fades in, so they never show on top of each other.
-                    Image(systemName: root.symbol)
-                        .animation(fade(in: !showsName)) { $0.opacity(showsName ? 0 : 1) }
-                    Text(verbatim: root.title)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: 260)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(width: showsName ? nil : 0)
-                        .animation(fade(in: showsName)) { $0.opacity(showsName ? 1 : 0) }
-                }
-                .font(.system(size: 24, weight: .semibold))
-                .padding(.horizontal, showsName ? 22 : 16)
-                .padding(.vertical, 6)
-                .foregroundStyle(textColour)
-                .clipShape(Capsule())
-                .background(Capsule().fill(fill))
-                .overlay(Capsule().strokeBorder(border, lineWidth: 1))
-                .background {
-                    // One white pill for the whole bar: it leaves this tab
-                    // and arrives on the next as a single moving shape.
-                    if inverted {
-                        // Outlined rather than filled, like the notch itself.
-                        highlightPill
-                    }
-                }
-                .scaleEffect(scale)
+                TVTopMenuTabLabel(symbol: root.symbol, title: root.title,
+                                  isSelected: isSelected,
+                                  isFocused: shownFocus == .root(root),
+                                  barHasFocus: shownFocus != nil,
+                                  highlight: highlight)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
@@ -319,17 +406,8 @@ extension TVMainTabView {
         }
 
         private var searchButton: some View {
-            let isItemFocused = shownFocus == .search
-            return Button(action: onSearch) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isItemFocused ? Color.white : Color.white.opacity(0.62))
-                    .frame(width: 44, height: 42)
-                    .background {
-                        // The tabs' highlight, so it glides here too.
-                        if isItemFocused { highlightPill }
-                    }
-                    .scaleEffect(isItemFocused && !reduceMotion ? 1.1 : 1)
+            Button(action: onSearch) {
+                TVTopMenuSearchLabel(isFocused: shownFocus == .search, highlight: highlight)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
@@ -345,20 +423,8 @@ extension TVMainTabView {
         }
 
         private var profileButton: some View {
-            let isItemFocused = focus == .profile
-            return Button(action: onProfile) {
-                ProfileAvatarView(
-                    avatar: profile?.avatarEmoji,
-                    imageUrl: profile?.avatarImageUrl,
-                    name: profile?.name ?? "",
-                    size: 40,
-                    backgroundColor: Color.white.opacity(0.18),
-                    textColor: .white
-                )
-                .overlay(Circle().strokeBorder(Color.white, lineWidth: isItemFocused ? 3 : 0))
-                .scaleEffect(isItemFocused && !reduceMotion ? 1.05 : 1)
-                .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isItemFocused)
-                .frame(width: 44, height: 42)
+            Button(action: onProfile) {
+                TVTopMenuProfileLabel(profile: profile, isFocused: focus == .profile)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
@@ -390,10 +456,7 @@ extension TVMainTabView {
             }
             guard pendingRoot == nil else { return }
             pendingRoot = root
-            // A timed curve rather than a spring: it has fully stopped
-            // before the page starts being built, where a spring's tail
-            // was still settling.
-            withAnimation(.easeOut(duration: 0.16)) { shownFocus = nil }
+            withAnimation(TVTopMenuMotion.close) { shownFocus = nil }
             let work = DispatchWorkItem {
                 guard pendingRoot == root else { return }
                 open(root)
