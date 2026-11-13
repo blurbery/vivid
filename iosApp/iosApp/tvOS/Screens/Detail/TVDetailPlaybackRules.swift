@@ -130,7 +130,6 @@ enum TVDetailPlaybackRules {
                 effectiveShowForcedSubtitles: watchDetail.effectiveShowForcedSubtitles,
                 effectiveSubtitleTrackSignature: watchDetail.effectiveSubtitleTrackSignature,
                 overlaySummary: item.overlaySummary,
-                pendingTranslationLanguage: item.pendingTranslationLanguage,
                 videos: item.videos,
                 extras: item.extras
             )

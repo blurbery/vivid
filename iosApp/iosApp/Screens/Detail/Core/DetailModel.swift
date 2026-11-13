@@ -474,7 +474,7 @@ class ItemDetailViewModel {
             effectiveSubtitleMode: watch.effectiveSubtitleMode,
             effectiveShowForcedSubtitles: watch.effectiveShowForcedSubtitles,
             effectiveSubtitleTrackSignature: watch.effectiveSubtitleTrackSignature,
-            overlaySummary: item.overlaySummary, pendingTranslationLanguage: item.pendingTranslationLanguage,
+            overlaySummary: item.overlaySummary,
             videos: item.videos, extras: item.extras)
     }
 
@@ -499,7 +499,7 @@ class ItemDetailViewModel {
             effectiveSubtitleMode: shown.effectiveSubtitleMode,
             effectiveShowForcedSubtitles: shown.effectiveShowForcedSubtitles,
             effectiveSubtitleTrackSignature: shown.effectiveSubtitleTrackSignature,
-            overlaySummary: item.overlaySummary, pendingTranslationLanguage: item.pendingTranslationLanguage,
+            overlaySummary: item.overlaySummary,
             videos: item.videos, extras: item.extras)
     }
 

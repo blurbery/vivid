@@ -25,9 +25,6 @@ struct TVSeriesDetailPage: View {
     @Namespace private var scope
     @State private var playHadFocus = false
     @State private var actionHadFocusWithoutTarget = false
-    /// Translation shows under the synopsis only while it describes the
-    /// series rather than a focused episode.
-    @State private var showsSeriesOverview = true
     @State private var tmdbRating: TMDbRatingResult?
 
     var body: some View {
@@ -44,9 +41,6 @@ struct TVSeriesDetailPage: View {
         }
         .focusScope(scope)
         .defaultFocus($heroFocus, .play, priority: .userInitiated)
-        .onAppear {
-            showsSeriesOverview = activeEpisodeId == nil
-        }
         .onChange(of: heroFocus) { old, focus in
             guard let focus, focus.isActionRow else { return }
             if focus == .play {
@@ -157,12 +151,7 @@ struct TVSeriesDetailPage: View {
                 overview: detail.overview,
                 synopsisEnabled: playHadFocus || actionHadFocusWithoutTarget,
                 focus: $heroFocus
-            ) {
-                if showsSeriesOverview {
-                    DescriptionTranslationView(viewModel: viewModel, contentId: contentId)
-                        .id(contentId)
-                }
-            }
+            )
         } summary: {
             TVDetailTechnicalRow(
                 releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: playTarget?.runtime ?? detail.runtime),
@@ -244,7 +233,6 @@ struct TVSeriesDetailPage: View {
                 isActionRowFocused: heroFocus?.isActionRow == true,
                 favoriteStates: viewModel.episodeFavoriteStates,
                 onSelectSeason: selectSeason,
-                onEpisodeFocus: { _ in showsSeriesOverview = false },
                 onPlayEpisode: { id in playEpisode(id, fileId(for: id, playback: playback), false) },
                 onSetWatched: actions.setEpisodeWatched,
                 onSetFavorite: actions.setEpisodeFavorite

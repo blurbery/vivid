@@ -37,7 +37,6 @@ enum SiloAPICompatibility {
         "/api/v1/images/capability": "/api/v2/images/capabilities",
         "/api/v1/playback/capability": "/api/v2/playback/capabilities",
         "/api/v1/downloads/capability": "/api/v2/capabilities/downloads",
-        "/api/v1/metadata/ai/status": "/api/v2/capabilities/metadata-ai",
     ]
 
     /// The v2 path and method for a v1 path and method.
@@ -416,9 +415,6 @@ enum SiloAPICompatibility {
             } else if let cursor = object["sync_cursor"] as? String {
                 object["next_cursor"] = "v2:" + cursor
             }
-        }
-        if path == "/api/v1/metadata/ai/status" {
-            object["enabled"] = isAvailableAndAllowed(object)
         }
         if path.hasPrefix("/api/v1/playback/") {
             object["native_api_major"] = 2

@@ -31,8 +31,7 @@ struct MobileSeasonPage: View {
                 MobileDetailHero(content: heroContent) {
                     actions
                 } underOverview: {
-                    DescriptionTranslationView(viewModel: model, contentId: detail.contentId)
-                        .id(detail.contentId)
+                    EmptyView()
                 }
                 belowFold
             }

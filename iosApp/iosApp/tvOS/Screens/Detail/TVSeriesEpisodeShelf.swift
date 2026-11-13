@@ -19,7 +19,6 @@ struct TVSeriesEpisodeShelf: View {
     let isActionRowFocused: Bool
     let favoriteStates: [String: Bool]
     let onSelectSeason: (Season) -> Void
-    let onEpisodeFocus: (String) -> Void
     let onPlayEpisode: (String) -> Void
     let onSetWatched: (String, Bool) async -> Bool
     let onSetFavorite: (String, Bool) async -> Bool
@@ -399,7 +398,6 @@ struct TVSeriesEpisodeShelf: View {
         if selectedSeason?.contentId != season.contentId {
             onSelectSeason(season)
         }
-        onEpisodeFocus(newId)
     }
 
     /// Works out which season is in view from the fixed slot geometry, so

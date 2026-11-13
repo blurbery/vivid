@@ -124,8 +124,6 @@ struct MobileMoviePage: View {
 
     private var underOverview: some View {
         VStack(alignment: .center, spacing: 14) {
-            DescriptionTranslationView(viewModel: model, contentId: detail.contentId)
-                .id(detail.contentId)
             if effectiveVersion != nil {
                 MobileSelectorsPlacement {
                     selectors

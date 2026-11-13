@@ -32,7 +32,6 @@ extension AppRootModel {
         #endif
 
         await hydrateOverlayPreferences(phase: "session_hydrate")
-        await AICapabilities.shared.refresh()
         await ImageSizeCapability.shared.refresh()
         await RequestsFeatureStore.shared.refresh()
         await CurrentProfileStore.shared.refresh()
@@ -134,7 +133,6 @@ extension AppRootModel {
 
         guard phase == .active, router.authState == .authenticated else { return }
         Task { await hydrateOverlayPreferences(phase: "foreground_refresh") }
-        Task { await AICapabilities.shared.refresh() }
         Task { await ImageSizeCapability.shared.refresh() }
         Task { await RequestsFeatureStore.shared.refresh() }
         Task { await UICustomizationPreferences.shared.refresh() }

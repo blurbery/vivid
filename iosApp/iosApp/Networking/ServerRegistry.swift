@@ -426,7 +426,6 @@ final class ServerRegistry {
     /// checks before the next foreground.
     private func resetServerScopedFeatures() async {
         await MainActor.run {
-            AICapabilities.shared.reset()
             ImageSizeCapability.shared.reset()
             RequestsFeatureStore.shared.reset()
             CurrentProfileStore.shared.reset()

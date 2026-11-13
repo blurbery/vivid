@@ -123,11 +123,6 @@ struct TVMovieDetailPage: View {
         }
     }
 
-    private var translation: some View {
-        DescriptionTranslationView(viewModel: viewModel, contentId: contentId)
-            .id(contentId)
-    }
-
     // MARK: Native layout
 
     private var nativeLayout: some View {
@@ -150,9 +145,7 @@ struct TVMovieDetailPage: View {
                     overview: detail.overview,
                     synopsisEnabled: playHadFocus,
                     focus: $heroFocus
-                ) {
-                    translation
-                }
+                )
             } summary: {
                 TVDetailTechnicalRow(
                     releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: detail.runtime),
@@ -282,9 +275,7 @@ struct TVMovieDetailPage: View {
                 overview: detail.overview,
                 synopsisEnabled: true,
                 focus: $heroFocus
-            ) {
-                translation
-            }
+            )
         } summary: {
             TVDetailPlaybackSummary(values: TVDetailPlaybackSummaryValues(version: currentVersion))
         } actions: {
