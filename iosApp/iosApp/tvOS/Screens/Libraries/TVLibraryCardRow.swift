@@ -76,13 +76,12 @@ extension TVMainTabView {
                 // when a card is picked up would tear down the focused view.
                 Button { select(library) } label: {
                     artwork(library, size: size)
-                        .opacity(movingId != nil && !isMoving ? 0.8 : 1)
                 }
-                .buttonStyle(.card)
-                // The whole card rocks, platter included. Rocking only the
-                // artwork inside it left the card's light platter showing
-                // behind the corners.
-                .modifier(LibraryCardWobble(active: isArranging))
+                .buttonStyle(LibraryCardButtonStyle(
+                    isArranging: isArranging,
+                    isPickedUp: isMoving,
+                    rocksLeftFirst: (libraries.firstIndex(of: library) ?? 0).isMultiple(of: 2)
+                ))
                 .focused(focusedLibraryId, equals: library.id)
                 .disabled(movingId != nil && !isMoving)
                 .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
@@ -156,25 +155,65 @@ extension TVMainTabView {
     }
 }
 
+/// A library card's own focus look: it grows and lifts on a shadow, with
+/// no system platter behind it, so nothing shows around a card while it
+/// rocks. A picked-up card grows a little more, like an app being moved on
+/// the Apple TV Home Screen.
+private struct LibraryCardButtonStyle: ButtonStyle {
+    let isArranging: Bool
+    let isPickedUp: Bool
+    let rocksLeftFirst: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        Card(label: configuration.label, isPressed: configuration.isPressed,
+             isArranging: isArranging, isPickedUp: isPickedUp, rocksLeftFirst: rocksLeftFirst)
+    }
+
+    private struct Card<Label: View>: View {
+        let label: Label
+        let isPressed: Bool
+        let isArranging: Bool
+        let isPickedUp: Bool
+        let rocksLeftFirst: Bool
+
+        @Environment(\.isFocused) private var isFocused
+
+        private var scale: CGFloat {
+            guard isFocused else { return 1 }
+            if isPickedUp { return 1.16 }
+            return isPressed ? 1.06 : 1.1
+        }
+
+        var body: some View {
+            label
+                .modifier(LibraryCardWobble(active: isArranging, rocksLeftFirst: rocksLeftFirst))
+                .scaleEffect(scale)
+                .shadow(color: .black.opacity(isFocused ? 0.5 : 0), radius: isFocused ? 26 : 0, y: isFocused ? 16 : 0)
+                .animation(.easeOut(duration: 0.18), value: scale)
+        }
+    }
+}
+
 /// A gentle rocking while the Library row is being arranged. It only ever
 /// changes an angle, so the card it rocks keeps its identity and its focus
-/// when arranging starts and ends.
+/// when arranging starts and ends. Neighbours start in opposite directions.
 private struct LibraryCardWobble: ViewModifier {
     let active: Bool
+    let rocksLeftFirst: Bool
 
     @State private var tilted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var angle: Double {
         guard active, !reduceMotion else { return 0 }
-        return tilted ? 1.8 : -1.8
+        return (tilted ? 1.2 : -1.2) * (rocksLeftFirst ? 1 : -1)
     }
 
     func body(content: Content) -> some View {
         content
             .rotationEffect(.degrees(angle))
             .animation(
-                active ? .easeInOut(duration: 0.14).repeatForever(autoreverses: true) : .easeOut(duration: 0.14),
+                active ? .easeInOut(duration: 0.13).repeatForever(autoreverses: true) : .easeOut(duration: 0.13),
                 value: tilted
             )
             .onChange(of: active, initial: true) { tilted = active }
