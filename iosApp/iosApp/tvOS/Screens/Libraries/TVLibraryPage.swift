@@ -65,10 +65,16 @@ extension TVMainTabView {
                 .padding(.bottom, 48)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .vividBackground()
+            // Theme Mode Adaptive carries on from the Library tab, and this
+            // library's posters drive its colour while the page is on show.
+            .background { TVAdaptiveBackdrop(opensInCurrentColour: true) }
             // Owns its 80pt insets itself, like the root pages.
             .ignoresSafeArea(edges: [.top, .horizontal])
-            .onAppear(perform: ensureModel)
+            .onAppear {
+                TVAdaptiveAmbience.shared.isOnLibraryPage = true
+                ensureModel()
+            }
+            .onDisappear { TVAdaptiveAmbience.shared.isOnLibraryPage = false }
             .task(id: library.id) { await openLibrary() }
         }
 
