@@ -67,6 +67,7 @@ struct TVPersonalScrollAppearance: ViewModifier {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .scrollEdgeEffectHidden(true, for: .all)
+            .modifier(TVTopMenuTucksOnScroll())
     }
 }
 #endif

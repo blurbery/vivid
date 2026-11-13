@@ -171,6 +171,7 @@ struct TVHomeDiscoveryFeed: View {
                 }
             }
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
+            .modifier(TVTopMenuTucksOnScroll())
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
                 appliedFocusRequest = request
