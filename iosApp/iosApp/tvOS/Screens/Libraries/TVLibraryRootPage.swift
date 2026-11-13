@@ -2,7 +2,7 @@
 import SwiftUI
 
 extension TVMainTabView {
-    /// For You's sub-tabs.
+    /// The Library tab's sub-tabs.
     enum ForYouTab: Hashable, CaseIterable, Identifiable {
         case watchlist
         case favourites
@@ -22,10 +22,12 @@ extension TVMainTabView {
         var source: String { self == .watchlist ? "watchlist" : "favorites" }
     }
 
-    /// Watchlist, Favourites and Collections, each with its own filter and,
-    /// for the lists, its own A–Z letter.
-    struct ForYouPage: View {
+    /// The Library tab: the row of libraries, then Watchlist, Favourites and
+    /// Collections, each with its own filter and, for the lists, its own A–Z
+    /// letter.
+    struct LibraryRootPage: View {
         @Binding var tab: ForYouTab
+        /// The libraries the row shows, in order; Collections reads them too.
         let libraries: [Library]
         let focusRequest: Int
         let isTopMenuFocused: Bool
@@ -40,6 +42,10 @@ extension TVMainTabView {
         @State private var nextOffset = 0
         /// Bumped by every reload; older responses are dropped.
         @State private var generation = 0
+        @State private var lastAppliedFocusRequest = 0
+        /// The library card that last held focus, which entry returns to.
+        @State private var lastLibraryId: Int?
+        @FocusState private var focusedLibraryId: Int?
         @FocusState private var focusedTab: ForYouTab?
         @FocusState private var alphabetFocused: Bool
         @FocusState private var filterFocused: Bool
@@ -67,6 +73,16 @@ extension TVMainTabView {
         var body: some View {
             VStack(alignment: .leading, spacing: 32) {
                 ScrollView(.vertical) {
+                    if !libraries.isEmpty {
+                        LibraryCardRow(
+                            libraries: libraries,
+                            focusedLibraryId: $focusedLibraryId,
+                            defaultLibraryId: entryLibraryId,
+                            onOpen: { router.navigate(to: .library(libraryId: $0.id, title: $0.name)) },
+                            onMoveUp: handUpToTopMenu
+                        )
+                        .padding(.bottom, 16)
+                    }
                     subTabRow
                         .padding(.bottom, tab == .collections ? 0 : 32)
                     content
@@ -81,6 +97,12 @@ extension TVMainTabView {
             .task(id: pageCacheKey) { await reload() }
             .onAppear(perform: applyFocusRequest)
             .onChange(of: focusRequest) { applyFocusRequest() }
+            .onChange(of: isTopMenuFocused) {
+                if !isTopMenuFocused { applyFocusRequest() }
+            }
+            .onChange(of: focusedLibraryId) {
+                if let focusedLibraryId { lastLibraryId = focusedLibraryId }
+            }
         }
 
         // MARK: Sub-tabs
@@ -103,11 +125,9 @@ extension TVMainTabView {
             .focusSection()
             .defaultFocus($focusedTab, tab, priority: .userInitiated)
             .onMoveCommand { direction in
-                guard direction == .up else { return }
-                focusedTab = nil
-                alphabetFocused = false
-                filterFocused = false
-                onTopMenuFocusRequest()
+                // With libraries above, Up moves to their row natively.
+                guard direction == .up, libraries.isEmpty else { return }
+                handUpToTopMenu()
             }
         }
 
@@ -163,7 +183,8 @@ extension TVMainTabView {
                 TVLibraryCollectionsView(
                     libraries: libraries,
                     filter: selectedFilter,
-                    isFocusUp: isTopMenuFocused || focusedTab != nil || alphabetFocused || filterFocused
+                    isFocusUp: isTopMenuFocused || focusedLibraryId != nil || focusedTab != nil
+                        || alphabetFocused || filterFocused
                 )
             } else if items.isEmpty, let error {
                 ErrorView(state: error, onRetry: { Task { await reload() } })
@@ -200,9 +221,32 @@ extension TVMainTabView {
             }
         }
 
+        /// The remembered library card while it's still offered, else the
+        /// first.
+        private var entryLibraryId: Int? {
+            if let lastLibraryId, libraries.contains(where: { $0.id == lastLibraryId }) { return lastLibraryId }
+            return libraries.first?.id
+        }
+
+        private func handUpToTopMenu() {
+            focusedLibraryId = nil
+            focusedTab = nil
+            alphabetFocused = false
+            filterFocused = false
+            onTopMenuFocusRequest()
+        }
+
+        /// Each request lands once, on the library row or, without
+        /// libraries, on the current sub-tab. Coming back from a pushed page
+        /// leaves focus where the navigation stack restores it.
         private func applyFocusRequest() {
-            guard focusRequest > 0, !isTopMenuFocused else { return }
-            focusedTab = tab
+            guard focusRequest > 0, focusRequest != lastAppliedFocusRequest, !isTopMenuFocused else { return }
+            lastAppliedFocusRequest = focusRequest
+            if let entryLibraryId {
+                focusedLibraryId = entryLibraryId
+            } else {
+                focusedTab = tab
+            }
         }
 
         // MARK: Loading

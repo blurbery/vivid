@@ -36,16 +36,16 @@ struct TVMainTabView: View {
     /// A page the top bar can show.
     enum Root: Hashable {
         case home
-        case forYou
+        /// Every movie and series library, then Watchlist, Favourites and
+        /// Collections.
+        case library
         case calendar
-        case library(TVLibraryTabType)
 
         var title: String {
             switch self {
             case .home: String(localized: "Home")
-            case .forYou: String(localized: "For You")
+            case .library: String(localized: "Library")
             case .calendar: String(localized: "Calendar")
-            case .library(let type): type.title
             }
         }
 
@@ -54,16 +54,14 @@ struct TVMainTabView: View {
         var symbol: String {
             switch self {
             case .home: AppTab.home.icon
-            case .forYou: AppTab.recommendations.icon
+            case .library: AppTab.libraries.icon
             case .calendar: AppTab.calendar.icon
-            case .library(.movies): PrimaryMenuBuiltin.movies.navigationIcon
-            case .library(.series): PrimaryMenuBuiltin.series.navigationIcon
             }
         }
 
         var accessibilityHint: Text {
             switch self {
-            case .forYou: Text("Open Watchlist, Favourites, or Collections")
+            case .library: Text("Open your libraries, Watchlist, Favourites, or Collections")
             case .calendar: Text("Open Upcoming or Trending")
             default: Text("Open page")
             }
@@ -75,8 +73,6 @@ struct TVMainTabView: View {
     @State private var calendarPage: TVCalendarView.Page = .upcoming
     @State private var libraries: [Library]
     @State private var libraryAuthority: MainTabLibraryAuthority?
-    /// The library picked on each page this session, by id.
-    @State private var sessionLibraryChoice: [TVLibraryTabType: Int] = [:]
     @State private var barFocused = false
     @State private var barSuppressed = true
     @State private var homeAllowsBarFocus = false
@@ -235,32 +231,14 @@ struct TVMainTabView: View {
                 isTopMenuFocused: barFocused,
                 onTopMenuFocusRequest: focusBar
             )
-        case .forYou:
-            ForYouPage(
+        case .library:
+            LibraryRootPage(
                 tab: $forYouTab,
-                libraries: libraries.filter { $0.isMovieLibrary || $0.isSeriesLibrary || $0.isMixedLibrary },
+                libraries: browsableLibraries,
                 focusRequest: contentFocusRequest,
                 isTopMenuFocused: barFocused,
                 onTopMenuFocusRequest: focusBar
             )
-        case .library(let type):
-            let choices = sortedLibraries(of: type)
-            if let library = activeLibrary(of: type, among: choices) {
-                LibraryTypePage(
-                    type: type,
-                    library: library,
-                    libraries: choices,
-                    focusRequest: contentFocusRequest,
-                    isTopMenuFocused: barFocused,
-                    onTopMenuFocusRequest: focusBar,
-                    onChooseLibrary: { chosen in
-                        sessionLibraryChoice[type] = chosen.id
-                        LibraryScopeMemory.remember(chosen.id, for: type)
-                    }
-                )
-            } else {
-                EmptyStateView(icon: "square.stack.3d.up", title: "No libraries")
-            }
         }
     }
 
@@ -289,6 +267,13 @@ struct TVMainTabView: View {
     @ViewBuilder
     private func destination(for route: Route) -> some View {
         switch route {
+        case .library(let libraryId, _):
+            if let library = browsableLibraries.first(where: { $0.id == libraryId }) {
+                LibraryPage(library: library)
+            } else {
+                EmptyStateView(icon: "square.stack.3d.up", title: "No libraries")
+                    .vividBackground()
+            }
         case .libraryCollection(let libraryId, let collectionId, let title, let kind):
             LibraryCollectionDetailView(libraryId: libraryId, collectionId: collectionId, title: title, kind: kind)
         case .itemDetail(let contentId, let seed):
@@ -358,55 +343,34 @@ struct TVMainTabView: View {
         )
     }
 
+    /// Home and Library, in the saved menu's order, then Calendar after
+    /// Library when it's on. Library is always offered: it is the only way
+    /// to the libraries and the personal lists.
     private var visibleRoots: [Root] {
-        var roots: [Root] = []
-        for item in UICustomizationPreferences.shared.resolvedPrimaryMenuItems(availableLibraries: libraries) {
-            let root: Root?
-            switch item {
-            case .builtin(let builtin):
-                switch builtin {
-                case .home: root = .home
-                case .movies: root = libraries.contains(where: TVLibraryTabType.movies.matches) ? .library(.movies) : nil
-                case .series: root = libraries.contains(where: TVLibraryTabType.series.matches) ? .library(.series) : nil
-                case .forYou: root = .forYou
-                }
-            case .library, .section, .collection:
-                root = nil
-            }
-            if let root, !roots.contains(root) { roots.append(root) }
-        }
-        if !roots.contains(.home) { roots.insert(.home, at: 0) }
-        if showsCalendar {
-            if let forYou = roots.firstIndex(of: .forYou) {
-                roots.insert(.calendar, at: forYou + 1)
-            } else {
-                roots.append(.calendar)
-            }
+        let items = UICustomizationPreferences.shared.resolvedPrimaryMenuItems(availableLibraries: libraries)
+        var roots: [Root] = tvTabBarLibraryLeadsHome(in: items) ? [.library, .home] : [.home, .library]
+        if showsCalendar, let library = roots.firstIndex(of: .library) {
+            roots.insert(.calendar, at: library + 1)
         }
         return roots
     }
 
-    /// A type's libraries by sort order (missing last), then id.
-    private func sortedLibraries(of type: TVLibraryTabType) -> [Library] {
-        libraries.filter(type.matches).sorted { lhs, rhs in
-            let left = lhs.sortOrder ?? Int.max
-            let right = rhs.sortOrder ?? Int.max
-            return left == right ? lhs.id < rhs.id : left < right
-        }
-    }
-
-    private func activeLibrary(of type: TVLibraryTabType, among choices: [Library]) -> Library? {
-        if let chosen = sessionLibraryChoice[type], let library = choices.first(where: { $0.id == chosen }) {
-            return library
-        }
-        return LibraryScopeMemory.resolve(type, among: choices)
+    /// The movie, series and mixed libraries, by sort order (missing last),
+    /// then id.
+    private var browsableLibraries: [Library] {
+        libraries
+            .filter { library in TVLibraryTabType.allCases.contains { $0.matches(library) } }
+            .sorted { lhs, rhs in
+                let left = lhs.sortOrder ?? Int.max
+                let right = rhs.sortOrder ?? Int.max
+                return left == right ? lhs.id < rhs.id : left < right
+            }
     }
 
     private func loadLibraries(for authority: MainTabLibraryAuthority?) async {
         if authority != libraryAuthority {
             libraryAuthority = authority
             libraries = []
-            sessionLibraryChoice = [:]
             ensureSelectedRootVisible()
         }
         guard authority != nil else { return }

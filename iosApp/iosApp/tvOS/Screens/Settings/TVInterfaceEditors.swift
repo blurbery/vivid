@@ -317,33 +317,20 @@ extension TVSettingsView {
 
     /// General > Customise Tab Bar on Apple TV.
     struct TabBarEditorPage: View {
-        let libraries: [Library]
-
         @State private var preferences = UICustomizationPreferences.shared
         @AppStorage private var swapsUtilities: Bool
         @AppStorage private var showsCalendar: Bool
         @Environment(\.dismiss) private var dismiss
 
-        init(libraries: [Library]) {
-            self.libraries = libraries
+        init() {
             _swapsUtilities = AppStorage(wrappedValue: false, MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities"))
             _showsCalendar = AppStorage(wrappedValue: true, MobileProfilePreferenceKeys.key("vivid.mobile.showCalendarTab"))
         }
 
+        /// Home and the saved tab that places Library, in bar order.
         private var visibleItems: [PrimaryMenuItem] {
-            TVSettingsView.tabBarItems(preferences.resolvedPrimaryMenuItems(), libraries: libraries)
+            TVSettingsView.tabBarItems(preferences.resolvedPrimaryMenuItems())
         }
-
-        private var hiddenItems: [PrimaryMenuItem] {
-            let visible = visibleItems
-            var candidates: [PrimaryMenuItem] = [.builtin(.home)]
-            if TVSettingsView.tabBarShows(.builtin(.movies), libraries: libraries) { candidates.append(.builtin(.movies)) }
-            if TVSettingsView.tabBarShows(.builtin(.series), libraries: libraries) { candidates.append(.builtin(.series)) }
-            candidates.append(.builtin(.forYou))
-            return candidates.filter { !visible.contains($0) }
-        }
-
-        private var showsForYou: Bool { visibleItems.contains(.builtin(.forYou)) }
 
         private var canEdit: Bool {
             tvCustomizationMutationIsEnabled(allowsEditing: preferences.allowsEditing,
@@ -358,9 +345,8 @@ extension TVSettingsView {
                 preview
                 searchAndProfile
                 visibleSection
-                if !hiddenItems.isEmpty { hiddenSection }
                 calendarSection
-                TVSettingsFooter("Changes save automatically. Home stays visible; press Back to return.")
+                TVSettingsFooter("Changes save automatically. Home and Library stay visible; press Back to return.")
             }
             .onExitCommand { dismiss() }
         }
@@ -376,15 +362,13 @@ extension TVSettingsView {
 
         private var preview: some View {
             let visible = visibleItems
-            var tabs = visible.map { TabBarPreview.Tab(id: $0.id, title: $0.title, symbol: $0.navigationIcon) }
-            if showsCalendar {
+            var tabs = visible.map {
+                TabBarPreview.Tab(id: $0.id, title: TVSettingsView.tabBarTitle($0), symbol: TVSettingsView.tabBarSymbol($0))
+            }
+            if showsCalendar, let library = visible.firstIndex(where: { !$0.isHome }) {
                 let calendar = TabBarPreview.Tab(id: "vivid.calendar", title: AppTab.calendar.title,
                                                  symbol: AppTab.calendar.icon)
-                if let forYou = visible.firstIndex(of: .builtin(.forYou)) {
-                    tabs.insert(calendar, at: forYou + 1)
-                } else {
-                    tabs.append(calendar)
-                }
+                tabs.insert(calendar, at: library + 1)
             }
             return TabBarPreview(tabs: tabs, swapsUtilities: swapsUtilities)
         }
@@ -421,23 +405,19 @@ extension TVSettingsView {
                 heading("VISIBLE DESTINATIONS")
                 TVSettingsGroup {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
+                        let title = TVSettingsView.tabBarTitle(item)
                         HStack(spacing: TVSettingsLayout.scaled(12)) {
-                            TVSettingsRowLabel(title: Text(item.title),
+                            TVSettingsRowLabel(title: Text(title),
                                                detail: Text("Shown in the tab bar. Use the arrows to change its position."))
                             Spacer(minLength: TVSettingsLayout.scaled(12))
-                            EditorSymbolButton(systemName: "arrow.up", label: Text("Move \(item.title) earlier")) {
-                                swap(index, index - 1, in: visible)
+                            EditorSymbolButton(systemName: "arrow.up", label: Text("Move \(title) earlier")) {
+                                setLibraryLeads(item.isHome ? false : true)
                             }
                             .disabled(index == 0)
-                            EditorSymbolButton(systemName: "arrow.down", label: Text("Move \(item.title) later")) {
-                                swap(index, index + 1, in: visible)
+                            EditorSymbolButton(systemName: "arrow.down", label: Text("Move \(title) later")) {
+                                setLibraryLeads(item.isHome ? true : false)
                             }
                             .disabled(index == visible.count - 1)
-                            if !item.isHome {
-                                EditorSymbolButton(systemName: "eye", label: Text("Hide \(item.title)")) {
-                                    save(visible.filter { $0 != item })
-                                }
-                            }
                         }
                         .padding(.horizontal, TVSettingsLayout.scaled(24))
                         .padding(.vertical, TVSettingsLayout.scaled(12))
@@ -449,31 +429,9 @@ extension TVSettingsView {
             }
         }
 
-        private var hiddenSection: some View {
-            let visible = visibleItems
-            return Group {
-                heading("HIDDEN DESTINATIONS")
-                TVSettingsGroup {
-                    ForEach(hiddenItems) { item in
-                        Button { save(visible + [item]) } label: {
-                            HStack(spacing: TVSettingsLayout.scaled(18)) {
-                                Image(systemName: "eye.slash")
-                                Text("Show \(item.title)")
-                                Spacer()
-                            }
-                            .font(.tvSettings(26, weight: .medium))
-                        }
-                        .buttonStyle(TVSettingsPaneRowStyle())
-                    }
-                }
-                .focusSection()
-                .disabled(!canEdit)
-            }
-        }
-
         private var calendarSection: some View {
             let detail: LocalizedStringResource = !showsCalendar ? "Hidden from the tab bar."
-                : showsForYou ? "Shown in the tab bar, just after For You." : "Shown at the end of the tab bar."
+                : "Shown in the tab bar, just after Library."
             return Group {
                 heading("CALENDAR")
                 TVSettingsGroup {
@@ -494,26 +452,15 @@ extension TVSettingsView {
 
         // MARK: Saving
 
-        private func swap(_ first: Int, _ second: Int, in visible: [PrimaryMenuItem]) {
-            guard visible.indices.contains(first), visible.indices.contains(second) else { return }
-            var items = visible
-            items.swapAt(first, second)
-            save(items)
-        }
-
-        /// Saves a new visible list. Items this editor doesn't show keep
-        /// their places; the places of shown items are refilled in order.
-        private func save(_ newVisible: [PrimaryMenuItem]) {
-            var remaining = newVisible[...]
-            var menu: [PrimaryMenuItem] = []
-            for item in preferences.resolvedPrimaryMenuItems() {
-                if TVSettingsView.tabBarShows(item, libraries: libraries) {
-                    if let next = remaining.popFirst() { menu.append(next) }
-                } else {
-                    menu.append(item)
-                }
-            }
-            menu.append(contentsOf: remaining)
+        /// Puts Home after or before every other saved tab. Movies, Series
+        /// and For You, which Library stands for here, keep their own order
+        /// for the clients that still show them.
+        private func setLibraryLeads(_ leads: Bool) {
+            let saved = preferences.resolvedPrimaryMenuItems()
+            let home = saved.filter(\.isHome)
+            let others = saved.filter { !$0.isHome }
+            let menu = leads ? others + home : home + others
+            guard menu != saved else { return }
             preferences.setPrimaryMenuItems(menu)
         }
     }
