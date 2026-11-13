@@ -158,8 +158,7 @@ enum TVTopMenuMotion {
     }
 }
 
-/// One tab in the notch: its symbol, or its name while it is focused or
-/// while it is the selected tab of a bar without focus.
+/// One tab in the notch: its symbol, or its name while it is focused.
 struct TVTopMenuTabLabel: View {
     let symbol: String
     let title: String
@@ -180,9 +179,10 @@ struct TVTopMenuTabLabel: View {
         let fill: Color = !inverted && isSelected ? Color.white.opacity(0.14) : .clear
         let border: Color = !isFocused && isSelected ? .vividChromeSelectedBorder : .clear
         let scale: CGFloat = isFocused && !reduceMotion ? 1.1 : 1
-        // The name shows for the focused tab, or for the selected one
-        // while the bar doesn't have focus; the rest show their symbol.
-        let showsName = inverted
+        // Only the focused tab shows its name. The selected tab of a bar
+        // without focus keeps its symbol, so tucking and opening change
+        // the notch's width and nothing else.
+        let showsName = isFocused
         // Both stay in the tree and crossfade, so the pill's width is the
         // only thing that moves. The cluster's animation moves it together
         // with the other tabs.
