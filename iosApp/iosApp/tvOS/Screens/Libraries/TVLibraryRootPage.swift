@@ -23,8 +23,7 @@ extension TVMainTabView {
     }
 
     /// The Library tab: the row of libraries, then Watchlist, Favourites and
-    /// Collections, each with its own filter and, for the lists, its own A–Z
-    /// letter.
+    /// Collections, each with its own filter and A–Z letter.
     struct LibraryRootPage: View {
         @Binding var tab: ForYouTab
         /// The libraries the row shows, in order; Collections reads them too.
@@ -61,9 +60,7 @@ extension TVMainTabView {
             (filters[tab] ?? PersonalListFilter()).limited(to: choices)
         }
 
-        private var letter: String? {
-            tab == .collections ? nil : letters[tab]
-        }
+        private var letter: String? { letters[tab] }
 
         /// In memory under `personal:`, so a profile change clears it.
         private var pageCacheKey: String {
@@ -116,10 +113,8 @@ extension TVMainTabView {
                 if !choices.isEmpty {
                     filterMenu
                 }
-                if tab != .collections {
-                    TVAlphabetMenu(selected: letter) { letters[tab] = $0 }
-                        .focused($alphabetFocused)
-                }
+                TVAlphabetMenu(selected: letter) { letters[tab] = $0 }
+                    .focused($alphabetFocused)
             }
             .padding(.horizontal, 80)
             .focusSection()
@@ -138,11 +133,9 @@ extension TVMainTabView {
                 Text(verbatim: option.title)
                     .font(.system(size: 26, weight: .semibold))
                     .padding(.horizontal, 22)
-                    .padding(.vertical, 10)
-                    .foregroundStyle(isFocused ? Color.black : (isSelected ? Color.white : Color.white.opacity(0.65)))
-                    .background(
-                        Capsule().fill(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.18 : 0.06))
-                    )
+                    .frame(height: TVBrowseControlPillStyle.height)
+                    .foregroundStyle(isFocused || isSelected ? Color.white : Color.white.opacity(0.65))
+                    .background(TVBrowsePillBackground(isFocused: isFocused, isSelected: isSelected))
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
@@ -183,6 +176,7 @@ extension TVMainTabView {
                 TVLibraryCollectionsView(
                     libraries: libraries,
                     filter: selectedFilter,
+                    letter: letter,
                     isFocusUp: isTopMenuFocused || focusedLibraryId != nil || focusedTab != nil
                         || alphabetFocused || filterFocused
                 )

@@ -8,6 +8,8 @@ extension TVMainTabView {
     struct TVLibraryCollectionsView: View {
         let libraries: [Library]
         let filter: PersonalListFilter
+        /// The A–Z letter collection names must start with; `nil` shows all.
+        let letter: String?
         /// The bar, a sub-tab, A–Z or Filter holds focus.
         let isFocusUp: Bool
 
@@ -133,7 +135,7 @@ extension TVMainTabView {
         }
 
         private var emptyContent: some View {
-            let filterActive = filter.limited(to: .collections).isActive
+            let filterActive = filter.limited(to: .collections).isActive || letter != nil
             let title: LocalizedStringKey = filterActive ? "No collections match these filters" : "No collections yet"
             let subtitle: LocalizedStringKey? = filterActive ? nil : "Collections created on the server will appear here."
             return ZStack {
@@ -190,6 +192,9 @@ extension TVMainTabView {
                             activeProfileID: profileID
                         )
                     }
+                }
+                if let letter {
+                    entries = entries.filter { Self.name($0.collection.name, startsWith: letter) }
                 }
                 if usesNativeUser {
                     entries = entries.map { entry in
@@ -343,6 +348,19 @@ extension TVMainTabView {
             case .orderedDescending: false
             case .orderedSame: lhs.collection.id < rhs.collection.id
             }
+        }
+
+        /// Whether a name files under an A–Z choice, by the same sort key
+        /// that orders the grid (so "The Matrix Collection" is under M).
+        /// "#" takes every name that doesn't start with A to Z.
+        private static func name(_ name: String, startsWith letter: String) -> Bool {
+            let first = TitleSortOrder.sortKey(name)
+                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+                .uppercased()
+                .first
+            let isLetter = first.map { ("A"..."Z").contains($0) } ?? false
+            if letter == "#" { return !isLetter }
+            return isLetter && first.map(String.init) == letter
         }
 
         private static func libraryKey(_ id: Int) -> String { "library:\(id):collections" }
