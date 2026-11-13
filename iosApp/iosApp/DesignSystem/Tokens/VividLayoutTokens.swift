@@ -50,12 +50,10 @@ extension VividTheme {
     /// The Apple TV shell bar and dense Home and collection grids.
     enum Skyline {
         static let safeAreaX: CGFloat = 88
-        /// The bar floats over the top of each page as an island, so pages
-        /// take no extra inset for it.
+        /// The bar hangs from the top edge as a notch, so pages take no
+        /// extra inset for it.
         static let barTopInset: CGFloat = 0
-        /// The island, the gap above it and the gap below, down to where
-        /// Home's Spotlight starts.
-        static let barHeight: CGFloat = 81
+        static let barHeight: CGFloat = 64
         static let tabSpacing: CGFloat = 8
         static let densePosterCardWidth: CGFloat = 176
         static let collectionGridColumnSpacing: CGFloat = 40

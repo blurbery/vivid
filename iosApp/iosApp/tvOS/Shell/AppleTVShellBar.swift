@@ -20,29 +20,50 @@ struct TVTopMenuGlassChrome: ViewModifier {
     }
 }
 
-/// The top bar's island: a dark glass capsule with an outline, floating a
-/// small gap below the top edge. It sits midway between the top of the
-/// screen and Home's Spotlight.
-struct TVTopMenuIslandChrome: ViewModifier {
-    /// The island's content is 42 points tall with 4 above and below, and
-    /// Home's Spotlight starts 81 points down, which leaves this above the
-    /// island and a point more below it.
-    static let topGap: CGFloat = 15
+/// A tab hanging from the top of the screen, like a notch: the sides flare
+/// out where they meet the top edge and the bottom corners are rounded.
+struct TVTopMenuNotchShape: Shape {
+    static let flare: CGFloat = 8
+    /// Without the top edge, for the outline.
+    var open = false
 
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
-            .background(.ultraThinMaterial, in: Capsule())
-            .background(Capsule().fill(Color.black.opacity(0.45)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1.5))
-            .padding(.top, Self.topGap)
+    func path(in rect: CGRect) -> Path {
+        let flare = Self.flare
+        let radius = min(26, rect.height / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + flare, y: rect.minY + flare),
+                          control: CGPoint(x: rect.minX + flare, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + flare, y: rect.maxY - radius))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + flare + radius, y: rect.maxY),
+                          control: CGPoint(x: rect.minX + flare, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - flare - radius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - flare, y: rect.maxY - radius),
+                          control: CGPoint(x: rect.maxX - flare, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - flare, y: rect.minY + flare))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY),
+                          control: CGPoint(x: rect.maxX - flare, y: rect.minY))
+        if !open { path.closeSubpath() }
+        return path
     }
 }
 
-/// The one highlight the island's tabs and Search share. Drawn by whichever
+/// The top bar's notch: dark glass with an outline on its sides and bottom.
+struct TVTopMenuNotchChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, TVTopMenuNotchShape.flare + 16)
+            .padding(.top, 3)
+            .padding(.bottom, 5)
+            .background(.ultraThinMaterial, in: TVTopMenuNotchShape())
+            .background(TVTopMenuNotchShape().fill(Color.black.opacity(0.45)))
+            .overlay(TVTopMenuNotchShape(open: true).stroke(Color.white.opacity(0.28), lineWidth: 1.5))
+    }
+}
+
+/// The one highlight the notch's tabs and Search share. Drawn by whichever
 /// item holds it, so it leaves one and arrives on the next as a single
-/// moving shape. Outlined rather than filled, like the island itself.
+/// moving shape. Outlined rather than filled, like the notch itself.
 struct TVTopMenuHighlightPill: View {
     let namespace: Namespace.ID
 
@@ -54,7 +75,7 @@ struct TVTopMenuHighlightPill: View {
     }
 }
 
-/// The hairline between the island's utilities and its tabs.
+/// The hairline between the notch's utilities and its tabs.
 struct TVTopMenuDivider: View {
     var body: some View {
         Rectangle()
@@ -65,7 +86,7 @@ struct TVTopMenuDivider: View {
     }
 }
 
-/// How the island's tabs, highlight and lift move, shared with the Tab Bar
+/// How the notch's tabs, highlight and lift move, shared with the Tab Bar
 /// settings preview so the two stay in step.
 enum TVTopMenuMotion {
     /// One animation for every tab's width, the highlight and the lift,
@@ -84,7 +105,7 @@ enum TVTopMenuMotion {
     }
 }
 
-/// One tab in the island: its symbol, or its name while it is focused or
+/// One tab in the notch: its symbol, or its name while it is focused or
 /// while it is the selected tab of a bar without focus.
 struct TVTopMenuTabLabel: View {
     let symbol: String
@@ -142,7 +163,7 @@ struct TVTopMenuTabLabel: View {
     }
 }
 
-/// Search in the island.
+/// Search in the notch.
 struct TVTopMenuSearchLabel: View {
     let isFocused: Bool
     let highlight: Namespace.ID
@@ -162,7 +183,7 @@ struct TVTopMenuSearchLabel: View {
     }
 }
 
-/// The profile avatar in the island.
+/// The profile avatar in the notch.
 struct TVTopMenuProfileLabel: View {
     let profile: UserProfile?
     let isFocused: Bool
@@ -186,8 +207,8 @@ struct TVTopMenuProfileLabel: View {
 }
 
 extension TVMainTabView {
-    /// Search, the root tabs and the profile avatar in an island floating
-    /// just below the top edge. Off focus it closes to Search, the selected tab and
+    /// Search, the root tabs and the profile avatar in a notch hanging from
+    /// the top edge. Off focus it closes to Search, the selected tab and
     /// the avatar; with focus the other tabs come back as symbols. It only
     /// takes focus when the shell hands it over, or while Home's
     /// spotlight leaves it reachable.
@@ -295,7 +316,7 @@ extension TVMainTabView {
                 utility(swapsUtilities ? .search : .profile)
             }
             .fixedSize()
-            .modifier(TVTopMenuIslandChrome())
+            .modifier(TVTopMenuNotchChrome())
             .frame(maxWidth: .infinity)
             .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
             .animation(tabAnimation, value: selectedRoot)
@@ -329,7 +350,7 @@ extension TVMainTabView {
                 divider
                 utility(swapsUtilities ? .search : .profile)
             }
-            .modifier(TVTopMenuIslandChrome())
+            .modifier(TVTopMenuNotchChrome())
             .padding(.horizontal, 150)
             .frame(maxWidth: .infinity)
             .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
