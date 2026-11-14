@@ -53,8 +53,12 @@ final class LibraryRowOrderStore {
         return placed + libraries.filter { !saved.contains($0.id) }
     }
 
-    /// Moves a library one place within the row as shown.
+    /// Moves a library one place within the row. `shown` is put in the saved
+    /// order first: a caller's copy of the row dates from when it was last
+    /// drawn, so a second move arriving before the row redraws would start
+    /// from the old order and repeat the first move instead of adding to it.
     func move(_ library: Library, by offset: Int, in shown: [Library]) {
+        let shown = Self.arranged(shown, saved: savedOrder)
         guard let activeKey, let index = shown.firstIndex(where: { $0.id == library.id }) else { return }
         let target = index + offset
         guard shown.indices.contains(target) else { return }

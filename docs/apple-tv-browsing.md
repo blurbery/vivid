@@ -323,6 +323,7 @@ The library each Movies and Series page used to remember is no longer kept.
 Holding Select on a library card starts arranging the row.
 Every card rocks, Select picks a card up, Left and Right move it and Select drops it.
 There is no save button: each move saves as it happens, and arranging lasts until Menu.
+Each move starts from the saved order, not from the row as it was last drawn, so presses made faster than the row redraws each count.
 While a card is picked up, Up does nothing.
 Library cards draw their own focus: they grow and lift on a shadow with no system card platter, and a picked-up card grows a little more.
 The other media cards keep the native card style.
