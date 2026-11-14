@@ -13,6 +13,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 struct TVDetailFoldSnapping: ScrollTargetBehavior {
     let showcaseHeight: CGFloat
+    /// On a page with a pinned logo, how far past the fold a scroll may be
+    /// aimed and still settle on the fold, so coming back up to the first
+    /// shelf lands where arriving from the hero does, with the logo whole.
+    var pinnedReach: CGFloat = 0
 
     /// Snaps focus-driven scrolls on the native movie and series pages to
     /// either the whole hero or the shelves at the top. Vivid decides "above
@@ -27,6 +31,9 @@ struct TVDetailFoldSnapping: ScrollTargetBehavior {
         if startedAboveFold, proposed < fold * 0.3 {
             target.rect.origin.y = 0
         } else if !startedAboveFold, proposed > fold {
+            if proposed < fold + pinnedReach {
+                target.rect.origin.y = fold
+            }
             return
         } else if startedAboveFold || (fold * 0.7...fold).contains(proposed) {
             target.rect.origin.y = fold
@@ -43,7 +50,22 @@ struct TVDetailFoldSnapping: ScrollTargetBehavior {
 final class TVDetailScrollState {
     /// The visible top, clamped to 0 through the showcase height.
     var offset: CGFloat = 0
+    /// How far the page has scrolled past the shelves' resting position.
+    var overscroll: CGFloat = 0
     var showsShelfLogo = false
+    /// Counts requests to bring the page back to the fold.
+    private(set) var foldRequests = 0
+
+    /// Asks the page to return to the fold when it has scrolled a little
+    /// past it, no further than `reach`. The series page's season selector
+    /// calls this when it takes focus with the distance at which it is
+    /// still wholly on screen: focus doesn't scroll to a control it can
+    /// already see. Further down, the system's own focus scroll brings the
+    /// page back and the fold snapping settles it, so nothing is asked.
+    func requestFold(within reach: CGFloat) {
+        guard overscroll > 0, overscroll <= reach else { return }
+        foldRequests += 1
+    }
 }
 
 /// Fold snapping for the native page's scroll view, the scroll position the
@@ -55,22 +77,36 @@ struct TVDetailFoldScrolling: ViewModifier {
     let showcaseHeight: CGFloat
     /// The visible top from which the shelf logo shows.
     let logoThreshold: CGFloat
+    /// The hero's logo, drawn fixed over the page instead of inside it.
+    var pinnedLogo: TVDetailHeroLogo? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scroll = TVDetailScrollState()
+    @State private var position = ScrollPosition(idType: String.self)
 
     func body(content: Content) -> some View {
         content
-            .scrollTargetBehavior(TVDetailFoldSnapping(showcaseHeight: showcaseHeight))
+            .scrollPosition($position)
+            .scrollTargetBehavior(TVDetailFoldSnapping(
+                showcaseHeight: showcaseHeight,
+                pinnedReach: pinnedLogo == nil ? 0 : 300
+            ))
+            .onChange(of: scroll.foldRequests) { _, _ in
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.45)) {
+                    position.scrollTo(y: showcaseHeight)
+                }
+            }
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.visibleRect.minY
             } action: { _, top in
                 let offset = min(max(top, 0), showcaseHeight)
-                if offset != scroll.offset {
+                let overscroll = max(top - showcaseHeight, 0)
+                if offset != scroll.offset || overscroll != scroll.overscroll {
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
                         scroll.offset = offset
+                        scroll.overscroll = overscroll
                     }
                 }
                 let logoVisible = top >= logoThreshold
@@ -84,6 +120,56 @@ struct TVDetailFoldScrolling: ViewModifier {
             .background {
                 TVDetailScrollMaterialLayer(viewportSize: viewportSize, showcaseHeight: showcaseHeight, scroll: scroll)
             }
+            .overlay(alignment: .topLeading) {
+                if let pinnedLogo {
+                    TVDetailPinnedLogo(logo: pinnedLogo, scroll: scroll)
+                }
+            }
+    }
+}
+
+/// The hero's logo held in its corner while the page crosses the fold. It
+/// only moves once the page scrolls on past the shelves' first row, when it
+/// leaves with them.
+private struct TVDetailPinnedLogo: View {
+    let logo: TVDetailHeroLogo
+    let scroll: TVDetailScrollState
+
+    var body: some View {
+        logo
+            .offset(y: -scroll.overscroll)
+            .allowsHitTesting(false)
+    }
+}
+
+/// On a page with a pinned logo, fades the hero out as the page leaves it
+/// and the shelves in as they arrive, so the two never cross under the logo.
+struct TVDetailFoldFade: ViewModifier {
+    enum Part { case hero, shelves }
+
+    let part: Part
+    let showcaseHeight: CGFloat
+    var isEnabled = true
+
+    @Environment(TVDetailScrollState.self) private var scroll: TVDetailScrollState?
+
+    func body(content: Content) -> some View {
+        content.opacity(opacity)
+    }
+
+    /// Never fully clear: the focus engine skips a view with no opacity,
+    /// which would stop focus moving between the hero and the shelves.
+    private static let floor = 0.02
+
+    private var opacity: Double {
+        guard isEnabled, let scroll, showcaseHeight > 0 else { return 1 }
+        let progress = min(max(scroll.offset / showcaseHeight, 0), 1)
+        let faded: Double
+        switch part {
+        case .hero: faded = 1 - min(progress / 0.45, 1)
+        case .shelves: faded = min(max((progress - 0.45) / 0.45, 0), 1)
+        }
+        return max(faded, Self.floor)
     }
 }
 

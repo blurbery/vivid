@@ -1,17 +1,23 @@
 #if os(tvOS)
 import SwiftUI
 
-/// The series page's season pills over one continuous row of every loaded
-/// season's episodes.
+/// The series page's season selector, the shown season's synopsis and
+/// poster, and one continuous row of every loaded season's episodes.
 ///
 /// Coming down from the hero, the shelf opens on the Play target's season
-/// and episode. After that, the browsed season follows the pills and the
-/// focused episode, and the pill highlight follows the scroll position.
+/// and episode. After that, the browsed season follows the selector and
+/// the focused episode, and the shown season's name, synopsis and poster
+/// follow the scroll position.
 struct TVSeriesEpisodeShelf: View {
     let seasons: [Season]
     /// Loaded episode pages by season number, spoilers already covered.
     let pages: [Int: [EpisodeListItem]]
     let selectedSeason: Season?
+    /// Stands in for a season that has no poster of its own.
+    let seriesPosterUrl: String?
+    /// With spoilers hidden, the season the viewer is up to: later seasons
+    /// show no synopsis. Nil shows them all.
+    let spoilerSeasonNumber: Int?
     /// The episode Play targets, marked as current.
     let currentEpisodeId: String?
     /// Where focus lands when it comes down from the hero.
@@ -25,11 +31,14 @@ struct TVSeriesEpisodeShelf: View {
 
     private static let slotWidth: CGFloat = 440
     private static let cardCentre: CGFloat = 200
+    /// Taller than the pills, season name and synopsis need, so the poster
+    /// beside them is large and the episode row fills the rest of the
+    /// screen, with the next shelf's heading below the bottom edge.
+    private static let headerHeight: CGFloat = 310
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var focusedPillId: String?
+    @FocusState private var selectorFocused: Bool
     @FocusState private var focusedEpisodeId: String?
-    @Namespace private var pillScope
 
     @State private var browseSeasonId: String?
     @State private var scrollSeasonId: String?
@@ -38,11 +47,14 @@ struct TVSeriesEpisodeShelf: View {
     @State private var pendingEpisodeJump: String?
     @State private var isSeeded = false
     @State private var dwellTask: Task<Void, Never>?
-
-    private var referenceSeasonId: String? { browseSeasonId ?? selectedSeason?.contentId }
+    /// The season stepped to on the selector, shown before it loads.
+    @State private var stepSeasonId: String?
+    @State private var showsWatchedFailure = false
+    @Environment(\.seasonWatchedAction) private var setSeasonWatched
+    @Environment(TVDetailScrollState.self) private var pageScroll: TVDetailScrollState?
 
     private var shownSeasonId: String? {
-        focusedPillId ?? scrollSeasonId ?? browseSeasonId ?? selectedSeason?.contentId
+        stepSeasonId ?? scrollSeasonId ?? browseSeasonId ?? selectedSeason?.contentId
     }
 
     private var targetSeason: Season? {
@@ -57,7 +69,7 @@ struct TVSeriesEpisodeShelf: View {
     var body: some View {
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 24) {
-                pills(proxy)
+                header(proxy)
                 episodeRow(proxy)
             }
             .onPlayPauseCommand {
@@ -78,8 +90,8 @@ struct TVSeriesEpisodeShelf: View {
             .onChange(of: shownEpisodeIds, initial: true) { _, _ in
                 episodesChanged(proxy)
             }
-            .onChange(of: focusedPillId) { oldValue, newValue in
-                pillFocusChanged(from: oldValue, to: newValue, proxy: proxy)
+            .onChange(of: selectorFocused) { _, focused in
+                selectorFocusChanged(focused, proxy: proxy)
             }
             .onChange(of: focusedEpisodeId) { oldValue, newValue in
                 episodeFocusChanged(from: oldValue, to: newValue)
@@ -87,135 +99,189 @@ struct TVSeriesEpisodeShelf: View {
         }
     }
 
-    // MARK: Pills
+    // MARK: Season header
 
-    private func pills(_ proxy: ScrollViewProxy) -> some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 4) {
-                ForEach(pillEntries, id: \.season.contentId) { entry in
-                    let season = entry.season
-                    let isShown = entry.range == nil && season.contentId == shownSeasonId
+    private var shownSeason: Season? {
+        seasons.first { $0.contentId == shownSeasonId } ?? selectedSeason
+    }
+
+    /// The season selector, fixed at the top, over the shown season's
+    /// facts and synopsis, with its poster
+    /// on the trailing side. The poster rises into the space beside the
+    /// pinned logo without adding height, and never takes focus.
+    private func header(_ proxy: ScrollViewProxy) -> some View {
+        let season = shownSeason
+        return VStack(alignment: .leading, spacing: 10) {
+            // The section spans the shelf, so focus reaches the name from
+            // any episode below it and from anywhere on the action row.
+            selector(proxy)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focusSection()
+            if let season {
+                TVSeasonSummary(
+                    season: season,
+                    showsSynopsis: showsSynopsis(for: season)
+                )
+            }
+        }
+        .frame(height: Self.headerHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottomTrailing) {
+            TVSeasonPosterCard(season: season, seriesPosterUrl: seriesPosterUrl)
+        }
+    }
+
+    /// Specials are never held back, whatever number the server gives
+    /// them, as in `EpisodeSpoilerPolicy`.
+    private func showsSynopsis(for season: Season) -> Bool {
+        guard let spoilerSeasonNumber else { return true }
+        if season.isSpecials == true || season.seasonNumber == 0 { return true }
+        return season.seasonNumber <= spoilerSeasonNumber
+    }
+
+    // MARK: Season selector
+
+    /// Specials first, then the numbered seasons, as Left and Right step
+    /// through them.
+    private var orderedSeasons: [Season] {
+        seasons.filter { $0.seasonNumber == 0 } + seasons.filter { $0.seasonNumber != 0 }
+    }
+
+    /// The shown season's name, always in the same place over its synopsis.
+    /// It is the one season control: Left and Right step through the
+    /// seasons, and Select opens the list of them, which also holds the
+    /// shown season's watched action.
+    @ViewBuilder
+    private func selector(_ proxy: ScrollViewProxy) -> some View {
+        if let season = shownSeason {
+            let ordered = orderedSeasons
+            let index = ordered.firstIndex { $0.contentId == season.contentId }
+            Menu {
+                ForEach(ordered, id: \.contentId) { entry in
                     Button {
-                        selectPill(season, proxy: proxy)
+                        jump(to: entry, proxy: proxy)
                     } label: {
-                        TVSeasonPillLabel(
-                            title: entry.range ?? Self.pillTitle(season),
-                            shortTitle: entry.range ?? Self.pillShortTitle(season),
-                            isExpanded: isShown,
-                            isRange: entry.range != nil
+                        TVDetailMenuRow.label(
+                            TVDetailMenuRow.text(Self.pillTitle(entry), detail: Self.episodeCount(entry)),
+                            isSelected: entry.contentId == season.contentId
                         )
                     }
-                    .buttonStyle(TVSeasonPillStyle(isHighlighted: isShown))
-                    .accessibilityLabel(Text(verbatim: entry.range ?? Self.pillTitle(season)))
-                    .focused($focusedPillId, equals: season.contentId)
-                    .modifier(SeasonWatchedContextMenu(season: season, isEnabled: entry.range == nil))
+                }
+                if let setSeasonWatched {
+                    let isPlayed = season.userData?.played == true
+                    Divider()
+                    Button {
+                        let seasonId = season.contentId
+                        Task {
+                            if await !setSeasonWatched(seasonId, !isPlayed) {
+                                showsWatchedFailure = true
+                            }
+                        }
+                    } label: {
+                        if isPlayed {
+                            Label("Mark Season Unwatched", systemImage: "checkmark.circle")
+                        } else {
+                            Label("Mark Season Watched", systemImage: "checkmark.circle")
+                        }
+                    }
+                }
+            } label: {
+                TVSeasonSelectorLabel(
+                    title: Self.pillTitle(season),
+                    reservedTitle: Self.reservedTitle(for: season),
+                    isFocused: selectorFocused,
+                    hasPrevious: (index ?? 0) > 0,
+                    hasNext: index.map { $0 < ordered.count - 1 } ?? false
+                )
+            }
+            .menuStyle(.button)
+            .buttonStyle(TVSeasonSelectorStyle())
+            .focusEffectDisabled()
+            .accessibilityLabel(Text(verbatim: Self.pillTitle(season)))
+            .focused($selectorFocused)
+            .onMoveCommand { direction in
+                switch direction {
+                case .left: step(by: -1, proxy: proxy)
+                case .right: step(by: 1, proxy: proxy)
+                default: break
                 }
             }
-            .padding(4)
-            .vividGlass(in: Capsule(), tint: .black.opacity(0.26))
-            // Opening another section swaps the pills in one step, with no
-            // animation. Animated, the old section's pills were removed only
-            // when it ended, and that took focus off the pill just landed
-            // on, sending it back to Specials or down to the episodes.
-        }
-        .scrollClipDisabled()
-        .focusSection()
-        .focusScope(pillScope)
-        .defaultFocus(
-            $focusedPillId,
-            referenceSeasonId,
-            priority: focusedPillId == nil ? .userInitiated : .automatic
-        )
-    }
-
-    /// One button in the season pill: a season, or a closed range standing
-    /// in for its seasons ("S13 - S29"). A range uses the identity of the
-    /// season beside the open section, so focusing it opens that season's
-    /// section with focus on it.
-    private struct PillEntry {
-        let season: Season
-        let range: String?
-    }
-
-    /// Specials on their own, then the numbered seasons in sections of six
-    /// once there are more than six. A lone season left at the end joins
-    /// the section before it.
-    private var pillSections: [[Season]] {
-        let specials = seasons.filter { $0.seasonNumber == 0 }
-        let numbered = seasons.filter { $0.seasonNumber != 0 }
-        var sections: [[Season]] = specials.isEmpty ? [] : [specials]
-        guard numbered.count > Self.seasonsPerSection else {
-            if !numbered.isEmpty { sections.append(numbered) }
-            return sections
-        }
-        var chunks = stride(from: 0, to: numbered.count, by: Self.seasonsPerSection).map {
-            Array(numbered[$0..<min($0 + Self.seasonsPerSection, numbered.count)])
-        }
-        if chunks.count > 1, let last = chunks.last, last.count == 1 {
-            chunks.removeLast()
-            chunks[chunks.count - 1].append(contentsOf: last)
-        }
-        sections.append(contentsOf: chunks)
-        return sections
-    }
-
-    private static let seasonsPerSection = 6
-
-    /// The numbered section shown open: the one holding the shown season,
-    /// else the one the page is on, else the first.
-    private var openSectionIndex: Int? {
-        let sections = pillSections
-        let numbered = sections.indices.filter { sections[$0].first?.seasonNumber != 0 }
-        let candidates = [shownSeasonId, referenceSeasonId, selectedSeason?.contentId]
-        for id in candidates {
-            guard let id else { continue }
-            if let index = numbered.first(where: { sections[$0].contains { $0.contentId == id } }) {
-                return index
+            .alert("Couldn’t update season", isPresented: $showsWatchedFailure) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Please try again.")
             }
         }
-        return numbered.first
     }
 
-    /// The open section's seasons, with everything before it as one range
-    /// and everything after it as another, so a long series never shows
-    /// more than a few closed groups. Each range takes the identity of the
-    /// season next to the open section (the previous section's last season,
-    /// or the next section's first), so moving onto it opens that section
-    /// on the neighbouring season and left and right step through every
-    /// season in order.
-    private var pillEntries: [PillEntry] {
-        let sections = pillSections
-        let specials = sections.filter { $0.first?.seasonNumber == 0 }.flatMap { $0 }
-        let numbered = sections.filter { $0.first?.seasonNumber != 0 }
-        var entries = specials.map { PillEntry(season: $0, range: nil) }
-        guard numbered.count > 1, let openIndex = openSectionIndex,
-              let open = numbered.firstIndex(where: { $0.first?.contentId == sections[openIndex].first?.contentId }) else {
-            entries += numbered.flatMap { $0 }.map { PillEntry(season: $0, range: nil) }
-            return entries
-        }
-        if open > 0, let first = numbered[0].first, let adjacent = numbered[open - 1].last {
-            entries.append(PillEntry(season: adjacent, range: Self.rangeTitle(first, adjacent)))
-        }
-        entries += numbered[open].map { PillEntry(season: $0, range: nil) }
-        if open < numbered.count - 1, let adjacent = numbered[open + 1].first,
-           let last = numbered[numbered.count - 1].last {
-            entries.append(PillEntry(season: adjacent, range: Self.rangeTitle(adjacent, last)))
-        }
-        return entries
+    /// A season name as wide as any with the same number of digits, so
+    /// the arrows hold one place across the single-digit seasons and step
+    /// out once for the two-digit ones.
+    private static func reservedTitle(for season: Season) -> String {
+        let digits = max(String(season.seasonNumber).count, 1)
+        return String(localized: "Season \(String(repeating: "8", count: digits))")
     }
 
-    private static func rangeTitle(_ first: Season, _ last: Season) -> String {
-        String(
-            localized: "S\(String(first.seasonNumber)) - S\(String(last.seasonNumber))",
-            comment: "A closed group of seasons on the season pill, from its first to its last season"
-        )
+    private static func episodeCount(_ season: Season) -> String? {
+        season.episodeCount > 0 ? String(localized: "\(season.episodeCount) Episodes") : nil
     }
 
-    /// The collapsed pill's label: the season number, or "SP" for specials.
-    static func pillShortTitle(_ season: Season) -> String {
-        season.seasonNumber == 0
-            ? String(localized: "SP", comment: "Short label for the Specials season on a collapsed season pill")
-            : String(season.seasonNumber)
+    /// Goes straight to a season picked from the list.
+    private func jump(to season: Season, proxy: ScrollViewProxy) {
+        dwellTask?.cancel()
+        dwellTask = nil
+        stepSeasonId = nil
+        scrollSeasonId = nil
+        selectPill(season, proxy: proxy)
+    }
+
+    /// Shows the next or previous season straight away, and loads it once
+    /// the stepping pauses, so holding a direction doesn't load every
+    /// season on the way.
+    private func step(by offset: Int, proxy: ScrollViewProxy) {
+        let ordered = orderedSeasons
+        guard ordered.count > 1, let current = shownSeason,
+              let index = ordered.firstIndex(where: { $0.contentId == current.contentId }) else { return }
+        let next = index + offset
+        guard ordered.indices.contains(next) else { return }
+        let id = ordered[next].contentId
+        isEnteringFromHero = false
+        // A jump still waiting on the browsed season's episodes stays
+        // armed: committing a step replaces it, and stepping back to that
+        // season needs it.
+        scrollSeasonId = nil
+        stepSeasonId = id
+        dwellTask?.cancel()
+        dwellTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard stepSeasonId == id else { return }
+            commitStep(proxy)
+        }
+    }
+
+    private func commitStep(_ proxy: ScrollViewProxy) {
+        dwellTask?.cancel()
+        dwellTask = nil
+        guard let id = stepSeasonId, let season = seasons.first(where: { $0.contentId == id }) else { return }
+        stepSeasonId = nil
+        // Stepping away and back keeps the row where it was, such as on
+        // the Play target, rather than jumping to the first episode.
+        guard id != (browseSeasonId ?? selectedSeason?.contentId) else { return }
+        selectPill(season, proxy: proxy)
+    }
+
+    private func selectorFocusChanged(_ focused: Bool, proxy: ScrollViewProxy) {
+        if focused {
+            pageScroll?.requestFold(within: 200)
+            if isEnteringFromHero { prepareEntry(proxy) }
+            scrollSeasonId = nil
+        } else {
+            commitStep(proxy)
+        }
     }
 
     /// "Specials" or "Season N"; a season's own title isn't used here.
@@ -255,8 +321,14 @@ struct TVSeriesEpisodeShelf: View {
                     }
                 }
             }
+            .scrollTargetLayout()
             .padding(.vertical, 20)
         }
+        // Focus scrolls the row a card at a time, with a card always at
+        // the leading edge. Without this, landing on an episode that has
+        // others before it nudges the row to show a strip of the previous
+        // one, so the row only stayed put on a season's very first episode.
+        .scrollTargetBehavior(.viewAligned)
         .scrollClipDisabled()
         .focusSection()
         // Acts only when the season in view changes to a known one, so
@@ -264,7 +336,7 @@ struct TVSeriesEpisodeShelf: View {
         .onScrollGeometryChange(for: String?.self) { geometry in
             seasonInView(geometry.visibleRect)
         } action: { _, seasonId in
-            guard let seasonId, !isActionRowFocused, !isEnteringFromHero, focusedPillId == nil else { return }
+            guard let seasonId, !isActionRowFocused, !isEnteringFromHero, !selectorFocused else { return }
             scrollSeasonId = seasonId
         }
     }
@@ -327,7 +399,7 @@ struct TVSeriesEpisodeShelf: View {
         pendingEpisodeJump = nil
     }
 
-    // MARK: Pills and dwell
+    // MARK: Selecting a season
 
     private func selectPill(_ season: Season, proxy: ScrollViewProxy) {
         isEnteringFromHero = false
@@ -338,43 +410,6 @@ struct TVSeriesEpisodeShelf: View {
             onSelectSeason(season)
         }
         jumpWhenReady(proxy)
-    }
-
-    private func pillFocusChanged(from oldId: String?, to newId: String?, proxy: ScrollViewProxy) {
-        dwellTask?.cancel()
-        dwellTask = nil
-        guard let newId, let season = seasons.first(where: { $0.contentId == newId }) else { return }
-
-        if oldId == nil, isEnteringFromHero, let target = targetSeason {
-            prepareEntry(proxy)
-            if newId != target.contentId {
-                focusedPillId = target.contentId
-                return
-            }
-        }
-
-        scrollSeasonId = nil
-        if newId != referenceSeasonId {
-            isEnteringFromHero = false
-            pendingSeasonJump = nil
-            pendingEpisodeJump = nil
-        }
-
-        guard dwellSelects(newId) else { return }
-        dwellTask = Task { @MainActor in
-            do {
-                try await Task.sleep(for: .milliseconds(120))
-            } catch {
-                return
-            }
-            guard focusedPillId == newId, dwellSelects(newId) else { return }
-            selectPill(season, proxy: proxy)
-        }
-    }
-
-    private func dwellSelects(_ seasonId: String) -> Bool {
-        guard seasonId != referenceSeasonId else { return false }
-        return !isEnteringFromHero || seasonId == targetSeason?.contentId
     }
 
     // MARK: Episode focus and scroll season
@@ -430,69 +465,194 @@ struct TVSeriesEpisodeShelf: View {
     }
 }
 
-/// A season pill's text: the full name while it's the season shown, and
-/// just its number in a circle otherwise.
-private struct TVSeasonPillLabel: View {
-    let title: String
-    let shortTitle: String
-    let isExpanded: Bool
-    /// A closed group of seasons: padded like an expanded pill and a
-    /// little dimmer, so it reads as a group rather than a season.
-    var isRange = false
+/// The shown season's own title (when it has one), episode count, year and
+/// synopsis. The selector above already names the season.
+private struct TVSeasonSummary: View {
+    let season: Season
+    let showsSynopsis: Bool
 
-    static let height: CGFloat = 48
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var facts: String {
+        var parts: [String] = []
+        let title = season.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !title.isEmpty, title != TVSeriesEpisodeShelf.pillTitle(season) {
+            parts.append(title)
+        }
+        if season.episodeCount > 0 {
+            parts.append(String(localized: "\(season.episodeCount) Episodes"))
+        }
+        if let year = season.airDate?.prefix(4), year.count == 4, year.allSatisfy(\.isNumber) {
+            parts.append(String(year))
+        }
+        return parts.joined(separator: "  \u{00B7}  ")
+    }
+
+    private var synopsis: String {
+        guard showsSynopsis else { return "" }
+        return season.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: facts)
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(verbatim: synopsis)
+                .font(.system(size: 22))
+                .foregroundStyle(.secondary)
+                .lineLimit(6)
+                .frame(maxWidth: 1100, alignment: .leading)
+        }
+        .contentTransition(.opacity)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: season.contentId)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The shown season's poster. It turns over to the next season's poster
+/// when the season changes, and can't be focused or opened.
+private struct TVSeasonPosterCard: View {
+    let season: Season?
+    let seriesPosterUrl: String?
+
+    static let size = CGSize(width: 360, height: 540)
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown: Season?
+    @State private var angle: Double = 0
+    @State private var turn: Task<Void, Never>?
+
+    private var seasonPosterUrl: String? {
+        let url = shown?.posterUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return url.isEmpty ? nil : url
+    }
+
+    var body: some View {
+        let url = seasonPosterUrl ?? seriesPosterUrl ?? ""
+        CachedAsyncImage(
+            url: url,
+            targetSize: Self.size,
+            thumbhash: seasonPosterUrl == nil ? nil : shown?.posterThumbhash,
+            contentMode: .fill
+        )
+        .id(url)
+        .frame(width: Self.size.width, height: Self.size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+        .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
+        .opacity(url.isEmpty ? 0 : 1)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onChange(of: season?.contentId, initial: true) { _, _ in
+            show(season)
+        }
+        .onDisappear { turn?.cancel() }
+    }
+
+    private func show(_ season: Season?) {
+        turn?.cancel()
+        guard shown != nil, !reduceMotion else {
+            angle = 0
+            shown = season
+            return
+        }
+        turn = Task { @MainActor in
+            withAnimation(.easeIn(duration: 0.16)) { angle = 90 }
+            do {
+                try await Task.sleep(for: .milliseconds(160))
+            } catch {
+                return
+            }
+            var swap = Transaction()
+            swap.disablesAnimations = true
+            withTransaction(swap) {
+                shown = season
+                angle = -90
+            }
+            // A frame apart, so the turn back starts from the far side.
+            do {
+                try await Task.sleep(for: .milliseconds(20))
+            } catch {
+                return
+            }
+            withAnimation(.easeOut(duration: 0.22)) { angle = 0 }
+        }
+    }
+}
+
+/// The season selector's text: the season's name with a pair of arrows
+/// after it. Focused, it takes a bar under the name and the arrows
+/// brighten, each dimmed when there's no season that way. The name is
+/// never narrower than `reservedTitle`, so the arrows stay put between
+/// seasons with the same number of digits.
+private struct TVSeasonSelectorLabel: View {
+    let title: String
+    let reservedTitle: String
+    let isFocused: Bool
+    let hasPrevious: Bool
+    let hasNext: Bool
+
+    static let height: CGFloat = 68
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Text(verbatim: isExpanded ? title : shortTitle)
-            .font(.system(size: 22, weight: .semibold))
+        HStack(alignment: .center, spacing: 16) {
+            ZStack(alignment: .leading) {
+                Text(verbatim: reservedTitle)
+                Text(verbatim: title)
+            }
+            .font(.system(size: 46, weight: .bold).monospacedDigit())
             .lineLimit(1)
             .fixedSize()
-            .contentTransition(.opacity)
-            .opacity(isRange ? 0.72 : 1)
-            .padding(.horizontal, isExpanded || isRange ? 20 : 0)
-            .frame(minWidth: Self.height, minHeight: Self.height)
-            .animation(reduceMotion ? nil : TVDetailActionRowLayout.resize, value: isExpanded)
-    }
-}
-
-/// A button inside the season pill, which carries the tinted glass of the
-/// action row. The season shown stays highlighted, and the focused button
-/// takes the bright rim.
-private struct TVSeasonPillStyle: ButtonStyle {
-    let isHighlighted: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        TVSeasonPillBody(configuration: configuration, isHighlighted: isHighlighted)
-    }
-}
-
-private struct TVSeasonPillBody: View {
-    let configuration: ButtonStyleConfiguration
-    let isHighlighted: Bool
-
-    @Environment(\.isFocused) private var isFocused
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        configuration.label
-            .foregroundStyle(Color.white)
-            .background(Capsule().fill(Color.white.opacity(isHighlighted ? 0.18 : 0)))
-            .overlay {
-                Capsule()
-                    .strokeBorder(LinearGradient.vividPrimaryRim, lineWidth: 2.5)
-                    .opacity(isFocused ? 1 : 0)
+            .padding(.bottom, 8)
+            .hidden()
+            .overlay(alignment: .leading) {
+                Text(verbatim: title)
+                    .font(.system(size: 46, weight: .bold).monospacedDigit())
+                    .lineLimit(1)
+                    .fixedSize()
+                    .contentTransition(.numericText())
+                    .foregroundStyle(Color.white)
+                    .padding(.bottom, 8)
+                    .overlay(alignment: .bottom) {
+                        Capsule()
+                            .fill(Color.white)
+                            .frame(height: 4)
+                            .opacity(isFocused ? 1 : 0)
+                    }
             }
-            .shadow(
-                color: .black.opacity(isFocused ? 0.34 : 0),
-                radius: isFocused ? 12 : 0,
-                y: isFocused ? 4 : 0
-            )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            if hasPrevious || hasNext {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.left")
+                        .opacity(hasPrevious ? 1 : 0.3)
+                    Image(systemName: "chevron.right")
+                        .opacity(hasNext ? 1 : 0.3)
+                }
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(Color.white.opacity(isFocused ? 1 : 0.45))
+                // Level with the name, not with the room under it for
+                // the focus bar.
+                .padding(.bottom, 8)
+            }
+        }
+        .frame(height: Self.height, alignment: .leading)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: title)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
+    }
+}
+
+private struct TVSeasonSelectorStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1, anchor: .leading)
             .focusEffectDisabled()
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHighlighted)
     }
 }
 

@@ -27,6 +27,10 @@ struct TVDetailHeroLayout {
     static let logoTopInset: CGFloat = 100
     static let logoWidth: CGFloat = 650
     static let logoHeight: CGFloat = 160
+    /// The shelves' top padding under a pinned logo: the logo box's bottom
+    /// edge plus 4. The page leaves 26 points above the shelves as well,
+    /// so their content starts 30 points below the logo box.
+    static let pinnedLogoShelfInset: CGFloat = logoTopInset + logoHeight + 4
 
     var height: CGFloat
     var topInset: CGFloat

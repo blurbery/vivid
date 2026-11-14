@@ -466,24 +466,21 @@ SwiftUI still supplies the scroll animation.
 The owner approved this page lock on Apple TV; the complete approved design is saved at `checkpoint/tvos-approved-page-lock` (`bac9b7d`).
 The blur boundary rises towards both sides and dips in the centre; the curved material boundary rises with native scroll progress until it covers the supporting shelves, and descends with the page on return.
 The material no longer waits for a visibility-triggered fade.
-The artwork remains fixed while the shelves scroll, and the main logo scrolls away with its metadata and controls.
-Once that logo has left the viewport, a separate logo anchored above the supporting shelves (including series seasons) fades in at the top centre over 0.25 seconds.
-On both movie and series pages, it scrolls away with those shelves when browsing further down; scrolling back fades it out more quickly over 0.08 seconds.
-Reduce Motion makes the visibility change immediate.
-The owner confirmed the transitions and season navigation on Apple TV.
-The secondary logo artwork and fallback title are centred within a full-width shelf header; the owner confirmed this alignment on Apple TV.
+The artwork remains fixed while the shelves scroll, and on the movie and series pages the logo stays fixed with it, as described under the series shelf below.
+The earlier design let the main logo scroll away with its metadata and controls and faded a separate, smaller logo in at the top centre above the shelves; the owner confirmed that on Apple TV before replacing it.
+Only the loading page still has that centred shelf logo: it fades in over 0.25 seconds once the page has scrolled past the hero logo, fades out over 0.08 seconds on the way back, and changes immediately under Reduce Motion.
 The hero layout is described below; the loading layout matches it.
 A broad elliptical contrast fade replaces the intersecting linear gradients rejected during Apple TV testing.
 It moves upward and fades away with scroll progress, with extended-linear rendering intended to reduce banding.
 Scroll-surface state is isolated from the content and focus state.
-The logo visibility threshold follows the same position; season navigation retains its existing behaviour.
+The loading page's shelf logo threshold follows the same position.
 The previous pre-contrast design is preserved at Git tag `checkpoint/tvos-before-hero-contrast` (`6619b27`).
 The owner approved this contrast and scroll-linked blur on Apple TV.
 Apple's sample licence is retained in the source.
 This is an adaptation of Apple's public sample, not the Apple TV app's private source.
 
 The movie and series hero puts the title logo in the top-left corner, 100 points in from the top and left.
-Logo images have their transparent margins trimmed when they load, so a logo's visible edge sits at that corner (the shelf logo is trimmed the same way).
+Logo images have their transparent margins trimmed when they load, so a logo's visible edge sits at that corner (the loading page's shelf logo is trimmed the same way).
 The left edge is trimmed to where the logo turns solid (over half opaque), as long as that removes no more than 15% of its visible width, so a soft shadow or glow baked into the image doesn't push it in.
 A logo with a deliberately faint left part keeps it, so its solid part sits a little in from the edge; the other edges keep anything more than faintly visible.
 The poster sits under the logo, from the top of the heading line to the bottom of the action row, with the heading, synopsis, credit line, technical row and action row shifted right beside it.
@@ -498,28 +495,37 @@ Icons stay fixed where they sit in the circle; a label is centred between the dr
 The controls use the tinted glass of the iOS Play button with no fill, and the focused control adds that button's bright gradient rim at 2.5 points.
 
 Series episodes form one native horizontal shelf across seasons.
-Season-tab highlighting follows native focus immediately.
-Automatic season selection and the episode jump wait for 120 milliseconds on the same pill, cancelling intermediate requests during rapid tab movement or when focus leaves the row.
-Clicking a season still jumps immediately.
-Device confirmation of this tab-only coalescing remains unrecorded; episode scrolling and its focus callbacks are unchanged.
-The approved baseline is tagged `checkpoint/tvos-approved-detail-flow` (`a8ab50c`).
-The season row uses a scoped native default-focus preference for the episode’s season when focus enters it.
-Once inside the row, ordinary directional navigation takes over.
-The previous manual Up redirect was removed after it failed Apple TV testing.
-The owner confirmed this native entry behaviour on Apple TV.
-Moving horizontally between season pills still selects and scrolls to the new season.
-Returning focus to the already highlighted season preserves the current episode position.
+On the movie and series pages the hero's logo stays fixed in its corner at the same size while the page moves between the hero and the shelves: the hero fades out under it and the shelves fade in below it.
+Neither fades out completely, because the focus engine skips a fully transparent view and focus could no longer cross between them.
+The logo leaves with the shelves once the page scrolls on past the first shelf (the episodes on a series).
+Coming back up to the season selector returns the page to that same resting position, the fold, with the logo whole.
+The system's focus scroll brings the page up.
+When that scroll would stop less than 300 points below the fold, the fold snapping moves its stopping position to the fold.
+When the page is already 200 points or less below the fold, the selector is on screen and focus doesn't scroll, so the page scrolls itself back to the fold.
+Moving up onto the episode row alone leaves the page where it is.
+On the movie page, coming back up to the first shelf settles on the fold through the same snapping.
+Only the loading page still uses the smaller centred shelf logo, if it is scrolled before the title loads.
+The season selector is the shown season's name (Season 4, or Specials) in large text, fixed at the top of the shelf under the logo.
+Below it are the season's own title (when it has one), its episode count and year, and up to six lines of its synopsis.
+It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
+Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
+The name reserves the width of the widest season name with the same number of digits, so the arrows sit close to the name, level with it, hold one place across the single-digit seasons and step out once for the two-digit ones.
+A step shows the new season's name, synopsis and poster straight away, then selects the season and jumps the episodes after 150 milliseconds on the same season, so holding a direction doesn't load every season passed.
+Stepping away and back to the season already being browsed selects nothing and leaves the episode row where it was.
+Select opens a menu of every season with its episode count and a tick on the shown season; picking one jumps to it immediately.
+The shown season's poster stands on the trailing side, 360 by 540 points, from near the top of the screen to the bottom of the season header.
+It turns over to the next poster when the season changes (a plain swap under Reduce Motion), falls back to the series poster when the season has none, and never takes focus or opens anything.
+The header's height is fixed, so the selector and the episode row never move with the synopsis length, and the next shelf's heading starts below the screen's bottom edge.
+With Hide Episode Spoilers on, seasons after the one the viewer is up to show no synopsis.
+The approved baseline before this layout is tagged `checkpoint/tvos-approved-detail-flow` (`a8ab50c`).
+When focus first enters the shelf from the hero, the selector shows the Play target's season and the episode row opens on that episode.
+The episode row aligns a card to its leading edge (`.viewAligned`), so landing on an episode never nudges the row to reveal part of the previous one.
+The owner approved this layout on an Apple TV simulator and on an Apple TV 4K (3rd generation) with a development build.
 
-The season selector is one glass pill in the action row's style.
-The season shown expands to its full name (Season 4, or Specials) with a soft highlight, and the other seasons show only their number (SP for specials); the focused season takes the bright rim.
-A series with more than six numbered seasons opens one section of six at a time, with a lone final season joining the section before it.
-The seasons before the open section collapse into one range (for example S1 - S6) and those after it into another (S13 - S29), so the pill never holds more than nine segments.
-Each range takes the identity of the season beside the open section (the previous section's last season, or the next section's first), so moving onto it opens that section on the neighbouring season, and left and right still step through the seasons in order.
-Opening another section swaps the pill's segments in one step without animating; an animated swap removed the old section's segments only when it finished, which took focus off the season just reached and sent it back to Specials or down to the episodes.
-A range has no watched/unwatched menu, since it stands for more than one season.
-Episode focus updates the highlight immediately.
-During accelerated remote scrolling, scroll geometry keeps the highlight on the visible rail when the previously focused episode has moved offscreen, without changing playback selection or triggering season jumps.
-The last highlighted season remains marked when focus leaves the shelf.
+Episode focus updates the shown season immediately.
+During accelerated remote scrolling, scroll geometry keeps the shown season on the visible rail when the previously focused episode has moved offscreen, without changing playback selection or triggering season jumps.
+The last shown season remains when focus moves down to the lower shelves.
+Moving up to the action row prepares the shelf for entry again, so it shows the Play target's season.
 Rapid boundary crossings still need confirmation on Apple TV.
 Episode artwork shows a compact duration or minutes-remaining badge, watched state and an inset progress bar when applicable.
 Focusing an episode updates the selected season.
@@ -533,7 +539,7 @@ Separate episode and season detail pages retain their existing layouts.
 The owner supplied an 89-second Apple TV reference recording.
 It establishes the requested appearance and interaction; it does not measure Apple's internal rendering performance.
 The owner approved the overall page flow on Apple TV.
-The compact season buttons and automatic rail movement on season focus await device confirmation; Reduce Motion, startup, memory and the full playback regression checks remain unverified.
+The owner confirmed the season selector and the rail's movement on season changes on an Apple TV 4K (3rd generation); Reduce Motion, startup, memory and the full playback regression checks remain unverified.
 No claim of matching Apple's frame timing is made.
 
 Outside the continuous series shelf, TV card captions share 20-point titles and 18-point secondary text, aligned to the left.
@@ -688,7 +694,7 @@ Missing biographies and photos still depend on server enrichment.
 
 Movie and series detail pages order the supporting sections as Trailers, Cast & Crew, More Like This and Media Information, omitting unavailable sections.
 
-Individual season buttons offer native long-press watched/unwatched menus without adding layout space; the season pill's closed ranges have none.
+The season selector's menu ends with Mark Season Watched or Unwatched for the shown season.
 The series More menu has Shuffle after Start Over, and orders watched actions as Episode, Season, then Series, targeting the Play/Resume episode.
 The main series Play button retains its initial resume/next episode while browsing other episodes or seasons; explicitly playing a card and playback completion can update that target.
 Profile arrangement suppresses the large native button highlight and uses a ring around the selected avatar.

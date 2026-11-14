@@ -325,11 +325,13 @@ Vivid's other SwiftUI alerts and confirmation dialogs on Apple TV haven't been c
 Episode cards bind the rail’s existing `FocusState` directly to their native button.
 The button also owns its accessibility description and context menu; separate captions do not hide or replace its activation action.
 
-When opening a series from Continue Watching, keep the exact Play/Resume episode available during the downward handoff through the season row.
-On first entry into that row, seed its focus to the episode’s season before the existing dwell handler can select a spatially nearer, incorrect season.
+When opening a series from Continue Watching, keep the exact Play/Resume episode available during the downward handoff through the season selector.
+The selector is one control that shows the episode’s season on first entry, so focus has no nearer, incorrect season to land on.
+Its focus section spans the shelf’s width; without that, focus skips it from most episodes and action-row controls.
 On first entry into the episode row, seed the exact episode, including late episodes that cannot align to the leading edge.
 Explicit season selection or episode browsing releases this entry preference; returning to the hero prepares it again.
-Keep the existing horizontal focus movement, season click and dwell behaviour, scrolling geometry and playback selection.
+Keep the selector’s Left and Right stepping and its dwell, its season menu, the scrolling geometry and playback selection.
+A step that returns to the season already being browsed must not reselect it, or the row loses its place.
 An explicitly requested episode waits for its card instead of falling back to the first episode while loading.
 
 Settings inherits the selected theme canvas, with lighter grey control groups, inset separators and a white focus highlight.
