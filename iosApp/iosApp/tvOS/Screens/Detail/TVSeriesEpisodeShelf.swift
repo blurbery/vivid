@@ -15,6 +15,9 @@ struct TVSeriesEpisodeShelf: View {
     let selectedSeason: Season?
     /// Stands in for a season that has no poster of its own.
     let seriesPosterUrl: String?
+    /// Shown for a season that has no synopsis of its own, or whose
+    /// synopsis is held back as a spoiler.
+    let seriesOverview: String?
     /// With spoilers hidden, the season the viewer is up to: later seasons
     /// show no synopsis. Nil shows them all.
     let spoilerSeasonNumber: Int?
@@ -120,7 +123,8 @@ struct TVSeriesEpisodeShelf: View {
             if let season {
                 TVSeasonSummary(
                     season: season,
-                    showsSynopsis: showsSynopsis(for: season)
+                    showsSynopsis: showsSynopsis(for: season),
+                    seriesOverview: seriesOverview
                 )
             }
         }
@@ -470,6 +474,7 @@ struct TVSeriesEpisodeShelf: View {
 private struct TVSeasonSummary: View {
     let season: Season
     let showsSynopsis: Bool
+    let seriesOverview: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -488,9 +493,12 @@ private struct TVSeasonSummary: View {
         return parts.joined(separator: "  \u{00B7}  ")
     }
 
+    /// The season's own synopsis, else the series'. Many servers have none
+    /// for a season, Specials above all.
     private var synopsis: String {
-        guard showsSynopsis else { return "" }
-        return season.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let own = showsSynopsis ? season.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" : ""
+        guard own.isEmpty else { return own }
+        return seriesOverview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     var body: some View {

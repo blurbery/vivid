@@ -516,7 +516,8 @@ Select opens a menu of every season with its episode count and a tick on the sho
 The shown season's poster stands on the trailing side, 360 by 540 points, from near the top of the screen to the bottom of the season header.
 It turns over to the next poster when the season changes (a plain swap under Reduce Motion), falls back to the series poster when the season has none, and never takes focus or opens anything.
 The header's height is fixed, so the selector and the episode row never move with the synopsis length, and the next shelf's heading starts below the screen's bottom edge.
-With Hide Episode Spoilers on, seasons after the one the viewer is up to show no synopsis.
+A season with no synopsis of its own shows the series synopsis in its place.
+With Hide Episode Spoilers on, seasons after the one the viewer is up to show the series synopsis instead of their own.
 The approved baseline before this layout is tagged `checkpoint/tvos-approved-detail-flow` (`a8ab50c`).
 When focus first enters the shelf from the hero, the selector shows the Play target's season and the episode row opens on that episode.
 The episode row aligns a card to its leading edge (`.viewAligned`), so landing on an episode never nudges the row to reveal part of the previous one.

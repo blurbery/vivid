@@ -243,6 +243,7 @@ struct TVSeriesDetailPage: View {
                 pages: shelfPages,
                 selectedSeason: viewModel.selectedSeason,
                 seriesPosterUrl: detail.posterUrl,
+                seriesOverview: detail.overview,
                 spoilerSeasonNumber: spoilerSeasonNumber,
                 currentEpisodeId: activeEpisodeId,
                 playTarget: playTarget,
