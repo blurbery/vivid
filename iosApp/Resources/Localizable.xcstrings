@@ -37075,13 +37075,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mover %@. Muévelo en cualquier dirección y pulsa el centro para soltarlo."
+            "value" : "Mover %@. Muévela en cualquier dirección y pulsa el centro para soltarla."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déplacer %@. Déplacez dans n’importe quelle direction, puis appuyez au centre pour déposer."
+            "value" : "Déplacer %@. Déplacez-la dans n’importe quelle direction, puis appuyez au centre pour déposer."
           }
         },
         "ja" : {

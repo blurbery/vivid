@@ -315,7 +315,8 @@ Library opens on a row of library cards: every movie, series and mixed library, 
 Each card shows the library's own image, with the library's name underneath as the server gives it, with nothing shortened.
 A library the server has no image for shows a collage of its own posters instead: four tall strips standing side by side, leaning 12 degrees so the joins run diagonally across the card.
 The four are a random pick from the library's 40 most recently added titles, made once per library each time the app starts, from one small catalogue request.
-Until they arrive, and for a library with no posters, the card shows the library's symbol on a plain tile.
+A request that fails is made again the next time the card appears; one that succeeds is not repeated, even when it found no posters.
+Until the posters arrive, and when none of those 40 titles has one, the card shows the library's symbol on a plain tile.
 Below the row are the Watchlist, Favourites and Collections sub-tabs the For You tab used to hold.
 Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the same seven-column poster grid the Movies and Series pages had, without the old category dropdowns or mixed Recommended/Browse landing page.
 A mixed library such as Sports is one card, and its page shows movies and series together; it used to appear under both Movies and Series, filtered by type.
