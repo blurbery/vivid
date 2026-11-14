@@ -306,7 +306,7 @@ The avatar opens Settings directly.
 Root pages have no separate Vivid logo in the top-left corner.
 The notch is dark glass with sides that flare out slightly where they meet the top edge, rounded bottom corners and a thin white outline along its sides and bottom that fades out into the top edge, so the notch grows out of the edge.
 The selected or focused pill is a white outline with a faint fill rather than a solid white pill, and that one highlight glides between Search, the tabs and the avatar.
-When Home, Library or Calendar is scrolled more than about 60 points from its top and the bar has no focus, the notch tucks down to just the current tab's symbol, slightly dimmed and without the highlight, so it covers less of the page.
+When Home, Library or Calendar is scrolled more than about 60 points from its top and the bar has no focus, the notch tucks down to just the current tab's symbol, slightly dimmed, keeping the faint selected fill but not the white focus outline, so it covers less of the page.
 It opens again at the top of the page or when it takes focus, for example on Menu.
 Home's spotlight, Library's row of libraries and Calendar's sub-tabs sit just under the notch (`VividTheme.Skyline.barTopInset` is 0).
 On Home the gap between the notch and the spotlight is about 30 points, and the gaps between the spotlight and Studios & Networks and below Studios & Networks are 30 points.
