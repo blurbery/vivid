@@ -170,6 +170,10 @@ struct TVTopMenuTabLabel: View {
     /// The tucked notch: the selected tab keeps its symbol and loses the
     /// highlight.
     var isCompact = false
+    /// A fixed width while only the symbol shows, in place of the symbol's
+    /// own padding. Search uses the avatar's width, so the two ends of the
+    /// notch match and the tab between them sits at the centre.
+    var symbolWidth: CGFloat?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -200,7 +204,8 @@ struct TVTopMenuTabLabel: View {
                 .animation(fade(in: showsName)) { $0.opacity(showsName ? 1 : 0) }
         }
         .font(.system(size: 24, weight: .semibold))
-        .padding(.horizontal, showsName ? 22 : 16)
+        .padding(.horizontal, showsName ? 22 : (symbolWidth == nil ? 16 : 0))
+        .frame(width: showsName ? nil : symbolWidth)
         .padding(.vertical, 6)
         .foregroundStyle(textColour)
         .clipShape(Capsule())
@@ -228,7 +233,8 @@ struct TVTopMenuSearchLabel: View {
     var body: some View {
         TVTopMenuTabLabel(symbol: "magnifyingglass", title: String(localized: "Search"),
                           isSelected: false, isFocused: isFocused,
-                          barHasFocus: true, highlight: highlight)
+                          barHasFocus: true, highlight: highlight,
+                          symbolWidth: 44)
     }
 }
 
