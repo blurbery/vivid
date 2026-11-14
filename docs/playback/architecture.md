@@ -128,7 +128,7 @@ The existing detail content, artwork, scroll-driven glass and X control remain, 
 The glass title background extends behind the status bar to the top screen edge; detail scroll views hide the native top scroll-edge effect so it does not add a separate blur strip.
 Actor pages occupy the same full-screen navigation stack and show Back to return to the detail; pulling down scrolls without navigating back.
 Search uses the same presentation.
-On iPhone, three-column Library, Search and For You grids fill the available cell width rather than capping posters at 120 points; poster proportions and existing margins stay unchanged. iPad retains its full-screen presentation and source-aware horizontal browsing.
+On iPhone, three-column library, Search, Watchlist and Favourites grids fill the available cell width rather than capping posters at 120 points; poster proportions and existing margins stay unchanged. iPad retains its full-screen presentation and source-aware horizontal browsing.
 Rotation after playback, interrupted dismissals and source-card restoration still require device verification because earlier iOS 26 pushed zoom transitions had geometry and disappearing-source regressions.
 
 Settings only allows the outer pull-to-close gesture while its overview is visible; submenu navigation keeps its own back behaviour.

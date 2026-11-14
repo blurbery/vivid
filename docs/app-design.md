@@ -70,7 +70,7 @@ Renaming code symbols is separate implementation work.
 - Preserve aspect ratios, truncation rules and stable layout as artwork loads.
 - On Home, Continue Watching and Next Up cards show an episode's series background (on Emby and Jellyfin, the episode's own backdrop if it has one) and a movie's own background, on iPhone, iPad and Apple TV.
   The Home spotlight shows the same background for a slide, so an episode from those rows doesn't fill the spotlight with its episode still.
-  For You, the player's On Deck and series pages keep episode stills.
+  Library, the player's On Deck and series pages keep episode stills.
 - Reuse spacing, corner radius, typography and motion tokens from the implementation.
 - Support readable text, meaningful accessibility labels and Reduce Motion.
 
@@ -80,17 +80,21 @@ Home uses the discovery spotlight and collection-based media rows described in [
 The spotlight is 785 points tall, with rounded sliding cards shown one at a time, and the logo, metadata and overview on the left, lined up with the detail pages' logo.
 Its native focus targets use a fixed decorative gradient outline, without focus enlargement, parallax or a blurred colour glow.
 Ordinary media cards retain native `.card` focus.
+The library cards in Library's row draw their own focus instead, growing and lifting on a shadow.
 Server artwork uses subject-aware cropping; Spotlight makes no TMDb requests.
 Root pages share the selected static theme canvas, except Home's first screen with Theme Mode on Spotlight Only and a spotlight on Home, and every root page with Theme Mode on Adaptive, and a tab bar that hangs from the top edge like a notch, with Search and Profile dividers, without a separate corner logo.
 
-Movies, Series and For You are independent pages with sub-tabs.
+The bar offers Search, Home, Library, Calendar and Settings/Profile; Library replaces the earlier Movies, Series and For You tabs and is always shown.
+Library is one page: a row of library cards above Watchlist, Favourites and Collections sub-tabs, with each library opening on its own pushed page.
+Sub-tabs and the Sort, Filter and A–Z pills share one height and the top bar's dark glass with its outline, and their focus is the bar's white outline rather than a white fill.
+The notch, its tucked state on a scrolled page and the library row are described in [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages).
 Settings opens categories as separate pages on the selected theme canvas, with grey panels, inset dividers and outlined icon tiles, retaining TV-sized controls and white focus highlights.
 On Apple TV every fixed Settings font size, spacing, corner radius and width is drawn at 1.25 times its original design size through `TVSettingsLayout.scale`, keeping the same proportions while reading from across the room; the few labels that use tvOS system text styles keep those styles.
 That gives 33-point row titles, 30-point values, 24-point descriptions and footers and 23-point section headers in a 1,015-point column.
 The Profiles panel and page follow that scale inside Settings, and the Who’s watching profile row keeps its own size.
 Account settings uses the same canvas and labelled fields, while profile selection uses circular account cards.
 More Like This on tvOS uses Home’s Large poster size.
-TV captions use one local server/profile setting across Search, Home, Movies, Series, For You, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only.
+TV captions use one local server/profile setting across Search, Home, Library, library pages, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only.
 Titles use 20-point text and secondary captions use 18-point text, both left aligned; episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
 Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
 Search keeps seven columns across the safe-area width with reduced spacing below its result tabs.
@@ -127,10 +131,10 @@ On iPad the Settings heading is centred in that column, and the Profiles rows fi
 Profiles uses the rows and Settings > Profiles page described in [Settings and startup](#settings-and-startup): selecting a profile there switches to it, the signed-in or a signed-out profile opens its account page, and Edit rearranges them.
 
 The mobile app shares the TV feature owners, with touch layouts.
-Home, Libraries, For You, Downloads and Settings use the saved theme.
+Home, Library, Downloads and Settings use the saved theme.
 Movie and series details retain their original artwork-colour and glass surfaces regardless of the selected theme.
 Browsing cards use Home’s title size with left-aligned titles and years directly underneath the rendered title, without reserving an empty second title line.
-The shared Captions setting offers Title & Year (the default), Title Only and Artwork Only across Home, Search, Movies, Series and For You; episode cards retain episode information instead of a year, including with Title Only.
+The shared Captions setting offers Title & Year (the default), Title Only and Artwork Only across Home, Search, Library and library pages; episode cards retain episode information instead of a year, including with Title Only.
 Artwork Only hides it, except that Continue Watching stills, and Next Up stills on Emby and Jellyfin, always keep their series title and episode line.
 The Downloads page uses glass storage and transfer cards, live byte and speed progress, and locally fetched movie or main-series posters.
 Mobile headings use 30-point rounded bold text and smaller section labels; TV headings stay at 40 points, or 50 in Apple TV Settings.
@@ -142,8 +146,11 @@ On iPad in landscape the same capsule stands vertically on the right, centred, a
 Beside the iPhone Duo's side status bar it stands vertically in the strip instead; see [iPhone Duo](#iphone-duo).
 Icons occupy fixed, evenly spaced slots with a white selected pill; they do not expand into text labels or scroll sideways.
 Search and the signed-in profile sit outside the main destinations, separated by dividers.
+The main destinations are Home and Library, then Calendar and Downloads when they are on.
+Library replaces the earlier Movies, Series and For You tabs and is always shown.
 The bottom bar hides on downward scrolling and returns when scrolling upward; the vertical iPad and iPhone Duo bars stay put.
-Hidden built-in destinations can be restored using the Show controls in Tab Bar settings.
+Settings > General > Customise Tab Bar arranges only Home and Library, which both always show, so it has no hide or show list.
+The saved menu keeps its Movies, Series and For You entries for other clients; moving Library before Home puts Home after all of them, and they keep their own order.
 Tab Bar configuration uses the same component and icon definitions, provides a grey “Swap Search and Profile” button, and includes Downloads and Calendar visibility controls.
 Downloads appears immediately when enabled, without waiting for a server capability response.
 Download permissions still apply when the page opens.
@@ -160,13 +167,24 @@ Playback opens immediately; closing playback leaves the detail page and previous
 Settings retains its own navigation stack.
 Accounts use manual server setup and username/password sign-in, [Quick Connect](cores/jellyfin.md#quick-connect) on Jellyfin servers that have it turned on, or [Emby Connect](cores/emby.md#emby-connect) on Emby.
 
-For You switches in place between Watchlist, Favourites and Collections.
+Library opens on a row of library cards above the Watchlist, Favourites and Collections page tabs and their Filter menu.
+The row holds every movie, series and mixed library once, as landscape cards about 60% of a Continue Watching card's width.
+Each card shows the library's own image, or its symbol on a plain tile when the server has none, with the server's name for the library underneath.
+Tapping a library pushes a page with a back button, the library's name and the Sort, Filter and A–Z controls over the poster grid.
+Holding a library card picks it up: the row zooms out a little so more libraries fit, the card follows the finger, and holding it near either end scrolls the row.
+Letting go drops the card and keeps the row on it.
+There is no wiggle mode and no save button; each move saves as it happens.
+On Apple TV the same row sits above the sub-tabs and is rearranged with the remote, as described in [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages).
+The row's order is saved per server and profile and syncs through iCloud with the profile's other synced preferences, the same way as Home sections, so rearranging on one device rearranges the others.
+Other devices pick it up on their next launch or when the app returns to the foreground, not live; the last change wins, and a library added later appears at the end.
+Below the row, the page switches in place between Watchlist, Favourites and Collections.
 Watchlist and Favourites combine movies and series in one view without Movie or Series pills.
 On iPhone and iPad their cards show the title and year in the same style as Home's posters.
 A Filter menu narrows either list: Show (All, Movies or Series), Original Language (one at a time, Silo only because Emby and Jellyfin do not report it) and Anime (Show everything, Only anime or Hide anime).
 Show, Original Language and A–Z are sent to the server.
 Anime is matched on the device from titles in libraries whose name includes "Anime", the Anime genre, or Japanese animation where the server reports the original language, so an Anime filter loads the whole list.
 On Apple TV the Filter menu sits beside A–Z in the sub-tab row; on iPhone and iPad it is a round button beside the sub-tabs, with A–Z inside the menu.
+On iPhone and iPad the button is always offered, because every list has at least the A–Z choice.
 Each list keeps its own filter.
 On Apple TV, an empty Watchlist or Favourites with a filter or an A–Z letter chosen says "No titles match these filters" (see [Apple TV Browsing](apple-tv-browsing.md)).
 On Silo, Collections has its own Filter menu with Source, matched on the device: All, Server (collections set up on the server), Shared (personal collections other profiles share into a library) or Mine (this profile's own).
@@ -175,17 +193,17 @@ On Apple TV, iPhone and iPad, a Silo profile's Collections has two headed groups
 A Source that matches only one kind leaves a single group, and Emby and Jellyfin show the Collections group alone.
 On iPhone and iPad, these cards show the collection's name in the same style as a movie or series name on Home (one line, semibold), with no type line under it (User collection, Collection, or a Silo type such as Smart), because the group heading already says whether it's a user collection or the server's. A collection listed by more than one library appears once.
 Opening one of the profile's own collections loads its titles through the catalogue, the same as a shared one.
-Emby and Jellyfin collections are all the server's, so Collections has no Filter there.
-Collections has no A–Z, because most collection names start with "Movies" or "TV Shows".
+Emby and Jellyfin collections are all the server's, so Collections has no Source filter there: Apple TV shows A–Z alone, and the iPhone and iPad Filter menu holds only A–Z.
+Collections has A–Z too: a name is filed by the same sort key that orders the grid, so a leading The, A or An is ignored, and "#" takes names that don't start with A to Z.
 A Source with nothing in it shows "No collections match these filters".
 The secondary tabs scroll with each list, including Collections.
 Collections combines personal collections with movie, series and mixed-library collections without a library dropdown.
 Cached collection sections appear first; library requests run together and publish each completed result instead of leaving the page empty for the slowest response.
 A library the profile can't see counts as empty, and one that fails to load leaves the rest on screen, so the page only shows an error when nothing loads: no library collections and none of the profile's own either.
 This is the same on Apple TV, iPhone and iPad.
-Recommendations are not a For You section.
-Libraries opens its catalogue directly, with native library-selection, Sort and Filter menus and an A–Z menu at the right of the same control row.
-The current library selector and its saved selection remain.
+Recommendations are not a Library section.
+A library page opens its catalogue directly, with native Sort and Filter menus and an A–Z menu at the right of the same control row.
+The library is chosen from Library's row, so the page has no library selector.
 Music and pinned library destinations are excluded from the Apple menu and its editor.
 The client no longer reads, caches or retries navigation-shortcut preferences; older cache entries are discarded while card settings and supported tab order remain.
 Emby also removes retired shortcut rows from the current account’s local settings without changing its playback preferences.
@@ -193,7 +211,7 @@ Legacy Recommended/Library/Collections landing pages are removed; direct library
 The full Home cache, current Spotlight and normal browse-page caches remain. iOS Spotlight reads Emby metadata from the shared persistent Home cache, including parent-series metadata for episode slides. iOS episode lists no longer request unused per-episode favourite states; tvOS keeps those lookups for its current menus.
 Season-page caching remains unchanged.
 
-Calendar, on iPhone and iPad, switches between Upcoming and Trending with the same glass control as For You.
+Calendar, on iPhone and iPad, switches between Upcoming and Trending with the same glass control as Library's page tabs.
 Upcoming lists new episodes of series from the profile's Continue Watching and Next Up, Watchlist and history for the next 90 days, grouped by day under a two-week strip whose dots mark days with episodes.
 Each row shows the series poster from the server, the season, episode and title, the air time and where the series came from, and opens the series.
 Air times come from TVmaze through Vivid's relay (see [TMDb Relay](tmdb-relay.md)) as UTC times and are shown in the device's time zone and locale, so a 9 pm US episode appears the next day in Australia.
@@ -211,21 +229,24 @@ The round calendar button opens a month view for the page it's on, with arrows t
 Upcoming's month marks days with new episodes and jumps the list to a picked day.
 Trending's marks release days for the titles its filter shows and narrows Trending to the picked day, with Show all to go back.
 Calendar works the same on Silo, Emby and Jellyfin, because it only needs each series' TVDB, IMDb or TMDb ID.
-Apple TV has its own Calendar root after For You, described in [Apple TV Browsing](apple-tv-browsing.md).
+Apple TV has its own Calendar root after Library, described in [Apple TV Browsing](apple-tv-browsing.md).
 
-Search, Libraries and For You keep three posters per row on iPhone, filling each available cell rather than capping posters at 120 points. iPad grids adapt to the current window width.
+Search, library pages, Watchlist and Favourites keep three posters per row on iPhone, filling each available cell rather than capping posters at 120 points. iPad grids adapt to the current window width.
 Search uses smaller, readable result captions with truncation for long titles; this does not change Home poster preferences.
 Poster widths fit their grid cells so orientation and Split View do not overlap cards.
 Watchlist and Favourites retain three columns on iPhone.
 The iPhone Duo's inner screen shows six posters across in landscape and four in portrait in all of these grids; see [iPhone Duo](#iphone-duo).
-On iPad, Search, Libraries, Watchlist, Favourites and collection poster grids use the available window width to fit evenly sized posters with small gaps in portrait, landscape and Split View.
+On iPad, Search, library pages, Watchlist, Favourites and collection poster grids use the available window width to fit evenly sized posters with small gaps in portrait, landscape and Split View.
+
+The Library tab, its library row and hold-to-rearrange, the pushed library pages and the Home and Library tab bar editor were checked in the iOS simulator only.
+None of it has been checked on a physical iPhone or iPad, and iCloud sync of the library order between devices has not been tested.
 
 ### Home spotlight
 
 Home uses full-width artwork from the configured spotlight sections.
 An episode slide shows its series background when one is known, the same as Home's Continue Watching and Next Up cards.
 Sharp artwork reaches the top; there is no separate top blur or sampled-colour band.
-Home, For You and all settings pages explicitly hide the system’s top scroll-edge effect on iOS 26 and later; settings retain their navigation controls without a full-width glass bar.
+Home, Library and all settings pages explicitly hide the system’s top scroll-edge effect on iOS 26 and later; settings retain their navigation controls without a full-width glass bar.
 The logo is bottom-aligned above a centred line of slim year and genre pills (up to two genres) followed by the outlined age rating chip, when available, with no star rating or description.
 The line never wraps; the last genre is dropped when it does not fit.
 The logo and metadata sit just above the page indicators near the first row heading.
@@ -414,7 +435,7 @@ Both surfaces use the same saved order, which syncs through iCloud.
 Deletion removes the saved connection across iCloud devices and removes its saved server only when no other profile uses it.
 It does not delete the actual media-server account or library.
 
-Saved profile order, Home sections, spotlight choices, Studios & Networks choices, Collections choices, card captions and sizes, navigation and metadata preferences, and Seerr, MDBList and OpenSubtitles credentials travel through the encrypted private vault.
+Saved profile order, Home sections, the Library row's order, spotlight choices, Studios & Networks choices, Collections choices, card captions and sizes, navigation and metadata preferences, and Seerr, MDBList and OpenSubtitles credentials travel through the encrypted private vault.
 On Silo, the top menu, card captions and sizes, library page state and the other interface preferences belong to Vivid: they are never read from or saved to the Silo server, so a menu or card size saved in Silo's own apps doesn't change Vivid, and Vivid's choices don't change those apps.
 Other synced values are saved on the server; if it permanently rejects one, the device keeps the server's value instead of sending it again on every launch.
 Playback and subtitle settings remain device-specific, as do downloaded media and metadata caches.
@@ -525,8 +546,8 @@ The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDeta
   Folding or unfolding only asks iOS to re-check the supported orientations; Vivid sends no rotation request, because iOS replays one after the next unfold and pins the inner screen in portrait.
 - **Side status bar:** on the cover screen, and on the inner screen in landscape, iOS runs the status bar down an 84-point strip on one side.
   The tab bar stands vertically in that strip, below the status icons and on their line; on the cover it ends where the page tabs begin.
-  For You, Search and Calendar move their page tabs to the bottom, keeping their portrait width.
-  The scrolling glass strip at the top of Home, For You and Libraries is off there.
+  Library, Search and Calendar move their page tabs to the bottom, keeping their portrait width; Library's row of libraries stays at the top.
+  The scrolling glass strip at the top of Home, Library and library pages is off there.
   Home's spotlight artwork runs under the strip, and keeps its slower-moving parallax on the inner screen.
 - **X and back:** whenever the tab bar is hidden, a page's X or back button stands under the connectivity icon, centred on the status icons' line 48 points in from the screen's edge: in the strip on the cover and in landscape, and in the top corner in portrait.
   This covers detail and actor pages, Search, Settings, Settings pages and pages opened from the tabs.
@@ -535,7 +556,7 @@ The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDeta
   With just the time and connectivity icons it ends 170 points down on the cover, 120 in the inner screen's landscape strip and 82 in its portrait corner, and the layouts above are placed for that.
   When widgets make it longer, the X and back buttons and the Settings avatar bar move down by the same amount, and so does the top of the tab bar, which gets shorter so its bottom stays put.
   Builds without the iOS 27.1 SDK keep the usual positions.
-- **Grids:** Libraries, Search, For You and collection grids fit posters to the inner screen like Apple TV: six across in landscape and four in portrait.
+- **Grids:** Library-page, Search, Watchlist, Favourites and collection grids fit posters to the inner screen like Apple TV: six across in landscape and four in portrait.
   The cover keeps three.
 - **Detail pages:** the inner screen keeps the iPhone portrait design in both orientations, with its parallax and artwork glass, and no glass bar or title fading in while scrolling.
   Play shares a row with Favourite, Watchlist, Watched, Shuffle and Download (Shuffle on series only), whose circles match Play's height with even gaps; the row, synopsis, credits and playback selectors sit in one 560-point column centred under the logo, and the season chips are centred.
@@ -714,7 +735,7 @@ Returning from an actor or nested detail preserves the iPhone title bar at the r
 Home pauses its spotlight and progress indicator until detail dismissal completes, then resumes the remaining slide time.
 The covered source page does not accept touches or accessibility focus.
 
-iPad Search uses a centred field capped at 640 points; its filters and For You tabs are capped at 520 points, above full-width content.
+iPad Search uses a centred field capped at 640 points; its filters and Library's page tabs are capped at 520 points, above full-width content.
 Settings subpages keep their content centred within 760 points, tightening for narrower windows.
 Search and Settings support iPad rotation, although the earlier Mac layout check did not verify physical iPad rotation.
 Horizontal Home and detail shelves intentionally scroll; they are not full-page grids.

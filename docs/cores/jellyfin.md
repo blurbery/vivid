@@ -86,6 +86,10 @@ If a remembered older route returns 404, the current route is retried and the pr
 Authentication failures do not trigger fallback, and no fallback selects another provider.
 Older Jellyfin server versions still need live verification.
 
+The library list carries each library's own image: when the server's view for a library reports a `Primary` image tag, Vivid passes that image along with the library.
+The Library tab's library cards show it on iPhone, iPad and Apple TV, and a library without one shows its symbol on a plain tile.
+This has not been verified against a live Jellyfin server.
+
 ## Playback and limits
 
 Jellyfin maps source IDs, media streams, chapters and tick-based progress into Vivid's models.

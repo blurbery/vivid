@@ -222,7 +222,7 @@ struct MainTabView: View {
         switch id {
         case .app(.home):
             HomeView()
-        case .app(.libraries), .app(.recommendations):
+        case .app(.libraries), .app(.recommendations), .libraryCategory:
             RecommendationsView(
                 libraries: LibraryRowOrderStore.browsable(librarySnapshot.availableLibraries(for: currentAuthority))
             )
@@ -230,8 +230,6 @@ struct MainTabView: View {
             CalendarView()
         case .app(.downloads):
             DownloadsView()
-        case .libraryCategory(let category):
-            LibrariesTabView(category: category, libraryAuthority: currentAuthority, onLibrariesLoaded: storeReportedLibraries)
         case .app:
             unknownPage
         }
@@ -341,11 +339,6 @@ struct MainTabView: View {
     private func applyRefreshedLibraries(_ notification: Notification) {
         guard let response = notification.object as? LibrariesResponse, let authority = currentAuthority else { return }
         librarySnapshot = MainTabLibrarySnapshot(authority: authority, libraries: response.libraries)
-    }
-
-    private func storeReportedLibraries(_ authority: MainTabLibraryAuthority?, _ libraries: [Library]) {
-        guard let authority, authority == currentAuthority else { return }
-        librarySnapshot = MainTabLibrarySnapshot(authority: authority, libraries: libraries)
     }
 
     private func applyRequestedTab() {
