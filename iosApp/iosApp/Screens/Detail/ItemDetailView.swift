@@ -48,9 +48,9 @@ extension EnvironmentValues {
 /// unwatched, with an alert when that fails.
 struct SeasonWatchedContextMenu: ViewModifier {
     let season: Season
-    /// Off for a control that stands for more than one season (a closed
-    /// range on the Apple TV season pill). The modifier stays applied, so
-    /// the control keeps its identity and focus when that changes.
+    /// Off for a control that shouldn't offer the menu. The modifier stays
+    /// applied, so the control keeps its identity and focus when that
+    /// changes. Nothing turns it off at present.
     var isEnabled = true
 
     @Environment(\.seasonWatchedAction) private var setWatched

@@ -765,8 +765,8 @@ Exercise slow clicks, rapid movement, reversals and return navigation on a physi
 
 The design is Vivid's. Server names identify connections and capabilities, not the app's branding.
 
-On iPhone and iPad, long-pressing a season opens its native watched/unwatched menu.
-On Apple TV the action sits at the end of the season selector's menu, for the shown season.
+On iPhone, iPad and the Apple TV season page, long-pressing a season opens its native watched/unwatched menu.
+On the Apple TV series page the action sits at the end of the season selector's menu, for the shown season.
 Series menus order watched actions as Episode, Season, then Series, targeting the Play/Resume episode.
 Season writes reuse the existing optimistic episode updates and rollback on failure.
 On tvOS, browsing episodes leaves the main resume target unchanged.

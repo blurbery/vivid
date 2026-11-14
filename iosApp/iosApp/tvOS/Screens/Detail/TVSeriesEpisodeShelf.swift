@@ -5,8 +5,9 @@ import SwiftUI
 /// poster, and one continuous row of every loaded season's episodes.
 ///
 /// Coming down from the hero, the shelf opens on the Play target's season
-/// and episode. After that, the browsed season follows the pills and the
-/// focused episode, and the pill highlight follows the scroll position.
+/// and episode. After that, the browsed season follows the selector and
+/// the focused episode, and the shown season's name, synopsis and poster
+/// follow the scroll position.
 struct TVSeriesEpisodeShelf: View {
     let seasons: [Season]
     /// Loaded episode pages by season number, spoilers already covered.
@@ -119,7 +120,7 @@ struct TVSeriesEpisodeShelf: View {
             if let season {
                 TVSeasonSummary(
                     season: season,
-                    showsSynopsis: spoilerSeasonNumber.map { season.seasonNumber <= $0 } ?? true
+                    showsSynopsis: showsSynopsis(for: season)
                 )
             }
         }
@@ -128,6 +129,14 @@ struct TVSeriesEpisodeShelf: View {
         .overlay(alignment: .bottomTrailing) {
             TVSeasonPosterCard(season: season, seriesPosterUrl: seriesPosterUrl)
         }
+    }
+
+    /// Specials are never held back, whatever number the server gives
+    /// them, as in `EpisodeSpoilerPolicy`.
+    private func showsSynopsis(for season: Season) -> Bool {
+        guard let spoilerSeasonNumber else { return true }
+        if season.isSpecials == true || season.seasonNumber == 0 { return true }
+        return season.seasonNumber <= spoilerSeasonNumber
     }
 
     // MARK: Season selector
@@ -257,8 +266,11 @@ struct TVSeriesEpisodeShelf: View {
         dwellTask?.cancel()
         dwellTask = nil
         guard let id = stepSeasonId, let season = seasons.first(where: { $0.contentId == id }) else { return }
-        selectPill(season, proxy: proxy)
         stepSeasonId = nil
+        // Stepping away and back keeps the row where it was, such as on
+        // the Play target, rather than jumping to the first episode.
+        guard id != (browseSeasonId ?? selectedSeason?.contentId) else { return }
+        selectPill(season, proxy: proxy)
     }
 
     private func selectorFocusChanged(_ focused: Bool, proxy: ScrollViewProxy) {

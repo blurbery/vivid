@@ -466,24 +466,21 @@ SwiftUI still supplies the scroll animation.
 The owner approved this page lock on Apple TV; the complete approved design is saved at `checkpoint/tvos-approved-page-lock` (`bac9b7d`).
 The blur boundary rises towards both sides and dips in the centre; the curved material boundary rises with native scroll progress until it covers the supporting shelves, and descends with the page on return.
 The material no longer waits for a visibility-triggered fade.
-The artwork remains fixed while the shelves scroll, and the main logo scrolls away with its metadata and controls.
-Once that logo has left the viewport, a separate logo anchored above the supporting shelves (including series seasons) fades in at the top centre over 0.25 seconds.
-On both movie and series pages, it scrolls away with those shelves when browsing further down; scrolling back fades it out more quickly over 0.08 seconds.
-Reduce Motion makes the visibility change immediate.
-The owner confirmed the transitions and season navigation on Apple TV.
-The secondary logo artwork and fallback title are centred within a full-width shelf header; the owner confirmed this alignment on Apple TV.
+The artwork remains fixed while the shelves scroll, and on the movie and series pages the logo stays fixed with it, as described under the series shelf below.
+The earlier design let the main logo scroll away with its metadata and controls and faded a separate, smaller logo in at the top centre above the shelves; the owner confirmed that on Apple TV before replacing it.
+Only the loading page still has that centred shelf logo: it fades in over 0.25 seconds once the page has scrolled past the hero logo, fades out over 0.08 seconds on the way back, and changes immediately under Reduce Motion.
 The hero layout is described below; the loading layout matches it.
 A broad elliptical contrast fade replaces the intersecting linear gradients rejected during Apple TV testing.
 It moves upward and fades away with scroll progress, with extended-linear rendering intended to reduce banding.
 Scroll-surface state is isolated from the content and focus state.
-The logo visibility threshold follows the same position; season navigation retains its existing behaviour.
+The loading page's shelf logo threshold follows the same position.
 The previous pre-contrast design is preserved at Git tag `checkpoint/tvos-before-hero-contrast` (`6619b27`).
 The owner approved this contrast and scroll-linked blur on Apple TV.
 Apple's sample licence is retained in the source.
 This is an adaptation of Apple's public sample, not the Apple TV app's private source.
 
 The movie and series hero puts the title logo in the top-left corner, 100 points in from the top and left.
-Logo images have their transparent margins trimmed when they load, so a logo's visible edge sits at that corner (the shelf logo is trimmed the same way).
+Logo images have their transparent margins trimmed when they load, so a logo's visible edge sits at that corner (the loading page's shelf logo is trimmed the same way).
 The left edge is trimmed to where the logo turns solid (over half opaque), as long as that removes no more than 15% of its visible width, so a soft shadow or glow baked into the image doesn't push it in.
 A logo with a deliberately faint left part keeps it, so its solid part sits a little in from the edge; the other edges keep anything more than faintly visible.
 The poster sits under the logo, from the top of the heading line to the bottom of the action row, with the heading, synopsis, credit line, technical row and action row shifted right beside it.
@@ -501,8 +498,10 @@ Series episodes form one native horizontal shelf across seasons.
 On the movie and series pages the hero's logo stays fixed in its corner at the same size while the page moves between the hero and the shelves: the hero fades out under it and the shelves fade in below it.
 Neither fades out completely, because the focus engine skips a fully transparent view and focus could no longer cross between them.
 The logo leaves with the shelves once the page scrolls on past the first shelf (the episodes on a series).
-Coming back up to the season selector returns the page to that same resting position, with the logo whole: the system's focus scroll brings the page up and the fold snapping settles a target within 300 points of the fold on the fold.
-When the page is 200 points or less past the fold the selector is already on screen and focus doesn't scroll, so the page scrolls itself back.
+Coming back up to the season selector returns the page to that same resting position, the fold, with the logo whole.
+The system's focus scroll brings the page up.
+When that scroll would stop less than 300 points below the fold, the fold snapping moves its stopping position to the fold.
+When the page is already 200 points or less below the fold, the selector is on screen and focus doesn't scroll, so the page scrolls itself back to the fold.
 Moving up onto the episode row alone leaves the page where it is.
 On the movie page, coming back up to the first shelf settles on the fold through the same snapping.
 Only the loading page still uses the smaller centred shelf logo, if it is scrolled before the title loads.
@@ -524,7 +523,8 @@ The owner approved this layout on an Apple TV simulator and on an Apple TV 4K (3
 
 Episode focus updates the shown season immediately.
 During accelerated remote scrolling, scroll geometry keeps the shown season on the visible rail when the previously focused episode has moved offscreen, without changing playback selection or triggering season jumps.
-The last shown season remains when focus leaves the shelf.
+The last shown season remains when focus moves down to the lower shelves.
+Moving up to the action row prepares the shelf for entry again, so it shows the Play target's season.
 Rapid boundary crossings still need confirmation on Apple TV.
 Episode artwork shows a compact duration or minutes-remaining badge, watched state and an inset progress bar when applicable.
 Focusing an episode updates the selected season.
@@ -538,7 +538,7 @@ Separate episode and season detail pages retain their existing layouts.
 The owner supplied an 89-second Apple TV reference recording.
 It establishes the requested appearance and interaction; it does not measure Apple's internal rendering performance.
 The owner approved the overall page flow on Apple TV.
-The season selector and automatic rail movement on season changes await device confirmation; Reduce Motion, startup, memory and the full playback regression checks remain unverified.
+The owner confirmed the season selector and the rail's movement on season changes on an Apple TV 4K (3rd generation); Reduce Motion, startup, memory and the full playback regression checks remain unverified.
 No claim of matching Apple's frame timing is made.
 
 Outside the continuous series shelf, TV card captions share 20-point titles and 18-point secondary text, aligned to the left.
