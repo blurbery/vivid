@@ -1,4 +1,5 @@
 #if os(tvOS)
+import Observation
 import SwiftUI
 import UIKit
 
@@ -48,7 +49,8 @@ struct TVTopMenuNotchShape: Shape {
     }
 }
 
-/// The top bar's notch: dark glass with an outline on its sides and bottom.
+/// The top bar's notch: dark glass with an outline on its sides and bottom
+/// that fades into the top edge.
 struct TVTopMenuNotchChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -57,7 +59,19 @@ struct TVTopMenuNotchChrome: ViewModifier {
             .padding(.bottom, 5)
             .background(.ultraThinMaterial, in: TVTopMenuNotchShape())
             .background(TVTopMenuNotchShape().fill(Color.black.opacity(0.45)))
-            .overlay(TVTopMenuNotchShape(open: true).stroke(Color.white.opacity(0.28), lineWidth: 1.5))
+            // The outline fades out as it reaches the top edge, so the notch
+            // grows out of the edge instead of stopping against it.
+            .overlay(TVTopMenuNotchShape(open: true).stroke(
+                LinearGradient(
+                    stops: [
+                        .init(color: Color.white.opacity(0), location: 0),
+                        .init(color: Color.white.opacity(0.28), location: 0.4),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 1.5
+            ))
     }
 }
 
@@ -86,6 +100,45 @@ struct TVTopMenuDivider: View {
     }
 }
 
+/// Whether the root page on show is scrolled away from its top. The notch
+/// tucks down to the current tab's symbol while it is, so it covers less of
+/// the page, and opens again at the top of the page or when it takes focus.
+/// Only the notch observes it.
+@MainActor
+@Observable
+final class TVTopMenuTuck {
+    static let shared = TVTopMenuTuck()
+
+    private(set) var isScrolledDown = false
+
+    private init() {}
+
+    func report(scrolledDown: Bool) {
+        if isScrolledDown != scrolledDown { isScrolledDown = scrolledDown }
+    }
+}
+
+/// Reports a root page's vertical scroll view to `TVTopMenuTuck`. The page
+/// republishes its own position when it comes back from a pushed page, and
+/// a newly shown page starts at its top.
+struct TVTopMenuTucksOnScroll: ViewModifier {
+    @State private var isScrolledDown = false
+
+    /// How far a page scrolls before the notch tucks.
+    private static let threshold: CGFloat = 60
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > Self.threshold
+            } action: { _, scrolledDown in
+                isScrolledDown = scrolledDown
+                TVTopMenuTuck.shared.report(scrolledDown: scrolledDown)
+            }
+            .onAppear { TVTopMenuTuck.shared.report(scrolledDown: isScrolledDown) }
+    }
+}
+
 /// How the notch's tabs, highlight and lift move, shared with the Tab Bar
 /// settings preview so the two stay in step.
 enum TVTopMenuMotion {
@@ -105,8 +158,7 @@ enum TVTopMenuMotion {
     }
 }
 
-/// One tab in the notch: its symbol, or its name while it is focused or
-/// while it is the selected tab of a bar without focus.
+/// One tab in the notch: its symbol, or its name while it is focused.
 struct TVTopMenuTabLabel: View {
     let symbol: String
     let title: String
@@ -115,18 +167,26 @@ struct TVTopMenuTabLabel: View {
     /// True while anything in the bar is drawn as focused.
     let barHasFocus: Bool
     let highlight: Namespace.ID
+    /// The tucked notch: the selected tab keeps its symbol and its faint
+    /// selected fill, and loses the white focus outline.
+    var isCompact = false
+    /// A fixed width while only the symbol shows, in place of the symbol's
+    /// own padding. Search uses the avatar's width, so the two ends of the
+    /// notch match and the tab between them sits at the centre.
+    var symbolWidth: CGFloat?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let inverted = isFocused || (isSelected && !barHasFocus)
+        let inverted = !isCompact && (isFocused || (isSelected && !barHasFocus))
         let textColour: Color = inverted || isSelected ? .white : Color.white.opacity(0.62)
         let fill: Color = !inverted && isSelected ? Color.white.opacity(0.14) : .clear
         let border: Color = !isFocused && isSelected ? .vividChromeSelectedBorder : .clear
         let scale: CGFloat = isFocused && !reduceMotion ? 1.1 : 1
-        // The name shows for the focused tab, or for the selected one
-        // while the bar doesn't have focus; the rest show their symbol.
-        let showsName = inverted
+        // Only the focused tab shows its name. The selected tab of a bar
+        // without focus keeps its symbol, so tucking and opening change
+        // the notch's width and nothing else.
+        let showsName = isFocused
         // Both stay in the tree and crossfade, so the pill's width is the
         // only thing that moves. The cluster's animation moves it together
         // with the other tabs.
@@ -144,7 +204,8 @@ struct TVTopMenuTabLabel: View {
                 .animation(fade(in: showsName)) { $0.opacity(showsName ? 1 : 0) }
         }
         .font(.system(size: 24, weight: .semibold))
-        .padding(.horizontal, showsName ? 22 : 16)
+        .padding(.horizontal, showsName ? 22 : (symbolWidth == nil ? 16 : 0))
+        .frame(width: showsName ? nil : symbolWidth)
         .padding(.vertical, 6)
         .foregroundStyle(textColour)
         .clipShape(Capsule())
@@ -163,46 +224,63 @@ struct TVTopMenuTabLabel: View {
     }
 }
 
-/// Search in the notch.
+/// Search in the notch: the magnifying glass, opening to its name while
+/// it has focus, like a tab.
 struct TVTopMenuSearchLabel: View {
+    let isFocused: Bool
+    let highlight: Namespace.ID
+
+    var body: some View {
+        TVTopMenuTabLabel(symbol: "magnifyingglass", title: String(localized: "Search"),
+                          isSelected: false, isFocused: isFocused,
+                          barHasFocus: true, highlight: highlight,
+                          symbolWidth: 44)
+    }
+}
+
+/// The profile avatar in the notch. With focus it gives way to "Settings"
+/// inside the tabs' highlight, as a tab's symbol gives way to its name.
+struct TVTopMenuProfileLabel: View {
+    let profile: UserProfile?
     let isFocused: Bool
     let highlight: Namespace.ID
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Image(systemName: "magnifyingglass")
-            .font(.system(size: 24, weight: .semibold))
-            .foregroundStyle(isFocused ? Color.white : Color.white.opacity(0.62))
-            .frame(width: 44, height: 42)
-            .background {
-                // The tabs' highlight, so it glides here too.
-                if isFocused { TVTopMenuHighlightPill(namespace: highlight) }
-            }
-            .scaleEffect(isFocused && !reduceMotion ? 1.1 : 1)
+        // Both stay in the tree and crossfade, so only the width moves.
+        ZStack {
+            ProfileAvatarView(
+                avatar: profile?.avatarEmoji,
+                imageUrl: profile?.avatarImageUrl,
+                name: profile?.name ?? "",
+                size: 40,
+                backgroundColor: Color.white.opacity(0.18),
+                textColor: .white
+            )
+            .animation(fade(in: !isFocused)) { $0.opacity(isFocused ? 0 : 1) }
+            Text("Settings")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: isFocused ? nil : 0)
+                .animation(fade(in: isFocused)) { $0.opacity(isFocused ? 1 : 0) }
+        }
+        .frame(minWidth: isFocused ? nil : 44)
+        .padding(.horizontal, isFocused ? 22 : 0)
+        .frame(height: 42)
+        .clipShape(Capsule())
+        .background {
+            if isFocused { TVTopMenuHighlightPill(namespace: highlight) }
+        }
+        .scaleEffect(isFocused && !reduceMotion ? 1.1 : 1)
     }
-}
 
-/// The profile avatar in the notch.
-struct TVTopMenuProfileLabel: View {
-    let profile: UserProfile?
-    let isFocused: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ProfileAvatarView(
-            avatar: profile?.avatarEmoji,
-            imageUrl: profile?.avatarImageUrl,
-            name: profile?.name ?? "",
-            size: 40,
-            backgroundColor: Color.white.opacity(0.18),
-            textColor: .white
-        )
-        .overlay(Circle().strokeBorder(Color.white, lineWidth: isFocused ? 3 : 0))
-        .scaleEffect(isFocused && !reduceMotion ? 1.05 : 1)
-        .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isFocused)
-        .frame(width: 44, height: 42)
+    /// Whichever is leaving fades out before the other fades in.
+    private func fade(in appearing: Bool) -> Animation? {
+        if reduceMotion { return nil }
+        return appearing ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
     }
 }
 
@@ -234,6 +312,7 @@ extension TVMainTabView {
         /// navigation from outside the bar, such as a Siri search, wins.
         var isCovered = false
 
+        @State private var tuck = TVTopMenuTuck.shared
         @FocusState private var focus: Item?
         /// Lets the white highlight glide from one tab to the next.
         @Namespace private var highlight
@@ -305,27 +384,35 @@ extension TVMainTabView {
 
         private var centredCluster: some View {
             HStack(spacing: VividTheme.Skyline.tabSpacing) {
-                utility(leadingUtility)
-                divider
+                if !isTucked {
+                    utility(leadingUtility).transition(tabTransition)
+                    divider.transition(.opacity)
+                }
                 ForEach(roots, id: \.self) { root in
                     if showsTab(root) {
                         rootTab(root).transition(tabTransition)
                     }
                 }
-                divider
-                utility(swapsUtilities ? .search : .profile)
+                if !isTucked {
+                    divider.transition(.opacity)
+                    utility(swapsUtilities ? .search : .profile).transition(tabTransition)
+                }
             }
             .fixedSize()
             .modifier(TVTopMenuNotchChrome())
+            .opacity(isTucked ? 0.8 : 1)
             .frame(maxWidth: .infinity)
             .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
             .animation(tabAnimation, value: selectedRoot)
+            .animation(tabAnimation, value: isTucked)
         }
 
         private var scrollingCluster: some View {
             HStack(spacing: VividTheme.Skyline.tabSpacing) {
-                utility(leadingUtility)
-                divider
+                if !isTucked {
+                    utility(leadingUtility).transition(tabTransition)
+                    divider.transition(.opacity)
+                }
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: VividTheme.Skyline.tabSpacing) {
@@ -347,14 +434,18 @@ extension TVMainTabView {
                         proxy.scrollTo(selectedRoot, anchor: .center)
                     }
                 }
-                divider
-                utility(swapsUtilities ? .search : .profile)
+                if !isTucked {
+                    divider.transition(.opacity)
+                    utility(swapsUtilities ? .search : .profile).transition(tabTransition)
+                }
             }
             .modifier(TVTopMenuNotchChrome())
+            .opacity(isTucked ? 0.8 : 1)
             .padding(.horizontal, 150)
             .frame(maxWidth: .infinity)
             .frame(height: VividTheme.Skyline.barHeight, alignment: .top)
             .animation(tabAnimation, value: selectedRoot)
+            .animation(tabAnimation, value: isTucked)
         }
 
         private var tabAnimation: Animation? {
@@ -365,6 +456,12 @@ extension TVMainTabView {
         /// tab and the avatar; the other tabs come back once it has focus.
         private func showsTab(_ root: Root) -> Bool {
             shownFocus != nil || root == displayedRoot
+        }
+
+        /// Tucked down to the current tab's symbol: the page is scrolled
+        /// away from its top and the bar has no focus and no tab opening.
+        private var isTucked: Bool {
+            tuck.isScrolledDown && shownFocus == nil && focus == nil && pendingRoot == nil
         }
 
         private var tabTransition: AnyTransition {
@@ -383,7 +480,8 @@ extension TVMainTabView {
                                   isSelected: isSelected,
                                   isFocused: shownFocus == .root(root),
                                   barHasFocus: shownFocus != nil,
-                                  highlight: highlight)
+                                  highlight: highlight,
+                                  isCompact: isTucked)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
@@ -424,7 +522,7 @@ extension TVMainTabView {
 
         private var profileButton: some View {
             Button(action: onProfile) {
-                TVTopMenuProfileLabel(profile: profile, isFocused: focus == .profile)
+                TVTopMenuProfileLabel(profile: profile, isFocused: shownFocus == .profile, highlight: highlight)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()

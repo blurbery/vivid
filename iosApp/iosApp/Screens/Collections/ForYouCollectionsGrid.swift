@@ -151,6 +151,9 @@ struct ForYouCollectionsGrid: View {
                 activeProfileID: profileID
             )
         }
+        if let letter = activeFilter.namePrefix {
+            shown = shown.filter { TitleSortOrder.name($0.collection.name, startsWith: letter) }
+        }
 
         let ordered: (Entry, Entry) -> Bool = { lhs, rhs in
             switch TitleSortOrder.compare(lhs.collection.name, rhs.collection.name) {

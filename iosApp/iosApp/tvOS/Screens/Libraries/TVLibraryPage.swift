@@ -1,7 +1,7 @@
 #if os(tvOS)
 import SwiftUI
 
-/// The Movies and Series top-level pages and the libraries each one shows.
+/// The two kinds of library the Library tab offers.
 enum TVLibraryTabType: String, CaseIterable, Hashable {
     case movies
     case series
@@ -28,126 +28,54 @@ enum TVLibraryTabType: String, CaseIterable, Hashable {
 }
 
 extension TVMainTabView {
-    /// A Movies or Series page: library sub-tabs, the Sort, Filter and A–Z
-    /// row, then the shown library's poster grid.
-    struct LibraryTypePage: View {
-        let type: TVLibraryTabType
+    /// One library, opened from the Library tab: its name, the Sort, Filter
+    /// and A–Z row, then its poster grid.
+    struct LibraryPage: View {
         let library: Library
-        let libraries: [Library]
-        let focusRequest: Int
-        let isTopMenuFocused: Bool
-        let onTopMenuFocusRequest: () -> Void
-        let onChooseLibrary: (Library) -> Void
 
         @State private var model: TVLibraryGridViewModel?
-        @State private var loadedLibraryId: Int?
-        @State private var lastAppliedFocusRequest = 0
         @State private var lastControl: LibraryControl = .sort
-        @FocusState private var focusedLibraryId: Int?
         @Environment(AppRouter.self) private var router
 
-        private var libraryType: String { type == .movies ? "movies" : "series" }
-        private var isSeriesPage: Bool { VividMediaType.isSeries(libraryType) }
+        /// Movie and series libraries ask for their own type, as the Movies
+        /// and Series pages did; a mixed library browses every type.
+        private var libraryType: String {
+            if library.isMixedLibrary { return library.type }
+            return library.isSeriesLibrary ? "series" : "movies"
+        }
+
+        private var isSeriesLibrary: Bool { VividMediaType.isSeries(libraryType) }
 
         var body: some View {
-            ZStack {
-                HStack(spacing: 0) {
-                    ScrollView(.vertical) {
-                        VStack(alignment: .leading, spacing: 32) {
-                            Color.clear.frame(height: VividTheme.Skyline.barTopInset + 78)
-                            libraryTabs
-                            if let model {
-                                LibraryControlRow(model: model, lastControl: $lastControl)
-                                content(model)
-                            } else {
-                                Color.clear.frame(maxWidth: .infinity, minHeight: 400)
-                            }
-                        }
-                        .padding(.bottom, 48)
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 32) {
+                    Text(verbatim: library.name)
+                        .font(.system(size: 36, weight: .semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 80)
+                        .padding(.top, 80)
+                        .accessibilityAddTraits(.isHeader)
+                    if let model {
+                        LibraryControlRow(model: model, lastControl: $lastControl)
+                        content(model)
+                    } else {
+                        Color.clear.frame(maxWidth: .infinity, minHeight: 400)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .focusSection()
+                .padding(.bottom, 48)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Theme Mode Adaptive carries on from the Library tab, and this
+            // library's posters drive its colour while the page is on show.
+            .background { TVAdaptiveBackdrop(opensInCurrentColour: true) }
+            // Owns its 80pt insets itself, like the root pages.
+            .ignoresSafeArea(edges: [.top, .horizontal])
             .onAppear {
+                TVAdaptiveAmbience.shared.isOnLibraryPage = true
                 ensureModel()
-                handDownFocus()
             }
+            .onDisappear { TVAdaptiveAmbience.shared.isOnLibraryPage = false }
             .task(id: library.id) { await openLibrary() }
-            .onChange(of: focusRequest) { handDownFocus() }
-            .onChange(of: isTopMenuFocused) {
-                if !isTopMenuFocused { handDownFocus() }
-            }
-        }
-
-        // MARK: Library sub-tabs
-
-        private var libraryTabs: some View {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(libraries) { option in
-                            libraryTab(option)
-                        }
-                    }
-                }
-                .scrollClipDisabled()
-                .padding(.horizontal, 80)
-                .focusSection()
-                .defaultFocus($focusedLibraryId, library.id, priority: .userInitiated)
-                .onMoveCommand { direction in
-                    if direction == .up { onTopMenuFocusRequest() }
-                }
-                .onChange(of: focusedLibraryId) {
-                    if let focusedLibraryId { proxy.scrollTo(focusedLibraryId, anchor: .center) }
-                }
-            }
-        }
-
-        private func libraryTab(_ option: Library) -> some View {
-            let isShown = option.id == library.id
-            let isFocused = focusedLibraryId == option.id
-            return Button { onChooseLibrary(option) } label: {
-                Text(verbatim: tabLabel(for: option))
-                    .font(.system(size: 26, weight: .semibold))
-                    .lineLimit(1)
-                    .foregroundStyle(isFocused ? Color.black : Color.white)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule().fill(isFocused ? Color.white : Color.white.opacity(isShown ? 0.18 : 0.06))
-                    )
-            }
-            .buttonStyle(.vividFlat)
-            .focused($focusedLibraryId, equals: option.id)
-            .id(option.id)
-            .accessibilityLabel(Text(verbatim: option.name))
-            .accessibilityAddTraits(isShown ? .isSelected : [])
-        }
-
-        /// The shortened label, unless another library in the row shortens
-        /// to the same text; then the full name.
-        private func tabLabel(for option: Library) -> String {
-            let short = Self.shortLabel(option.name, isSeriesPage: isSeriesPage)
-            let collides = libraries.contains { other in
-                other.id != option.id
-                    && Self.shortLabel(other.name, isSeriesPage: isSeriesPage).localizedCaseInsensitiveCompare(short) == .orderedSame
-            }
-            return collides ? option.name : short
-        }
-
-        /// Drops a leading "Movies", "TV Shows" and the like when a separator
-        /// follows it.
-        static func shortLabel(_ name: String, isSeriesPage: Bool) -> String {
-            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let words = isSeriesPage ? #"series|tv\s+shows?|shows?"# : #"movies?"#
-            let separators = "[\\s:\u{2013}\u{2014}_\\-]+"
-            guard let match = trimmed.range(
-                of: "^(?:\(words))\(separators)",
-                options: [.regularExpression, .caseInsensitive]
-            ) else { return trimmed }
-            let rest = trimmed[match.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
-            return rest.isEmpty ? trimmed : rest
         }
 
         // MARK: Content
@@ -160,7 +88,7 @@ extension TVMainTabView {
                 ErrorView(state: error, onRetry: { Task { await model.loadInitial() } })
             } else if model.items.isEmpty {
                 EmptyStateView(
-                    icon: isSeriesPage ? "tv" : "film.stack",
+                    icon: isSeriesLibrary ? "tv" : "film.stack",
                     title: "No titles match",
                     subtitle: "Try a different letter or filter."
                 )
@@ -178,12 +106,11 @@ extension TVMainTabView {
             }
         }
 
-        // MARK: Loading and focus
+        // MARK: Loading
 
         private func ensureModel() {
-            guard loadedLibraryId != library.id else { return }
+            guard model?.libraryId != library.id else { return }
             model = TVLibraryGridViewModel(libraryId: library.id, libraryType: libraryType)
-            loadedLibraryId = library.id
         }
 
         /// Paints the cached page, then refetches it once per visit.
@@ -197,12 +124,6 @@ extension TVMainTabView {
                 await model.refreshFirstPage()
             }
             await facets
-        }
-
-        private func handDownFocus() {
-            guard focusRequest > 0, focusRequest != lastAppliedFocusRequest, !isTopMenuFocused else { return }
-            focusedLibraryId = library.id
-            lastAppliedFocusRequest = focusRequest
         }
     }
 
@@ -218,7 +139,7 @@ extension TVMainTabView {
         @Binding var lastControl: LibraryControl
 
         /// Read from the library when the row appears and whenever the shown
-        /// library changes, since switching sub-tabs keeps this row.
+        /// library changes.
         @State private var preserves = false
         @FocusState private var focused: LibraryControl?
 

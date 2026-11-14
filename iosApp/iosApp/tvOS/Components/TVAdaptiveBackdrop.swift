@@ -3,7 +3,7 @@ import SwiftUI
 import Observation
 
 /// The colour the Adaptive theme mode shows, from whatever artwork last had
-/// focus on a root page. Cards and the Spotlight report focus with a plain
+/// focus on a root page or a library page. Cards and the Spotlight report focus with a plain
 /// method call and never read anything here, and only `TVAdaptiveBackdrop`
 /// observes `tint`, so a focus move never invalidates a page or a row.
 ///
@@ -33,6 +33,9 @@ final class TVAdaptiveAmbience {
     /// Set by the shell: false while a page is pushed over the root pages,
     /// so cards on detail and other pushed pages don't change the colour.
     @ObservationIgnored var isOnRootPage = true
+    /// Set by a pushed library page while it's the page on show, so its
+    /// posters drive the colour as a root page's do.
+    @ObservationIgnored var isOnLibraryPage = false
     /// The artwork focus last rested on, so repeated reports are ignored.
     @ObservationIgnored private var requested: String?
     @ObservationIgnored private var pending: Task<Void, Never>?
@@ -53,10 +56,10 @@ final class TVAdaptiveAmbience {
 
     /// A card or Spotlight slide showing this artwork took focus. Cheap to
     /// call from a focus handler: it returns at once, and the artwork isn't
-    /// even worked out unless Adaptive is on and a root page is showing, so
-    /// the other modes do no work on a focus move.
+    /// even worked out unless Adaptive is on and a root page or a library
+    /// page is showing, so the other modes do no work on a focus move.
     func focused(artwork: @autoclosure () -> String?, source: Source = .card) {
-        guard isActive, isOnRootPage else { return }
+        guard isActive, isOnRootPage || isOnLibraryPage else { return }
         guard let raw = artwork(), !raw.isEmpty else {
             // A card with no artwork: don't let the card before it land late.
             pending?.cancel()
@@ -142,6 +145,10 @@ final class TVAdaptiveAmbience {
 /// and no redraw of the pages. A colour that arrives mid-fade starts from
 /// the blend actually showing, so quick moves never snap.
 struct TVAdaptiveBackdrop: View {
+    /// For a page pushed over the root pages: it opens already in the colour
+    /// on show, rather than fading in from the base theme.
+    var opensInCurrentColour = false
+
     @AppStorage(TVThemeMode.storageKey) private var themeMode = TVThemeMode.defaultValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -154,6 +161,7 @@ struct TVAdaptiveBackdrop: View {
     /// The fade running now: when it began and the front's opacity then.
     @State private var fade: (start: Date, from: Double)?
     @State private var run = 0
+    @State private var hasOpened = false
 
     private let ambience = TVAdaptiveAmbience.shared
 
@@ -178,7 +186,16 @@ struct TVAdaptiveBackdrop: View {
             if mode != .adaptive { ambience.reset() }
         }
         .onChange(of: ambience.tint, initial: true) { _, tint in
-            if let tint { show(TVThemeWash.shades(tint)) } else { hide() }
+            let opening = !hasOpened
+            hasOpened = true
+            if opening, opensInCurrentColour, let tint {
+                front = TVThemeWash.shades(tint)
+                frontOpacity = 1
+            } else if let tint {
+                show(TVThemeWash.shades(tint))
+            } else {
+                hide()
+            }
         }
     }
 

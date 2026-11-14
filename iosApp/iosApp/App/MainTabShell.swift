@@ -18,6 +18,8 @@ struct MainTabView: View {
     @State private var selectedID: MainTabDestinationID = .app(.home)
     @State private var librarySnapshot: MainTabLibrarySnapshot
     @State private var libraryRefreshes = 0
+    /// Why the libraries couldn't load, while none have.
+    @State private var libraryError: ErrorState?
     @Namespace private var zoomNamespace
     @Environment(\.scenePhase) private var scenePhase
 
@@ -38,10 +40,7 @@ struct MainTabView: View {
     }
 
     private var visibleDestinations: [MainTabDestination] {
-        var destinations = projectedMainTabDestinations(
-            primaryMenu: UICustomizationPreferences.shared.primaryMenu,
-            availableLibraries: librarySnapshot.availableLibraries(for: currentAuthority)
-        )
+        var destinations = libraryMainTabDestinations(menuItems: UICustomizationPreferences.shared.resolvedPrimaryMenuItems())
         if showsCalendarTab, !destinations.contains(where: { $0.id == .app(.calendar) }) {
             destinations.append(.app(.calendar))
         }
@@ -225,16 +224,16 @@ struct MainTabView: View {
         switch id {
         case .app(.home):
             HomeView()
-        case .app(.libraries):
-            LibrariesTabView(libraryAuthority: currentAuthority, onLibrariesLoaded: storeReportedLibraries)
-        case .app(.recommendations):
-            RecommendationsView()
+        case .app(.libraries), .app(.recommendations), .libraryCategory:
+            RecommendationsView(
+                libraries: LibraryRowOrderStore.browsable(librarySnapshot.availableLibraries(for: currentAuthority)),
+                librariesError: libraryError,
+                onRetryLibraries: { libraryRefreshes += 1 }
+            )
         case .app(.calendar):
             CalendarView()
         case .app(.downloads):
             DownloadsView()
-        case .libraryCategory(let category):
-            LibrariesTabView(category: category, libraryAuthority: currentAuthority, onLibrariesLoaded: storeReportedLibraries)
         case .app:
             unknownPage
         }
@@ -243,6 +242,12 @@ struct MainTabView: View {
     @ViewBuilder
     private func pushedPage(for route: Route) -> some View {
         switch route {
+        case .library(let libraryId, _):
+            if let library = librarySnapshot.availableLibraries(for: currentAuthority).first(where: { $0.id == libraryId }) {
+                PhoneLibraryPage(library: library)
+            } else {
+                unknownPage
+            }
         case .libraryCollection(let libraryId, let collectionId, let title, let kind):
             LibraryCollectionDetailView(libraryId: libraryId, collectionId: collectionId, title: title, kind: kind)
         case .personDetail(let personId):
@@ -327,26 +332,37 @@ struct MainTabView: View {
     // MARK: Libraries and selection
 
     private func refreshLibraries(for requested: MainTabLibraryAuthority?) async {
-        let kept = librarySnapshot.authority == requested ? librarySnapshot.libraries : []
+        let sameAccount = librarySnapshot.authority == requested
+        let kept = sameAccount ? librarySnapshot.libraries : []
         librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: kept)
-        guard let requested else { return }
-        guard let response = try? await StartupContentPrefetcher.fetchUserLibraries(),
-              !Task.isCancelled, requested == currentAuthority else { return }
-        librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: response.libraries)
+        // Another server or profile's error never shows for this one.
+        if !sameAccount { libraryError = nil }
+        guard let requested else {
+            libraryError = nil
+            return
+        }
+        do {
+            let response = try await StartupContentPrefetcher.fetchUserLibraries()
+            guard !Task.isCancelled, requested == currentAuthority else { return }
+            libraryError = nil
+            librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: response.libraries)
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError), requested == currentAuthority else { return }
+            // Libraries already showing stay; only an empty row reports it.
+            libraryError = kept.isEmpty ? ErrorState(error) : nil
+        }
     }
 
     private func applyRefreshedLibraries(_ notification: Notification) {
         guard let response = notification.object as? LibrariesResponse, let authority = currentAuthority else { return }
+        libraryError = nil
         librarySnapshot = MainTabLibrarySnapshot(authority: authority, libraries: response.libraries)
     }
 
-    private func storeReportedLibraries(_ authority: MainTabLibraryAuthority?, _ libraries: [Library]) {
-        guard let authority, authority == currentAuthority else { return }
-        librarySnapshot = MainTabLibrarySnapshot(authority: authority, libraries: libraries)
-    }
-
     private func applyRequestedTab() {
-        guard let tab = router.requestedTab else { return }
+        guard var tab = router.requestedTab else { return }
+        // For You now lives in the Library tab.
+        if tab == .recommendations { tab = .libraries }
         selectedID = resolvedRequestedMainTabDestination(tab, visibleDestinations: visibleDestinations)
         router.requestedTab = nil
     }

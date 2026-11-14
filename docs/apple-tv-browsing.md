@@ -10,7 +10,7 @@
 
 Vivid's Apple TV Home uses a discovery spotlight above collection-based media rows on the selected app theme described in [App Design](app-design.md#appearance); with Theme Mode set to Spotlight Only and a spotlight on Home, Home's first screen sits on a backdrop in the current slide's colour and the theme returns below it.
 With Adaptive, every root page sits on a backdrop in the colour of whatever last had focus.
-Movies, Series and For You each keep their own page and sub-tab selection.
+The Library tab holds every library with Watchlist, Favourites and Collections, and each library opens on its own page.
 
 ## Home and discovery spotlight
 
@@ -61,10 +61,11 @@ Movies, Series and For You each keep their own page and sub-tab selection.
   The tab bar fades out and back in with the transition.
   Other ways into a detail page, and Reduce Motion, keep the standard push.
   On Apple TV the spotlight artwork keeps to the image's middle band, moved only as far as keeping the subject's top in view needs, so the zoom into the full-screen detail backdrop barely moves the image.
-- With Theme Mode set to Adaptive (Apple TV only), one full-screen backdrop sits behind every root page (Home, Movies, Series, For You and Calendar) in the colour of whatever last had focus, with the same shading and grain as Spotlight Only, whose Home backdrop is then off.
+- With Theme Mode set to Adaptive (Apple TV only), one full-screen backdrop sits behind every root page (Home, Library and Calendar) in the colour of whatever last had focus, with the same shading and grain as Spotlight Only, whose Home backdrop is then off.
   While the Spotlight has focus it takes the slide's saved tint and follows the slides as they turn; a poster, a Continue Watching or Next Up card (also when they're combined into one row) or a collection takes the main colour of the artwork the card shows, a landscape card's series backdrop or thumbnail included.
   Studios & Networks tiles and the tab bar don't change it, so moving from the Spotlight to Studios & Networks keeps the Spotlight's colour.
   The backdrop sits outside the pages, so changing tabs keeps the last colour until something new takes focus, and cards on pushed pages (detail pages, Search, studio pages) don't change it.
+  A library page pushed from Library is the exception: it opens already in the colour on show instead of fading in from the base theme, and its posters drive the colour while it is the page on show.
   When Home shows and nothing has set a colour yet, such as just after Adaptive is turned on, it starts on the current slide's colour.
   Focus has to rest on a card for 200 ms before its colour is looked up, so moving quickly along a row does no colour work for the cards it passes; the look-up reads the bytes the card already downloaded, makes a 48-pixel thumbnail off the main thread, keeps nothing in the shared decoded-image cache, and is remembered for the session.
   Cards report focus with a plain call and only the backdrop observes the colour, so a focus move never rebuilds a page, row or card, and with Off or Spotlight Only the call returns before doing any work.
@@ -141,7 +142,7 @@ Movies, Series and For You each keep their own page and sub-tab selection.
   The choice lasts while the page is open.
   The menu is native, in the library pill style, and its heading row is a focus section, so Down from any rail card lands on the filter and Down again reaches the grid.
   The rails use the same reusable collection row as Home.
-  The grid's first row is built up front so Down from the filter always reaches it; the rest is the For You and library grid, which builds rows as they near the screen, prefetches nearby artwork and redraws only the row that changes.
+  The grid's first row is built up front so Down from the filter always reaches it; the rest is the grid Library's lists and library pages use, which builds rows as they near the screen, prefetches nearby artwork and redraws only the row that changes.
   The page only redraws when that brand's own rows change, not while other brands load or refresh, and the daily library read and TMDb matching run off the main thread.
   Both rows lead with the brand's titles in this week's TMDb trending list, in trending order, and fill the rest from its popular titles: network rows from titles with episodes aired or a release in the past 12 months, falling back to all-time popular when fewer than six match, and studio rows from their all-time most popular, because studios release few films a year.
   TMDb's trending list is one worldwide list with no network, studio or region filter, so a trending title counts for a brand when it's one of the brand's library titles (anything All in Your Library lists, or a title from its past-12-months list).
@@ -206,7 +207,7 @@ When enabled, Spotlight’s Continue Watching choice includes both sources, inte
   The row reserves the same height as a poster row and uses the same nearby-row artwork window.
   It only appears on Home, and it is absent when Show on Home is off, nothing is chosen or the server has no collections.
   It also needs something else on Home: with every Home row hidden and no Spotlight, Home shows its empty state without it.
-- The list is the server's own collections (what For You shows with Source set to Server) plus, on Silo, the profile's own personal collections (what Source set to Mine shows).
+- The list is the server's own collections (what Library's Collections shows with Source set to Server) plus, on Silo, the profile's own personal collections (what Source set to Mine shows).
   Emby and Jellyfin return every box set in one request; Silo is read from each movie, series and mixed library, and a collection that appears in more than one library is shown once.
   The profile's own collections are read from its collections list; other profiles' shared collections are left out.
   A library the profile can't see (Silo answers it with Library not found) counts as having no collections.
@@ -287,50 +288,71 @@ Cached startup is intended to reduce waiting, but no before/after device benchma
 
 ## Tabs and catalogue pages
 
-The tab bar hangs from the top edge of the screen like a notch and contains Search, Home, Movies, Series, For You, Calendar and the profile/settings avatar as available.
-Calendar has its own show/hide eye in Settings > General > Tab Bar, outside the reorderable destinations, and when shown always sits just after For You (at the end when For You is hidden).
+The tab bar hangs from the top edge of the screen like a notch and contains Search, Home, Library, Calendar and the profile/settings avatar as available.
+Library replaces the earlier Movies, Series and For You tabs.
+It is always shown and can't be hidden, because it is the only way to the libraries and the personal lists.
+Calendar has its own show/hide eye in Settings > General > Tab Bar, outside the reorderable destinations, and when shown always sits just after Library.
 It shares the profile setting with the iPhone and iPad Calendar tab.
 Dividers separate Search and Profile.
-While focus is below the bar it closes to Search, the selected tab's name and the avatar.
-Once the bar has focus the other tabs come back as their symbols, the same ones as on iPhone and iPad, and only the focused tab shows its name, so the selected tab closes to its symbol when focus moves to another tab.
+While focus is below the bar it closes to Search, the selected tab's symbol in the highlight and the avatar.
+Once the bar has focus the other tabs come back as their symbols, the same ones as on iPhone and iPad.
+A tab shows its name only while it has focus, so opening and closing the bar change its width and nothing else.
+Search opens from its magnifying glass to "Search" while it has focus, and the avatar gives way to "Settings", both inside the shared highlight.
 One white highlight glides from tab to tab, the symbol fades out before the name fades in, and the whole bar follows focus on one spring animation (none with Reduce Motion).
 Choosing a different tab closes the bar around it over 0.16 seconds and opens the page 0.19 seconds after the press, so the close doesn't stutter while the page is built; with Reduce Motion the page opens at once.
-Search shares the tabs' outlined highlight and the avatar keeps its white focus ring.
 VoiceOver reads every tab's name.
 Focusing a tab gives that individual control a lift.
 The avatar opens Settings directly.
 Root pages have no separate Vivid logo in the top-left corner.
-The notch is dark glass with sides that flare out slightly where they meet the top edge, rounded bottom corners and a thin white outline along its sides and bottom but not its top.
-The selected or focused pill is a white outline with a faint fill rather than a solid white pill, and that one highlight glides between Search and the tabs.
-Home's spotlight, and the sub-tabs of Movies, Series, For You and Calendar, sit just under the notch (`VividTheme.Skyline.barTopInset` is 0).
+The notch is dark glass with sides that flare out slightly where they meet the top edge, rounded bottom corners and a thin white outline along its sides and bottom that fades out into the top edge, so the notch grows out of the edge.
+The selected or focused pill is a white outline with a faint fill rather than a solid white pill, and that one highlight glides between Search, the tabs and the avatar.
+When Home, Library or Calendar is scrolled more than about 60 points from its top and the bar has no focus, the notch tucks down to just the current tab's symbol, slightly dimmed, keeping the faint selected fill but not the white focus outline, so it covers less of the page.
+It opens again at the top of the page or when it takes focus, for example on Menu.
+Home's spotlight, Library's row of libraries and Calendar's sub-tabs sit just under the notch (`VividTheme.Skyline.barTopInset` is 0).
 On Home the gap between the notch and the spotlight is about 30 points, and the gaps between the spotlight and Studios & Networks and below Studios & Networks are 30 points.
 
-Movies and Series use library sub-tabs above Sort and Filter, without the old category dropdowns or mixed Recommended/Browse landing page.
-Redundant leading words such as “Movies” or “TV Shows” are shortened in sub-tab labels; colliding labels retain the original library names.
-Each page keeps its own selection and filter scope.
-Movie and series queries filter content by type, including mixed libraries such as Sports; classification depends on the server's metadata.
+Library opens on a row of library cards: every movie, series and mixed library, each once, as landscape cards the size of Home's Continue Watching cards.
+Each card shows the library's own image, or its symbol on a plain tile when the server has none, with the library's name underneath as the server gives it, with nothing shortened.
+Below the row are the Watchlist, Favourites and Collections sub-tabs the For You tab used to hold.
+Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the same seven-column poster grid the Movies and Series pages had, without the old category dropdowns or mixed Recommended/Browse landing page.
+A mixed library such as Sports is one card, and its page shows movies and series together; it used to appear under both Movies and Series, filtered by type.
+Movie and series libraries still ask the server for their own type; classification depends on the server's metadata.
+A mixed library asks for every type, and its Filter menu adds a Type choice to narrow it to movies or series.
+The library each Movies and Series page used to remember is no longer kept.
 
-Opening Movies or Series, or switching library sub-tabs, paints the library's saved first page straight away, then fetches that page again once and swaps the new one in behind the posters already showing.
+Holding Select on a library card starts arranging the row.
+Every card rocks, Select picks a card up, Left and Right move it and Select drops it.
+There is no save button: each move saves as it happens, and arranging lasts until Menu.
+While a card is picked up, Up does nothing.
+Library cards draw their own focus: they grow and lift on a shadow with no system card platter, and a picked-up card grows a little more.
+The other media cards keep the native card style.
+The row's order is saved per server and profile and syncs through iCloud with the profile's other synced preferences, the same way as Home sections, so rearranging on one device rearranges the others, iPhone and iPad included.
+Other devices pick it up on their next launch or when the app returns to the foreground, not live, and the last change wins.
+A library added later appears at the end of the row.
+
+Opening a library paints its saved first page straight away, then fetches that page again once and swaps the new one in behind the posters already showing.
 The saved page is kept in memory until the app quits or the profile changes, and later pages are fenced to the time the first page loaded, so without this refetch a newly added title stayed hidden everywhere in the grid until the sort changed or the app restarted.
-Coming back from a title or returning to Vivid with a grid on screen doesn't refetch, and once the grid has loaded past its first page it is left as it is, so your place in the list is kept; switching tabs, changing the sort or filter, or choosing a letter loads it fresh.
+Coming back from a title or returning to Vivid with a grid on screen doesn't refetch, and once the grid has loaded past its first page it is left as it is, so your place in the list is kept; opening the library again, changing the sort or filter, or choosing a letter loads it fresh.
 
 Sort, Filter and A–Z use native tvOS menus.
 A–Z is available whatever the sort; choosing a letter switches that library to Title A to Z, as on iPhone and iPad.
 Filters become available after their facets load, avoiding a partial menu that changes while open.
 The menu owns focus while presented and restores it to its trigger on dismissal.
-Up and Down between the library sub-tabs, this control row and the grid use native focus, so Siri Remote swipes and clicks behave the same: Down from the row lands on the poster below, and entering the row returns to the last control used.
-Entering the sub-tabs lands on the current library.
-Only Up to the top menu, which stays disabled while content owns focus, is a boundary handler.
+Up and Down between this control row and the grid use native focus, so Siri Remote swipes and clicks behave the same: Down from the row lands on the poster below, and entering the row returns to the last control used.
+A pushed library page has no top menu above it, so it needs no boundary handler, and Menu goes back to Library.
 An earlier version disabled the grid and sub-tabs while the row had focus and moved focus manually on clicks, which left swipes stuck on the row.
 
-For You has Watchlist, Favourites and Collections sub-tabs, with no Sort control.
-Watchlist and Favourites each have an independent native A–Z menu; choosing All restores the unfiltered list.
-Collections has no A–Z.
-Watchlist and Favourites also have a native Filter menu left of A–Z (Show, Original Language and Anime), and Silo Collections has one at the end of the row (Source; Emby and Jellyfin have none), as described in [App Design](app-design.md).
+Below its library row, Library has Watchlist, Favourites and Collections sub-tabs, with no Sort control.
+Each sub-tab has an independent native A–Z menu; choosing All restores the unfiltered list.
+Collections has A–Z too: a name is filed by the same sort key that orders the grid, so a leading The, A or An is ignored, and "#" takes names that don't start with A to Z.
+Watchlist and Favourites also have a native Filter menu left of A–Z (Show, Original Language and Anime), and Silo Collections has one in the same place (Source; Emby and Jellyfin have none), as described in [App Design](app-design.md).
 Each sub-tab keeps its own filter and shows "Filter · n" when filters are on.
 When Watchlist or Favourites has nothing to show and a filter or an A–Z letter is chosen, it says "No titles match these filters"; with neither, it says "Your watchlist is empty" or "Your favourites are empty".
-Up from the Filter menu hands off to the top menu like the sub-tabs and A–Z.
+Entering Library lands on the library row, on the library that last had focus or else the first; coming back from a library page leaves focus where the navigation stack restores it.
+Up from the sub-tabs, Filter or A–Z moves to the library row natively, and Up from the library row hands off to the top menu.
+With no libraries to show, entry lands on the current sub-tab and Up from the sub-tab row hands off to the top menu instead.
 Up and Down between the sub-tab row and the posters use native focus, landing on the poster below and returning to the current sub-tab; only Up to the top menu is a boundary handler.
+The sub-tabs and the Sort, Filter and A–Z pills, here and on Calendar, library pages and Studios & Networks, share one height and the top bar's dark glass with its outline; focus is the bar's white outline rather than a white fill.
 A manual Down claim used to race native focus and made the grid jump to its first poster.
 Collections combines movie and series collections, and on Silo adds this profile's own collections to User Collections, which comes first, above the server's Collections.
 It paints cached per-library sections immediately, refreshes source libraries together and publishes each response as it arrives instead of waiting for the slowest library.
@@ -340,7 +362,7 @@ Posters load for the rows around the cards on screen; a card the lazy grid drops
 When no card counts as on screen, as after returning from a collection, the window follows the remembered focus.
 Catalogue grids use seven posters across, with deliberate space above the first row for focus enlargement.
 
-Calendar is laid out like For You, with Upcoming and Trending sub-tabs and a Calendar pill on the right where For You keeps Filter and A–Z.
+Calendar is laid out like Library's lists, with Upcoming and Trending sub-tabs and a Calendar pill on the right where Library keeps Filter and A–Z.
 Upcoming shows the same episodes as on iPhone and iPad (see [App Design](app-design.md)), as cards grouped by day, three across; choosing one opens the series.
 Trending shows rails of series and movies coming soon with local date badges, and choosing a poster shows its date and overview.
 The Calendar pill opens a month view of the page's window: on Upcoming, choosing a day with a dot scrolls to it; on Trending, it shows that day's releases with Show all to go back.
@@ -396,7 +418,7 @@ This does not modify any media-server backend.
 The removed marquee, legacy Browse/Recommended landings, music tab, pinned library shortcuts and tab dropdowns no longer run their former tvOS startup prefetch/cache paths.
 Startup retains Home and profile warmup.
 Home row artwork selection stays bounded, and already-warmed candidates are skipped before queuing.
-Movies, Series and For You load their own current-page caches when opened.
+Library and each library page load their own current-page caches when opened.
 
 Cold startup uses Vivid’s two-piece Glide logo, with Reduce Motion and a static-logo fallback.
 The pieces assemble once; when content is ready, the logo fades out before the destination fades in, following the [shared startup handoff](app-design.md#settings-and-startup).
@@ -422,13 +444,13 @@ On Who’s watching a ring around the saved-account avatar identifies the signed
 Settings uses the selected app theme, neutral grey grouped panels, inset dividers and subtly outlined icon tiles.
 The overview separates the joined Profiles panel from one joined category group; secondary pages use the same grouped treatment.
 The TV retains its white focus highlight and existing control geometry.
-General's Customise Tab Bar editor saves changes automatically, uses readable move/hide controls, and has no Pin Libraries section or Done button.
+General's Customise Tab Bar editor saves changes automatically and arranges only Home and Library with readable move controls, without a Pin Libraries section or Done button.
+Home and Library always show and can't be hidden; Calendar keeps its own show and hide control below them.
+The saved menu still keeps its Movies, Series and For You entries for other clients: moving Library before Home puts Home after all of them, and they keep their own order.
 Its preview includes Search and Profile, which can swap ends without joining the main tab order, and Calendar in its fixed place.
 The preview is the tab bar's own notch, drawn with the same views, playing on a loop: it opens, moves to the next tab, chooses it and closes around it.
 With Reduce Motion it stays open on one tab.
-With only one tab there is nothing to open, so it stays closed.
-The crossed-out eye means a tab is hidden.
-Below the destinations, a Calendar section has its own eye, since Calendar isn't reordered with them.
+Below the destinations, a Calendar section has its own eye, since Calendar isn't reordered with them; the crossed-out eye means Calendar is hidden.
 Crash and problem reports are covered in Diagnostics.
 Home timing/geometry capture is opt-in through a developer launch argument, as described in the focus guide; local player stats remain available.
 The shared footer reads “© 2026 Vivid™”.
@@ -617,6 +639,7 @@ Its posters and loading placeholders use Home’s Large poster size.
     <tr><td>Collections row</td><td><a href="../iosApp/iosApp/Components/HomeCollectionsStore.swift">HomeCollectionsStore</a>, <a href="../iosApp/iosApp/tvOS/Components/TVHomeCollections.swift">Apple TV row and settings</a></td></tr>
     <tr><td>Local metadata</td><td><a href="../iosApp/iosApp/tvOS/Caching/TVHomeMetadataCache.swift">TVHomeMetadataCache</a></td></tr>
     <tr><td>Catalogue grids</td><td><a href="../iosApp/iosApp/tvOS/Screens/Catalogue/TVPosterGrid.swift">TVCatalogGrid</a>, <a href="../iosApp/iosApp/tvOS/Screens/Catalogue/TVPosterArtworkPrefetch.swift">artwork window</a>, <a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryPagingModel.swift">Library paging</a></td></tr>
+    <tr><td>Library tab</td><td><a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryRootPage.swift">Library page</a>, <a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryCardRow.swift">library row</a>, <a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryPage.swift">pushed library page</a>, <a href="../iosApp/iosApp/Components/LibraryRowOrderStore.swift">row order</a></td></tr>
     <tr><td>Navigation and Settings</td><td><a href="../iosApp/iosApp/tvOS/Shell/AppleTVShell.swift">TVMainTabView</a>, <a href="../iosApp/iosApp/tvOS/Screens/Settings/TVGeneralPane.swift">General</a></td></tr>
     <tr><td>Siri search</td><td><a href="../iosApp/iosApp/tvOS/Siri/SearchVividIntent.swift">SearchVividIntent and search link</a>, <a href="../iosApp/iosApp/Screens/Search/SearchPage.swift">SearchView</a></td></tr>
     <tr><td>Startup</td><td><a href="../iosApp/iosApp/tvOS/Components/VividStartupView.swift">VividStartupView</a>, <a href="../iosApp/iosApp/Startup/StartupPrefetch.swift">StartupContentPrefetcher</a></td></tr>
@@ -630,6 +653,9 @@ The review follow-up `06ed084` changed episode button focus/accessibility wiring
 Targeted date checks passed, and [CI passed the iOS tests and tvOS simulator build](https://github.com/blurbery/vivid/actions/runs/34695468089).
 No focused VoiceOver/device check of that follow-up is recorded.
 Documentation-only updates made straight after that run reused those results because application sources were unchanged.
+
+The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only.
+None of it has been checked on a physical Apple TV, and iCloud sync of the library order between devices has not been tested.
 
 The results below belong to the stated development revisions.
 For current TestFlight availability and source mappings, use App Store Connect.
@@ -648,15 +674,15 @@ The paired iPhone checks are in [App Design](app-design.md#detail-pages-and-vali
 No measured benchmark, universal output-format certification or physical iPad check is recorded.
 
 Before treating a revision as device-verified, record its exact commit, Apple TV model and OS, server version, and results.
-Check cold/warm startup, multiple accounts, manual sign-out, optional PINs, spotlight cycling, Continue Watching returns, independent library sub-tabs, sort/filter changes, paging beyond seventy items, reverse scrolling, cache clearing and Settings navigation.
+Check cold/warm startup, multiple accounts, manual sign-out, optional PINs, spotlight cycling, Continue Watching returns, the Library row and its rearranging, library pages, sort/filter changes, paging beyond seventy items, reverse scrolling, cache clearing and Settings navigation.
 The changed shared code also needs iOS validation; the current tvOS build does not cover those platforms.
 
 Read [focus ownership rules](apple-tv-focus.md) before changing navigation.
 Preserve series season/episode focus, context-menu restoration, and cancellation of obsolete artwork work.
 
 Cast and crew filmography uses Home’s dense poster width and shared title/year captions.
-For You's Watchlist and Favourites no longer show Movie or Series pills on iOS or tvOS; the Filter menu's Show choice separates them instead.
-For You’s secondary tabs scroll with Watchlist, Favourites and Collections.
+Watchlist and Favourites no longer show Movie or Series pills on iOS or tvOS; the Filter menu's Show choice separates them instead.
+Library’s secondary tabs scroll with Watchlist, Favourites and Collections.
 Person details reuse the active profile’s response cache while refreshing in the background; filmography and filter availability load alongside the person request.
 Missing biographies and photos still depend on server enrichment.
 

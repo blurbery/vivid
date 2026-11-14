@@ -122,11 +122,16 @@ extension JellyfinAdapter {
             guard let id = raw["Id"] as? String else { return nil }
             let type = raw["CollectionType"] as? String ?? "mixed"
             guard ["movies", "tvshows", "mixed", ""].contains(type) else { return nil }
-            return [
+            var library: [String: Any] = [
                 "id": Self.numberID(id),
                 "name": raw["Name"] as? String ?? String(localized: "Library", comment: "Fallback name for a library the server sent without one"),
                 "type": type == "tvshows" ? "series" : type == "movies" ? "movie" : "mixed",
             ]
+            // The library's own image, when the server has one.
+            if (raw["ImageTags"] as? [String: Any])?["Primary"] != nil {
+                library["posterUrl"] = image(raw, kind: "Primary")
+            }
+            return library
         }
     }
 

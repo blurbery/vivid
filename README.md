@@ -60,7 +60,7 @@ It does not import either service’s existing watched history or replace server
 
 ## Apple TV
 
-I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs.
+I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, a Library tab for your libraries and saved lists, and saved server accounts with optional profile PINs.
 Search uses seven posters across the available width, and a short press of the Siri button anywhere in the app searches by voice.
 TV cards share consistent title and year captions.
 Detail pages include TMDb trailers and ratings, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume.
@@ -69,7 +69,7 @@ The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and
 ## iPhone and iPad
 
 The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching.
-For You combines Watchlist, Favourites and Collections, and Calendar shows upcoming episodes of your shows and what's coming soon.
+The Library tab holds a row of your libraries, which you can rearrange, above Watchlist, Favourites and Collections, and Calendar shows upcoming episodes of your shows and what's coming soon.
 Search and Settings are full-screen pages with slide-up/down transitions, portrait on iPhone and rotatable on iPad and the iPhone Duo's inner screen.
 Movie, series and actor details open full-screen on iPhone and iPad, staying above Search during playback. iPhone details use interactive zoom transitions, with X to close and Back from actor pages.
 Movie and series pages show aligned video/file and audio information.

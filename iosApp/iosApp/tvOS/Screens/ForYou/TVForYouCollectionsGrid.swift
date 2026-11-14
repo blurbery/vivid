@@ -8,6 +8,8 @@ extension TVMainTabView {
     struct TVLibraryCollectionsView: View {
         let libraries: [Library]
         let filter: PersonalListFilter
+        /// The A–Z letter collection names must start with; `nil` shows all.
+        let letter: String?
         /// The bar, a sub-tab, A–Z or Filter holds focus.
         let isFocusUp: Bool
 
@@ -133,7 +135,7 @@ extension TVMainTabView {
         }
 
         private var emptyContent: some View {
-            let filterActive = filter.limited(to: .collections).isActive
+            let filterActive = filter.limited(to: .collections).isActive || letter != nil
             let title: LocalizedStringKey = filterActive ? "No collections match these filters" : "No collections yet"
             let subtitle: LocalizedStringKey? = filterActive ? nil : "Collections created on the server will appear here."
             return ZStack {
@@ -190,6 +192,9 @@ extension TVMainTabView {
                             activeProfileID: profileID
                         )
                     }
+                }
+                if let letter {
+                    entries = entries.filter { TitleSortOrder.name($0.collection.name, startsWith: letter) }
                 }
                 if usesNativeUser {
                     entries = entries.map { entry in

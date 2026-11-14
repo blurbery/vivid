@@ -241,6 +241,7 @@ final class VividCloudPreferences {
             guard let profile = account.profile?.id else { continue }
             let suffix = "\(account.serverID).\(profile)"
             keys.formUnion(["tvos.homeSections.v1.\(suffix)", "tvos.homeSpotlight.v1.\(suffix)", "tvos.homeStudiosNetworks.v1.\(suffix)", "tvos.homeCollections.v1.\(suffix)", "tvos.homeCards.v1.\(suffix)", "tvos.homeCards.v1.\(suffix).captions"])
+            keys.insert(LibraryRowOrderStore.defaultsKey(serverId: account.serverID, profileId: profile))
             for key in storedKeys {
                 for prefix in ["ios.browsePrefs.", "tv.browsePrefs."] where key.hasPrefix(prefix + suffix + ".") {
                     let canonical = "vivid.browsePrefs." + String(key.dropFirst(prefix.count))
@@ -522,6 +523,7 @@ final class VividCloudPreferences {
             StudiosNetworksStore.shared.refresh(force: true)
             HomeCollectionsStore.shared.refresh(force: true)
             TVHomeCardPreferences.shared.cloudPreferencesChanged()
+            LibraryRowOrderStore.shared.cloudPreferencesChanged()
             TVTMDbStore.shared.reloadForCurrentProfile(force: true)
             TVSeerrConnectionStore.shared.cloudPreferencesChanged()
             MDBListSyncStore.shared.reload()

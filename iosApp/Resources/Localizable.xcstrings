@@ -14646,8 +14646,43 @@
         }
       }
     },
-    "Changes save automatically. Home stays visible; press Back to return." : {
+    "Changes save automatically. Home and Library stay visible; press Back to return." : {
       "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen werden automatisch gespeichert. Home und Mediathek bleiben sichtbar; drücke „Zurück“, um zurückzukehren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los cambios se guardan automáticamente. Inicio y Biblioteca siguen visibles; pulsa Atrás para volver."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modifications sont enregistrées automatiquement. Les onglets Accueil et Bibliothèque restent visibles ; appuyez sur Retour pour revenir."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更は自動的に保存されます。「ホーム」と「ライブラリ」は常に表示されます。戻るには「戻る」を押してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改会自动存储。“主页”和“资料库”始终可见；按下“返回”即可返回。"
+          }
+        }
+      }
+    },
+    "Changes save automatically. Home stays visible; press Back to return." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -22195,7 +22230,7 @@
       }
     },
     "Default menu applied. Reorder or hide tabs to customise." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -23447,7 +23482,7 @@
       }
     },
     "Discover" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30052,7 +30087,7 @@
       }
     },
     "HIDDEN DESTINATIONS" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30840,6 +30875,41 @@
         }
       }
     },
+    "Home and Library stay visible. Use the arrows to reorder them. Downloads (when available), Search, and Profile stay automatic." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home und Mediathek bleiben sichtbar. Ordne sie mit den Pfeilen neu an. Downloads (falls verfügbar), Suchen und Profil werden automatisch angeordnet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio y Biblioteca siguen visibles. Usa las flechas para reordenarlos. Descargas (si está disponible), Buscar y Perfil se gestionan automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les onglets Accueil et Bibliothèque restent visibles. Utilisez les flèches pour les réorganiser. Téléchargements (si disponible), Rechercher et Profil restent automatiques."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「ホーム」と「ライブラリ」は常に表示されます。矢印を使って並べ替えます。「ダウンロード」（利用可能な場合）、「検索」、「プロフィール」は自動的に配置されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“主页”和“资料库”始终可见。使用箭头重新排列。“下载”（可用时）、“搜索”和“个人资料”保持自动。"
+          }
+        }
+      }
+    },
     "Home cache and storage" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30911,7 +30981,7 @@
       }
     },
     "Home is required. Use the arrows to reorder tabs. Downloads (when available), Search, and Profile stay automatic." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -33269,7 +33339,7 @@
       }
     },
     "Libraries visible to this profile will appear here." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39381,7 +39451,7 @@
       }
     },
     "No libraries available" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -41858,7 +41928,7 @@
       }
     },
     "Open Watchlist, Favourites, or Collections" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -41962,6 +42032,41 @@
         }
       }
     },
+    "Open library" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mediathek öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la biblioteca"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir la bibliothèque"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブラリを開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开资料库"
+          }
+        }
+      }
+    },
     "Open page" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42028,6 +42133,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开边栏"
+          }
+        }
+      }
+    },
+    "Open your libraries, Watchlist, Favourites, or Collections" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Mediatheken, Watchlist, Favoriten oder Sammlungen öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre tus bibliotecas, Mi lista, Favoritos o Colecciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir vos bibliothèques, Ma liste, Favoris ou Collections"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブラリ、「ウォッチリスト」「お気に入り」「コレクション」を開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开你的资料库、“待播清单”、“个人收藏”或“合集”"
           }
         }
       }
@@ -49480,6 +49620,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新排列或隐藏标签。更改会自动存储。"
+          }
+        }
+      }
+    },
+    "Reorder tabs. Changes save automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordne Tabs neu an. Änderungen werden automatisch gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reordena las pestañas. Los cambios se guardan automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réorganisez les onglets. Les modifications sont enregistrées automatiquement."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブを並べ替えられます。変更は自動的に保存されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新排列标签。更改会自动存储。"
           }
         }
       }
@@ -57228,7 +57403,7 @@
       }
     },
     "Shown at the end of the tab bar." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -57298,7 +57473,7 @@
       }
     },
     "Shown in the tab bar, just after For You." : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -57328,6 +57503,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示在标签栏中，紧跟在“为你推荐”之后。"
+          }
+        }
+      }
+    },
+    "Shown in the tab bar, just after Library." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In der Tab-Leiste direkt nach „Mediathek“ angezeigt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se muestra en la barra de pestañas, justo después de Biblioteca."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiché dans la barre d’onglets, juste après Bibliothèque."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブバーの「ライブラリ」のすぐ後に表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在标签栏中，紧跟在“资料库”之后。"
           }
         }
       }
@@ -76766,6 +76976,48 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统信号"
+          }
+        }
+      }
+    },
+    "tab.library" : {
+      "comment" : "Title of the Library tab, which holds the libraries, Watchlist, Favourites and Collections",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mediathek"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Biblioteca"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bibliothèque"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブラリ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资料库"
           }
         }
       }

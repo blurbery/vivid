@@ -25,4 +25,17 @@ enum TitleSortOrder {
         }
         return trimmed
     }
+
+    /// Whether a name files under an A–Z choice, by the same sort key that
+    /// orders a grid (so "The Matrix Collection" is under M). "#" takes
+    /// every name that doesn't start with A to Z.
+    static func name(_ name: String, startsWith letter: String) -> Bool {
+        let first = sortKey(name)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .uppercased()
+            .first
+        let isLetter = first.map { ("A"..."Z").contains($0) } ?? false
+        if letter == "#" { return !isLetter }
+        return isLetter && first.map(String.init) == letter
+    }
 }

@@ -97,21 +97,40 @@ Decide which focus model the control should use, then remove the other one.
 
 ## Current tab and Settings ownership
 
-Home, Movies, Series, For You and Calendar are direct root tabs.
-Movies and Series expose native library sub-tabs within their own page; For You exposes Watchlist, Favourites and Collections, and Calendar exposes Upcoming and Trending.
-Calendar's row works like For You's: entering it lands on the current sub-tab, only Up to the top menu is a boundary hand-up, and one scroll view holds both sub-tabs so the row stays mounted.
-Its Calendar pill, where For You keeps Filter and A–Z, opens a month view whose day buttons and month arrows are the only focus targets; days with nothing on them aren't focusable.
+Home, Library and Calendar are direct root tabs.
+Library has a row of library cards above its Watchlist, Favourites and Collections sub-tabs, and Calendar exposes Upcoming and Trending.
+Selecting a library card pushes that library's page onto the navigation stack; a library is not a sub-tab.
+Calendar's sub-tab row works like Library's: one scroll view holds both sub-tabs so the row stays mounted.
+Entering Calendar lands on the current sub-tab, and only Up to the top menu is a boundary hand-up.
+Its Calendar pill, where Library keeps Filter and A–Z, opens a month view whose day buttons and month arrows are the only focus targets; days with nothing on them aren't focusable.
 Trending posters put only the artwork in the native card button, with a 20-point gap above the captions so the focus lift never covers the title.
 The Profile control opens Settings directly.
 Do not restore the removed Movies/Series/For You/Profile dropdowns when fixing focus.
+The Movies, Series and For You tabs themselves are gone too: Library replaced them.
+
+Entering Library lands on the library row: the library card that last had focus, or the first when that library is no longer offered.
+With no libraries to show, it lands on the current sub-tab.
+Each entry request lands once, and coming back from a pushed library page leaves focus where the navigation stack restores it, with no focus claim of Vivid's own.
+Up from the library row hands off to the top menu.
+Up from the sub-tab row (the sub-tabs, Filter or A–Z) moves to the library row natively; only without libraries does it hand off to the top menu.
+
+Holding Select on a library card starts arranging the row: every card rocks, Select picks a card up, Left and Right move it and Select drops it.
+Each move saves as it happens, so there is no save button.
+Arranging lasts until Menu, which the page handles because focus may have left the row; outside arranging, Menu stays the shell's.
+While a card is picked up, Up does nothing, so the card stays in the row until it is dropped.
+The row uses one button per card in every state and keys cards by library, so a picked-up card keeps its identity and its focus as it changes place.
+Moving a picked-up card doesn't move focus, so the row scrolls the card into view itself.
+The rocking angle is read from the clock on every frame and the card's view structure never changes, so starting or ending arranging doesn't drop focus.
 
 A [Siri search](apple-tv-browsing.md#siri-search) opens Search with one navigation-path assignment that replaces every pushed screen, not a pop followed by a push, so the root's pop-to-root focus handling never runs for a screen that isn't shown.
 It marks the bar as the owner after Back, as the bar's Search button does.
 Focus inside Search stays with the native search field and grid, and the hand-off pins no focus target.
 The one exception is a cold launch: Search opens while the startup hand-off still disables the content, so when the content is enabled the shell asks the focus engine to re-resolve once (the same request the focus watchdog makes), which lands on the search field.
 
-Media cards across Home, Search, Movies, Series, For You and detail pages use SwiftUI’s native `.card` button style, including collection posters, episodes, trailers and cast.
+Media cards across Home, Search, Library, library pages and detail pages use SwiftUI’s native `.card` button style, including collection posters, episodes, trailers and cast.
 The system owns their focus lift, shadow and animation; cards add no custom focus scale, shadow or animated artwork border.
+The library cards in Library's row are the exception: they draw their own focus, growing and lifting on a shadow with no system card platter, so nothing shows around a card while it rocks.
+A picked-up card grows a little more.
 Resume progress is inside the artwork button so it moves with the native effect.
 Trailer and cast captions sit outside the native card button; its effect follows only the thumbnail or portrait poster.
 The Cast & Crew rail's group dividers are plain views with no focus target, so directional movement goes straight from one poster to the next and the first person in the first group stays the rail's default focus.
@@ -153,7 +172,9 @@ The countdown pauses until the selected card actually reaches the centre.
 
 The top menu remains a native upward destination while browsing the spotlight, then resumes its row-boundary suppression when entering lower rows.
 Spotlight Up uses native movement without an additional manual menu-focus request.
-The whole top bar declares the selected page tab as its default focus destination for user-initiated entry, so Up returns to Home, Movies, Series or For You rather than whichever utility is closest.
+The whole top bar declares the selected page tab as its default focus destination for user-initiated entry, so Up returns to Home, Library or Calendar rather than whichever utility is closest.
+When a root page is scrolled more than about 60 points from its top and the bar has no focus and no tab opening, the notch tucks down to the current tab's symbol.
+It opens again when the bar takes focus (for example on Menu) or the page returns to its top, so tucking needs no focus handling of its own (see [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages)).
 Movement within the bar remains native.
 Moving across the top menu only changes focus; Down returns to the currently selected page.
 A centre click on a different tab closes the bar around it and opens that page 0.19 seconds later (at once with Reduce Motion); moving focus, pressing Menu, the bar losing focus, or a page or the player opening from elsewhere (such as a Siri search) in that gap drops the choice, so it never overrides Search, Settings or Home (see [Apple TV Browsing](apple-tv-browsing.md)).
@@ -163,7 +184,7 @@ Focus changes alone do not pause or reset the counter.
 Visible loop copies keep stable identities throughout navigation.
 
 Each root owns its own sub-tab selection.
-A focus move within Movies must not change Series or For You.
+A focus move within Library must not change Calendar's sub-tab.
 Keep card identities stable across paging and artwork eviction.
 Home's spotlight retains a fixed 785-point layout and focus height; the system owns directional movement.
 Down performs one explicit handoff, to the Studios & Networks row when it is showing and otherwise to the first row, preserving the remembered tile or card independently of a moving Spotlight slide; explicit detail return restores the launching tile or card when it still exists.
@@ -204,7 +225,7 @@ No delayed claims, polling, generation counters or normal-navigation focus retri
 Row ownership is observed by the affected rows and a separate artwork worker, without making it a dependency of the entire feed.
 
 Startup warms row artwork without fetching the removed marquee’s first-item backdrop, logo or tint; landscape episode cards and the independent spotlight retain their artwork. tvOS startup no longer prefetches the former Recommendations feed, library-section landings, legacy Browse page or first Series detail.
-Current Movies, Series and For You pages load through their own caches when opened; Home and profile warmup remain active.
+Library and each library page load through their own caches when opened; Home and profile warmup remain active.
 Apple TV Spotlight uses the Home section payload and its artwork cache.
 It does not fetch full item details, seasons, episodes or playback data; a missing backdrop uses the section artwork fallback.
 Its full Home snapshot also retains versioned subject-crop decisions (including no detected subject) and sampled tint colours by artwork URL. tvOS prepares current Spotlight backdrops sequentially and shares in-flight analysis with visible slides.
@@ -216,9 +237,11 @@ tvOS Home hydrates its snapshot immediately.
 [Home refresh](server-connections.md#home-refresh) defines entry, provider-specific timers and deferred updates while Home is hidden.
 Unchanged rows and snapshots are not republished or rewritten.
 The unused row warmer and unreachable personal-root shell have been removed.
-The tvOS bar supports Search, Home, Movies, Series, For You, Calendar and Settings/Profile only.
+The tvOS bar supports Search, Home, Library, Calendar and Settings/Profile only.
+Library is always shown and can't be hidden.
 Music, library shortcuts, Recommended library landings and their dropdown focus machinery are removed, including their tvOS customisation options.
 Shared saved menu data remains compatible with other clients.
+The saved menu keeps its Movies, Series and For You entries, and the first of them marks where Library sits in the bar.
 
 Local Home diagnosis can be armed with the `--home-scroll-diagnostics` launch argument.
 Adding `--home-scroll-diagnostics-autostart` starts one capture eight seconds after the feed arms, without requiring notification delivery.
@@ -230,7 +253,7 @@ Without the launch argument, the diagnostic observers remain inactive.
 
 Settings → General → Themes (Appearance → Base Theme on Apple TV) saves the device-wide Graphite, Black or Native choice described in [App Design](app-design.md#appearance).
 Native uses the shared static mesh gradient on iPhone, iPad and Apple TV.
-On Apple TV, Theme Mode can cover the base theme with a colour backdrop: Spotlight Only covers Home's first screen in the spotlight's colour when Home has a spotlight, and Adaptive covers every root page in the colour of whatever last had focus (see [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight)).
+On Apple TV, Theme Mode can cover the base theme with a colour backdrop: Spotlight Only covers Home's first screen in the spotlight's colour when Home has a spotlight, and Adaptive covers every root page, and a library page pushed from Library, in the colour of whatever last had focus (see [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight)).
 Neither takes focus, and Adaptive's colour follows focus without changing it.
 The shared canvas sits behind `ContentView`, outside the routed subtree and tab transitions, and is available before profile selection.
 Theme changes preserve native focus targets, artwork effects and the 200 ms tab content crossfade.
@@ -243,9 +266,12 @@ Sort, Filter and A–Z are real native menus.
 Do not restore the removed centred sort/filter panels or their directional interception.
 Load filter facets before enabling the menu.
 Dismissal belongs to the native menu and should return to its trigger without a delayed focus repair.
-For You keeps one Filter selection per sub-tab and one A–Z selection each for Watchlist and Favourites.
-Its Filter menu is a native menu in the sub-tab row: left of A–Z on Watchlist and Favourites, and last in the row on Silo Collections, which has no A–Z.
-Up from it hands off to the top menu like the tabs and A–Z.
+Library keeps one Filter selection and one A–Z selection per sub-tab.
+Its Filter menu is a native menu in the sub-tab row, left of A–Z: on Watchlist, Favourites and Silo Collections.
+Emby and Jellyfin Collections have no Filter, so A–Z stands alone there.
+Up from it moves to the library row natively, like the sub-tabs and A–Z.
+Choosing a Collections letter only narrows the loaded grid, like its filter.
+The sub-tabs and the Sort, Filter and A–Z pills share one height and the top bar's dark glass, and their focus is the bar's white outline rather than a white fill.
 Changing a Collections filter only narrows the loaded grid; it does not reload collections or claim focus.
 All three sub-tabs share one scroll view, so the sub-tab row stays mounted and selecting Collections keeps focus on Collections.
 When Collections had its own scroll view, selecting it rebuilt the row and dropped focus onto Watchlist.
@@ -432,7 +458,7 @@ These are configured budgets and task limits, not measured total memory use:
 | tvOS Home refresh while visible | Jellyfin every 10 seconds; Silo every 30 minutes; Emby has no periodic Home timer. Entry and explicit refresh/mutation events can also refresh Home. |
 
 The app shell also loads profiles, library names and presentation preferences for the visible navigation and badges.
-It does not use those library summaries to preload Movies, Series, For You or detail pages.
+It does not use those library summaries to preload Library's lists, library pages or detail pages.
 Home-specific requests can fan out by provider: Silo uses its Home endpoint, Emby loads required row contents, and Jellyfin loads resume, next-up and latest-library rows.
 
 Before this change, a 180 ms card-focus pause could fetch two payloads for a movie, up to three for an episode, or four for a series (detail, seasons, one season's episodes and watch data).

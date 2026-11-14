@@ -96,12 +96,9 @@ struct TVCalendarView: View {
                     Text(tab.title)
                         .font(.system(size: 26, weight: .semibold))
                         .padding(.horizontal, 22)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(focused ? Color.black : .white.opacity(page == tab ? 1 : 0.65))
-                        .background(
-                            focused ? Color.white : .white.opacity(page == tab ? 0.18 : 0.06),
-                            in: Capsule()
-                        )
+                        .frame(height: TVBrowseControlPillStyle.height)
+                        .foregroundStyle(Color.white.opacity(focused || page == tab ? 1 : 0.65))
+                        .background(TVBrowsePillBackground(isFocused: focused, isSelected: page == tab))
                 }
                 .buttonStyle(.vividFlat)
                 .focusEffectDisabled()

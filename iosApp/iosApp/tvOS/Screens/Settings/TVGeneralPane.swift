@@ -19,7 +19,6 @@ extension TVSettingsView {
         @State private var tmdb = TVTMDbStore.shared
         @State private var cards = TVHomeCardPreferences.shared
         @State private var registry = ServerRegistry.shared
-        @State private var snapshot = MainTabLibrarySnapshot.cachedForCurrentAuthority()
         @State private var showsHomeScreen = false
         @State private var showsStudios = false
         @State private var showsHomeSections = false
@@ -28,12 +27,6 @@ extension TVSettingsView {
         @Environment(\.scenePhase) private var scenePhase
 
         private var provider: MediaServerProvider { MediaServerProvider.forServerID(registry.activeServerId) }
-
-        private var authority: MainTabLibraryAuthority? {
-            MainTabLibraryAuthority(serverId: registry.activeServerId, profileId: registry.activeProfileId)
-        }
-
-        private var libraries: [Library] { snapshot.availableLibraries(for: authority) }
 
         private var languageOptions: [MenuOption] {
             VividAppLanguage.allCases.map {
@@ -105,7 +98,7 @@ extension TVSettingsView {
             .navigationDestination(isPresented: $showsStudios) { TVStudiosNetworksSettingsView() }
             .navigationDestination(isPresented: $showsHomeSections) { HomeSectionsEditorPage() }
             .navigationDestination(isPresented: $showsCollections) { TVHomeCollectionsSettingsView() }
-            .navigationDestination(isPresented: $showsTabBar) { TabBarEditorPage(libraries: libraries) }
+            .navigationDestination(isPresented: $showsTabBar) { TabBarEditorPage() }
             .onAppear {
                 sections.refresh()
                 tmdb.reloadForCurrentProfile()
@@ -117,15 +110,9 @@ extension TVSettingsView {
                 collections.refresh()
             }
             .task { await preferences.refresh() }
-            .task(id: authority) { await refreshLibraries(for: authority) }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
-                let current = authority
-                Task {
-                    async let menu: Void = preferences.refresh()
-                    async let shelves: Void = refreshLibraries(for: current)
-                    _ = await (menu, shelves)
-                }
+                Task { await preferences.refresh() }
             }
             .tvSystemAlert("Reopen Vivid", isPresented: $showsReopen, message: reopenMessage, buttons: [.cancel("OK")])
         }
@@ -178,7 +165,8 @@ extension TVSettingsView {
         }
 
         private var tabBarItemCount: Int {
-            TVSettingsView.tabBarItems(preferences.resolvedPrimaryMenuItems(), libraries: libraries).count
+            // Home and Library always show.
+            2
         }
 
         private var reopenMessage: LocalizedStringResource {
@@ -198,34 +186,24 @@ extension TVSettingsView {
                 showsReopen = true
             }
         }
-
-        /// Keeps libraries only for the server and profile they belong to,
-        /// then fetches that profile's libraries.
-        private func refreshLibraries(for authority: MainTabLibraryAuthority?) async {
-            if snapshot.authority != authority {
-                snapshot = MainTabLibrarySnapshot(authority: authority, libraries: [])
-            }
-            guard let authority else { return }
-            guard let response = try? await StartupContentPrefetcher.fetchUserLibraries(),
-                  !Task.isCancelled, self.authority == authority else { return }
-            snapshot = MainTabLibrarySnapshot(authority: authority, libraries: response.libraries)
-        }
     }
 
-    /// The tab bar items the Apple TV editor and its count show: built-in
-    /// destinations only, with Movies and Series only when a matching
-    /// library exists.
-    static func tabBarItems(_ items: [PrimaryMenuItem], libraries: [Library]) -> [PrimaryMenuItem] {
-        items.filter { tabBarShows($0, libraries: libraries) }
+    /// The saved tabs the Apple TV editor arranges: Home, and the tab that
+    /// places Library (see `tvTabBarLibraryAnchor`). The other saved tabs
+    /// stay in the menu for clients that still show them.
+    static func tabBarItems(_ items: [PrimaryMenuItem]) -> [PrimaryMenuItem] {
+        let anchor = tvTabBarLibraryAnchor(in: items)
+        return items.filter { $0.isHome || $0 == anchor }
     }
 
-    static func tabBarShows(_ item: PrimaryMenuItem, libraries: [Library]) -> Bool {
-        switch item {
-        case .builtin(.home), .builtin(.forYou): true
-        case .builtin(.movies): libraries.contains { TVLibraryTabType.movies.matches($0) }
-        case .builtin(.series): libraries.contains { TVLibraryTabType.series.matches($0) }
-        default: false
-        }
+    /// What the Apple TV tab bar calls a saved tab: Home, or Library for
+    /// the tab that places it.
+    static func tabBarTitle(_ item: PrimaryMenuItem) -> String {
+        item.isHome ? item.title : TVMainTabView.Root.library.title
+    }
+
+    static func tabBarSymbol(_ item: PrimaryMenuItem) -> String {
+        item.isHome ? item.navigationIcon : TVMainTabView.Root.library.symbol
     }
 }
 #endif

@@ -17,6 +17,17 @@ struct MainTabDestination: Identifiable, Equatable {
         MainTabDestination(id: .app(tab), title: tab.title, icon: tab.icon, selectedIcon: tab.selectedIcon)
     }
 
+    /// The Library tab: every movie and series library, then Watchlist,
+    /// Favourites and Collections.
+    static var library: MainTabDestination {
+        MainTabDestination(
+            id: .app(.libraries),
+            title: String(localized: "tab.library", defaultValue: "Library",
+                          comment: "Title of the Library tab, which holds the libraries, Watchlist, Favourites and Collections"),
+            icon: AppTab.libraries.icon, selectedIcon: AppTab.libraries.selectedIcon
+        )
+    }
+
     static func libraryCategory(_ category: PrimaryMenuBuiltin) -> MainTabDestination {
         MainTabDestination(
             id: .libraryCategory(category), title: category.title,
@@ -65,6 +76,16 @@ func projectedMainTabDestinations(primaryMenu: PrimaryMenuPreference?, available
     }
     fallback.append(.app(.recommendations))
     return fallback
+}
+
+/// The iPhone and iPad tab bar: Home and Library in the saved menu's order.
+/// Library stands for the saved Movies, Series and For You tabs, which stay
+/// in the menu, and is always offered: it is the only way to the libraries
+/// and the personal lists.
+/// `menuItems` is the resolved saved menu, the one the tab bar editor edits.
+func libraryMainTabDestinations(menuItems: [PrimaryMenuItem]) -> [MainTabDestination] {
+    let home = MainTabDestination.app(.home)
+    return tvTabBarLibraryLeadsHome(in: menuItems) ? [.library, home] : [home, .library]
 }
 
 func mainTabSupportsDestination(_ item: PrimaryMenuItem, availableLibraries: [Library]) -> Bool {

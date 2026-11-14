@@ -29,7 +29,7 @@ Each media server supplies authentication, library data, playback sources and us
 > See the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md) for supported behaviour and verification gaps.
 > Keep each provider’s requests and credentials separate.
 
-Movies and Series offer Release Date in the Sort menu on iPhone, iPad and Apple TV.
+Library pages offer Release Date in the Sort menu on iPhone, iPad and Apple TV.
 It starts with Newest; selecting it again switches to Oldest.
 Movies use their release date and series use their premiere date, rather than the date files were added.
 Sorting happens on the server before pagination: Silo uses `release_date`, while Emby and Jellyfin use `PremiereDate`.
@@ -43,9 +43,9 @@ They reorder the shows themselves, still as show posters, rather than listing ep
 Date Last Episode Released sorts by the air date of each show's newest aired episode: Silo uses `last_air_date` (the newest aired episode with a file in a library) and Emby uses `LastContentPremiereDate,SortName`.
 Jellyfin's API has no equivalent, so Jellyfin doesn't offer it, and a sort saved on another server falls back to Title there.
 Date Last Episode Added sorts by when each show last gained an episode: Silo uses `latest_episode_added`, and Emby and Jellyfin use `DateLastContentAdded,SortName`, the same as their own web apps.
-Neither option appears in Movies or mixed libraries, or on studio and network pages.
+Neither option appears in movie or mixed libraries, or on studio and network pages.
 On Silo, shows without a value go last in either order; on Emby and Jellyfin, where they land is up to the server.
-In poster grids (libraries, Search, For You, collections and person, studio and network pages), a series poster shows its year span like Emby's own apps: "2021 - Present" while it's still airing (Silo `show_status` returning, Emby and Jellyfin `Status` Continuing), "2005 - 2017" once it ended in a later year (from Silo's last air date, or Emby and Jellyfin's `EndDate`), and the year alone otherwise.
+In poster grids (libraries, Search, Watchlist, Favourites, collections and person, studio and network pages), a series poster shows its year span like Emby's own apps: "2021 - Present" while it's still airing (Silo `show_status` returning, Emby and Jellyfin `Status` Continuing), "2005 - 2017" once it ended in a later year (from Silo's last air date, or Emby and Jellyfin's `EndDate`), and the year alone otherwise.
 Emby is asked for `Status` and `EndDate` with the other browse fields; Jellyfin sends them anyway.
 
 ## Saved accounts on Apple TV, iPhone and iPad
@@ -386,6 +386,9 @@ Removing the app does not delete the private CloudKit vault or accounts from the
 
 The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured Seerr, MDBList and OpenSubtitles credentials.
 Shared preferences and connections belong to the matching server account and viewing profile, not to every account using the same Apple iCloud login.
+They include the order of the Library tab's row of libraries, saved per server and profile and synced the same way as Home sections.
+Another device picks a new order up on its next launch or when the app returns to the foreground, not live; the last change wins, and a library added later appears at the end.
+Syncing that order between devices has not been tested.
 A second Silo account has its own settings; an Emby account does not inherit a Silo account’s keys or settings.
 Plugin reads and edits pause while the active server/profile does not match the selected saved account.
 Unowned legacy global TMDb credentials and TV layout choices are not copied into a newly selected account.
