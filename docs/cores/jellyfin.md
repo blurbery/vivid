@@ -152,6 +152,7 @@ On iPhone, initial episode-rail positioning does not replace Jellyfin’s reques
 
 Jellyfin series discovery cards use portrait posters on iOS and tvOS, including newly added episodes or seasons.
 Series posters request the main series artwork rather than episode or season artwork.
+The season list is the exception: each season there carries its own poster when Jellyfin has one, and the series poster otherwise, so the Apple TV series page and an episode's page on iPhone and iPad show the season's artwork, as they do on Emby.
 Continue Watching and Next Up retain the same card sizing and layout as Emby and Silo.
 On Home their episode cards show the episode's backdrop, kept in `seriesBackdropUrl`, which Jellyfin's Resume and NextUp items fill with the series background (`ParentBackdropItemId`) when the episode has no backdrop of its own, as is usual.
 The Home spotlight shows the same background for those episodes; the same rows elsewhere, such as the player's On Deck, keep the episode preview image.
