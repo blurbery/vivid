@@ -34,6 +34,10 @@ struct PhoneLibraryCardRow: View {
     @State private var movingId: Int?
     /// The finger, in the row's own space.
     @State private var finger: CGPoint = .zero
+    /// The card last dropped, and a count that asks the row to settle on it.
+    @State private var droppedId: Int?
+    @State private var settleRequest = 0
+    @State private var dropAnchor: UnitPoint = .center
     /// When a hold last ended, so the lift of that finger isn't read as a tap.
     @State private var holdEnded = Date.distantPast
     @State private var homeCards = TVHomeCardPreferences.shared
@@ -86,6 +90,14 @@ struct PhoneLibraryCardRow: View {
                 }
             }
             .task(id: movingId) { await scrollAtEdges(proxy) }
+            // After a drop the row zooms back in; keep the dropped card where
+            // it was let go rather than wherever the row lands.
+            .onChange(of: settleRequest) {
+                guard let droppedId else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+                    proxy.scrollTo(droppedId, anchor: dropAnchor)
+                }
+            }
         }
         .coordinateSpace(name: Self.space)
         .overlay(alignment: .topLeading) { heldCard }
@@ -216,9 +228,14 @@ struct PhoneLibraryCardRow: View {
     }
 
     private func drop() {
-        guard movingId != nil else { return }
+        guard let held = movingId else { return }
         holdEnded = Date()
+        // Where across the row the finger let go, so the card can stay there.
+        let width = max(scrollMemory.rowWidth, 1)
+        dropAnchor = UnitPoint(x: min(max(finger.x / width, 0), 1), y: 0.5)
+        droppedId = held
         movingId = nil
+        settleRequest += 1
     }
 
     /// The library's own image, or its symbol on a plain tile when the
@@ -256,10 +273,28 @@ private struct PhoneLibraryHoldGesture: UIGestureRecognizerRepresentable {
     let space: String
     let onChange: (UIGestureRecognizer.State, CGPoint) -> Void
 
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
     func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
         let recogniser = UILongPressGestureRecognizer()
-        recogniser.minimumPressDuration = 0.35
+        recogniser.minimumPressDuration = 0.3
+        // A finger rarely rests perfectly still; a little drift is still a hold.
+        recogniser.allowableMovement = 24
+        recogniser.cancelsTouchesInView = false
+        recogniser.delegate = context.coordinator
         return recogniser
+    }
+
+    /// Runs alongside the row's and the page's scrolling and the cards' taps,
+    /// so none of them can stop a hold from being recognised. Once a card is
+    /// held the row and the page are told to hold still.
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
     }
 
     func handleUIGestureRecognizerAction(_ recogniser: UILongPressGestureRecognizer, context: Context) {
