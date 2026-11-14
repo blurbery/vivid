@@ -283,17 +283,24 @@ private struct LibraryPosterCollage: View {
     private static let lean = 12.0
     private static let gap: CGFloat = 4
 
+    /// One strip's size. The turned set has to reach every corner of the
+    /// card, so it covers the card's bounding box at the lean, plus 5%.
+    /// Worked out in typed steps: as one expression it was too much for
+    /// the compiler on CI to type-check.
+    private var stripSize: CGSize {
+        let radians: CGFloat = CGFloat(Self.lean) * .pi / 180
+        let cosine: CGFloat = cos(radians)
+        let sine: CGFloat = sin(radians)
+        let coverWidth: CGFloat = (size.width * cosine + size.height * sine) * 1.05
+        let coverHeight: CGFloat = (size.width * sine + size.height * cosine) * 1.05
+        let count = CGFloat(Self.strips)
+        let gaps: CGFloat = Self.gap * (count - 1)
+        let width: CGFloat = (coverWidth - gaps) / count
+        return CGSize(width: width.rounded(.up), height: coverHeight.rounded(.up))
+    }
+
     var body: some View {
-        let radians = Self.lean * .pi / 180
-        // The turned set has to reach every corner of the card.
-        let cover = CGSize(
-            width: (size.width * cos(radians) + size.height * sin(radians)) * 1.05,
-            height: (size.width * sin(radians) + size.height * cos(radians)) * 1.05
-        )
-        let strip = CGSize(
-            width: ((cover.width - Self.gap * CGFloat(Self.strips - 1)) / CGFloat(Self.strips)).rounded(.up),
-            height: cover.height.rounded(.up)
-        )
+        let strip = stripSize
         HStack(spacing: Self.gap) {
             ForEach(0..<Self.strips, id: \.self) { index in
                 AsyncImageView(
