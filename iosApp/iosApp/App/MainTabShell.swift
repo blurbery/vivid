@@ -332,8 +332,11 @@ struct MainTabView: View {
     // MARK: Libraries and selection
 
     private func refreshLibraries(for requested: MainTabLibraryAuthority?) async {
-        let kept = librarySnapshot.authority == requested ? librarySnapshot.libraries : []
+        let sameAccount = librarySnapshot.authority == requested
+        let kept = sameAccount ? librarySnapshot.libraries : []
         librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: kept)
+        // Another server or profile's error never shows for this one.
+        if !sameAccount { libraryError = nil }
         guard let requested else {
             libraryError = nil
             return
