@@ -34,6 +34,17 @@ struct PhoneLibraryCardRow: View {
     @State private var movingId: Int?
     /// The finger, in the row's own space.
     @State private var finger: CGPoint = .zero
+    /// Where the hold began: the finger, and once the zoomed-out row has
+    /// settled under it, the held card's place and the row's scroll offset.
+    /// Moves are counted from here, so the card only moves as far as the
+    /// finger (and the row under it) has.
+    @State private var pickupX: CGFloat = 0
+    @State private var origin: (index: Int, offset: CGFloat)?
+    /// Counts up while a card is held. The work each tick does runs in the
+    /// view, where the library order is current; a long-running task would
+    /// keep the order it started with.
+    @State private var holdTick = 0
+    @State private var lastEdgeScroll = ContinuousClock.now
     /// The card last dropped, and a count that asks the row to settle on it.
     @State private var droppedId: Int?
     @State private var settleRequest = 0
@@ -61,6 +72,12 @@ struct PhoneLibraryCardRow: View {
 
     private var step: CGFloat { cardWidth + HomeFeedMetrics.cardSpacing }
 
+    /// A full-size card with its name, which the row keeps as its height
+    /// while it is zoomed out, so nothing below it moves.
+    private var fullCardHeight: CGFloat { fullWidth * 9 / 16 + 8 + Self.nameHeight }
+
+    private static let nameHeight = UIFont.systemFont(ofSize: 13, weight: .semibold).lineHeight.rounded(.up)
+
     var body: some View {
         let width = cardWidth
         ScrollViewReader { proxy in
@@ -72,6 +89,7 @@ struct PhoneLibraryCardRow: View {
                         card(library, width: width).id(library.id)
                     }
                 }
+                .frame(height: fullCardHeight, alignment: .center)
                 .padding(.vertical, 6)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: libraries.map(\.id))
             }
@@ -89,7 +107,17 @@ struct PhoneLibraryCardRow: View {
                     proxy.scrollTo(leading, anchor: .leading)
                 }
             }
-            .task(id: movingId) { await scrollAtEdges(proxy) }
+            // The row zooms out under a held card; bring that card's slot
+            // back under the finger in the same animation.
+            .onChange(of: movingId) { _, held in
+                guard let held else { return }
+                let width = max(scrollMemory.rowWidth, 1)
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+                    proxy.scrollTo(held, anchor: UnitPoint(x: min(max(pickupX / width, 0), 1), y: 0.5))
+                }
+            }
+            .task(id: movingId) { await tickWhileHeld() }
+            .onChange(of: holdTick) { holdTicked(proxy) }
             // After a drop the row zooms back in; keep the dropped card where
             // it was let go rather than wherever the row lands.
             .onChange(of: settleRequest) {
@@ -138,7 +166,7 @@ struct PhoneLibraryCardRow: View {
         }
         .frame(width: width)
         // The held card's slot stays open; its copy follows the finger.
-        .opacity(isMoving ? 0 : 1)
+        .opacity(isMoving ? 0.001 : 1)
         .contentShape(Rectangle())
         .onTapGesture { tap(library) }
         .gesture(PhoneLibraryHoldGesture(space: Self.space) { state, point in
@@ -160,7 +188,7 @@ struct PhoneLibraryCardRow: View {
             artwork(library, width: width)
                 .scaleEffect(reduceMotion ? 1 : 1.1)
                 .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
-                .position(x: finger.x, y: 6 + width * 9 / 32)
+                .position(x: finger.x, y: 6 + fullCardHeight / 2 - (8 + Self.nameHeight) / 2)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
                 .transition(.opacity)
@@ -180,6 +208,8 @@ struct PhoneLibraryCardRow: View {
             guard movingId == nil else { return }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             finger = point
+            pickupX = point.x
+            origin = nil
             movingId = library.id
         case .changed:
             guard movingId == library.id else { return }
@@ -192,39 +222,55 @@ struct PhoneLibraryCardRow: View {
         }
     }
 
-    /// Moves the held card one slot towards wherever the finger is over.
+    /// Moves the held card one slot towards where the finger has taken it:
+    /// as many slots from where it started as the finger, and the row under
+    /// the finger, have travelled.
     private func retarget() {
-        guard let movingId, let index = libraries.firstIndex(where: { $0.id == movingId }) else { return }
-        // The offset rests at minus the leading margin, so this is the
-        // finger's distance along the cards.
-        let along = finger.x + scrollMemory.offset
-        let target = min(max(Int((along / step).rounded(.down)), 0), libraries.count - 1)
+        guard let movingId, let origin,
+              let index = libraries.firstIndex(where: { $0.id == movingId }) else { return }
+        let travelled = (finger.x - pickupX) + (scrollMemory.offset - origin.offset)
+        let wanted = origin.index + Int((travelled / step).rounded())
+        let target = min(max(wanted, 0), libraries.count - 1)
         guard target != index else { return }
         onMove(libraries[index], target > index ? 1 : -1)
         UISelectionFeedbackGenerator().selectionChanged()
     }
 
-    /// While a card is held near either end, brings the next library in
-    /// from that side, one at a time.
-    private func scrollAtEdges(_ proxy: ScrollViewProxy) async {
-        guard movingId != nil else { return }
-        while !Task.isCancelled, movingId != nil {
-            try? await Task.sleep(for: Self.edgePause)
-            guard !Task.isCancelled, let movingId,
-                  let index = libraries.firstIndex(where: { $0.id == movingId }) else { return }
-            let rowWidth = scrollMemory.rowWidth
-            guard rowWidth > 0 else { continue }
+    /// Ticks while a card is held, after the zoomed-out row has had time to
+    /// settle under it.
+    private func tickWhileHeld() async {
+        guard let held = movingId else { return }
+        try? await Task.sleep(for: .milliseconds(300))
+        while !Task.isCancelled, movingId == held {
+            holdTick += 1
+            try? await Task.sleep(for: .milliseconds(60))
+        }
+    }
+
+    /// The first tick notes where the held card and the row are. Later
+    /// ticks keep the card in step with the finger and, while the finger
+    /// rests near either end, bring the next library in from that side.
+    private func holdTicked(_ proxy: ScrollViewProxy) {
+        guard let held = movingId,
+              let index = libraries.firstIndex(where: { $0.id == held }) else { return }
+        if origin == nil {
+            origin = (index, scrollMemory.offset)
+            lastEdgeScroll = .now
+        } else if ContinuousClock.now - lastEdgeScroll >= Self.edgePause, scrollMemory.rowWidth > 0 {
             if finger.x < Self.edgeZone, index > 0 {
+                lastEdgeScroll = .now
                 withAnimation(.easeInOut(duration: 0.25)) {
                     proxy.scrollTo(libraries[index - 1].id, anchor: .leading)
                 }
-            } else if finger.x > rowWidth - Self.edgeZone, index < libraries.count - 1 {
+            } else if finger.x > scrollMemory.rowWidth - Self.edgeZone, index < libraries.count - 1 {
+                lastEdgeScroll = .now
                 withAnimation(.easeInOut(duration: 0.25)) {
                     proxy.scrollTo(libraries[index + 1].id, anchor: .trailing)
                 }
             }
-            retarget()
         }
+        // Also catches moves the row's own scrolling asks for.
+        retarget()
     }
 
     private func drop() {
@@ -234,6 +280,7 @@ struct PhoneLibraryCardRow: View {
         let width = max(scrollMemory.rowWidth, 1)
         dropAnchor = UnitPoint(x: min(max(finger.x / width, 0), 1), y: 0.5)
         droppedId = held
+        origin = nil
         movingId = nil
         settleRequest += 1
     }
@@ -280,8 +327,9 @@ private struct PhoneLibraryHoldGesture: UIGestureRecognizerRepresentable {
     func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
         let recogniser = UILongPressGestureRecognizer()
         recogniser.minimumPressDuration = 0.3
-        // A finger rarely rests perfectly still; a little drift is still a hold.
-        recogniser.allowableMovement = 24
+        // The same drift a scroll allows before it starts, so a slow scroll
+        // that begins on a card stays a scroll.
+        recogniser.allowableMovement = 10
         recogniser.cancelsTouchesInView = false
         recogniser.delegate = context.coordinator
         return recogniser
