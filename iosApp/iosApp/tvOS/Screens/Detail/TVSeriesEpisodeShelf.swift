@@ -50,6 +50,7 @@ struct TVSeriesEpisodeShelf: View {
     @State private var stepSeasonId: String?
     @State private var showsWatchedFailure = false
     @Environment(\.seasonWatchedAction) private var setSeasonWatched
+    @Environment(TVDetailScrollState.self) private var pageScroll: TVDetailScrollState?
 
     private var shownSeasonId: String? {
         stepSeasonId ?? scrollSeasonId ?? browseSeasonId ?? selectedSeason?.contentId
@@ -178,6 +179,7 @@ struct TVSeriesEpisodeShelf: View {
             } label: {
                 TVSeasonSelectorLabel(
                     title: Self.pillTitle(season),
+                    widestTitle: Self.widestTitle(ordered),
                     isFocused: selectorFocused,
                     hasPrevious: (index ?? 0) > 0,
                     hasNext: index.map { $0 < ordered.count - 1 } ?? false
@@ -201,6 +203,14 @@ struct TVSeriesEpisodeShelf: View {
                 Text("Please try again.")
             }
         }
+    }
+
+    /// The longest season name the selector may show, and never shorter
+    /// than a two-digit season, so the arrows sit in the same place on
+    /// every series.
+    private static func widestTitle(_ seasons: [Season]) -> String {
+        let twoDigit = String(localized: "Season \(String(88))")
+        return (seasons.map(pillTitle) + [twoDigit]).max { $0.count < $1.count } ?? twoDigit
     }
 
     private static func episodeCount(_ season: Season) -> String? {
@@ -253,6 +263,7 @@ struct TVSeriesEpisodeShelf: View {
 
     private func selectorFocusChanged(_ focused: Bool, proxy: ScrollViewProxy) {
         if focused {
+            pageScroll?.requestFold(within: 200)
             if isEnteringFromHero { prepareEntry(proxy) }
             scrollSeasonId = nil
         } else {
@@ -564,9 +575,12 @@ private struct TVSeasonPosterCard: View {
 
 /// The season selector's text: the season's name with a pair of arrows
 /// after it. Focused, it takes a bar under the name and the arrows
-/// brighten, each dimmed when there's no season that way.
+/// brighten, each dimmed when there's no season that way. The name keeps
+/// the width of the series' longest season name, so the arrows stay put
+/// while the seasons change.
 private struct TVSeasonSelectorLabel: View {
     let title: String
+    let widestTitle: String
     let isFocused: Bool
     let hasPrevious: Bool
     let hasNext: Bool
@@ -576,19 +590,27 @@ private struct TVSeasonSelectorLabel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(alignment: .center, spacing: 20) {
-            Text(verbatim: title)
-                .font(.system(size: 46, weight: .bold))
+        HStack(alignment: .center, spacing: 28) {
+            Text(verbatim: widestTitle)
+                .font(.system(size: 46, weight: .bold).monospacedDigit())
                 .lineLimit(1)
                 .fixedSize()
-                .contentTransition(.numericText())
-                .foregroundStyle(Color.white)
                 .padding(.bottom, 8)
-                .overlay(alignment: .bottom) {
-                    Capsule()
-                        .fill(Color.white)
-                        .frame(height: 4)
-                        .opacity(isFocused ? 1 : 0)
+                .hidden()
+                .overlay(alignment: .leading) {
+                    Text(verbatim: title)
+                        .font(.system(size: 46, weight: .bold).monospacedDigit())
+                        .lineLimit(1)
+                        .fixedSize()
+                        .contentTransition(.numericText())
+                        .foregroundStyle(Color.white)
+                        .padding(.bottom, 8)
+                        .overlay(alignment: .bottom) {
+                            Capsule()
+                                .fill(Color.white)
+                                .frame(height: 4)
+                                .opacity(isFocused ? 1 : 0)
+                        }
                 }
             if hasPrevious || hasNext {
                 HStack(spacing: 10) {

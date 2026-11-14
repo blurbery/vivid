@@ -13,6 +13,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 struct TVDetailFoldSnapping: ScrollTargetBehavior {
     let showcaseHeight: CGFloat
+    /// On a page with a pinned logo, how far past the fold a scroll may be
+    /// aimed and still settle on the fold, so coming back up to the first
+    /// shelf lands where arriving from the hero does, with the logo whole.
+    var pinnedReach: CGFloat = 0
 
     /// Snaps focus-driven scrolls on the native movie and series pages to
     /// either the whole hero or the shelves at the top. Vivid decides "above
@@ -27,6 +31,9 @@ struct TVDetailFoldSnapping: ScrollTargetBehavior {
         if startedAboveFold, proposed < fold * 0.3 {
             target.rect.origin.y = 0
         } else if !startedAboveFold, proposed > fold {
+            if proposed < fold + pinnedReach {
+                target.rect.origin.y = fold
+            }
             return
         } else if startedAboveFold || (fold * 0.7...fold).contains(proposed) {
             target.rect.origin.y = fold
@@ -46,6 +53,19 @@ final class TVDetailScrollState {
     /// How far the page has scrolled past the shelves' resting position.
     var overscroll: CGFloat = 0
     var showsShelfLogo = false
+    /// Counts requests to bring the page back to the fold.
+    private(set) var foldRequests = 0
+
+    /// Asks the page to return to the fold when it has scrolled a little
+    /// past it, no further than `reach`. The series page's season selector
+    /// calls this when it takes focus with the distance at which it is
+    /// still wholly on screen: focus doesn't scroll to a control it can
+    /// already see. Further down, the system's own focus scroll brings the
+    /// page back and the fold snapping settles it, so nothing is asked.
+    func requestFold(within reach: CGFloat) {
+        guard overscroll > 0, overscroll <= reach else { return }
+        foldRequests += 1
+    }
 }
 
 /// Fold snapping for the native page's scroll view, the scroll position the
@@ -62,10 +82,20 @@ struct TVDetailFoldScrolling: ViewModifier {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scroll = TVDetailScrollState()
+    @State private var position = ScrollPosition(idType: String.self)
 
     func body(content: Content) -> some View {
         content
-            .scrollTargetBehavior(TVDetailFoldSnapping(showcaseHeight: showcaseHeight))
+            .scrollPosition($position)
+            .scrollTargetBehavior(TVDetailFoldSnapping(
+                showcaseHeight: showcaseHeight,
+                pinnedReach: pinnedLogo == nil ? 0 : 300
+            ))
+            .onChange(of: scroll.foldRequests) { _, _ in
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.45)) {
+                    position.scrollTo(y: showcaseHeight)
+                }
+            }
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.visibleRect.minY
             } action: { _, top in

@@ -501,11 +501,15 @@ Series episodes form one native horizontal shelf across seasons.
 On a series page the hero's logo stays fixed in its corner at the same size while the page moves between the hero and the shelves: the hero fades out under it and the shelves fade in below it.
 Neither fades out completely, because the focus engine skips a fully transparent view and focus could no longer cross between them.
 The logo leaves with the shelves once the page scrolls on past the episodes.
+Coming back up to the season selector returns the page to that same resting position, with the logo whole: the system's focus scroll brings the page up and the fold snapping settles a target within 300 points of the fold on the fold.
+When the page is 200 points or less past the fold the selector is already on screen and focus doesn't scroll, so the page scrolls itself back.
+Moving up onto the episode row alone leaves the page where it is.
 The movie page keeps its smaller centred shelf logo.
 The season selector is the shown season's name (Season 4, or Specials) in large text, fixed at the top of the shelf under the logo.
 Below it are the season's own title (when it has one), its episode count and year, and up to six lines of its synopsis.
 It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
 Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
+The name reserves the width of the series' longest season name, and at least a two-digit season, so the arrows sit in the same place on every series and never move while the seasons change.
 A step shows the new season's name, synopsis and poster straight away, then selects the season and jumps the episodes after 150 milliseconds on the same season, so holding a direction doesn't load every season passed.
 Select opens a menu of every season with its episode count and a tick on the shown season; picking one jumps to it immediately.
 The shown season's poster stands on the trailing side, 360 by 540 points, from near the top of the screen to the bottom of the season header.
@@ -515,7 +519,7 @@ With Hide Episode Spoilers on, seasons after the one the viewer is up to show no
 The approved baseline before this layout is tagged `checkpoint/tvos-approved-detail-flow` (`a8ab50c`).
 When focus first enters the shelf from the hero, the selector shows the Play target's season and the episode row opens on that episode.
 The episode row aligns a card to its leading edge (`.viewAligned`), so landing on an episode never nudges the row to reveal part of the previous one.
-The owner approved this layout on an Apple TV simulator; it has not been checked on a physical Apple TV.
+The owner approved this layout on an Apple TV simulator and on an Apple TV 4K (3rd generation) with a development build.
 
 Episode focus updates the shown season immediately.
 During accelerated remote scrolling, scroll geometry keeps the shown season on the visible rail when the previously focused episode has moved offscreen, without changing playback selection or triggering season jumps.
