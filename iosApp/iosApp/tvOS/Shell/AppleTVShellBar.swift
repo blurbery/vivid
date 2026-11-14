@@ -219,46 +219,61 @@ struct TVTopMenuTabLabel: View {
     }
 }
 
-/// Search in the notch.
+/// Search in the notch: the magnifying glass, opening to its name while
+/// it has focus, like a tab.
 struct TVTopMenuSearchLabel: View {
+    let isFocused: Bool
+    let highlight: Namespace.ID
+
+    var body: some View {
+        TVTopMenuTabLabel(symbol: "magnifyingglass", title: String(localized: "Search"),
+                          isSelected: false, isFocused: isFocused,
+                          barHasFocus: true, highlight: highlight)
+    }
+}
+
+/// The profile avatar in the notch. With focus it opens to the avatar and
+/// "Settings" inside the tabs' highlight, so the highlight glides here too.
+struct TVTopMenuProfileLabel: View {
+    let profile: UserProfile?
     let isFocused: Bool
     let highlight: Namespace.ID
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Image(systemName: "magnifyingglass")
-            .font(.system(size: 24, weight: .semibold))
-            .foregroundStyle(isFocused ? Color.white : Color.white.opacity(0.62))
-            .frame(width: 44, height: 42)
-            .background {
-                // The tabs' highlight, so it glides here too.
-                if isFocused { TVTopMenuHighlightPill(namespace: highlight) }
-            }
-            .scaleEffect(isFocused && !reduceMotion ? 1.1 : 1)
+        HStack(spacing: isFocused ? 10 : 0) {
+            ProfileAvatarView(
+                avatar: profile?.avatarEmoji,
+                imageUrl: profile?.avatarImageUrl,
+                name: profile?.name ?? "",
+                size: isFocused ? 30 : 40,
+                backgroundColor: Color.white.opacity(0.18),
+                textColor: .white
+            )
+            // Stays in the tree and fades, so only the width moves.
+            Text("Settings")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: isFocused ? nil : 0)
+                .animation(fade) { $0.opacity(isFocused ? 1 : 0) }
+        }
+        .padding(.leading, isFocused ? 8 : 2)
+        .padding(.trailing, isFocused ? 22 : 2)
+        .frame(height: 42)
+        .clipShape(Capsule())
+        .background {
+            if isFocused { TVTopMenuHighlightPill(namespace: highlight) }
+        }
+        .scaleEffect(isFocused && !reduceMotion ? 1.1 : 1)
     }
-}
 
-/// The profile avatar in the notch.
-struct TVTopMenuProfileLabel: View {
-    let profile: UserProfile?
-    let isFocused: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ProfileAvatarView(
-            avatar: profile?.avatarEmoji,
-            imageUrl: profile?.avatarImageUrl,
-            name: profile?.name ?? "",
-            size: 40,
-            backgroundColor: Color.white.opacity(0.18),
-            textColor: .white
-        )
-        .overlay(Circle().strokeBorder(Color.white, lineWidth: isFocused ? 3 : 0))
-        .scaleEffect(isFocused && !reduceMotion ? 1.05 : 1)
-        .animation(reduceMotion ? nil : VividTheme.springAnimation, value: isFocused)
-        .frame(width: 44, height: 42)
+    /// The name fading in late, or out early, as a tab's does.
+    private var fade: Animation? {
+        if reduceMotion { return nil }
+        return isFocused ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
     }
 }
 
@@ -500,7 +515,7 @@ extension TVMainTabView {
 
         private var profileButton: some View {
             Button(action: onProfile) {
-                TVTopMenuProfileLabel(profile: profile, isFocused: focus == .profile)
+                TVTopMenuProfileLabel(profile: profile, isFocused: shownFocus == .profile, highlight: highlight)
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()

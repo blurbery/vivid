@@ -286,7 +286,7 @@ extension TVSettingsView {
             if search {
                 TVTopMenuSearchLabel(isFocused: false, highlight: highlight)
             } else {
-                TVTopMenuProfileLabel(profile: CurrentProfileStore.shared.profile, isFocused: false)
+                TVTopMenuProfileLabel(profile: CurrentProfileStore.shared.profile, isFocused: false, highlight: highlight)
             }
         }
 
