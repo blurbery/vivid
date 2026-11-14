@@ -253,7 +253,7 @@ Without the launch argument, the diagnostic observers remain inactive.
 
 Settings → General → Themes (Appearance → Base Theme on Apple TV) saves the device-wide Graphite, Black or Native choice described in [App Design](app-design.md#appearance).
 Native uses the shared static mesh gradient on iPhone, iPad and Apple TV.
-On Apple TV, Theme Mode can cover the base theme with a colour backdrop: Spotlight Only covers Home's first screen in the spotlight's colour when Home has a spotlight, and Adaptive covers every root page, and a library page pushed from Library, in the colour of whatever last had focus (see [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight)).
+On Apple TV, Theme Mode can cover the base theme with a colour backdrop: Spotlight Only covers Home's first screen in the spotlight's colour when Home has a spotlight, and Adaptive covers every root page, and the library, collection and studio or network pages pushed over them, in the colour of whatever last had focus (see [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight)).
 Neither takes focus, and Adaptive's colour follows focus without changing it.
 The shared canvas sits behind `ContentView`, outside the routed subtree and tab transitions, and is available before profile selection.
 Theme changes preserve native focus targets, artwork effects and the 200 ms tab content crossfade.

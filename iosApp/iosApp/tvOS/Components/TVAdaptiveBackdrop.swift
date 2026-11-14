@@ -3,7 +3,8 @@ import SwiftUI
 import Observation
 
 /// The colour the Adaptive theme mode shows, from whatever artwork last had
-/// focus on a root page or a library page. Cards and the Spotlight report focus with a plain
+/// focus on a root page or a pushed browsing page (a library, a collection
+/// or a studio or network). Cards and the Spotlight report focus with a plain
 /// method call and never read anything here, and only `TVAdaptiveBackdrop`
 /// observes `tint`, so a focus move never invalidates a page or a row.
 ///
@@ -33,9 +34,13 @@ final class TVAdaptiveAmbience {
     /// Set by the shell: false while a page is pushed over the root pages,
     /// so cards on detail and other pushed pages don't change the colour.
     @ObservationIgnored var isOnRootPage = true
-    /// Set by a pushed library page while it's the page on show, so its
-    /// posters drive the colour as a root page's do.
-    @ObservationIgnored var isOnLibraryPage = false
+    /// How many pushed browsing pages (`tvAdaptivePage()`) are on show.
+    /// A count, since pushing one from another shows the new page before
+    /// the old one goes.
+    @ObservationIgnored private var browsingPages = 0
+    /// True while a pushed library, collection or studio page is the page
+    /// on show, so its posters drive the colour as a root page's do.
+    private var isOnBrowsingPage: Bool { browsingPages > 0 }
     /// The artwork focus last rested on, so repeated reports are ignored.
     @ObservationIgnored private var requested: String?
     @ObservationIgnored private var pending: Task<Void, Never>?
@@ -56,10 +61,11 @@ final class TVAdaptiveAmbience {
 
     /// A card or Spotlight slide showing this artwork took focus. Cheap to
     /// call from a focus handler: it returns at once, and the artwork isn't
-    /// even worked out unless Adaptive is on and a root page or a library
-    /// page is showing, so the other modes do no work on a focus move.
+    /// even worked out unless Adaptive is on and a root page or a pushed
+    /// browsing page is showing, so the other modes do no work on a focus
+    /// move.
     func focused(artwork: @autoclosure () -> String?, source: Source = .card) {
-        guard isActive, isOnRootPage || isOnLibraryPage else { return }
+        guard isActive, isOnRootPage || isOnBrowsingPage else { return }
         guard let raw = artwork(), !raw.isEmpty else {
             // A card with no artwork: don't let the card before it land late.
             pending?.cancel()
@@ -78,6 +84,11 @@ final class TVAdaptiveAmbience {
         isActive = Self.savedModeIsAdaptive
         guard isActive, tint == nil, requested == nil, let raw, !raw.isEmpty else { return }
         request(raw, source: .spotlight)
+    }
+
+    /// A pushed browsing page came on show or left it.
+    func browsingPage(isShowing: Bool) {
+        browsingPages = max(0, browsingPages + (isShowing ? 1 : -1))
     }
 
     private func request(_ raw: String, source: Source) {
@@ -132,6 +143,23 @@ final class TVAdaptiveAmbience {
         tints[key] = colour
         return colour
     }
+}
+
+/// A browsing page pushed over the root pages (a library, a collection, or
+/// a studio or network): Theme Mode Adaptive carries on from the page it
+/// was opened from, and this page's posters drive the colour while it is
+/// on show.
+private struct TVAdaptivePage: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background { TVAdaptiveBackdrop(opensInCurrentColour: true) }
+            .onAppear { TVAdaptiveAmbience.shared.browsingPage(isShowing: true) }
+            .onDisappear { TVAdaptiveAmbience.shared.browsingPage(isShowing: false) }
+    }
+}
+
+extension View {
+    func tvAdaptivePage() -> some View { modifier(TVAdaptivePage()) }
 }
 
 /// Theme Mode's Adaptive backdrop: one full-screen layer behind every root

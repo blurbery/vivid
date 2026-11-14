@@ -9,7 +9,7 @@
 ---
 
 Vivid's Apple TV Home uses a discovery spotlight above collection-based media rows on the selected app theme described in [App Design](app-design.md#appearance); with Theme Mode set to Spotlight Only and a spotlight on Home, Home's first screen sits on a backdrop in the current slide's colour and the theme returns below it.
-With Adaptive, every root page sits on a backdrop in the colour of whatever last had focus.
+With Adaptive, every root page, and the library, collection and studio or network pages pushed over them, sits on a backdrop in the colour of whatever last had focus.
 The Library tab holds every library with Watchlist, Favourites and Collections, and each library opens on its own page.
 
 ## Home and discovery spotlight
@@ -64,8 +64,8 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
 - With Theme Mode set to Adaptive (Apple TV only), one full-screen backdrop sits behind every root page (Home, Library and Calendar) in the colour of whatever last had focus, with the same shading and grain as Spotlight Only, whose Home backdrop is then off.
   While the Spotlight has focus it takes the slide's saved tint and follows the slides as they turn; a poster, a Continue Watching or Next Up card (also when they're combined into one row) or a collection takes the main colour of the artwork the card shows, a landscape card's series backdrop or thumbnail included.
   Studios & Networks tiles and the tab bar don't change it, so moving from the Spotlight to Studios & Networks keeps the Spotlight's colour.
-  The backdrop sits outside the pages, so changing tabs keeps the last colour until something new takes focus, and cards on pushed pages (detail pages, Search, studio pages) don't change it.
-  A library page pushed from Library is the exception: it opens already in the colour on show instead of fading in from the base theme, and its posters drive the colour while it is the page on show.
+  The backdrop sits outside the pages, so changing tabs keeps the last colour until something new takes focus, and cards on detail pages and Search don't change it.
+  The pushed browsing pages are the exception: a library page, a collection's page and a studio's or network's page each open already in the colour on show instead of fading in from the base theme, and their posters drive the colour while they are the page on show.
   When Home shows and nothing has set a colour yet, such as just after Adaptive is turned on, it starts on the current slide's colour.
   Focus has to rest on a card for 200 ms before its colour is looked up, so moving quickly along a row does no colour work for the cards it passes; the look-up reads the bytes the card already downloaded, makes a 48-pixel thumbnail off the main thread, keeps nothing in the shared decoded-image cache, and is remembered for the session.
   Cards report focus with a plain call and only the backdrop observes the colour, so a focus move never rebuilds a page, row or card, and with Off or Spotlight Only the call returns before doing any work.
@@ -662,7 +662,9 @@ Targeted date checks passed, and [CI passed the iOS tests and tvOS simulator bui
 No focused VoiceOver/device check of that follow-up is recorded.
 Documentation-only updates made straight after that run reused those results because application sources were unchanged.
 
-The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only.
+The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only, not on a physical Apple TV.
+Adaptive on collection pages and on studio or network pages was checked in the tvOS simulator after those pages moved to the shared page modifier; library pages were not rechecked after that move.
+Opening a collection from inside a library page, and returning to these pages from a detail page, were not checked.
 None of it has been checked on a physical Apple TV, and iCloud sync of the library order between devices has not been tested.
 
 The results below belong to the stated development revisions.

@@ -35,6 +35,11 @@ struct LibraryCollectionDetailView: View {
     var body: some View {
         content
             .vividBackground()
+            #if os(tvOS)
+            // Theme Mode Adaptive carries on from the page this was opened
+            // from, and this collection's posters drive its colour.
+            .tvAdaptivePage()
+            #endif
             .navigationTitle(title ?? String(localized: "Collection"))
             .vividNavigationTitleDisplayMode(.large)
             #if os(iOS)

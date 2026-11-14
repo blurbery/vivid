@@ -59,7 +59,7 @@ Renaming code symbols is separate implementation work.
   Native retains dark appearance and uses the same static mesh gradient on iPhone, iPad and Apple TV, with the approved blue-grey and warm charcoal colours sampled from the tvOS 27 backdrop.
   An explicit shared palette avoids differences between transparent system hosting backgrounds.
   The backdrop has no animation, image loading or live blur.
-  Apple TV's Theme Mode is separate from the theme and fades between colours under any of the three themes: Spotlight Only follows the Home spotlight's slides, and Adaptive follows whatever has focus on the root pages.
+  Apple TV's Theme Mode is separate from the theme and fades between colours under any of the three themes: Spotlight Only follows the Home spotlight's slides, and Adaptive follows whatever has focus on the root pages and on the library, collection and studio or network pages pushed over them.
   The choice uses a stable app-defaults key that survives in-place app updates, independently of server and profile, so the loading logo, handoff, the saved-profile picker, sign-in, Settings and browsing pages use it before login.
   Artwork and playback controls remain visible; playback retains its black canvas. iOS detail pages are independent of Themes and retain their original artwork-colour and glass surfaces under Graphite, Black and Native.
   On Apple TV the group is called Appearance: its first row, Base Theme, is this choice, and its second, Theme Mode, offers Off, Spotlight Only and Adaptive, described in [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight).
@@ -82,7 +82,7 @@ Its native focus targets use a fixed decorative gradient outline, without focus 
 Ordinary media cards retain native `.card` focus.
 The library cards in Library's row draw their own focus instead, growing and lifting on a shadow.
 Server artwork uses subject-aware cropping; Spotlight makes no TMDb requests.
-Root pages share the selected static theme canvas, except Home's first screen with Theme Mode on Spotlight Only and a spotlight on Home, and every root page with Theme Mode on Adaptive, and a tab bar that hangs from the top edge like a notch, with Search and Profile dividers, without a separate corner logo.
+Root pages share the selected static theme canvas, except Home's first screen with Theme Mode on Spotlight Only and a spotlight on Home, and every root page with Theme Mode on Adaptive (which also covers the library, collection and studio or network pages pushed over them), and a tab bar that hangs from the top edge like a notch, with Search and Profile dividers, without a separate corner logo.
 
 The bar offers Search, Home, Library, Calendar and Settings/Profile; Library replaces the earlier Movies, Series and For You tabs and is always shown.
 Library is one page: a row of library cards above Watchlist, Favourites and Collections sub-tabs, with each library opening on its own pushed page.
