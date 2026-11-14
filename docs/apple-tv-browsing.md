@@ -509,7 +509,7 @@ The season selector is the shown season's name (Season 4, or Specials) in large 
 Below it are the season's own title (when it has one), its episode count and year, and up to six lines of its synopsis.
 It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
 Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
-The name reserves the width of the series' longest season name, and at least a two-digit season, so the arrows sit in the same place on every series and never move while the seasons change.
+The name reserves the width of the widest season name with the same number of digits, so the arrows sit close to the name, level with it, hold one place across the single-digit seasons and step out once for the two-digit ones.
 A step shows the new season's name, synopsis and poster straight away, then selects the season and jumps the episodes after 150 milliseconds on the same season, so holding a direction doesn't load every season passed.
 Select opens a menu of every season with its episode count and a tick on the shown season; picking one jumps to it immediately.
 The shown season's poster stands on the trailing side, 360 by 540 points, from near the top of the screen to the bottom of the season header.

@@ -179,7 +179,7 @@ struct TVSeriesEpisodeShelf: View {
             } label: {
                 TVSeasonSelectorLabel(
                     title: Self.pillTitle(season),
-                    widestTitle: Self.widestTitle(ordered),
+                    reservedTitle: Self.reservedTitle(for: season),
                     isFocused: selectorFocused,
                     hasPrevious: (index ?? 0) > 0,
                     hasNext: index.map { $0 < ordered.count - 1 } ?? false
@@ -205,12 +205,12 @@ struct TVSeriesEpisodeShelf: View {
         }
     }
 
-    /// The longest season name the selector may show, and never shorter
-    /// than a two-digit season, so the arrows sit in the same place on
-    /// every series.
-    private static func widestTitle(_ seasons: [Season]) -> String {
-        let twoDigit = String(localized: "Season \(String(88))")
-        return (seasons.map(pillTitle) + [twoDigit]).max { $0.count < $1.count } ?? twoDigit
+    /// A season name as wide as any with the same number of digits, so
+    /// the arrows hold one place across the single-digit seasons and step
+    /// out once for the two-digit ones.
+    private static func reservedTitle(for season: Season) -> String {
+        let digits = max(String(season.seasonNumber).count, 1)
+        return String(localized: "Season \(String(repeating: "8", count: digits))")
     }
 
     private static func episodeCount(_ season: Season) -> String? {
@@ -575,12 +575,12 @@ private struct TVSeasonPosterCard: View {
 
 /// The season selector's text: the season's name with a pair of arrows
 /// after it. Focused, it takes a bar under the name and the arrows
-/// brighten, each dimmed when there's no season that way. The name keeps
-/// the width of the series' longest season name, so the arrows stay put
-/// while the seasons change.
+/// brighten, each dimmed when there's no season that way. The name is
+/// never narrower than `reservedTitle`, so the arrows stay put between
+/// seasons with the same number of digits.
 private struct TVSeasonSelectorLabel: View {
     let title: String
-    let widestTitle: String
+    let reservedTitle: String
     let isFocused: Bool
     let hasPrevious: Bool
     let hasNext: Bool
@@ -590,28 +590,31 @@ private struct TVSeasonSelectorLabel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(alignment: .center, spacing: 28) {
-            Text(verbatim: widestTitle)
-                .font(.system(size: 46, weight: .bold).monospacedDigit())
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.bottom, 8)
-                .hidden()
-                .overlay(alignment: .leading) {
-                    Text(verbatim: title)
-                        .font(.system(size: 46, weight: .bold).monospacedDigit())
-                        .lineLimit(1)
-                        .fixedSize()
-                        .contentTransition(.numericText())
-                        .foregroundStyle(Color.white)
-                        .padding(.bottom, 8)
-                        .overlay(alignment: .bottom) {
-                            Capsule()
-                                .fill(Color.white)
-                                .frame(height: 4)
-                                .opacity(isFocused ? 1 : 0)
-                        }
-                }
+        HStack(alignment: .center, spacing: 16) {
+            ZStack(alignment: .leading) {
+                Text(verbatim: reservedTitle)
+                Text(verbatim: title)
+            }
+            .font(.system(size: 46, weight: .bold).monospacedDigit())
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.bottom, 8)
+            .hidden()
+            .overlay(alignment: .leading) {
+                Text(verbatim: title)
+                    .font(.system(size: 46, weight: .bold).monospacedDigit())
+                    .lineLimit(1)
+                    .fixedSize()
+                    .contentTransition(.numericText())
+                    .foregroundStyle(Color.white)
+                    .padding(.bottom, 8)
+                    .overlay(alignment: .bottom) {
+                        Capsule()
+                            .fill(Color.white)
+                            .frame(height: 4)
+                            .opacity(isFocused ? 1 : 0)
+                    }
+            }
             if hasPrevious || hasNext {
                 HStack(spacing: 10) {
                     Image(systemName: "chevron.left")
@@ -621,6 +624,9 @@ private struct TVSeasonSelectorLabel: View {
                 }
                 .font(.system(size: 26, weight: .bold))
                 .foregroundStyle(Color.white.opacity(isFocused ? 1 : 0.45))
+                // Level with the name, not with the room under it for
+                // the focus bar.
+                .padding(.bottom, 8)
             }
         }
         .frame(height: Self.height, alignment: .leading)
