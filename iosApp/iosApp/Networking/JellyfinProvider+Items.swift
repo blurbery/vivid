@@ -396,7 +396,15 @@ struct JellyfinAdapter {
 
     func seasonRows(_ rows: [[String: Any]], episodes: [[String: Any]]? = nil) throws -> [[String: Any]] {
         let seasons = rows.filter { $0["Type"] as? String == "Season" }
-        let converted = try convert(seasons)
+        // A season in the season list carries its own poster when it has
+        // one, as Emby's does. `convert` gives a season its series' poster,
+        // which stays as the fallback.
+        let converted = zip(seasons, try convert(seasons)).map { raw, season in
+            guard let own = image(raw, kind: "Primary") else { return season }
+            var season = season
+            season["posterUrl"] = own
+            return season
+        }
         guard let episodes else { return converted }
         return zip(seasons, converted).map { raw, season in
             Self.countingGroupedVersions(season, seasonNumber: raw["IndexNumber"] as? Int, episodes: episodes)
