@@ -230,7 +230,8 @@ struct TVSeriesDetailPage: View {
     }
 
     /// The season the viewer is up to when spoilers are hidden, so later
-    /// seasons keep their synopsis back. Nil shows every synopsis.
+    /// seasons show the series synopsis instead of their own. Nil shows
+    /// every season's own.
     private var spoilerSeasonNumber: Int? {
         guard PlayerSettings.shared.hideFutureEpisodeSpoilers else { return nil }
         return EpisodeSpoilerPolicy.currentPosition(seasons: viewModel.seasons, pages: loadedPages)?.season

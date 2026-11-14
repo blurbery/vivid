@@ -19,7 +19,7 @@ struct TVSeriesEpisodeShelf: View {
     /// synopsis is held back as a spoiler.
     let seriesOverview: String?
     /// With spoilers hidden, the season the viewer is up to: later seasons
-    /// show no synopsis. Nil shows them all.
+    /// show the series synopsis instead of their own. Nil shows them all.
     let spoilerSeasonNumber: Int?
     /// The episode Play targets, marked as current.
     let currentEpisodeId: String?
