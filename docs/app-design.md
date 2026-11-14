@@ -149,7 +149,7 @@ Search and the signed-in profile sit outside the main destinations, separated by
 The main destinations are Home and Library, then Calendar and Downloads when they are on.
 Library replaces the earlier Movies, Series and For You tabs and is always shown.
 The bottom bar hides on downward scrolling and returns when scrolling upward; the vertical iPad and iPhone Duo bars stay put.
-Settings > General > Customise Tab Bar arranges only Home and Library, which both always show, so it has no hide or show list.
+Settings > General > Customise Tab Bar arranges only Home and Library, which both always show and can't be hidden; Downloads and Calendar keep their own show and hide controls.
 The saved menu keeps its Movies, Series and For You entries for other clients; moving Library before Home puts Home after all of them, and they keep their own order.
 Tab Bar configuration uses the same component and icon definitions, provides a grey “Swap Search and Profile” button, and includes Downloads and Calendar visibility controls.
 Downloads appears immediately when enabled, without waiting for a server capability response.
@@ -168,6 +168,7 @@ Settings retains its own navigation stack.
 Accounts use manual server setup and username/password sign-in, [Quick Connect](cores/jellyfin.md#quick-connect) on Jellyfin servers that have it turned on, or [Emby Connect](cores/emby.md#emby-connect) on Emby.
 
 Library opens on a row of library cards above the Watchlist, Favourites and Collections page tabs and their Filter menu.
+If no libraries load, the row's place shows the error with Retry, and the lists below still work.
 The row holds every movie, series and mixed library once, as landscape cards about 60% of a Continue Watching card's width.
 Each card shows the library's own image, or its symbol on a plain tile when the server has none, with the server's name for the library underneath.
 Tapping a library pushes a page with a back button, the library's name and the Sort, Filter and A–Z controls over the poster grid.

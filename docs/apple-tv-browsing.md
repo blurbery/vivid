@@ -317,6 +317,7 @@ Below the row are the Watchlist, Favourites and Collections sub-tabs the For You
 Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the same seven-column poster grid the Movies and Series pages had, without the old category dropdowns or mixed Recommended/Browse landing page.
 A mixed library such as Sports is one card, and its page shows movies and series together; it used to appear under both Movies and Series, filtered by type.
 Movie and series libraries still ask the server for their own type; classification depends on the server's metadata.
+A mixed library asks for every type, and its Filter menu adds a Type choice to narrow it to movies or series.
 The library each Movies and Series page used to remember is no longer kept.
 
 Holding Select on a library card starts arranging the row.
@@ -328,9 +329,6 @@ The other media cards keep the native card style.
 The row's order is saved per server and profile and syncs through iCloud with the profile's other synced preferences, the same way as Home sections, so rearranging on one device rearranges the others, iPhone and iPad included.
 Other devices pick it up on their next launch or when the app returns to the foreground, not live, and the last change wins.
 A library added later appears at the end of the row.
-Redundant leading words such as “Movies” or “TV Shows” are shortened in sub-tab labels; colliding labels retain the original library names.
-Each page keeps its own selection and filter scope.
-Movie and series queries filter content by type, including mixed libraries such as Sports; classification depends on the server's metadata.
 
 Opening a library paints its saved first page straight away, then fetches that page again once and swaps the new one in behind the posters already showing.
 The saved page is kept in memory until the app quits or the profile changes, and later pages are fenced to the time the first page loaded, so without this refetch a newly added title stayed hidden everywhere in the grid until the sort changed or the app restarted.
@@ -446,8 +444,8 @@ On Who’s watching a ring around the saved-account avatar identifies the signed
 Settings uses the selected app theme, neutral grey grouped panels, inset dividers and subtly outlined icon tiles.
 The overview separates the joined Profiles panel from one joined category group; secondary pages use the same grouped treatment.
 The TV retains its white focus highlight and existing control geometry.
-General's Customise Tab Bar editor saves changes automatically, arranges only Home and Library with readable move controls, and has no hide or show list, Pin Libraries section or Done button.
-Home and Library always show.
+General's Customise Tab Bar editor saves changes automatically and arranges only Home and Library with readable move controls, without a Pin Libraries section or Done button.
+Home and Library always show and can't be hidden; Calendar keeps its own show and hide control below them.
 The saved menu still keeps its Movies, Series and For You entries for other clients: moving Library before Home puts Home after all of them, and they keep their own order.
 Its preview includes Search and Profile, which can swap ends without joining the main tab order, and Calendar in its fixed place.
 The preview is the tab bar's own notch, drawn with the same views, playing on a loop: it opens, moves to the next tab, chooses it and closes around it.

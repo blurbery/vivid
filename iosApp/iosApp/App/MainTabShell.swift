@@ -18,6 +18,8 @@ struct MainTabView: View {
     @State private var selectedID: MainTabDestinationID = .app(.home)
     @State private var librarySnapshot: MainTabLibrarySnapshot
     @State private var libraryRefreshes = 0
+    /// Why the libraries couldn't load, while none have.
+    @State private var libraryError: ErrorState?
     @Namespace private var zoomNamespace
     @Environment(\.scenePhase) private var scenePhase
 
@@ -224,7 +226,9 @@ struct MainTabView: View {
             HomeView()
         case .app(.libraries), .app(.recommendations), .libraryCategory:
             RecommendationsView(
-                libraries: LibraryRowOrderStore.browsable(librarySnapshot.availableLibraries(for: currentAuthority))
+                libraries: LibraryRowOrderStore.browsable(librarySnapshot.availableLibraries(for: currentAuthority)),
+                librariesError: libraryError,
+                onRetryLibraries: { libraryRefreshes += 1 }
             )
         case .app(.calendar):
             CalendarView()
@@ -330,14 +334,25 @@ struct MainTabView: View {
     private func refreshLibraries(for requested: MainTabLibraryAuthority?) async {
         let kept = librarySnapshot.authority == requested ? librarySnapshot.libraries : []
         librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: kept)
-        guard let requested else { return }
-        guard let response = try? await StartupContentPrefetcher.fetchUserLibraries(),
-              !Task.isCancelled, requested == currentAuthority else { return }
-        librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: response.libraries)
+        guard let requested else {
+            libraryError = nil
+            return
+        }
+        do {
+            let response = try await StartupContentPrefetcher.fetchUserLibraries()
+            guard !Task.isCancelled, requested == currentAuthority else { return }
+            libraryError = nil
+            librarySnapshot = MainTabLibrarySnapshot(authority: requested, libraries: response.libraries)
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError), requested == currentAuthority else { return }
+            // Libraries already showing stay; only an empty row reports it.
+            libraryError = kept.isEmpty ? ErrorState(error) : nil
+        }
     }
 
     private func applyRefreshedLibraries(_ notification: Notification) {
         guard let response = notification.object as? LibrariesResponse, let authority = currentAuthority else { return }
+        libraryError = nil
         librarySnapshot = MainTabLibrarySnapshot(authority: authority, libraries: response.libraries)
     }
 

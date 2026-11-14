@@ -33,6 +33,10 @@ struct RecommendationsView: View {
     /// The libraries in the server's order. The row shows them in the order
     /// the profile arranged.
     var libraries: [Library] = []
+    /// Why the libraries couldn't load, shown in the row's place while none
+    /// have, with a retry.
+    var librariesError: ErrorState? = nil
+    var onRetryLibraries: (() -> Void)? = nil
 
     /// A library card is being held, so the page holds still under it.
     @State private var isHoldingLibrary = false
@@ -101,6 +105,9 @@ struct RecommendationsView: View {
                     onMove: { library, offset in libraryOrder.move(library, by: offset, in: shown) }
                 )
                 .padding(.top, 8)
+            } else if let librariesError {
+                ErrorView(state: librariesError, onRetry: onRetryLibraries)
+                    .frame(maxWidth: .infinity)
             }
             if !usesDuoSideTabBar { pageTabs }
         }

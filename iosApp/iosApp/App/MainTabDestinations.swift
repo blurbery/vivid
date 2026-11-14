@@ -21,7 +21,9 @@ struct MainTabDestination: Identifiable, Equatable {
     /// Favourites and Collections.
     static var library: MainTabDestination {
         MainTabDestination(
-            id: .app(.libraries), title: String(localized: "Library"),
+            id: .app(.libraries),
+            title: String(localized: "tab.library", defaultValue: "Library",
+                          comment: "Title of the Library tab, which holds the libraries, Watchlist, Favourites and Collections"),
             icon: AppTab.libraries.icon, selectedIcon: AppTab.libraries.selectedIcon
         )
     }

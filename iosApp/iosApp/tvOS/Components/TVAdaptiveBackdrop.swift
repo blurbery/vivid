@@ -3,7 +3,7 @@ import SwiftUI
 import Observation
 
 /// The colour the Adaptive theme mode shows, from whatever artwork last had
-/// focus on a root page. Cards and the Spotlight report focus with a plain
+/// focus on a root page or a library page. Cards and the Spotlight report focus with a plain
 /// method call and never read anything here, and only `TVAdaptiveBackdrop`
 /// observes `tint`, so a focus move never invalidates a page or a row.
 ///
@@ -56,8 +56,8 @@ final class TVAdaptiveAmbience {
 
     /// A card or Spotlight slide showing this artwork took focus. Cheap to
     /// call from a focus handler: it returns at once, and the artwork isn't
-    /// even worked out unless Adaptive is on and a root page is showing, so
-    /// the other modes do no work on a focus move.
+    /// even worked out unless Adaptive is on and a root page or a library
+    /// page is showing, so the other modes do no work on a focus move.
     func focused(artwork: @autoclosure () -> String?, source: Source = .card) {
         guard isActive, isOnRootPage || isOnLibraryPage else { return }
         guard let raw = artwork(), !raw.isEmpty else {

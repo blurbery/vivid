@@ -44,7 +44,8 @@ struct TVMainTabView: View {
         var title: String {
             switch self {
             case .home: String(localized: "Home")
-            case .library: String(localized: "Library")
+            case .library: String(localized: "tab.library", defaultValue: "Library",
+                                  comment: "Title of the Library tab, which holds the libraries, Watchlist, Favourites and Collections")
             case .calendar: String(localized: "Calendar")
             }
         }

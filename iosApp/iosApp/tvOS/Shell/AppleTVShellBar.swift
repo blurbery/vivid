@@ -167,8 +167,8 @@ struct TVTopMenuTabLabel: View {
     /// True while anything in the bar is drawn as focused.
     let barHasFocus: Bool
     let highlight: Namespace.ID
-    /// The tucked notch: the selected tab keeps its symbol and loses the
-    /// highlight.
+    /// The tucked notch: the selected tab keeps its symbol and its faint
+    /// selected fill, and loses the white focus outline.
     var isCompact = false
     /// A fixed width while only the symbol shows, in place of the symbol's
     /// own padding. Search uses the avatar's width, so the two ends of the
