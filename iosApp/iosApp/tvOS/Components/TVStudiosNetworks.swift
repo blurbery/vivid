@@ -205,6 +205,9 @@ private struct TVStudioNetworkPageContent: View, Equatable {
         }
         .frame(width: 1920, alignment: .leading)
         .vividBackground()
+        // Theme Mode Adaptive carries on from Home, and this page's posters
+        // drive its colour.
+        .tvAdaptivePage()
         // Owns the 80pt inset itself, like the Home feed, instead of stacking
         // it on the system safe area.
         .ignoresSafeArea()
@@ -258,6 +261,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
                     // Same size as Home posters, like More Like This.
                     cardWidth: VividTheme.Skyline.densePosterCardWidth,
                     posterSize: railPosterSize,
+                    reportsAdaptiveFocus: true,
                     contentId: item.contentId
                 )
                 .environmentObject(overlayStore)
@@ -286,6 +290,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
                     overlayData: OverlayData.from(item),
                     action: { router.navigate(to: .itemDetail(browseItem: item)) },
                     cardWidth: width,
+                    reportsAdaptiveFocus: true,
                     contentId: item.contentId
                 )
                 .frame(maxWidth: .infinity)

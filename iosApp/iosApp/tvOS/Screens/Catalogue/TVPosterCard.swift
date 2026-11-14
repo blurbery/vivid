@@ -20,6 +20,9 @@ struct TVMediaCard: View {
     let defaultFocusNamespace: Namespace.ID?
     let focusBinding: FocusState<String?>.Binding?
     let focusContentId: String?
+    /// Reports its poster to Theme Mode Adaptive when it takes focus, for a
+    /// card outside a grid or row that already reports for its cards.
+    let reportsAdaptiveFocus: Bool
     let contentId: String?
 
     @State private var favoriteOverride: Bool?
@@ -44,6 +47,7 @@ struct TVMediaCard: View {
         leadingCaption: Bool = true,
         focusBinding: FocusState<String?>.Binding? = nil,
         focusContentId: String? = nil,
+        reportsAdaptiveFocus: Bool = false,
         contentId: String? = nil
     ) {
         self.title = title
@@ -61,6 +65,7 @@ struct TVMediaCard: View {
         self.defaultFocusNamespace = defaultFocusNamespace
         self.focusBinding = focusBinding
         self.focusContentId = focusContentId
+        self.reportsAdaptiveFocus = reportsAdaptiveFocus
         self.contentId = contentId
     }
 
@@ -112,6 +117,9 @@ struct TVMediaCard: View {
         .onChange(of: userState) {
             favoriteOverride = nil
             watchlistOverride = nil
+        }
+        .onChange(of: isFocused) {
+            if isFocused, reportsAdaptiveFocus { TVAdaptiveAmbience.shared.focused(artwork: posterUrl) }
         }
     }
 
