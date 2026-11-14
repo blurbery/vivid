@@ -660,7 +660,9 @@ Targeted date checks passed, and [CI passed the iOS tests and tvOS simulator bui
 No focused VoiceOver/device check of that follow-up is recorded.
 Documentation-only updates made straight after that run reused those results because application sources were unchanged.
 
-The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages and on collection and studio or network pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only, not on a physical Apple TV.
+The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only, not on a physical Apple TV.
+Adaptive on collection pages and on studio or network pages was checked in the tvOS simulator after those pages moved to the shared page modifier; library pages were not rechecked after that move.
+Opening a collection from inside a library page, and returning to these pages from a detail page, were not checked.
 None of it has been checked on a physical Apple TV, and iCloud sync of the library order between devices has not been tested.
 
 The results below belong to the stated development revisions.
