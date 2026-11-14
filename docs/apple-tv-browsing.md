@@ -511,6 +511,7 @@ It is the only season control and takes focus across the shelf's whole width, so
 Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
 The name reserves the width of the widest season name with the same number of digits, so the arrows sit close to the name, level with it, hold one place across the single-digit seasons and step out once for the two-digit ones.
 A step shows the new season's name, synopsis and poster straight away, then selects the season and jumps the episodes after 150 milliseconds on the same season, so holding a direction doesn't load every season passed.
+Stepping away and back to the season already being browsed selects nothing and leaves the episode row where it was.
 Select opens a menu of every season with its episode count and a tick on the shown season; picking one jumps to it immediately.
 The shown season's poster stands on the trailing side, 360 by 540 points, from near the top of the screen to the bottom of the season header.
 It turns over to the next poster when the season changes (a plain swap under Reduce Motion), falls back to the series poster when the season has none, and never takes focus or opens anything.

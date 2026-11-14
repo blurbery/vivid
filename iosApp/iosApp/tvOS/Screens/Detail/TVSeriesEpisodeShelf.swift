@@ -246,8 +246,9 @@ struct TVSeriesEpisodeShelf: View {
         guard ordered.indices.contains(next) else { return }
         let id = ordered[next].contentId
         isEnteringFromHero = false
-        pendingSeasonJump = nil
-        pendingEpisodeJump = nil
+        // A jump still waiting on the browsed season's episodes stays
+        // armed: committing a step replaces it, and stepping back to that
+        // season needs it.
         scrollSeasonId = nil
         stepSeasonId = id
         dwellTask?.cancel()

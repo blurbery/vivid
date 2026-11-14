@@ -331,6 +331,7 @@ Its focus section spans the shelf’s width; without that, focus skips it from m
 On first entry into the episode row, seed the exact episode, including late episodes that cannot align to the leading edge.
 Explicit season selection or episode browsing releases this entry preference; returning to the hero prepares it again.
 Keep the selector’s Left and Right stepping and its dwell, its season menu, the scrolling geometry and playback selection.
+A step that returns to the season already being browsed must not reselect it, or the row loses its place.
 An explicitly requested episode waits for its card instead of falling back to the first episode while loading.
 
 Settings inherits the selected theme canvas, with lighter grey control groups, inset separators and a white focus highlight.
