@@ -130,12 +130,14 @@ struct TVMovieDetailPage: View {
             backdropUrl: detail.backdropUrl,
             backdropThumbhash: detail.backdropThumbhash,
             logoUrl: detail.logoUrl,
-            title: detail.title
+            title: detail.title,
+            pinsLogo: true
         ) { showcase in
             TVDetailHeroPanel(
                 layout: .showcase(height: showcase),
                 poster: TVDetailHeroPoster(url: detail.posterUrl, thumbhash: detail.posterThumbhash),
-                logo: TVDetailHeroLogo(logoUrl: detail.logoUrl, title: detail.title),
+                // The shell pins the logo over the page.
+                logo: nil,
                 creditLine: TVHeroMetadata.creditLine(detail)
             ) {
                 TVDetailCompactPrimary(

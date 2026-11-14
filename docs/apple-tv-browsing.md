@@ -498,13 +498,14 @@ Icons stay fixed where they sit in the circle; a label is centred between the dr
 The controls use the tinted glass of the iOS Play button with no fill, and the focused control adds that button's bright gradient rim at 2.5 points.
 
 Series episodes form one native horizontal shelf across seasons.
-On a series page the hero's logo stays fixed in its corner at the same size while the page moves between the hero and the shelves: the hero fades out under it and the shelves fade in below it.
+On the movie and series pages the hero's logo stays fixed in its corner at the same size while the page moves between the hero and the shelves: the hero fades out under it and the shelves fade in below it.
 Neither fades out completely, because the focus engine skips a fully transparent view and focus could no longer cross between them.
-The logo leaves with the shelves once the page scrolls on past the episodes.
+The logo leaves with the shelves once the page scrolls on past the first shelf (the episodes on a series).
 Coming back up to the season selector returns the page to that same resting position, with the logo whole: the system's focus scroll brings the page up and the fold snapping settles a target within 300 points of the fold on the fold.
 When the page is 200 points or less past the fold the selector is already on screen and focus doesn't scroll, so the page scrolls itself back.
 Moving up onto the episode row alone leaves the page where it is.
-The movie page keeps its smaller centred shelf logo.
+On the movie page, coming back up to the first shelf settles on the fold through the same snapping.
+Only the loading page still uses the smaller centred shelf logo, if it is scrolled before the title loads.
 The season selector is the shown season's name (Season 4, or Specials) in large text, fixed at the top of the shelf under the logo.
 Below it are the season's own title (when it has one), its episode count and year, and up to six lines of its synopsis.
 It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
