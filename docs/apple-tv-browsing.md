@@ -9,7 +9,7 @@
 ---
 
 Vivid's Apple TV Home uses a discovery spotlight above collection-based media rows on the selected app theme described in [App Design](app-design.md#appearance); with Theme Mode set to Spotlight Only and a spotlight on Home, Home's first screen sits on a backdrop in the current slide's colour and the theme returns below it.
-With Adaptive, every root page sits on a backdrop in the colour of whatever last had focus.
+With Adaptive, every root page, and the library, collection and studio or network pages pushed over them, sits on a backdrop in the colour of whatever last had focus.
 The Library tab holds every library with Watchlist, Favourites and Collections, and each library opens on its own page.
 
 ## Home and discovery spotlight
@@ -660,7 +660,7 @@ Targeted date checks passed, and [CI passed the iOS tests and tvOS simulator bui
 No focused VoiceOver/device check of that follow-up is recorded.
 Documentation-only updates made straight after that run reused those results because application sources were unchanged.
 
-The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only.
+The Library tab, its library row and rearranging, the pushed library pages, Adaptive on those pages and on collection and studio or network pages, the restyled sub-tabs and pills, the tucking notch and the Home and Library tab bar editor were checked in the tvOS simulator only, not on a physical Apple TV.
 None of it has been checked on a physical Apple TV, and iCloud sync of the library order between devices has not been tested.
 
 The results below belong to the stated development revisions.
