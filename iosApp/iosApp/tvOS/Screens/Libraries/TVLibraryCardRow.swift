@@ -1,5 +1,4 @@
 #if os(tvOS)
-import Observation
 import SwiftUI
 
 extension TVMainTabView {
@@ -222,41 +221,4 @@ private struct LibraryCardWobble: ViewModifier {
     }
 }
 
-/// The order each server and profile arranged its Library row in, kept on
-/// this Apple TV. Libraries it hasn't placed follow in the server's order.
-@Observable @MainActor
-final class TVLibraryOrderStore {
-    static let shared = TVLibraryOrderStore()
-
-    private static let defaultsKey = "vivid.tv.libraryRowOrder"
-
-    /// Library ids by server and profile.
-    private var orders: [String: [Int]]
-
-    private init() {
-        orders = UserDefaults.standard.dictionary(forKey: Self.defaultsKey) as? [String: [Int]] ?? [:]
-    }
-
-    private var scope: String? {
-        guard let profile = ServerRegistry.shared.activeProfileId, !profile.isEmpty else { return nil }
-        return "\(ServerRegistry.shared.activeServerId ?? "default").\(profile)"
-    }
-
-    func ordered(_ libraries: [Library]) -> [Library] {
-        guard let scope, let saved = orders[scope], !saved.isEmpty else { return libraries }
-        let placed = saved.compactMap { id in libraries.first { $0.id == id } }
-        return placed + libraries.filter { !saved.contains($0.id) }
-    }
-
-    /// Moves a library one place within the row as shown.
-    func move(_ library: Library, by offset: Int, in shown: [Library]) {
-        guard let scope, let index = shown.firstIndex(of: library) else { return }
-        let target = index + offset
-        guard shown.indices.contains(target) else { return }
-        var ids = shown.map(\.id)
-        ids.swapAt(index, target)
-        orders[scope] = ids
-        UserDefaults.standard.set(orders, forKey: Self.defaultsKey)
-    }
-}
 #endif

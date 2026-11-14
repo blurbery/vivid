@@ -355,17 +355,8 @@ struct TVMainTabView: View {
         return roots
     }
 
-    /// The movie, series and mixed libraries, by sort order (missing last),
-    /// then id.
-    private var browsableLibraries: [Library] {
-        libraries
-            .filter { library in TVLibraryTabType.allCases.contains { $0.matches(library) } }
-            .sorted { lhs, rhs in
-                let left = lhs.sortOrder ?? Int.max
-                let right = rhs.sortOrder ?? Int.max
-                return left == right ? lhs.id < rhs.id : left < right
-            }
-    }
+    /// The movie, series and mixed libraries in the server's order.
+    private var browsableLibraries: [Library] { LibraryRowOrderStore.browsable(libraries) }
 
     private func loadLibraries(for authority: MainTabLibraryAuthority?) async {
         if authority != libraryAuthority {

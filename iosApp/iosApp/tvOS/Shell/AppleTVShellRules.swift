@@ -33,9 +33,9 @@ func tvCustomizationMutationIsEnabled(
     return !(changesFamilyMenu && usesDeviceMenuOverride)
 }
 
-/// The saved tab that places Library in the Apple TV tab bar: the first of
-/// Movies, Series and For You, which Library replaces there. The saved menu
-/// keeps all three for the other clients that still show them.
+/// The saved tab that places Library in the tab bar: the first of Movies,
+/// Series and For You, which Library replaces. The saved menu keeps all
+/// three for clients that still show them.
 func tvTabBarLibraryAnchor(in items: [PrimaryMenuItem]) -> PrimaryMenuItem? {
     items.first { item in
         if case .builtin(let builtin) = item { return builtin != .home }
@@ -43,10 +43,18 @@ func tvTabBarLibraryAnchor(in items: [PrimaryMenuItem]) -> PrimaryMenuItem? {
     }
 }
 
-/// Whether Library sits before Home in the Apple TV tab bar.
+/// Whether Library sits before Home in the tab bar.
 func tvTabBarLibraryLeadsHome(in items: [PrimaryMenuItem]) -> Bool {
     guard let anchor = tvTabBarLibraryAnchor(in: items),
           let library = items.firstIndex(of: anchor),
           let home = items.firstIndex(where: \.isHome) else { return false }
     return library < home
+}
+
+/// The saved menu with Home after or before every other saved tab. Movies,
+/// Series and For You, which Library stands for, keep their own order.
+func tabBarMenu(_ saved: [PrimaryMenuItem], libraryLeads: Bool) -> [PrimaryMenuItem] {
+    let home = saved.filter(\.isHome)
+    let others = saved.filter { !$0.isHome }
+    return libraryLeads ? others + home : home + others
 }

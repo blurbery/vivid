@@ -194,7 +194,7 @@ extension TVMainTabView {
                     }
                 }
                 if let letter {
-                    entries = entries.filter { Self.name($0.collection.name, startsWith: letter) }
+                    entries = entries.filter { TitleSortOrder.name($0.collection.name, startsWith: letter) }
                 }
                 if usesNativeUser {
                     entries = entries.map { entry in
@@ -348,19 +348,6 @@ extension TVMainTabView {
             case .orderedDescending: false
             case .orderedSame: lhs.collection.id < rhs.collection.id
             }
-        }
-
-        /// Whether a name files under an A–Z choice, by the same sort key
-        /// that orders the grid (so "The Matrix Collection" is under M).
-        /// "#" takes every name that doesn't start with A to Z.
-        private static func name(_ name: String, startsWith letter: String) -> Bool {
-            let first = TitleSortOrder.sortKey(name)
-                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
-                .uppercased()
-                .first
-            let isLetter = first.map { ("A"..."Z").contains($0) } ?? false
-            if letter == "#" { return !isLetter }
-            return isLetter && first.map(String.init) == letter
         }
 
         private static func libraryKey(_ id: Int) -> String { "library:\(id):collections" }

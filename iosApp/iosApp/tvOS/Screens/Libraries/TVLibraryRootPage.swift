@@ -27,7 +27,7 @@ extension TVMainTabView {
     struct LibraryRootPage: View {
         @Binding var tab: ForYouTab
         /// The libraries in the server's order. The row shows them in the
-        /// order arranged on this Apple TV; Collections reads them as given.
+        /// order the profile arranged; Collections reads them as given.
         let libraries: [Library]
         let focusRequest: Int
         let isTopMenuFocused: Bool
@@ -47,7 +47,7 @@ extension TVMainTabView {
         @State private var lastLibraryId: Int?
         /// The library row is being rearranged; Menu ends it.
         @State private var isArrangingLibraries = false
-        @State private var libraryOrder = TVLibraryOrderStore.shared
+        @State private var libraryOrder = LibraryRowOrderStore.shared
         @FocusState private var focusedLibraryId: Int?
         @FocusState private var focusedTab: ForYouTab?
         @FocusState private var alphabetFocused: Bool

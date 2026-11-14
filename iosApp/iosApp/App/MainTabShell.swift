@@ -38,10 +38,7 @@ struct MainTabView: View {
     }
 
     private var visibleDestinations: [MainTabDestination] {
-        var destinations = projectedMainTabDestinations(
-            primaryMenu: UICustomizationPreferences.shared.primaryMenu,
-            availableLibraries: librarySnapshot.availableLibraries(for: currentAuthority)
-        )
+        var destinations = libraryMainTabDestinations(menuItems: UICustomizationPreferences.shared.resolvedPrimaryMenuItems())
         if showsCalendarTab, !destinations.contains(where: { $0.id == .app(.calendar) }) {
             destinations.append(.app(.calendar))
         }
@@ -225,10 +222,10 @@ struct MainTabView: View {
         switch id {
         case .app(.home):
             HomeView()
-        case .app(.libraries):
-            LibrariesTabView(libraryAuthority: currentAuthority, onLibrariesLoaded: storeReportedLibraries)
-        case .app(.recommendations):
-            RecommendationsView()
+        case .app(.libraries), .app(.recommendations):
+            RecommendationsView(
+                libraries: LibraryRowOrderStore.browsable(librarySnapshot.availableLibraries(for: currentAuthority))
+            )
         case .app(.calendar):
             CalendarView()
         case .app(.downloads):
@@ -243,6 +240,12 @@ struct MainTabView: View {
     @ViewBuilder
     private func pushedPage(for route: Route) -> some View {
         switch route {
+        case .library(let libraryId, _):
+            if let library = librarySnapshot.availableLibraries(for: currentAuthority).first(where: { $0.id == libraryId }) {
+                PhoneLibraryPage(library: library)
+            } else {
+                unknownPage
+            }
         case .libraryCollection(let libraryId, let collectionId, let title, let kind):
             LibraryCollectionDetailView(libraryId: libraryId, collectionId: collectionId, title: title, kind: kind)
         case .personDetail(let personId):
@@ -346,7 +349,9 @@ struct MainTabView: View {
     }
 
     private func applyRequestedTab() {
-        guard let tab = router.requestedTab else { return }
+        guard var tab = router.requestedTab else { return }
+        // For You now lives in the Library tab.
+        if tab == .recommendations { tab = .libraries }
         selectedID = resolvedRequestedMainTabDestination(tab, visibleDestinations: visibleDestinations)
         router.requestedTab = nil
     }

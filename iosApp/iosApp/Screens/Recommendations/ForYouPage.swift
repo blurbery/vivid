@@ -26,9 +26,20 @@ enum ForYouList: String, CaseIterable, Hashable {
 }
 
 #if os(iOS)
-/// The For You tab on iPhone and iPad: Watchlist, Favourites and Collections
-/// switch in place under one row of page tabs, with a Filter menu beside them.
+/// The Library tab on iPhone and iPad: the row of libraries, then Watchlist,
+/// Favourites and Collections, which switch in place under one row of page
+/// tabs with a Filter menu beside them.
 struct RecommendationsView: View {
+    /// The libraries in the server's order. The row shows them in the order
+    /// the profile arranged.
+    var libraries: [Library] = []
+
+    /// A library card is being held, so the page holds still under it.
+    @State private var isHoldingLibrary = false
+    /// Keeps the row where it was scrolled to when the list under it changes.
+    @State private var libraryRowScroll = PhoneLibraryRowScrollMemory()
+    @State private var libraryOrder = LibraryRowOrderStore.shared
+    @Environment(AppRouter.self) private var router
     @State private var selection: ForYouList = .watchlist
     @State private var filters: [ForYouList: PersonalListFilter] = [:]
     @State private var chromeScroll = PageChromeScrollState()
@@ -38,8 +49,9 @@ struct RecommendationsView: View {
     var body: some View {
         selectedList
             .id(selection)
+            .scrollDisabled(isHoldingLibrary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .environment(\.forYouPageTabs, usesDuoSideTabBar ? nil : AnyView(pageTabs))
+            .environment(\.forYouPageTabs, AnyView(pageHeader))
             .modifier(DuoBottomPageTabs(isActive: PhoneDuo.isDuo && usesDuoSideTabBar) { pageTabs })
             .environment(chromeScroll)
             .modifier(MobileTopScrollEdgeModifier())
@@ -63,10 +75,6 @@ struct RecommendationsView: View {
         (filters[list] ?? PersonalListFilter()).limited(to: list.filterChoices)
     }
 
-    private var showsFilterMenu: Bool {
-        !(selection == .collections && PersonalListFilter.Choices.collections.isEmpty)
-    }
-
     private var selectedFilter: Binding<PersonalListFilter> {
         Binding(
             get: { filter(for: selection) },
@@ -77,14 +85,34 @@ struct RecommendationsView: View {
         )
     }
 
+    // MARK: Library row
+
+    /// What scrolls at the top of whichever list is showing: the library
+    /// row, then the page tabs unless the Duo keeps them at the bottom.
+    private var pageHeader: some View {
+        let shown = libraryOrder.ordered(libraries)
+        return VStack(spacing: 4) {
+            if !shown.isEmpty {
+                PhoneLibraryCardRow(
+                    libraries: shown,
+                    isHolding: $isHoldingLibrary,
+                    scrollMemory: libraryRowScroll,
+                    onOpen: { router.navigate(to: .library(libraryId: $0.id, title: $0.name)) },
+                    onMove: { library, offset in libraryOrder.move(library, by: offset, in: shown) }
+                )
+                .padding(.top, 8)
+            }
+            if !usesDuoSideTabBar { pageTabs }
+        }
+    }
+
     // MARK: Page tabs
 
     private var pageTabs: some View {
         HStack(spacing: 8) {
             segments
-            if showsFilterMenu {
-                filterMenu
-            }
+            // Always offered: every list has at least the A–Z choice.
+            filterMenu
         }
         .onDuo { $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(horizontalSizeClass)) }
         .frame(maxWidth: .infinity)
@@ -121,7 +149,7 @@ struct RecommendationsView: View {
         return Menu {
             PersonalListFilterMenuContent(
                 filter: selectedFilter,
-                showsAlphabet: selection != .collections,
+                showsAlphabet: true,
                 choices: selection.filterChoices
             )
         } label: {

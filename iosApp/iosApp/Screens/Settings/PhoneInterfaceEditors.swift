@@ -5,7 +5,6 @@ extension SettingsView {
     /// Settings > General > Customise Tab Bar.
     struct TabBarEditor: View {
         @State private var preferences = UICustomizationPreferences.shared
-        @State private var snapshot = MainTabLibrarySnapshot.cachedForCurrentAuthority()
         @State private var previewSelection: String?
         @AppStorage private var swapsUtilities: Bool
         @AppStorage private var showsDownloads: Bool
@@ -18,31 +17,16 @@ extension SettingsView {
             _showsCalendar = AppStorage(wrappedValue: true, MobileProfilePreferenceKeys.key("vivid.mobile.showCalendarTab"))
         }
 
-        private var authority: MainTabLibraryAuthority? {
-            MainTabLibraryAuthority(serverId: ServerRegistry.shared.activeServerId,
-                                    profileId: ServerRegistry.shared.activeProfileId)
-        }
-
-        private var libraries: [Library] { snapshot.availableLibraries(for: authority) }
-
+        /// Home and the saved tab that places Library, in bar order. The
+        /// saved Movies, Series and For You tabs stay in the menu.
         private var visibleItems: [PrimaryMenuItem] {
-            preferences.resolvedPrimaryMenuItems().filter { mainTabSupportsDestination($0, availableLibraries: libraries) }
-        }
-
-        private var hiddenDefaults: [PrimaryMenuItem] {
-            let visible = visibleItems
-            return appleDefaultPrimaryMenuItems().filter {
-                !visible.contains($0) && mainTabSupportsDestination($0, availableLibraries: libraries)
-            }
-        }
-
-        private var usesDefaultMenu: Bool {
-            guard let menu = preferences.primaryMenu else { return true }
-            return menu.items == [.builtin(.home)]
+            let saved = preferences.resolvedPrimaryMenuItems()
+            let anchor = tvTabBarLibraryAnchor(in: saved)
+            return saved.filter { $0.isHome || $0 == anchor }
         }
 
         private var previewItems: [MobileGlassNavigationBar.Item] {
-            var destinations = projectedMainTabDestinations(primaryMenu: preferences.primaryMenu, availableLibraries: libraries)
+            var destinations = libraryMainTabDestinations(menuItems: preferences.resolvedPrimaryMenuItems())
             if showsCalendar { destinations.append(.app(.calendar)) }
             if showsDownloads { destinations.append(.app(.downloads)) }
             return destinations.map {
@@ -53,7 +37,7 @@ extension SettingsView {
 
         var body: some View {
             List {
-                SettingsPageHeader(title: "Customise Tab Bar", subtitle: "Reorder or hide tabs. Changes save automatically.",
+                SettingsPageHeader(title: "Customise Tab Bar", subtitle: "Reorder tabs. Changes save automatically.",
                                    systemImage: "rectangle.3.group")
                     .settingsPageHeaderRow()
                 previewSection
@@ -96,15 +80,9 @@ extension SettingsView {
             .settingsListChrome()
             .navigationTitle("")
             .task { await preferences.refresh() }
-            .task(id: authority) { await refreshLibraries(for: authority) }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
-                let current = authority
-                Task {
-                    async let menu: Void = preferences.refresh()
-                    async let shelves: Void = refreshLibraries(for: current)
-                    _ = await (menu, shelves)
-                }
+                Task { await preferences.refresh() }
             }
         }
 
@@ -162,17 +140,10 @@ extension SettingsView {
                 ForEach(visible) { item in
                     menuRow(item, in: visible)
                 }
-                ForEach(hiddenDefaults) { item in
-                    Button { preferences.setPrimaryMenuItems(visible + [item]) } label: {
-                        Label("Show \(item.title)", systemImage: "eye")
-                    }
-                }
             } header: {
                 PhoneSettingsSectionHeader("Primary Menu")
             } footer: {
-                Text(usesDefaultMenu
-                     ? "Default menu applied. Reorder or hide tabs to customise."
-                     : "Home is required. Use the arrows to reorder tabs. Downloads (when available), Search, and Profile stay automatic.")
+                Text("Home and Library stay visible. Use the arrows to reorder them. Downloads (when available), Search, and Profile stay automatic.")
             }
             .disabled(!preferences.allowsEditing || preferences.primaryMenuUsesDeviceOverride)
         }
@@ -209,13 +180,6 @@ extension SettingsView {
                         }
                         .disabled(!canMove(item, by: 1, in: visible))
                         .accessibilityLabel("Move \(shown.title) down")
-                        Button { preferences.setPrimaryMenuItems(visible.filter { $0 != item }) } label: {
-                            Image(systemName: "eye.fill")
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel("Hide \(shown.title)")
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -223,46 +187,28 @@ extension SettingsView {
             }
         }
 
-        /// A library tab shows the library's current name and icon when
-        /// it's known.
+        /// Home, or Library for the saved tab that places it.
         private func shownTitleAndIcon(_ item: PrimaryMenuItem) -> (title: String, icon: String) {
-            if case .library(let libraryId, _) = item, let library = libraries.first(where: { $0.id == libraryId }) {
-                return (library.name, library.navigationIcon)
-            }
-            return (item.title, item.navigationIcon)
+            if item.isHome { return (item.title, item.navigationIcon) }
+            let library = MainTabDestination.library
+            return (library.title, library.icon)
         }
 
         private func typeCaption(_ item: PrimaryMenuItem) -> String {
-            switch item {
-            case .builtin(.movies), .builtin(.series): String(localized: "Media Type")
-            case .builtin(.home): String(localized: "Your Stuff")
-            case .builtin(.forYou): String(localized: "Discover")
-            default: ""
-            }
+            item.isHome ? String(localized: "Your Stuff") : String(localized: "Media Type")
         }
 
         private func canMove(_ item: PrimaryMenuItem, by offset: Int, in visible: [PrimaryMenuItem]) -> Bool {
-            guard let index = visible.firstIndex(of: item), visible.indices.contains(index + offset) else { return false }
-            return !item.isHome && !visible[index + offset].isHome
+            guard let index = visible.firstIndex(of: item) else { return false }
+            return !item.isHome && visible.indices.contains(index + offset)
         }
 
         private func move(_ item: PrimaryMenuItem, by offset: Int, in visible: [PrimaryMenuItem]) {
-            guard canMove(item, by: offset, in: visible), let index = visible.firstIndex(of: item) else { return }
-            var items = visible
-            items.swapAt(index, index + offset)
-            preferences.setPrimaryMenuItems(items)
-        }
-
-        /// Keeps libraries only for the server and profile they belong to,
-        /// then fetches that profile's libraries.
-        private func refreshLibraries(for authority: MainTabLibraryAuthority?) async {
-            if snapshot.authority != authority {
-                snapshot = MainTabLibrarySnapshot(authority: authority, libraries: [])
-            }
-            guard let authority else { return }
-            guard let response = try? await StartupContentPrefetcher.fetchUserLibraries(),
-                  !Task.isCancelled, self.authority == authority else { return }
-            snapshot = MainTabLibrarySnapshot(authority: authority, libraries: response.libraries)
+            guard canMove(item, by: offset, in: visible) else { return }
+            // Home goes after or before every other saved tab, so Movies,
+            // Series and For You keep their own order.
+            let saved = preferences.resolvedPrimaryMenuItems()
+            preferences.setPrimaryMenuItems(tabBarMenu(saved, libraryLeads: offset < 0))
         }
     }
 

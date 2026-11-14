@@ -457,9 +457,7 @@ extension TVSettingsView {
         /// for the clients that still show them.
         private func setLibraryLeads(_ leads: Bool) {
             let saved = preferences.resolvedPrimaryMenuItems()
-            let home = saved.filter(\.isHome)
-            let others = saved.filter { !$0.isHome }
-            let menu = leads ? others + home : home + others
+            let menu = tabBarMenu(saved, libraryLeads: leads)
             guard menu != saved else { return }
             preferences.setPrimaryMenuItems(menu)
         }
