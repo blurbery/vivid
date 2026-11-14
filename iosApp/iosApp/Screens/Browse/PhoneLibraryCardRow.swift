@@ -14,11 +14,11 @@ final class PhoneLibraryRowScrollMemory {
 }
 
 /// The Library tab's row of libraries on iPhone and iPad: landscape cards
-/// the size of Home's Continue Watching cards, each with its library's name
-/// below, as the server gives it.
+/// a little over half the width of Home's Continue Watching cards, each
+/// with its library's name below, as the server gives it.
 ///
-/// Holding a card picks it up. While it is held the row zooms out so more
-/// libraries fit, the card follows the finger, and holding it near either
+/// Holding a card picks it up. While it is held the row zooms out a little
+/// so more libraries fit, the card follows the finger, and holding it near either
 /// end scrolls the row. Letting go drops it and the row zooms back in. Each
 /// move saves as it happens.
 struct PhoneLibraryCardRow: View {
@@ -55,8 +55,10 @@ struct PhoneLibraryCardRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let space = "vivid.libraryRow"
+    /// A library card's width as a share of a Continue Watching card's.
+    private static let cardScale: CGFloat = 0.6
     /// How much of its size a card keeps while one is held.
-    private static let heldScale: CGFloat = 0.5
+    private static let heldScale: CGFloat = 0.7
     /// How close to an end the finger scrolls the row, and how often it
     /// brings the next library in.
     private static let edgeZone: CGFloat = 56
@@ -65,7 +67,7 @@ struct PhoneLibraryCardRow: View {
     private var isReordering: Bool { movingId != nil }
 
     private var fullWidth: CGFloat {
-        HomeFeedMetrics.stillWidth * homeCards.presentation.posterSize.scale
+        HomeFeedMetrics.stillWidth * homeCards.presentation.posterSize.scale * Self.cardScale
     }
 
     private var cardWidth: CGFloat { isReordering ? fullWidth * Self.heldScale : fullWidth }
@@ -294,7 +296,7 @@ struct PhoneLibraryCardRow: View {
         ZStack {
             Color.white.opacity(0.08)
             Image(systemName: Self.symbol(for: library))
-                .font(.system(size: 30, weight: .regular))
+                .font(.system(size: 24, weight: .regular))
                 .foregroundStyle(Color.white.opacity(0.55))
             if !url.isEmpty {
                 AsyncImageView(url: url, thumbhash: nil, targetSize: size, contentMode: .fill)
