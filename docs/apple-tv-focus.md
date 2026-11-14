@@ -114,13 +114,14 @@ Each entry request lands once, and coming back from a pushed library page leaves
 Up from the library row hands off to the top menu.
 Up from the sub-tab row (the sub-tabs, Filter or A–Z) moves to the library row natively; only without libraries does it hand off to the top menu.
 
-Holding Select on a library card starts arranging the row: every card rocks, Select picks a card up, Left and Right move it and Select drops it.
-Each move saves as it happens, so there is no save button.
-Arranging lasts until Menu, which the page handles because focus may have left the row; outside arranging, Menu stays the shell's.
-While a card is picked up, Up does nothing, so the card stays in the row until it is dropped.
-The row uses one button per card in every state and keys cards by library, so a picked-up card keeps its identity and its focus as it changes place.
-Moving a picked-up card doesn't move focus, so the row scrolls the card into view itself.
-The rocking angle is read from the clock on every frame and the card's view structure never changes, so starting or ending arranging doesn't drop focus.
+Holding Select on a library card opens the arrange grid as a full-screen cover: every library at once, each rocking.
+The cover is its own focus scope, and focus starts on the library whose card opened it.
+Select picks a card up, any direction moves it and Select drops it; each move saves as it happens, so there is no save button.
+Back closes the grid, as it closes any full-screen cover, and focus returns to the row; the page no longer handles Back for arranging.
+While a card is picked up every other card is disabled, so a direction moves the card and never focus, and focus can't leave the grid.
+The grid uses one button per card in every state and keys cards by library, so a picked-up card keeps its identity and its focus as it changes place.
+Nothing scrolls sideways, and the row itself never rearranges in place or scrolls to follow a card.
+The rocking angle is read from the clock on every frame and the card's view structure never changes, so picking a card up or dropping it doesn't drop focus.
 
 A [Siri search](apple-tv-browsing.md#siri-search) opens Search with one navigation-path assignment that replaces every pushed screen, not a pop followed by a push, so the root's pop-to-root focus handling never runs for a screen that isn't shown.
 It marks the bar as the owner after Back, as the bar's Search button does.
@@ -129,7 +130,7 @@ The one exception is a cold launch: Search opens while the startup hand-off stil
 
 Media cards across Home, Search, Library, library pages and detail pages use SwiftUI’s native `.card` button style, including collection posters, episodes, trailers and cast.
 The system owns their focus lift, shadow and animation; cards add no custom focus scale, shadow or animated artwork border.
-The library cards in Library's row are the exception: they draw their own focus, growing and lifting on a shadow with no system card platter, so nothing shows around a card while it rocks.
+The library cards in Library's row and in its arrange grid are the exception: they draw their own focus, growing and lifting on a shadow with no system card platter, so nothing shows around a card while it rocks in the grid.
 A picked-up card grows a little more.
 Resume progress is inside the artwork button so it moves with the native effect.
 Trailer and cast captions sit outside the native card button; its effect follows only the thumbnail or portrait poster.

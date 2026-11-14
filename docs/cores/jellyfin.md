@@ -87,7 +87,7 @@ Authentication failures do not trigger fallback, and no fallback selects another
 Older Jellyfin server versions still need live verification.
 
 The library list carries each library's own image: when the server's view for a library reports a `Primary` image tag, Vivid passes that image along with the library.
-The Library tab's library cards show it on iPhone, iPad and Apple TV, and a library without one shows its symbol on a plain tile.
+The Library tab's library cards show it on iPhone, iPad and Apple TV, and a library without one shows its symbol on a plain tile on iPhone and iPad, and a collage of its own posters on Apple TV, which keeps the symbol tile while the posters load or when none of the titles it samples has one.
 This has not been verified against a live Jellyfin server.
 
 ## Playback and limits

@@ -10988,6 +10988,41 @@
         }
       }
     },
+    "Arrange Libraries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mediatheken anordnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordenar bibliotecas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organiser les bibliothèques"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブラリを並べ替える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排列资料库"
+          }
+        }
+      }
+    },
     "Arrange Profiles" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -37028,6 +37063,41 @@
         }
       }
     },
+    "Move %@. Move it in any direction, then press centre to drop." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ verschieben. In eine beliebige Richtung bewegen und dann die Mitte drücken, um abzulegen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover %@. Muévela en cualquier dirección y pulsa el centro para soltarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer %@. Déplacez-la dans n’importe quelle direction, puis appuyez au centre pour déposer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を移動します。好きな方向に動かしてから中央を押すと配置します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动 %@。向任意方向移动，然后按下中央键放下。"
+          }
+        }
+      }
+    },
     "Move %@. Move left or right, then press centre to drop and save." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -37199,6 +37269,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "前移"
+          }
+        }
+      }
+    },
+    "Move it anywhere, then press Select to drop it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beliebig verschieben und dann „Auswählen“ drücken, um abzulegen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muévela a donde quieras y pulsa Seleccionar para soltarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacez-la où vous voulez, puis appuyez sur Sélectionner pour la déposer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好きな場所に動かしてから「選択」を押して配置します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到任意位置，然后按“选择”放下。"
           }
         }
       }
@@ -46882,6 +46987,41 @@
         }
       }
     },
+    "Press Select to pick a library up. Press Back when you're done." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drücke „Auswählen“, um eine Mediathek aufzunehmen. Drücke „Zurück“, wenn du fertig bist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pulsa Seleccionar para coger una biblioteca. Pulsa Atrás cuando termines."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appuyez sur Sélectionner pour saisir une bibliothèque. Appuyez sur Retour quand vous avez terminé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「選択」を押してライブラリを持ち上げます。終わったら「戻る」を押します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按“选择”拿起资料库。完成后按“返回”。"
+          }
+        }
+      }
+    },
     "Press and hold a poster to rearrange. Changes save automatically." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51722,18 +51862,6 @@
         }
       }
     },
-    "S%@ - S%@" : {
-      "comment" : "A closed group of seasons on the season pill, from its first to its last season",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "S%1$@ - S%2$@"
-          }
-        }
-      }
-    },
     "S%@ E%@" : {
       "comment" : "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02",
       "extractionState" : "manual",
@@ -52173,10 +52301,6 @@
           }
         }
       }
-    },
-    "SP" : {
-      "comment" : "Short label for the Specials season on a collapsed season pill",
-      "extractionState" : "manual"
     },
     "STUDIOS" : {
       "extractionState" : "manual",
