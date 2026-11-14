@@ -48,7 +48,7 @@ Saved sessions retain the native Emby user ID.
 The current user's details come from `/Users/{userId}`, and its `Policy.IsAdministrator` becomes the Admin or User shown on the profile in Settings.
 
 The library list carries each library's own image: when the server's view for a library reports a `Primary` image tag, Vivid passes that image along with the library.
-The Library tab's library cards show it on iPhone, iPad and Apple TV, and a library without one shows its symbol on a plain tile.
+The Library tab's library cards show it on iPhone, iPad and Apple TV, and a library without one shows its symbol on a plain tile on iPhone and iPad, and a collage of its own posters on Apple TV.
 This has not been verified against a live Emby server.
 
 ### Emby Connect

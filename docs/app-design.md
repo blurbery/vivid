@@ -175,7 +175,7 @@ Tapping a library pushes a page with a back button, the library's name and the S
 Holding a library card picks it up: the row zooms out a little so more libraries fit, the card follows the finger, and holding it near either end scrolls the row.
 Letting go drops the card and keeps the row on it.
 There is no wiggle mode and no save button; each move saves as it happens.
-On Apple TV the same row sits above the sub-tabs and is rearranged with the remote, as described in [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages).
+On Apple TV the same row sits above the sub-tabs, a library without an image shows a collage of its own posters, and the libraries are rearranged with the remote in a grid, as described in [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages).
 The row's order is saved per server and profile and syncs through iCloud with the profile's other synced preferences, the same way as Home sections, so rearranging on one device rearranges the others.
 Other devices pick it up on their next launch or when the app returns to the foreground, not live; the last change wins, and a library added later appears at the end.
 Below the row, the page switches in place between Watchlist, Favourites and Collections.

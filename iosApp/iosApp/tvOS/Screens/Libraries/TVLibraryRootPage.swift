@@ -101,8 +101,6 @@ extension TVMainTabView {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, VividTheme.Skyline.barTopInset + 82)
             .task(id: pageCacheKey) { await reload() }
-            // Only while arranging; otherwise Menu stays the shell's.
-            .onExitCommand(perform: isArrangingLibraries ? { isArrangingLibraries = false } : nil)
             .onDisappear { isArrangingLibraries = false }
             .onAppear(perform: applyFocusRequest)
             .onChange(of: focusRequest) { applyFocusRequest() }

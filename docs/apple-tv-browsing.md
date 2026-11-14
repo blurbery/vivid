@@ -312,7 +312,10 @@ Home's spotlight, Library's row of libraries and Calendar's sub-tabs sit just un
 On Home the gap between the notch and the spotlight is about 30 points, and the gaps between the spotlight and Studios & Networks and below Studios & Networks are 30 points.
 
 Library opens on a row of library cards: every movie, series and mixed library, each once, as landscape cards the size of Home's Continue Watching cards.
-Each card shows the library's own image, or its symbol on a plain tile when the server has none, with the library's name underneath as the server gives it, with nothing shortened.
+Each card shows the library's own image, with the library's name underneath as the server gives it, with nothing shortened.
+A library the server has no image for shows a collage of its own posters instead: four tall strips standing side by side, leaning 12 degrees so the joins run diagonally across the card.
+The four are a random pick from the library's 40 most recently added titles, made once per library each time the app starts, from one small catalogue request.
+Until they arrive, and for a library with no posters, the card shows the library's symbol on a plain tile.
 Below the row are the Watchlist, Favourites and Collections sub-tabs the For You tab used to hold.
 Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the same seven-column poster grid the Movies and Series pages had, without the old category dropdowns or mixed Recommended/Browse landing page.
 A mixed library such as Sports is one card, and its page shows movies and series together; it used to appear under both Movies and Series, filtered by type.
@@ -320,11 +323,15 @@ Movie and series libraries still ask the server for their own type; classificati
 A mixed library asks for every type, and its Filter menu adds a Type choice to narrow it to movies or series.
 The library each Movies and Series page used to remember is no longer kept.
 
-Holding Select on a library card starts arranging the row.
-Every card rocks, Select picks a card up, Left and Right move it and Select drops it.
-There is no save button: each move saves as it happens, and arranging lasts until Menu.
-Each move starts from the saved order, not from the row as it was last drawn, so presses made faster than the row redraws each count.
-While a card is picked up, Up does nothing.
+Holding Select on a library card opens the arrange grid over the page: every library at once in rows of five, each rocking gently (0.6 degrees each way, about three times a second, and not at all with Reduce Motion).
+Select picks a card up, any direction moves it and Select drops it.
+Left and Right move it one place, running on to the next or previous row at a row's end; Up and Down move it a whole row, and Down from the row above a short last row goes to the end.
+The libraries in between close up behind it.
+A hint at the top says what Select and Back do, and changes while a card is picked up.
+There is no save button: each move saves as it happens, and Back closes the grid.
+Each move starts from the saved order, not from the grid as it was last drawn, so presses made faster than it redraws each count.
+In the grid a library still on its plain tile also has its name on the tile.
+The row itself never rearranges in place: on a row longer than the screen, following a moving card meant scrolling the whole row, which a tester with identical plain tiles saw as the card going the wrong way.
 Library cards draw their own focus: they grow and lift on a shadow with no system card platter, and a picked-up card grows a little more.
 The other media cards keep the native card style.
 The row's order is saved per server and profile and syncs through iCloud with the profile's other synced preferences, the same way as Home sections, so rearranging on one device rearranges the others, iPhone and iPad included.
