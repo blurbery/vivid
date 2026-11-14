@@ -232,8 +232,8 @@ struct TVTopMenuSearchLabel: View {
     }
 }
 
-/// The profile avatar in the notch. With focus it opens to the avatar and
-/// "Settings" inside the tabs' highlight, so the highlight glides here too.
+/// The profile avatar in the notch. With focus it gives way to "Settings"
+/// inside the tabs' highlight, as a tab's symbol gives way to its name.
 struct TVTopMenuProfileLabel: View {
     let profile: UserProfile?
     let isFocused: Bool
@@ -242,26 +242,27 @@ struct TVTopMenuProfileLabel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: isFocused ? 10 : 0) {
+        // Both stay in the tree and crossfade, so only the width moves.
+        ZStack {
             ProfileAvatarView(
                 avatar: profile?.avatarEmoji,
                 imageUrl: profile?.avatarImageUrl,
                 name: profile?.name ?? "",
-                size: isFocused ? 30 : 40,
+                size: 40,
                 backgroundColor: Color.white.opacity(0.18),
                 textColor: .white
             )
-            // Stays in the tree and fades, so only the width moves.
+            .animation(fade(in: !isFocused)) { $0.opacity(isFocused ? 0 : 1) }
             Text("Settings")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(Color.white)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(width: isFocused ? nil : 0)
-                .animation(fade) { $0.opacity(isFocused ? 1 : 0) }
+                .animation(fade(in: isFocused)) { $0.opacity(isFocused ? 1 : 0) }
         }
-        .padding(.leading, isFocused ? 8 : 2)
-        .padding(.trailing, isFocused ? 22 : 2)
+        .frame(minWidth: isFocused ? nil : 44)
+        .padding(.horizontal, isFocused ? 22 : 0)
         .frame(height: 42)
         .clipShape(Capsule())
         .background {
@@ -270,10 +271,10 @@ struct TVTopMenuProfileLabel: View {
         .scaleEffect(isFocused && !reduceMotion ? 1.1 : 1)
     }
 
-    /// The name fading in late, or out early, as a tab's does.
-    private var fade: Animation? {
+    /// Whichever is leaving fades out before the other fades in.
+    private func fade(in appearing: Bool) -> Animation? {
         if reduceMotion { return nil }
-        return isFocused ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
+        return appearing ? .easeIn(duration: 0.16).delay(0.14) : .easeOut(duration: 0.1)
     }
 }
 
