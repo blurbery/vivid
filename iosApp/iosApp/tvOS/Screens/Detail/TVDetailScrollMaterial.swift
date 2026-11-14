@@ -43,6 +43,8 @@ struct TVDetailFoldSnapping: ScrollTargetBehavior {
 final class TVDetailScrollState {
     /// The visible top, clamped to 0 through the showcase height.
     var offset: CGFloat = 0
+    /// How far the page has scrolled past the shelves' resting position.
+    var overscroll: CGFloat = 0
     var showsShelfLogo = false
 }
 
@@ -55,6 +57,8 @@ struct TVDetailFoldScrolling: ViewModifier {
     let showcaseHeight: CGFloat
     /// The visible top from which the shelf logo shows.
     let logoThreshold: CGFloat
+    /// The hero's logo, drawn fixed over the page instead of inside it.
+    var pinnedLogo: TVDetailHeroLogo? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scroll = TVDetailScrollState()
@@ -66,11 +70,13 @@ struct TVDetailFoldScrolling: ViewModifier {
                 geometry.visibleRect.minY
             } action: { _, top in
                 let offset = min(max(top, 0), showcaseHeight)
-                if offset != scroll.offset {
+                let overscroll = max(top - showcaseHeight, 0)
+                if offset != scroll.offset || overscroll != scroll.overscroll {
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
                         scroll.offset = offset
+                        scroll.overscroll = overscroll
                     }
                 }
                 let logoVisible = top >= logoThreshold
@@ -84,6 +90,56 @@ struct TVDetailFoldScrolling: ViewModifier {
             .background {
                 TVDetailScrollMaterialLayer(viewportSize: viewportSize, showcaseHeight: showcaseHeight, scroll: scroll)
             }
+            .overlay(alignment: .topLeading) {
+                if let pinnedLogo {
+                    TVDetailPinnedLogo(logo: pinnedLogo, scroll: scroll)
+                }
+            }
+    }
+}
+
+/// The hero's logo held in its corner while the page crosses the fold. It
+/// only moves once the page scrolls on past the shelves' first row, when it
+/// leaves with them.
+private struct TVDetailPinnedLogo: View {
+    let logo: TVDetailHeroLogo
+    let scroll: TVDetailScrollState
+
+    var body: some View {
+        logo
+            .offset(y: -scroll.overscroll)
+            .allowsHitTesting(false)
+    }
+}
+
+/// On a page with a pinned logo, fades the hero out as the page leaves it
+/// and the shelves in as they arrive, so the two never cross under the logo.
+struct TVDetailFoldFade: ViewModifier {
+    enum Part { case hero, shelves }
+
+    let part: Part
+    let showcaseHeight: CGFloat
+    var isEnabled = true
+
+    @Environment(TVDetailScrollState.self) private var scroll: TVDetailScrollState?
+
+    func body(content: Content) -> some View {
+        content.opacity(opacity)
+    }
+
+    /// Never fully clear: the focus engine skips a view with no opacity,
+    /// which would stop focus moving between the hero and the shelves.
+    private static let floor = 0.02
+
+    private var opacity: Double {
+        guard isEnabled, let scroll, showcaseHeight > 0 else { return 1 }
+        let progress = min(max(scroll.offset / showcaseHeight, 0), 1)
+        let faded: Double
+        switch part {
+        case .hero: faded = 1 - min(progress / 0.45, 1)
+        case .shelves: faded = min(max((progress - 0.45) / 0.45, 0), 1)
+        }
+        return max(faded, Self.floor)
     }
 }
 

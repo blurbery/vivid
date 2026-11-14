@@ -33,7 +33,8 @@ struct TVSeriesDetailPage: View {
             backdropUrl: detail.backdropUrl,
             backdropThumbhash: detail.backdropThumbhash,
             logoUrl: detail.logoUrl,
-            title: detail.title
+            title: detail.title,
+            pinsLogo: true
         ) { showcase in
             hero(showcase: showcase, playback: playback)
         } shelves: {
@@ -134,7 +135,8 @@ struct TVSeriesDetailPage: View {
         TVDetailHeroPanel(
             layout: .showcase(height: showcase),
             poster: TVDetailHeroPoster(url: detail.posterUrl, thumbhash: detail.posterThumbhash),
-            logo: TVDetailHeroLogo(logoUrl: detail.logoUrl, title: detail.title),
+            // The shell pins the logo over the page.
+            logo: nil,
             creditLine: TVHeroMetadata.creditLine(detail)
         ) {
             TVDetailCompactPrimary(
@@ -211,15 +213,27 @@ struct TVSeriesDetailPage: View {
     /// The loaded pages with the selected season's current list in its slot
     /// and spoilers covered.
     private var shelfPages: [Int: [EpisodeListItem]] {
-        var pages = viewModel.episodesBySeason
-        if !viewModel.isLoadingEpisodes, let selected = viewModel.selectedSeason {
-            pages[selected.seasonNumber] = viewModel.episodes
-        }
+        var pages = loadedPages
         if PlayerSettings.shared.hideFutureEpisodeSpoilers {
             let position = EpisodeSpoilerPolicy.currentPosition(seasons: viewModel.seasons, pages: pages)
             pages = EpisodeSpoilerPolicy.cover(pages, after: position)
         }
         return pages
+    }
+
+    private var loadedPages: [Int: [EpisodeListItem]] {
+        var pages = viewModel.episodesBySeason
+        if !viewModel.isLoadingEpisodes, let selected = viewModel.selectedSeason {
+            pages[selected.seasonNumber] = viewModel.episodes
+        }
+        return pages
+    }
+
+    /// The season the viewer is up to when spoilers are hidden, so later
+    /// seasons keep their synopsis back. Nil shows every synopsis.
+    private var spoilerSeasonNumber: Int? {
+        guard PlayerSettings.shared.hideFutureEpisodeSpoilers else { return nil }
+        return EpisodeSpoilerPolicy.currentPosition(seasons: viewModel.seasons, pages: loadedPages)?.season
     }
 
     private func shelves(playback: PlaybackInputs) -> some View {
@@ -228,6 +242,8 @@ struct TVSeriesDetailPage: View {
                 seasons: viewModel.seasons,
                 pages: shelfPages,
                 selectedSeason: viewModel.selectedSeason,
+                seriesPosterUrl: detail.posterUrl,
+                spoilerSeasonNumber: spoilerSeasonNumber,
                 currentEpisodeId: activeEpisodeId,
                 playTarget: playTarget,
                 isActionRowFocused: heroFocus?.isActionRow == true,

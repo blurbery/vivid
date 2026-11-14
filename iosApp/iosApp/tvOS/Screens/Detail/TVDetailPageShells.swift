@@ -10,6 +10,11 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
     let backdropThumbhash: String?
     let logoUrl: String?
     let title: String
+    /// Keeps the hero's logo fixed in its corner, at the same size, while
+    /// the page moves between the hero and the shelves: the hero fades out
+    /// under it and the shelves fade in below it. The hero then draws no
+    /// logo of its own and the shelves get no shelf logo.
+    var pinsLogo = false
     /// Built for the showcase height.
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let shelves: () -> Shelves
@@ -48,16 +53,20 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
                 hero(showcase)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focusSection()
+                    .modifier(TVDetailFoldFade(part: .hero, showcaseHeight: showcase, isEnabled: pinsLogo))
                 shelves()
-                    .padding(.top, 150)
+                    .padding(.top, pinsLogo ? TVDetailHeroLayout.pinnedLogoShelfInset : 150)
                     .padding(.horizontal, TVDetailHeroLayout.horizontalInset)
                     .padding(.bottom, TVDetailHeroLayout.pageBottomPadding)
                     // At least a screen tall, so a page with few shelves
                     // can still scroll the whole hero away.
                     .frame(maxWidth: .infinity, minHeight: viewport.height - 26, alignment: .topLeading)
                     .overlay(alignment: .top) {
-                        TVDetailShelfLogo(logoUrl: logoUrl, title: title)
+                        if !pinsLogo {
+                            TVDetailShelfLogo(logoUrl: logoUrl, title: title)
+                        }
                     }
+                    .modifier(TVDetailFoldFade(part: .shelves, showcaseHeight: showcase, isEnabled: pinsLogo))
             }
             .scrollTargetLayout()
         }
@@ -65,7 +74,8 @@ struct TVDetailNativeShell<Hero: View, Shelves: View>: View {
         .modifier(TVDetailFoldScrolling(
             viewportSize: viewport,
             showcaseHeight: showcase,
-            logoThreshold: TVDetailHeroLayout.logoTopInset + TVDetailHeroLayout.logoHeight
+            logoThreshold: TVDetailHeroLayout.logoTopInset + TVDetailHeroLayout.logoHeight,
+            pinnedLogo: pinsLogo ? TVDetailHeroLogo(logoUrl: logoUrl, title: title) : nil
         ))
     }
 }
