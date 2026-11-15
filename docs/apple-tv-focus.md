@@ -295,11 +295,12 @@ The Description popup owns a separate scrollable set of text focus targets and c
 The Apple TV “Who's watching?” picker is one composite focus target, the arc of profiles (`TVProfileOrbit`), which starts with the first profile in display order in the centre.
 The remembered-profile badge does not change that starting profile.
 The arc owns Left and Right, which turn it, and no profile on it is a focus target of its own, which is what lets it wrap around.
-After the arc mounts and the startup overlay enables it, the picker waits for the scene to be active and account loading to finish, allows 150 ms for the enabled native control to settle, then gives the arc focus.
+After the arc mounts and the startup overlay enables it, the picker waits for the scene to be active and the saved-account store to be idle (no profile being selected, no error or PIN prompt showing), allows 150 ms for the enabled native control to settle, then gives the arc focus.
+The signed-in profile's refresh runs alongside and isn't waited for.
 Receiving focus marks the initial handoff complete.
 Refreshes do not repeat these requests, and PIN or sign-out overlays prevent them from taking focus.
 Profile activation and automatic-login preferences remain separate from this focus choice.
-The owner confirmed the initial profile focus and theme selection behaviour on Apple TV.
+The owner confirmed the initial profile focus and theme selection behaviour on Apple TV with the earlier row of profiles; the arc's initial focus has been checked on the simulator only.
 
 The playback timeline and Info/subtitle shortcuts share one directional boundary.
 Up from an idle timeline enters the shortcut row; Down returns to the timeline.

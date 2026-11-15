@@ -81,7 +81,10 @@ struct TVSavedProfilesScreen: View {
         // Again when posters are saved while the page is up, as when the
         // signed-in profile's Home loads behind it at launch.
         .task(id: WallKey(accounts: store.accounts, revision: wall.value)) {
-            posters = await TVPosterWallStore.posters(for: store.accounts)
+            // A load overtaken by a newer one doesn't replace its wall.
+            let loaded = await TVPosterWallStore.posters(for: store.accounts)
+            guard !Task.isCancelled else { return }
+            posters = loaded
         }
         .task(id: isFinishingHandoff) {
             guard isFinishingHandoff else { return }
