@@ -174,6 +174,7 @@ The countdown pauses until the selected card actually reaches the centre.
 The top menu remains a native upward destination while browsing the spotlight, then resumes its row-boundary suppression when entering lower rows.
 Spotlight Up uses native movement without an additional manual menu-focus request.
 The whole top bar declares the selected page tab as its default focus destination for user-initiated entry, so Up returns to Home, Library or Calendar rather than whichever utility is closest.
+Until focus has rested in the bar for about a quarter of a second, the selected tab is also the bar's only focusable item, so a touch surface swipe up lands on it exactly as a click does and cannot angle or carry across to Search or Settings.
 When a root page is scrolled more than about 60 points from its top and the bar has no focus and no tab opening, the notch tucks down to the current tab's symbol.
 It opens again when the bar takes focus (for example on Menu) or the page returns to its top, so tucking needs no focus handling of its own (see [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages)).
 Movement within the bar remains native.
