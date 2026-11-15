@@ -56,5 +56,20 @@ final class TVCatalogGridIndexTests: XCTestCase {
         XCTAssertEqual(TVPosterArtworkWindow.range(firstVisible: 70, focusedIndex: 7, itemCount: 300, columns: 7), 56..<126)
         XCTAssertEqual(TVPosterArtworkWindow.range(firstVisible: nil, focusedIndex: 70, itemCount: 300, columns: 7), 56..<126)
     }
+
+    /// The catalogue grids' own shape: two rows behind the first visible row
+    /// and the grid's row count in all, cut short at the end of the list.
+    func testArtworkRangeFollowsTheGridsColumnsAndRows() {
+        let columns = VividTheme.Skyline.posterGridColumns
+        let rows = VividTheme.Skyline.posterGridArtworkRows
+        XCTAssertEqual(
+            TVPosterArtworkWindow.range(firstVisible: columns * 10, itemCount: 300, columns: columns, rows: rows),
+            columns * 8..<columns * (8 + rows)
+        )
+        XCTAssertEqual(
+            TVPosterArtworkWindow.range(firstVisible: 66, itemCount: 70, columns: columns, rows: rows),
+            (66 / columns - 2) * columns..<70
+        )
+    }
 }
 #endif

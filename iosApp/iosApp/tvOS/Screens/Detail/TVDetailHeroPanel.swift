@@ -1,27 +1,98 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Hero sizes for each kind of page.
+/// Hero sizes for each kind of page. Every row sits in a fixed box, so
+/// nothing moves with what a title happens to have. The boxes are sized
+/// from these constants only; change one here and the rest follow.
 struct TVDetailHeroLayout {
     static let horizontalInset: CGFloat = 100
-    static let defaultHeight: CGFloat = 690
     static let defaultTopInset: CGFloat = 116
-    static let editorialWidth: CGFloat = 750
-    static let editorialHeight: CGFloat = 435
     static let sectionSpacing: CGFloat = 64
     static let sectionHeaderSpacing: CGFloat = 14
     static let pageBottomPadding: CGFloat = 140
-    /// Where the heading line starts below the top of the compact editorial.
-    static let compactHeadingTop: CGFloat = 170
+
+    // MARK: Rows every hero has
+
+    /// The gap between the credit line, the summary row and the action row.
+    static let rowSpacing: CGFloat = 12
+    /// The credit line's box: one line of 27-point text, with room for
+    /// scripts whose lines stand taller than Latin ones.
+    static let creditHeight: CGFloat = 40
+    /// Kept clear between the primary block and the credit line.
+    static let primaryClearance: CGFloat = 4
+    /// The height left for the primary block above the credit line and the
+    /// summary row.
+    static func primaryBlockHeight(editorialHeight: CGFloat, summaryHeight: CGFloat) -> CGFloat {
+        editorialHeight - creditHeight - rowSpacing - summaryHeight - primaryClearance
+    }
+
+    // MARK: Poster
+
+    /// The hero poster's height. The season poster on the series shelf is
+    /// the same size.
+    static let posterHeight: CGFloat = 435
+    static let posterWidth: CGFloat = (posterHeight * 2 / 3).rounded()
+    static let posterSize = CGSize(width: posterWidth, height: posterHeight)
     /// The gap between the hero poster and the details beside it.
     static let posterSpacing: CGFloat = 40
-    /// The poster runs from the heading line to the bottom of the action row
-    /// (the editorial's remainder, the 12-point gap and the 76-point row).
-    static let posterHeight: CGFloat = editorialHeight - compactHeadingTop + 12 + TVDetailActionRowLayout.controlHeight
-    static let posterWidth: CGFloat = (posterHeight * 2 / 3).rounded()
     /// How far the details sit right of the logo on the native pages, which
     /// the loading page matches so nothing moves when the title loads.
     static let posterInset: CGFloat = posterWidth + posterSpacing
+
+    // MARK: Native movie and series pages
+
+    /// The width of the heading, synopsis, credit line and technical row.
+    /// Four lines of the 28-point synopsis hold about what four lines held
+    /// at 22 points in the earlier 750-point column.
+    static let compactTextWidth: CGFloat = 900
+    /// The poster runs from the top of the heading to the bottom of the
+    /// action row, so the editorial is the poster less the gap above the
+    /// action row and the row itself.
+    static let compactEditorialHeight: CGFloat = posterHeight - rowSpacing - TVDetailActionRowLayout.controlHeight
+    /// The heading's box: one line of 29-point text and its rating badge.
+    static let compactHeadingHeight: CGFloat = 44
+    static let compactSynopsisGap: CGFloat = 22
+    /// The technical row's box: 29-point text and 22-point badges.
+    static let compactSummaryHeight: CGFloat = 44
+    static let compactPrimaryHeight: CGFloat = primaryBlockHeight(
+        editorialHeight: compactEditorialHeight,
+        summaryHeight: compactSummaryHeight
+    )
+    /// The synopsis has the rest of the primary block: four 28-point lines
+    /// need about 134 points of it, and taller scripts have the remainder.
+    static let compactSynopsisHeight: CGFloat = compactPrimaryHeight - compactHeadingHeight - compactSynopsisGap
+
+    // MARK: Older layout and season page
+
+    static let standardTextWidth: CGFloat = 750
+    static let standardStackSpacing: CGFloat = 14
+    static let standardTitleHeight: CGFloat = 160
+    /// One metadata row's box.
+    static let standardMetadataHeight: CGFloat = 36
+    /// Three 28-point lines and Read more, with room for taller scripts.
+    static let standardSynopsisHeight: CGFloat = 150
+    /// The playback readout's height.
+    static let standardSummaryHeight: CGFloat = 40
+    /// The room under the action row.
+    static let standardBottomMargin: CGFloat = 51
+    /// The gap between the eyebrow and the top of the editorial below it.
+    static let eyebrowGap: CGFloat = 16
+
+    /// The title, each metadata row and the synopsis, with the stack's
+    /// spacing after each.
+    static func standardPrimaryHeight(metadataRows: Int) -> CGFloat {
+        standardTitleHeight + standardStackSpacing
+            + CGFloat(metadataRows) * (standardMetadataHeight + standardStackSpacing)
+            + standardSynopsisHeight + standardStackSpacing
+    }
+
+    static func standardEditorialHeight(metadataRows: Int) -> CGFloat {
+        standardPrimaryHeight(metadataRows: metadataRows) + primaryClearance
+            + creditHeight + rowSpacing + standardSummaryHeight
+    }
+
+    // MARK: Logo
+
     /// The native pages' logo sits in the top-left corner, as far from the
     /// top as the content is from the left.
     static let logoTopInset: CGFloat = 100
@@ -38,34 +109,59 @@ struct TVDetailHeroLayout {
     var isCompact: Bool
     var showsBackdrop: Bool
     var clipsToHeight: Bool
+    /// The primary block, credit line and summary row together.
+    var editorialHeight: CGFloat
+    /// The width of the text, not counting the poster beside it.
+    var textWidth: CGFloat
+    /// The technical row's or the playback readout's box.
+    var summaryHeight: CGFloat
 
-    /// The editorial's top on a hero of the given height. The action row
-    /// (editorial, 12-point gap, 76-point row) ends at the hero's bottom, so
-    /// on the native pages it sits as far above the screen's bottom edge as
-    /// the content sits from the left.
-    static func browsingTopInset(for height: CGFloat) -> CGFloat {
-        max(defaultTopInset, height - 553) + 30
+    var primaryHeight: CGFloat {
+        Self.primaryBlockHeight(editorialHeight: editorialHeight, summaryHeight: summaryHeight)
     }
 
-    /// The native movie and series pages.
+    /// The native movie and series pages. The poster, and with it the
+    /// editorial and the action row, ends at the hero's bottom, which the
+    /// shell puts as far above the screen's bottom edge as the content sits
+    /// from the left. The poster grows upwards from there.
     static func showcase(height: CGFloat) -> TVDetailHeroLayout {
         TVDetailHeroLayout(
             height: height,
-            topInset: browsingTopInset(for: height),
+            topInset: height - posterHeight,
             isCompact: true,
             showsBackdrop: false,
-            clipsToHeight: false
+            clipsToHeight: false,
+            editorialHeight: compactEditorialHeight,
+            textWidth: compactTextWidth,
+            summaryHeight: compactSummaryHeight
         )
     }
 
-    /// The older layout and the season page.
-    static func standard(clipsToHeight: Bool) -> TVDetailHeroLayout {
-        TVDetailHeroLayout(
-            height: defaultHeight,
+    /// The older layout and the season page, tall enough for the given
+    /// number of metadata rows (an episode under its series title has two).
+    static func standard(clipsToHeight: Bool, metadataRows: Int = 1) -> TVDetailHeroLayout {
+        let editorialHeight = standardEditorialHeight(metadataRows: metadataRows)
+        return TVDetailHeroLayout(
+            height: defaultTopInset + editorialHeight + rowSpacing
+                + TVDetailActionRowLayout.controlHeight + standardBottomMargin,
             topInset: defaultTopInset,
             isCompact: false,
             showsBackdrop: true,
-            clipsToHeight: clipsToHeight
+            clipsToHeight: clipsToHeight,
+            editorialHeight: editorialHeight,
+            textWidth: standardTextWidth,
+            summaryHeight: standardSummaryHeight
+        )
+    }
+
+    /// Where the native hero's text and action row sit on a hero of the
+    /// given height, for the shade drawn behind them.
+    static func compactTextRect(showcaseHeight: CGFloat) -> CGRect {
+        CGRect(
+            x: horizontalInset + posterInset,
+            y: showcaseHeight - posterHeight,
+            width: compactTextWidth,
+            height: posterHeight
         )
     }
 }
@@ -84,7 +180,7 @@ struct TVDetailHeroPosterTile: View {
     var poster: TVDetailHeroPoster?
 
     var body: some View {
-        let size = CGSize(width: TVDetailHeroLayout.posterWidth, height: TVDetailHeroLayout.posterHeight)
+        let size = TVDetailHeroLayout.posterSize
         ZStack {
             RoundedRectangle(cornerRadius: VividTheme.cornerRadius)
                 .fill(Color.white.opacity(0.10))
@@ -160,6 +256,10 @@ struct TVDetailHeroPanel<Primary: View, Summary: View, Actions: View>: View {
     var poster: TVDetailHeroPoster? = nil
     /// Shown in the top-left corner on a compact page.
     var logo: TVDetailHeroLogo? = nil
+    /// The small capsule over the editorial, such as a season's series. It
+    /// stands in the hero's top inset, so the editorial below is the same
+    /// with or without it.
+    var eyebrow: String? = nil
     let creditLine: String?
     @ViewBuilder let primary: () -> Primary
     @ViewBuilder let summary: () -> Summary
@@ -173,7 +273,7 @@ struct TVDetailHeroPanel<Primary: View, Summary: View, Actions: View>: View {
         showsPoster ? TVDetailHeroLayout.posterInset : 0
     }
 
-    private var editorialWidth: CGFloat { TVDetailHeroLayout.editorialWidth + contentInset }
+    private var editorialWidth: CGFloat { layout.textWidth + contentInset }
 
     var body: some View {
         let hero = ZStack(alignment: .topLeading) {
@@ -183,17 +283,27 @@ struct TVDetailHeroPanel<Primary: View, Summary: View, Actions: View>: View {
             if layout.isCompact, let logo {
                 logo
             }
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: TVDetailHeroLayout.rowSpacing) {
                 editorial
+                    .overlay(alignment: .topLeading) {
+                        if let eyebrow, !eyebrow.isEmpty {
+                            TVDetailEyebrow(text: eyebrow)
+                                .lineLimit(1)
+                                .frame(maxWidth: layout.textWidth, alignment: .leading)
+                                .alignmentGuide(.top) { $0[.bottom] + TVDetailHeroLayout.eyebrowGap }
+                        }
+                    }
                 actions()
                     .padding(.leading, contentInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focusSection()
             }
+            // The editorial, the gap and the action row are as tall as the
+            // poster, so it runs from the heading to the action row's
+            // bottom edge.
             .overlay(alignment: .topLeading) {
                 if showsPoster, let poster {
-                    posterArtwork(poster)
-                        .padding(.top, TVDetailHeroLayout.compactHeadingTop)
+                    TVDetailHeroPosterTile(poster: poster)
                 }
             }
             .padding(.top, layout.topInset)
@@ -214,44 +324,40 @@ struct TVDetailHeroPanel<Primary: View, Summary: View, Actions: View>: View {
         ZStack(alignment: .topLeading) {
             primary()
                 .environment(\.tvDetailHeroContentInset, contentInset)
-                .frame(height: TVDetailHeroLayout.editorialHeight - 80 - 4, alignment: .topLeading)
+                .frame(height: layout.primaryHeight, alignment: .topLeading)
                 .clipped()
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: TVDetailHeroLayout.rowSpacing) {
                 ZStack(alignment: .leading) {
                     if let creditLine, !creditLine.isEmpty {
                         Text(verbatim: creditLine)
-                            .font(.system(size: 23))
+                            .font(.system(size: 27))
                             .foregroundStyle(Color.white.opacity(0.70))
                             .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: 28)
+                .frame(height: TVDetailHeroLayout.creditHeight)
                 .clipped()
 
                 summary()
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .frame(height: 40, alignment: .topLeading)
+                    .frame(height: layout.summaryHeight, alignment: .topLeading)
             }
             .padding(.leading, contentInset)
             .frame(
                 width: editorialWidth,
-                height: TVDetailHeroLayout.editorialHeight,
+                height: layout.editorialHeight,
                 alignment: .bottomLeading
             )
             .transaction { $0.animation = nil }
         }
         .frame(
             width: editorialWidth,
-            height: TVDetailHeroLayout.editorialHeight,
+            height: layout.editorialHeight,
             alignment: .topLeading
         )
         .clipped()
-    }
-
-    private func posterArtwork(_ poster: TVDetailHeroPoster) -> some View {
-        TVDetailHeroPosterTile(poster: poster)
     }
 }
 
@@ -278,8 +384,8 @@ struct TVDetailHeroBackdrop: View {
 
 // MARK: - Primary information
 
-/// Heading and synopsis on the native movie and series pages, below the
-/// space the logo used to fill (the logo now sits in the top-left corner).
+/// Heading and synopsis on the native movie and series pages, beside the
+/// poster. The heading starts level with the poster's top edge.
 struct TVDetailCompactPrimary: View {
     let headingTokens: [String]
     let genres: [String]
@@ -292,20 +398,26 @@ struct TVDetailCompactPrimary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Color.clear
-                .frame(height: 160)
-
             TVDetailCompactHeading(tokens: headingTokens, genres: genres, contentRating: contentRating)
-                .frame(height: 36, alignment: .leading)
-                .padding(.top, 10)
+                .frame(height: TVDetailHeroLayout.compactHeadingHeight, alignment: .leading)
                 .padding(.leading, contentInset)
 
-            TVDetailSynopsisSlot(overview: overview, isCompact: true, isEnabled: synopsisEnabled, focus: focus)
-                .frame(height: 140, alignment: .topLeading)
-                .padding(.top, 12)
-                .padding(.leading, contentInset)
+            TVDetailSynopsisSlot(
+                overview: overview,
+                isCompact: true,
+                isEnabled: synopsisEnabled,
+                height: TVDetailHeroLayout.compactSynopsisHeight,
+                maxWidth: TVDetailHeroLayout.compactTextWidth,
+                focus: focus
+            )
+            .padding(.top, TVDetailHeroLayout.compactSynopsisGap)
+            .padding(.leading, contentInset)
         }
-        .frame(width: TVDetailHeroLayout.editorialWidth + contentInset, height: 350, alignment: .topLeading)
+        .frame(
+            width: TVDetailHeroLayout.compactTextWidth + contentInset,
+            height: TVDetailHeroLayout.compactPrimaryHeight,
+            alignment: .topLeading
+        )
     }
 }
 
@@ -317,10 +429,9 @@ enum TVDetailTitleTreatment {
     case logo(url: String?, title: String)
 }
 
-/// Eyebrow, title, metadata and synopsis on the older layout and the season
-/// page.
+/// Title, metadata and synopsis on the older layout and the season page.
+/// The hero panel draws the season page's eyebrow above this block.
 struct TVDetailStandardPrimary: View {
-    let eyebrow: String?
     let treatment: TVDetailTitleTreatment
     let metadata: TVDetailMetadataSlots
     let overview: String?
@@ -328,20 +439,23 @@ struct TVDetailStandardPrimary: View {
     var focus: FocusState<TVDetailHeroFocus?>.Binding
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let eyebrow, !eyebrow.isEmpty {
-                TVDetailEyebrow(text: eyebrow)
-            }
+        VStack(alignment: .leading, spacing: TVDetailHeroLayout.standardStackSpacing) {
             titleBlock
-                .frame(height: 160, alignment: .bottomLeading)
-                .padding(.top, eyebrow == nil ? 0 : 2)
+                .frame(height: TVDetailHeroLayout.standardTitleHeight, alignment: .bottomLeading)
             metadata
-            TVDetailSynopsisSlot(overview: overview, isCompact: false, isEnabled: synopsisEnabled, focus: focus)
+            TVDetailSynopsisSlot(
+                overview: overview,
+                isCompact: false,
+                isEnabled: synopsisEnabled,
+                height: TVDetailHeroLayout.standardSynopsisHeight,
+                maxWidth: TVDetailHeroLayout.standardTextWidth,
+                focus: focus
+            )
             // A zero-size last child, so the stack keeps the spacing it has
             // always had after the synopsis.
             Color.clear.frame(width: 0, height: 0)
         }
-        .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .leading)
+        .frame(maxWidth: TVDetailHeroLayout.standardTextWidth, alignment: .leading)
     }
 
     @ViewBuilder
@@ -350,29 +464,43 @@ struct TVDetailStandardPrimary: View {
         case let .hierarchy(seriesTitle, seriesLogoUrl, episodeTitle):
             TVDetailHierarchyTitle(seriesTitle: seriesTitle, seriesLogoUrl: seriesLogoUrl, episodeTitle: episodeTitle)
         case let .logo(url, title):
-            TVDetailLogoTitle(logoUrl: url, label: title, maxWidth: 650, maxHeight: 160) {
+            TVDetailLogoTitle(
+                logoUrl: url,
+                label: title,
+                maxWidth: 650,
+                maxHeight: TVDetailHeroLayout.standardTitleHeight
+            ) {
                 TVDetailDisplayTitle(title: title)
             }
         }
     }
 }
 
-/// The 112-point synopsis slot, kept empty without an overview so the rows
-/// below keep their fixed positions.
+/// The synopsis slot, kept empty without an overview so the rows below
+/// keep their fixed positions. The slot itself doesn't clip: a script with
+/// taller lines runs on into the room the hero keeps under it, and the
+/// hero's primary block clips above the credit line.
 private struct TVDetailSynopsisSlot: View {
     let overview: String?
     let isCompact: Bool
     let isEnabled: Bool
+    let height: CGFloat
+    let maxWidth: CGFloat
     var focus: FocusState<TVDetailHeroFocus?>.Binding
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let overview, !overview.isEmpty {
-                TVDetailSynopsisButton(overview: overview, isCompact: isCompact, isEnabled: isEnabled, focus: focus)
+                TVDetailSynopsisButton(
+                    overview: overview,
+                    isCompact: isCompact,
+                    isEnabled: isEnabled,
+                    maxWidth: maxWidth,
+                    focus: focus
+                )
             }
         }
-        .frame(height: 112, alignment: .topLeading)
-        .clipped()
+        .frame(height: height, alignment: .topLeading)
     }
 }
 #endif

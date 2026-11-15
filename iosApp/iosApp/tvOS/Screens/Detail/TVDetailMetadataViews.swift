@@ -9,19 +9,19 @@ struct TVDetailTextBadge: View {
 
     var body: some View {
         Text(verbatim: text)
-            .font(.system(size: 18, weight: .bold))
+            .font(.system(size: 22, weight: .bold))
             .lineLimit(1)
             .foregroundStyle(isFilled ? Color.black : Color.white)
-            .padding(.horizontal, 7)
+            .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background {
                 if isFilled {
-                    RoundedRectangle(cornerRadius: 4).fill(Color.white)
+                    RoundedRectangle(cornerRadius: 5).fill(Color.white)
                 }
             }
             .overlay {
                 if !isFilled {
-                    RoundedRectangle(cornerRadius: 4).strokeBorder(Color.white.opacity(0.85), lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: 5).strokeBorder(Color.white.opacity(0.85), lineWidth: 1.5)
                 }
             }
             .fixedSize()
@@ -36,9 +36,9 @@ struct TVDetailCompactHeading: View {
     let contentRating: String?
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             headingText
-                .font(.system(size: 24, weight: .medium))
+                .font(.system(size: 29, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             if let contentRating {
@@ -67,10 +67,10 @@ struct TVDetailTechnicalRow: View {
     let tmdbScore: Double?
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if !releaseFacts.isEmpty {
                 Text(verbatim: releaseFacts.joined(separator: " \u{00B7} "))
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: 29, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.84))
             }
             ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
@@ -79,15 +79,15 @@ struct TVDetailTechnicalRow: View {
             if let tmdbScore {
                 TMDbRatingBadge(
                     rating: tmdbScore,
-                    logoHeight: 24,
-                    font: .system(size: 24, weight: .semibold),
+                    logoHeight: 29,
+                    font: .system(size: 29, weight: .semibold),
                     color: Color.white.opacity(0.92)
                 )
                 .padding(.leading, 4)
             }
         }
         .lineLimit(1)
-        .frame(height: 40, alignment: .leading)
+        .frame(height: TVDetailHeroLayout.compactSummaryHeight, alignment: .leading)
     }
 }
 
@@ -115,7 +115,7 @@ struct TVDetailMetadataSlots: View {
 
     private func slot(@ViewBuilder _ content: () -> some View) -> some View {
         content()
-            .frame(height: 36, alignment: .leading)
+            .frame(height: TVDetailHeroLayout.standardMetadataHeight, alignment: .leading)
             .clipped()
     }
 
@@ -222,7 +222,7 @@ struct TVDetailPlaybackSummary: View {
             item(label: String(localized: "Version"), systemImage: "square.stack", value: values.version)
             item(label: String(localized: "Audio"), systemImage: "speaker.wave.2", value: values.audio)
         }
-        .frame(width: 656, height: 40, alignment: .leading)
+        .frame(width: 656, height: TVDetailHeroLayout.standardSummaryHeight, alignment: .leading)
     }
 
     private func item(label: String, systemImage: String, value: String?) -> some View {
@@ -252,7 +252,7 @@ struct TVDetailPlaybackSummary: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity)
-        .frame(height: 40)
+        .frame(height: TVDetailHeroLayout.standardSummaryHeight)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.10)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(value.map { Text("\(label), \($0)") } ?? Text("\(label), loading"))

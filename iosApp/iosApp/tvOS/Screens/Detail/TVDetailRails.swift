@@ -91,12 +91,14 @@ private struct TVCastGroupDivider: View {
         HStack(spacing: 14) {
             Text(verbatim: label)
                 .textCase(.uppercase)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
                 .tracking(2.4)
                 .foregroundStyle(Color.vividSecondaryText)
+                .lineLimit(1)
                 .fixedSize()
                 .rotationEffect(.degrees(-90))
-                .frame(width: 20, height: height)
+                // As wide as the turned line is tall.
+                .frame(width: 26, height: height)
             Rectangle()
                 .fill(Color.white.opacity(0.15))
                 .frame(width: 2, height: height)
@@ -132,13 +134,13 @@ private struct TVCastPersonCard: View {
 
             VStack(spacing: 4) {
                 Text(verbatim: person.name)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.88))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                 if let role {
                     Text(verbatim: role)
-                        .font(.system(size: 17))
+                        .font(.system(size: 21))
                         .foregroundStyle(Color.vividSecondaryText)
                         .lineLimit(1)
                         .multilineTextAlignment(.center)
@@ -222,12 +224,12 @@ private struct TVTrailerCard: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: entry.title)
-                    .font(.system(size: 21, weight: .semibold))
+                    .font(.system(size: 25, weight: .semibold))
                     .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
                     .lineLimit(1)
                 if let secondary {
                     Text(verbatim: secondary)
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.system(size: 21, weight: .medium))
                         .foregroundStyle(Color.vividSecondaryText)
                         .lineLimit(1)
                 }

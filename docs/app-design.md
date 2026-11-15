@@ -95,9 +95,13 @@ The Profiles panel and page follow that scale inside Settings, and Who’s watch
 Account settings uses the same canvas and labelled fields, while profile selection uses circular account cards.
 More Like This on tvOS uses Home’s Large poster size.
 TV captions use one local server/profile setting across Search, Home, Library, library pages, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only.
-Titles use 20-point text and secondary captions use 18-point text, both left aligned; episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
+Under posters, titles use 24-point medium text and secondary captions use 22-point text, both left aligned and on one line each, so they read from across the room.
+Continue Watching, Next Up, the other landscape episode rows on Home and the Library tab's library cards use the same 24-point titles and 22-point secondary captions, on cards that keep their size.
+Episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
 Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
-Search keeps seven columns across the safe-area width with reduced spacing below its result tabs.
+Search keeps six columns across the safe-area width with reduced spacing below its result tabs.
+Every Apple TV poster grid (Search and its Seerr results, the Library tab, library pages, collection and Studios & Networks pages, the Collections tab and Calendar's day view) shows six posters across, each 260 by 390 points.
+Home's poster rows and the rails that match them (the Collections row, More Like This, collection rails, Studios & Networks rails and Cast & Crew) show posters 240 by 360 points, and a person's filmography shows seven posters across at the Standard poster size, or six at Compact or Large.
 
 Detail pages keep their credit, playback-readout and action rows at fixed baselines through loading and episode changes.
 Long-pressing Play or Resume opens a native context menu: Start Over when there's something to resume, and Shuffle on a series page.
@@ -110,6 +114,7 @@ Media cards use native `.card` styling; playback readouts retain their existing 
 Browsing cards retain their watched badges; episode information removes the old NOW VIEWING label and green-check styling.
 Long descriptions open separately; they must not push the action row down.
 Movie and series pages replace the old Details row with Media Information: separate Video & File and Audio glass panels.
+On Apple TV the detail pages' text is sized to read from the couch; the sizes are listed in [Apple TV Browsing](apple-tv-browsing.md#detail-pages).
 Video & File uses at most five equal-width columns; each audio track uses at most four.
 Column count shrinks for sparse panels, but an incomplete final row retains the same column alignment.
 Settings headings remain white at 50 points on Apple TV (40 at the original design size, drawn through `TVSettingsLayout.scale`), with the shared “© 2026 Vivid™” footer.

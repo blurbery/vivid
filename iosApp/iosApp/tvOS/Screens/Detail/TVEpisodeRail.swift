@@ -257,13 +257,13 @@ private struct TVEpisodeRailCard: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 titleText
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 28, weight: .semibold))
                     .lineLimit(1)
                     .foregroundStyle(isCurrent || isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
                 Spacer(minLength: 8)
                 if caption.showsMetadata, let runtime = episode.runtime, runtime > 0 {
                     Text(verbatim: TVHeroMetadata.shortRuntime(runtime))
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 22, weight: .medium))
                         .foregroundStyle(Color.vividSecondaryText)
                         .lineLimit(1)
                 }

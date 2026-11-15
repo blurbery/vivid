@@ -102,7 +102,7 @@ Selecting a library card pushes that library's page onto the navigation stack; a
 Calendar's sub-tab row works like Library's: one scroll view holds both sub-tabs so the row stays mounted.
 Entering Calendar lands on the current sub-tab, and only Up to the top menu is a boundary hand-up.
 Its Calendar pill, where Library keeps Filter and A–Z, opens a month view whose day buttons and month arrows are the only focus targets; days with nothing on them aren't focusable.
-Trending posters put only the artwork in the native card button, with a 20-point gap above the captions so the focus lift never covers the title.
+Trending posters put only the artwork in the native card button, with a 24-point gap above the captions so the focus lift never covers the title.
 The Profile control opens Settings directly.
 Do not restore the removed Movies/Series/For You/Profile dropdowns when fixing focus.
 The Movies, Series and For You tabs themselves are gone too: Library replaced them.
@@ -205,6 +205,7 @@ The Home Sections editor retains hidden row definitions even when Emby skips the
 Home uses the discovery feed.
 Its visible rows reserve a stable card-strip height using Home's Large poster size and the caption setting.
 Poster and landscape rows retain different artwork heights; missing metadata still reserves its caption line.
+The reserved caption height follows the card type: poster and landscape rows both reserve 24-point and 22-point caption lines, each from the sizes its own cards draw with.
 Cards align at their top edge and row headings reserve one fixed line.
 Current Home uses a VStack with row heights reserved from the existing card and caption geometry, with up to six enabled media rails plus Spotlight.
 All normal Home rails use VividCollectionMediaRow with the same CollectionHStack revision as Swiftfin, UIKit cell reuse and continuous leading-edge scrolling.

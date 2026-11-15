@@ -124,9 +124,7 @@ struct SearchView: View {
                 hasMore: model.hasMore,
                 onItemTap: open,
                 onNearEnd: { _ in loadMore() },
-                columnCount: 7,
-                fixedColumnCount: 7,
-                cardWidth: 190,
+                fixedColumnCount: VividTheme.Skyline.posterGridColumns,
                 prefersDefaultFocusOnFirstItem: true
             )
             #endif

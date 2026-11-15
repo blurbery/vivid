@@ -34,10 +34,17 @@ struct TVSeriesEpisodeShelf: View {
 
     private static let slotWidth: CGFloat = 440
     private static let cardCentre: CGFloat = 200
-    /// Taller than the pills, season name and synopsis need, so the poster
-    /// beside them is large and the episode row fills the rest of the
-    /// screen, with the next shelf's heading below the bottom edge.
-    private static let headerHeight: CGFloat = 310
+    /// The season name (68), the gap under it (10), the 26-point facts
+    /// line, and four 28-point lines of synopsis, about 251 points in
+    /// Latin text, with a little room for scripts whose lines stand taller. At the
+    /// fold the episode row's captions then end about 80 points above the
+    /// screen's bottom edge and the next shelf's heading starts below it.
+    /// The poster beside the header hangs from its bottom edge, so it
+    /// rises with the header.
+    private static let headerHeight: CGFloat = 270
+    /// The season synopsis' width. It stops well short of the poster on
+    /// the trailing side.
+    private static let synopsisWidth: CGFloat = 1300
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var selectorFocused: Bool
@@ -45,6 +52,10 @@ struct TVSeriesEpisodeShelf: View {
 
     @State private var browseSeasonId: String?
     @State private var scrollSeasonId: String?
+    /// The episode focus was last on in the row, cleared when the season
+    /// selector takes focus. Focus is nowhere for a moment between two
+    /// cards, and the season in view keeps following this card then.
+    @State private var lastFocusedEpisodeId: String?
     @State private var isEnteringFromHero = true
     @State private var pendingSeasonJump: Int?
     @State private var pendingEpisodeJump: String?
@@ -124,7 +135,8 @@ struct TVSeriesEpisodeShelf: View {
                 TVSeasonSummary(
                     season: season,
                     showsSynopsis: showsSynopsis(for: season),
-                    seriesOverview: seriesOverview
+                    seriesOverview: seriesOverview,
+                    maxWidth: Self.synopsisWidth
                 )
             }
         }
@@ -280,6 +292,7 @@ struct TVSeriesEpisodeShelf: View {
 
     private func selectorFocusChanged(_ focused: Bool, proxy: ScrollViewProxy) {
         if focused {
+            lastFocusedEpisodeId = nil
             pageScroll?.requestFold(within: 200)
             if isEnteringFromHero { prepareEntry(proxy) }
             scrollSeasonId = nil
@@ -321,6 +334,7 @@ struct TVSeriesEpisodeShelf: View {
                         } label: {
                             Text("Load Season \(String(season.seasonNumber))")
                         }
+                        .focused($focusedEpisodeId, equals: Self.loadFocusID(season))
                         .frame(width: 400, height: 225)
                     }
                 }
@@ -418,8 +432,26 @@ struct TVSeriesEpisodeShelf: View {
 
     // MARK: Episode focus and scroll season
 
+    /// What the row's focus state holds while a season's Load button has
+    /// focus, so the shown season follows it like an episode.
+    private static func loadFocusID(_ season: Season) -> String {
+        "load-season:\(season.contentId)"
+    }
+
     private func episodeFocusChanged(from oldId: String?, to newId: String?) {
         guard let newId else { return }
+        if let unloaded = seasons.first(where: { Self.loadFocusID($0) == newId }) {
+            // A season that hasn't loaded: show it without selecting it,
+            // which is what pressing the button does. Focus has arrived in
+            // the row, so entry from the hero is over, as for an episode.
+            isEnteringFromHero = false
+            pendingSeasonJump = nil
+            pendingEpisodeJump = nil
+            lastFocusedEpisodeId = newId
+            scrollSeasonId = nil
+            browseSeasonId = unloaded.contentId
+            return
+        }
         if oldId == nil, isEnteringFromHero, let playTarget,
            pages[playTarget.seasonNumber]?.contains(where: { $0.contentId == playTarget.contentId }) == true,
            newId != playTarget.contentId {
@@ -432,6 +464,7 @@ struct TVSeriesEpisodeShelf: View {
         isEnteringFromHero = false
         pendingSeasonJump = nil
         pendingEpisodeJump = nil
+        lastFocusedEpisodeId = newId
         scrollSeasonId = nil
         browseSeasonId = season.contentId
         if selectedSeason?.contentId != season.contentId {
@@ -451,17 +484,31 @@ struct TVSeriesEpisodeShelf: View {
             if let page {
                 guard !page.isEmpty else { continue }
                 count = page.count
-                if let focusedEpisodeId, let index = page.firstIndex(where: { $0.contentId == focusedEpisodeId }) {
+                if let anchorId = focusedEpisodeId ?? lastFocusedEpisodeId,
+                   let index = page.firstIndex(where: { $0.contentId == anchorId }) {
                     focusedCentre = (season, CGFloat(slot + index) * Self.slotWidth + Self.cardCentre)
                 }
             } else {
                 count = 1
+                if (focusedEpisodeId ?? lastFocusedEpisodeId) == Self.loadFocusID(season) {
+                    focusedCentre = (season, CGFloat(slot) * Self.slotWidth + Self.cardCentre)
+                }
             }
             firstSlots.append((season, CGFloat(slot) * Self.slotWidth))
             slot += count
         }
 
-        if let focusedCentre, focusedCentre.centre >= visible.minX, focusedCentre.centre <= visible.maxX {
+        // The focused episode decides while the row is on it or still
+        // scrolling to it: a card up to two slots past either edge is one
+        // the row is on its way to, even with a second move queued behind
+        // the first. Without that reach, the row's leading edge spoke
+        // while it caught up, and just after a season change that edge is
+        // in the season before, so the header and poster flicked back a
+        // season on every move. Further off than that, the row has been
+        // flung past the focused card and its leading edge decides.
+        let reach = 2 * Self.slotWidth
+        if let focusedCentre, focusedCentre.centre >= visible.minX - reach,
+           focusedCentre.centre <= visible.maxX + reach {
             return focusedCentre.season.contentId
         }
         let leadingCentre = max(0, visible.minX) + Self.cardCentre
@@ -475,6 +522,7 @@ private struct TVSeasonSummary: View {
     let season: Season
     let showsSynopsis: Bool
     let seriesOverview: String?
+    let maxWidth: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -504,14 +552,16 @@ private struct TVSeasonSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: facts)
-                .font(.system(size: 22, weight: .medium))
+                .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            // The same size and brightness as the series synopsis in the
+            // hero, so the two read as one voice.
             Text(verbatim: synopsis)
-                .font(.system(size: 22))
-                .foregroundStyle(.secondary)
-                .lineLimit(6)
-                .frame(maxWidth: 1100, alignment: .leading)
+                .font(.system(size: 28))
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineLimit(4)
+                .frame(maxWidth: maxWidth, alignment: .leading)
         }
         .contentTransition(.opacity)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: season.contentId)
@@ -519,26 +569,35 @@ private struct TVSeasonSummary: View {
     }
 }
 
-/// The shown season's poster. It turns over to the next season's poster
-/// when the season changes, and can't be focused or opened.
+/// The shown season's poster, the same size as the hero's. It turns over
+/// to the next season's poster when the season changes and the picture is
+/// a different one, and can't be focused or opened.
 private struct TVSeasonPosterCard: View {
     let season: Season?
     let seriesPosterUrl: String?
 
-    static let size = CGSize(width: 360, height: 540)
+    static let size = TVDetailHeroLayout.posterSize
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown: Season?
     @State private var angle: Double = 0
     @State private var turn: Task<Void, Never>?
 
-    private var seasonPosterUrl: String? {
-        let url = shown?.posterUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    private var seasonPosterUrl: String? { Self.posterUrl(of: shown) }
+
+    private static func posterUrl(of season: Season?) -> String? {
+        let url = season?.posterUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return url.isEmpty ? nil : url
     }
 
+    /// The picture a season shows: its own poster, or the series' when it
+    /// has none.
+    private func artwork(for season: Season?) -> String {
+        Self.posterUrl(of: season) ?? seriesPosterUrl ?? ""
+    }
+
     var body: some View {
-        let url = seasonPosterUrl ?? seriesPosterUrl ?? ""
+        let url = artwork(for: shown)
         CachedAsyncImage(
             url: url,
             targetSize: Self.size,
@@ -565,7 +624,10 @@ private struct TVSeasonPosterCard: View {
 
     private func show(_ season: Season?) {
         turn?.cancel()
-        guard shown != nil, !reduceMotion else {
+        // A season with the same picture as the one showing, such as two
+        // seasons that both fall back to the series poster, changes without
+        // a turn: the poster would only spin round to itself.
+        guard shown != nil, !reduceMotion, artwork(for: season) != artwork(for: shown) else {
             angle = 0
             shown = season
             return
@@ -666,6 +728,8 @@ private struct TVSeasonSelectorStyle: ButtonStyle {
 
 /// One episode on the series shelf: a fixed 400 by 225 still with its
 /// status, and the episode's number, title, overview and air date below.
+/// The caption is about 156 points tall in Latin text, which the shelf's
+/// header height allows for.
 private struct TVSeriesShelfCard: View {
     let episode: EpisodeListItem
     /// Spoken by VoiceOver; the shelf draws no current-episode outline.
@@ -677,10 +741,15 @@ private struct TVSeriesShelfCard: View {
     let onSetFavorite: (Bool) async -> Bool
 
     private static let stillSize = CGSize(width: 400, height: 225)
+    /// Three 22-point lines of overview (about 79 points), kept whether
+    /// the episode has three lines, fewer or none, with room for taller
+    /// scripts.
+    private static let overviewHeight: CGFloat = 88
 
     @State private var watchedOverride: Bool?
     @State private var favoriteOverride: Bool?
 
+    private var isFocused: Bool { focus.wrappedValue == episode.contentId }
     private var isWatched: Bool { watchedOverride ?? episode.userData?.played ?? false }
     private var isFavoriteShown: Bool { favoriteOverride ?? isFavorite }
 
@@ -763,37 +832,42 @@ private struct TVSeriesShelfCard: View {
                 Text("\(runtime)m")
             }
         }
-        .font(.system(size: 18))
+        .font(.system(size: 22))
         .foregroundStyle(.white)
         .fixedSize()
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(Capsule().fill(Color.black.opacity(0.45)))
     }
 
     private var caption: some View {
+        // Set like Home's Continue Watching captions, so an episode reads
+        // the same wherever it appears: the number and name as the card
+        // title, brightening with focus, over the overview and date in the
+        // quieter second-line style.
         VStack(alignment: .leading, spacing: 6) {
-            Text("EPISODE \(String(episode.episodeNumber))")
-                .font(.system(size: 18))
-                .foregroundStyle(.secondary)
             titleText
-                .font(.system(size: 24, weight: .semibold))
+                .font(.vividLandscapeCardTitle)
+                .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
                 .lineLimit(1)
             Text(verbatim: episode.overview ?? "")
-                .font(.system(size: 20))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(height: 52, alignment: .top)
+                .font(.vividLandscapeCardMetadata)
+                .foregroundStyle(Color.vividSecondaryText)
+                .lineLimit(3)
+                .frame(height: Self.overviewHeight, alignment: .top)
             Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
-                .font(.system(size: 18))
-                .foregroundStyle(.secondary)
+                .font(.vividLandscapeCardMetadata)
+                .foregroundStyle(Color.vividSecondaryText)
+                .lineLimit(1)
         }
     }
 
+    /// "3 · The Long Way Home", the number a little dimmer than the name.
     private var titleText: Text {
         // A missing or empty title falls back to the episode number.
         if let title = episode.title, !title.isEmpty {
-            return Text(verbatim: title)
+            return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.vividSecondaryText)
+                + Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")
     }

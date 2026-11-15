@@ -293,7 +293,7 @@ struct MediaCard: View {
     private var card: some View {
         let size = cardSize
         let caption = presentation.caption
-        return VStack(alignment: .leading, spacing: 22) {
+        return VStack(alignment: .leading, spacing: VividTheme.Skyline.posterCaptionGap) {
             artworkButton(size)
             if caption.showsTitle {
                 tvCaption(width: size.width, caption: caption)
@@ -379,7 +379,8 @@ struct MediaCard: View {
         }
         .frame(
             width: width,
-            height: inHomeRows ? TVHomeRowGeometry.captionHeight(caption.forEpisodes(rowHasEpisodes)) : nil,
+            height: inHomeRows
+                ? TVHomeRowGeometry.captionHeight(caption.forEpisodes(rowHasEpisodes), layout: .poster) : nil,
             alignment: .topLeading
         )
     }

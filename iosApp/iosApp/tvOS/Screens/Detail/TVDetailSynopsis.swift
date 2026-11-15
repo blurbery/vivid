@@ -33,6 +33,8 @@ struct TVDetailSynopsisButton: View {
     let overview: String
     let isCompact: Bool
     let isEnabled: Bool
+    /// The width the text wraps within: the hero's text column.
+    let maxWidth: CGFloat
     var focus: FocusState<TVDetailHeroFocus?>.Binding
 
     @State private var showsFullText = false
@@ -42,10 +44,11 @@ struct TVDetailSynopsisButton: View {
             showsFullText = true
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                // The Spotlight's overview size, so the slot holds a line
-                // more of the description than it did at 26 points.
+                // The Spotlight's overview size, large enough to read from
+                // the couch. The hero's text column is wide enough that four
+                // lines hold about what they did at 22 points.
                 Text(verbatim: overview)
-                    .font(.system(size: 22))
+                    .font(.system(size: 28))
                     .foregroundStyle(Color.white.opacity(0.92))
                     .lineLimit(isCompact ? 4 : 3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -55,7 +58,7 @@ struct TVDetailSynopsisButton: View {
                         .foregroundStyle(Color.white.opacity(0.65))
                 }
             }
-            .frame(maxWidth: 750, alignment: .leading)
+            .frame(maxWidth: maxWidth, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(TVSynopsisButtonStyle())

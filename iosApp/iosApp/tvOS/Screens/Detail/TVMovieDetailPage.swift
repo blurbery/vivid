@@ -260,13 +260,14 @@ struct TVMovieDetailPage: View {
             .hierarchy(seriesTitle: $0, seriesLogoUrl: olderLogoUrl, episodeTitle: detail.title)
         } ?? .logo(url: olderLogoUrl, title: detail.title)
         return TVDetailHeroPanel(
-            layout: .standard(clipsToHeight: false),
+            // An episode under its series title has a source row and a
+            // facts row.
+            layout: .standard(clipsToHeight: false, metadataRows: seriesTitle != nil ? 2 : 1),
             backdropUrl: detail.backdropUrl,
             backdropThumbhash: detail.backdropThumbhash,
             creditLine: TVHeroMetadata.creditLine(detail)
         ) {
             TVDetailStandardPrimary(
-                eyebrow: nil,
                 treatment: treatment,
                 metadata: TVDetailMetadataSlots(
                     separatesSourceRow: seriesTitle != nil,

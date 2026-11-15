@@ -185,6 +185,7 @@ struct TVDetailScrollMaterialLayer: View {
     var body: some View {
         let offset = scroll.offset
         let progress = showcaseHeight > 0 ? min(max(offset / showcaseHeight, 0), 1) : 0
+        let text = TVDetailHeroLayout.compactTextRect(showcaseHeight: showcaseHeight)
         ZStack {
             Rectangle()
                 .fill(.regularMaterial)
@@ -200,21 +201,33 @@ struct TVDetailScrollMaterialLayer: View {
             // A soft shade just behind the hero's text, so white text stays
             // readable over bright artwork. It hugs the heading, synopsis and
             // details only, so the rest of the picture keeps its own light,
-            // and it fades on one smooth curve with no visible steps.
+            // and it fades on one smooth curve with no visible steps. It is
+            // sized and placed from the hero's text block (the heading down
+            // to the action row), so it follows the layout.
             EllipticalGradient(
                 stops: Self.textShadeStops,
                 center: .center,
                 startRadiusFraction: 0,
                 endRadiusFraction: 0.5
             )
-            .frame(width: viewportSize.width * 0.86, height: viewportSize.height * 0.56)
+            .frame(width: text.width * Self.textShadeSpread.width, height: text.height * Self.textShadeSpread.height)
             .drawingGroup(opaque: false, colorMode: .extendedLinear)
-            .position(x: viewportSize.width * 0.36, y: viewportSize.height * 0.735 - offset)
+            .position(x: text.midX + Self.textShadeShift.width, y: text.midY + Self.textShadeShift.height - offset)
             .opacity(1 - progress)
         }
         .frame(width: viewportSize.width, height: viewportSize.height)
         .clipped()
     }
+
+    /// How far the shade reaches past the text block, as a multiple of the
+    /// block's size. The shade is level across its middle quarter and
+    /// eases out from there, so it has to be well over the block's size to
+    /// stay dark to the ends of the lines. These are the proportions the
+    /// shade had around the earlier, smaller text block.
+    private static let textShadeSpread = CGSize(width: 2.2, height: 1.7)
+    /// The shade's centre sits a little up and left of the text block's,
+    /// towards the poster, as it always has.
+    private static let textShadeShift = CGSize(width: -60, height: -10)
 
     /// Level across the middle, where the text sits, then eased out to
     /// nothing at the edge.

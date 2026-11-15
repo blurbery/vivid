@@ -31,7 +31,7 @@ extension TVMainTabView {
             libraries.map { "\($0.id)" }.joined(separator: ",") + "#\(retryCount)"
         }
 
-        private static let columns = 7
+        private static let columns = VividTheme.Skyline.posterGridColumns
         private static let columnSpacing = VividTheme.Skyline.collectionGridColumnSpacing
 
         var body: some View {
@@ -219,7 +219,8 @@ extension TVMainTabView {
                 firstVisible: firstVisible,
                 focusedIndex: focused,
                 itemCount: flat.count,
-                columns: Self.columns
+                columns: Self.columns,
+                rows: VividTheme.Skyline.posterGridArtworkRows
             )
         }
 
@@ -410,7 +411,7 @@ private struct CollectionPosterCard: View {
     var body: some View {
         let size = size
         let caption = UICustomizationPreferences.shared.cardPresentation.caption
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: VividTheme.Skyline.posterGridCaptionGap) {
             Button(action: action) {
                 poster(size)
                     .frame(width: size.width, height: size.height)

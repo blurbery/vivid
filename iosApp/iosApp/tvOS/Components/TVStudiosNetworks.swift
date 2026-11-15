@@ -149,7 +149,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
     @State private var filter = StudioNetworkLibraryFilter()
 
     private static let inset: CGFloat = 80
-    private static let columns = 7
+    private static let columns = VividTheme.Skyline.posterGridColumns
     private static let columnSpacing: CGFloat = 40
     /// Matches TVCatalogGrid's row spacing.
     private static let gridRowSpacing: CGFloat = 60
@@ -274,7 +274,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
         }
     }
 
-    /// Laid out like a TVCatalogGrid row: seven equal columns across the
+    /// Laid out like a TVCatalogGrid row: six equal columns across the
     /// inset width, cards sized to fill them.
     private func firstGridRow(_ items: [BrowseItem]) -> some View {
         let width = (1920 - Self.inset * 2 - Self.columnSpacing * CGFloat(Self.columns - 1)) / CGFloat(Self.columns)

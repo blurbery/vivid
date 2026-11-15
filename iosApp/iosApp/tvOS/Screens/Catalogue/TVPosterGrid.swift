@@ -227,7 +227,8 @@ struct TVCatalogGrid: View {
             firstVisible: firstVisible,
             focusedIndex: focusedIndex,
             itemCount: items.count,
-            columns: columns
+            columns: columns,
+            rows: VividTheme.Skyline.posterGridArtworkRows
         )
     }
 

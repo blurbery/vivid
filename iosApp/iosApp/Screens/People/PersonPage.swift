@@ -271,7 +271,7 @@ struct PersonDetailView: View {
                 hasMore: model.hasMore,
                 onItemTap: open,
                 onNearEnd: { index in Task { await model.nearEnd(at: index) } },
-                columnCount: 8,
+                columnCount: 7,
                 cardWidth: VividTheme.Skyline.densePosterCardWidth
             )
         }
