@@ -37343,6 +37343,76 @@
         }
       }
     },
+    "Move left or right to choose a profile." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach links oder rechts bewegen, um ein Profil auszuwählen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muévete a la izquierda o a la derecha para elegir un perfil."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacez vers la gauche ou la droite pour choisir un profil."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左右に動かしてプロフィールを選びます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向左或向右移动以选择个人资料。"
+          }
+        }
+      }
+    },
+    "Move left or right, then press centre to drop and save." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach links oder rechts bewegen und dann die Mitte drücken, um abzulegen und zu speichern."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muévelo a la izquierda o a la derecha y pulsa el centro para soltarlo y guardar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacez vers la gauche ou la droite, puis appuyez au centre pour déposer et enregistrer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左右に動かしてから中央を押すと、配置して保存します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向左或向右移动，然后按下中央键放下并存储。"
+          }
+        }
+      }
+    },
     "Move left or right, then press centre to drop. Press Play/Pause to remove." : {
       "extractionState" : "manual",
       "localizations" : {
