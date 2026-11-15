@@ -13,9 +13,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 struct TVDetailFoldSnapping: ScrollTargetBehavior {
     let showcaseHeight: CGFloat
-    /// On a page with a pinned logo, how far past the fold a scroll may be
-    /// aimed and still settle on the fold, so coming back up to the first
-    /// shelf lands where arriving from the hero does, with the logo whole.
+    /// On a page with a pinned logo, how far past the fold a scroll heading
+    /// up may be aimed and still settle on the fold, so coming back up to
+    /// the first shelf lands where arriving from the hero does, with the
+    /// logo whole. A scroll heading down is left alone: the movie page's
+    /// cast row needs a short one to show the names under its portraits.
     var pinnedReach: CGFloat = 0
 
     /// Snaps focus-driven scrolls on the native movie and series pages to
@@ -31,7 +33,7 @@ struct TVDetailFoldSnapping: ScrollTargetBehavior {
         if startedAboveFold, proposed < fold * 0.3 {
             target.rect.origin.y = 0
         } else if !startedAboveFold, proposed > fold {
-            if proposed < fold + pinnedReach {
+            if proposed < fold + pinnedReach, proposed < context.originalTarget.rect.minY {
                 target.rect.origin.y = fold
             }
             return
