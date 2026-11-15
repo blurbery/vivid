@@ -77,7 +77,7 @@ Renaming code symbols is separate implementation work.
 ## Apple TV layout
 
 Home uses the discovery spotlight and collection-based media rows described in [Apple TV Browsing](apple-tv-browsing.md).
-The spotlight is 785 points tall, with rounded sliding cards shown one at a time, and the logo, metadata and overview on the left, lined up with the detail pages' logo.
+The spotlight is 960 points tall, 60 points in from every edge of the screen over a blurred, darkened copy of its own artwork, with rounded sliding cards shown one at a time, and the logo, metadata and overview on the left, lined up with the detail pages' logo.
 Its native focus targets use a fixed decorative gradient outline, without focus enlargement, parallax or a blurred colour glow.
 Ordinary media cards retain native `.card` focus.
 The library cards in Library's row draw their own focus instead, growing and lifting on a shadow.

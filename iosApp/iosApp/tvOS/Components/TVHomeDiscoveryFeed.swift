@@ -30,7 +30,7 @@ struct TVHomeDiscoveryFeed: View {
     @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
     @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
-    @State private var studiosNetworksFocusRequest = 0
+    @State private var studiosNetworksEntry = TVHomeStudiosNetworksEntry()
     @State private var spotlightOpenedDetail = false
     @State private var studiosNetworksOpenedDetail = false
     @State private var collectionsFocusRequest = 0
@@ -52,6 +52,7 @@ struct TVHomeDiscoveryFeed: View {
                 VStack(alignment: .leading, spacing: 30) {
                     if !slides.isEmpty {
                         TVHomeSpotlightCarousel(
+                            ambience: spotlightAmbience,
                             slides: slides,
                             enterRequest: spotlightEnterRequest,
                             initialPosition: rowFocusMemory.spotlightPosition,
@@ -63,6 +64,9 @@ struct TVHomeDiscoveryFeed: View {
                             onFocusChange: { focused in
                                 rowFocusMemory.spotlightFocused = focused
                                 if focused {
+                                    // Runs again as focus lands, not once Home
+                                    // has finished scrolling back up.
+                                    spotlightAmbience.comeForward()
                                     reportSpotlightFocus(position: rowFocusMemory.spotlightPosition)
                                     rowFocusOwnership.rowID = nil
                                     rowArtworkWindow.focus(index: 0)
@@ -93,6 +97,16 @@ struct TVHomeDiscoveryFeed: View {
                             }
                         )
                         .id(Self.spotlightAnchor)
+                        .overlay(alignment: .top) {
+                            TVHomeSpotlightFocusPull(
+                                ambience: spotlightAmbience,
+                                slides: slides,
+                                initialPosition: rowFocusMemory.spotlightPosition
+                            )
+                        }
+                        // The rows start below the first screen, so the card
+                        // has the same margin under it as beside it.
+                        .padding(.bottom, 30)
                     }
 
                     // Shown with or without the Spotlight; without it, the row
@@ -156,22 +170,45 @@ struct TVHomeDiscoveryFeed: View {
                     }
                 }
                 .environment(\.tvHomeStableRows, true)
-                .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 86 : 81))
+                .padding(.top, VividTheme.Skyline.barTopInset + (slides.isEmpty ? 86 : TVHomeSpotlightCarousel.topInset))
                 .padding(.bottom, 80)
                 // Part of the scrolling content, so it leaves with the
                 // spotlight and has faded out by the first rows.
                 .background(alignment: .top) {
                     if !slides.isEmpty {
+                      ZStack(alignment: .top) {
                         TVHomeSpotlightGlow(
                             ambience: spotlightAmbience,
                             slides: slides,
                             initialPosition: rowFocusMemory.spotlightPosition
                         )
+                        TVHomeSpotlightBlurBackdrop(
+                            ambience: spotlightAmbience,
+                            slides: slides,
+                            initialPosition: rowFocusMemory.spotlightPosition
+                        )
+                      }
                     }
                 }
             }
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
             .modifier(TVTopMenuTucksOnScroll())
+            // Home is two pages: the Spotlight, then the rows. The focus
+            // engine picks its own short scroll to the first row; this
+            // moves that scroll's resting place to the rows page, so the
+            // engine carries the Spotlight off in its one move.
+            .scrollTargetBehavior(TVHomeSpotlightPaging(rowsOffset: slides.isEmpty ? 0 : TVHomeSpotlightPaging.rowsOffset))
+            // Home off its top and at rest means it has settled on the rows.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > 20
+            } action: { _, scrolledDown in
+                spotlightAmbience.scrolledDown = scrolledDown
+                if !scrolledDown { spotlightAmbience.comeForward() }
+            }
+            .onScrollPhaseChange { (_: ScrollPhase, phase: ScrollPhase) in
+                let isIdle = phase == .idle
+                if isIdle { spotlightAmbience.scrollSettled() }
+            }
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
                 appliedFocusRequest = request
@@ -256,8 +293,8 @@ struct TVHomeDiscoveryFeed: View {
 
     /// Pinned between the Spotlight and the first row when it has tiles.
     private var studiosNetworksRow: some View {
-        TVStudiosNetworksRow(
-            enterRequest: studiosNetworksFocusRequest,
+        TVHomeStudiosNetworksEntryRow(
+            entry: studiosNetworksEntry,
             onMoveUp: slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
             onFocused: { rowFocusOwnership.rowID = Self.studiosNetworksOwner },
             onOpen: {
@@ -304,13 +341,32 @@ struct TVHomeDiscoveryFeed: View {
     private func enterStudiosNetworks() {
         guard StudiosNetworksStore.shared.showsRow else { enterFirstRow(); return }
         rowFocusOwnership.rowID = Self.studiosNetworksOwner
-        studiosNetworksFocusRequest += 1
+        studiosNetworksEntry.request += 1
     }
 
     private func enterFirstRow() {
         guard let first = sections.first else { return }
         rowFocusOwnership.rowID = first.id
         firstRowFocusRequest += 1
+    }
+}
+
+/// Counts the Spotlight handing focus down to Studios & Networks. Only the
+/// row's wrapper reads it, so the handover doesn't redraw the whole feed
+/// (and the Spotlight with it) in the middle of the move.
+@Observable
+private final class TVHomeStudiosNetworksEntry {
+    var request = 0
+}
+
+private struct TVHomeStudiosNetworksEntryRow: View {
+    let entry: TVHomeStudiosNetworksEntry
+    var onMoveUp: (() -> Void)? = nil
+    let onFocused: () -> Void
+    let onOpen: () -> Void
+
+    var body: some View {
+        TVStudiosNetworksRow(enterRequest: entry.request, onMoveUp: onMoveUp, onFocused: onFocused, onOpen: onOpen)
     }
 }
 
@@ -907,11 +963,60 @@ enum TVThemeWash {
     }()
 }
 
+/// Rests Home's vertical scroll on the Spotlight or on the rows, never in
+/// between. It only moves where a scroll will end; the scroll itself stays
+/// the focus engine's.
+private struct TVHomeSpotlightPaging: ScrollTargetBehavior {
+    /// The offset that puts the first row just under the tab bar.
+    static let rowsOffset: CGFloat = TVHomeSpotlightCarousel.pullTravel
+    /// The engine's own target for the Spotlight card is at or near the
+    /// top; its targets for the first row are far below this.
+    static let spotlightReach: CGFloat = 150
+    let rowsOffset: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        let y = target.rect.minY
+        guard y > 1, y < rowsOffset else { return }
+        // Where the engine is heading says which page it wants: only a
+        // scroll to show the whole Spotlight card ends near the top. Any
+        // other target in between is for a row (arriving at the first row,
+        // or moving along it), and those all rest on the rows page. Going
+        // by direction instead sent a move along the first row back up to
+        // the Spotlight.
+        target.rect.origin.y = y < Self.spotlightReach ? 0 : rowsOffset
+    }
+}
+
 /// The carousel's position, for the glow behind Home. Only the glow
 /// observes it, so a slide change doesn't invalidate the feed.
 @Observable
 private final class TVHomeSpotlightAmbience {
     var position: Int?
+    /// Home has settled on its rows: the carousel waits, with its progress
+    /// pill hidden and the slide's time reset.
+    var recessed = false
+    /// Home is scrolled off its top. Not observed.
+    @ObservationIgnored var scrolledDown = false
+    /// Which way Home is heading next: down to the rows, or back up. It
+    /// only changes when Home's scroll comes to rest, where the focus pull
+    /// is either not showing at all or fully sharp, so the layers that
+    /// redraw for it show no change. They read it here and hand it to
+    /// their effects by value, so nothing shared is read while Home moves.
+    var pullsDown = true
+
+    /// Home's scroll came to rest. `recessed` redraws the carousel, so it
+    /// follows the scroll actually stopping on the rows: never the middle of
+    /// the move, and never a Down press that had no row to go to.
+    func scrollSettled() {
+        if recessed != scrolledDown { recessed = scrolledDown }
+        // At rest on the rows the next move is back up; at the top, down.
+        if pullsDown == scrolledDown { pullsDown = !scrolledDown }
+    }
+
+    /// Focus is back on the Spotlight; don't wait for the scroll to finish.
+    func comeForward() {
+        if recessed { recessed = false }
+    }
 }
 
 /// An opaque backdrop in the current slide's colour behind the top of Home:
@@ -1066,6 +1171,165 @@ private struct TVHomeSpotlightGlow: View {
     }
 }
 
+/// The slide the carousel is showing, for the layers drawn around it.
+@MainActor
+private func tvHomeSpotlightArtworkURL(
+    _ ambience: TVHomeSpotlightAmbience, slides: [TVHomeSpotlightSlide], initialPosition: Int
+) -> String? {
+    guard !slides.isEmpty else { return nil }
+    let position = ambience.position ?? initialPosition
+    let slide = slides[((position % slides.count) + slides.count) % slides.count]
+    return slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
+}
+
+/// The current slide's artwork across the whole first screen, blurred and
+/// darkened. It's laid out exactly as the card lays out its picture, so the
+/// card reads as a sharp section of the same picture, lifted off the screen.
+///
+/// It is drawn at a quarter of the screen, blurred and darkened there and
+/// kept as one small flat image, so at rest nothing is blurred live. As
+/// Home leaves for the rows it is held in place and the second half of the
+/// focus pull (see `TVHomeSpotlightCarousel.pullRadius`) blurs that small
+/// image further, then it fades into the page.
+private struct TVHomeSpotlightBlurBackdrop: View {
+    let ambience: TVHomeSpotlightAmbience
+    let slides: [TVHomeSpotlightSlide]
+    let initialPosition: Int
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func picture(_ url: String, down: Bool) -> some View {
+        let screen = TVHomeSpotlightCarousel.screen
+        let shrink = TVHomeSpotlightCarousel.pullShrink
+        let small = CGSize(width: screen.width / shrink, height: screen.height / shrink)
+        return TVSpotlightBackdropImage(url: url, size: small, fillsViewport: true)
+            .blur(radius: TVHomeSpotlightCarousel.restRadius / shrink, opaque: true)
+            .overlay { Color.black.opacity(TVHomeSpotlightCarousel.restShade) }
+            .frame(width: small.width, height: small.height)
+            .clipped()
+            // Ends softly just above the bottom of the first screen.
+            .mask {
+                LinearGradient(stops: [
+                    .init(color: .white, location: 0),
+                    .init(color: .white, location: 0.96),
+                    .init(color: .clear, location: 1)
+                ], startPoint: .top, endPoint: .bottom)
+            }
+            .drawingGroup()
+            // On the small image, before it's stretched: a sixteenth of the
+            // pixels a full-screen blur would work on.
+            // It also holds the picture in place while Home scrolls and
+            // fades it out at the end. All in this one effect: an effect
+            // further out would move this view, and it would then read its
+            // own position as not having scrolled at all.
+            .visualEffect { content, proxy in
+                let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                return content
+                    .blur(radius: TVHomeSpotlightCarousel.backdropExtraRadius(travelled: travelled, down: down) / shrink)
+                    .offset(y: travelled / shrink)
+                    .opacity(TVHomeSpotlightCarousel.leavingOpacity(travelled: travelled, down: down))
+            }
+            .scaleEffect(shrink, anchor: .topLeading)
+            .frame(width: screen.width, height: screen.height, alignment: .topLeading)
+    }
+
+    var body: some View {
+        let artworkURL = tvHomeSpotlightArtworkURL(ambience, slides: slides, initialPosition: initialPosition)
+        let down = ambience.pullsDown
+        ZStack(alignment: .top) {
+            if let artworkURL {
+                picture(artworkURL, down: down)
+                    .id(artworkURL)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: TVHomeSpotlightCarousel.screen.height, alignment: .top)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: artworkURL)
+        // Out of the way while a title is open. The card zooms into its
+        // page, and this second copy of the same picture, left around it,
+        // read as the picture splitting in two. It returns once the flight
+        // back has landed.
+        .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == nil ? 1 : 0)
+        .animation(.easeOut(duration: TVSpotlightLogoFlight.shared.hiddenSourceID == nil ? 0.35 : 0.12),
+                   value: TVSpotlightLogoFlight.shared.hiddenSourceID == nil)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The first part of the focus pull, over the card: a small copy of the
+/// card's picture in the card's shape, and a shade the same shape over it.
+/// The copy comes in over the card at once, while it is still as sharp as
+/// the card, so the swap can't be seen; the card is then hidden and never
+/// shown half faded. From there the copy goes out of focus and darkens
+/// until it matches the blurred backdrop around it, and its edge softens
+/// into the backdrop as it does. Once they match it steps aside and the
+/// backdrop carries the blur on.
+///
+/// Both pieces are small flat images with the card's shape drawn into
+/// them, so each frame only changes their blur and opacity: nothing is
+/// clipped or faded as a group while Home moves.
+private struct TVHomeSpotlightFocusPull: View {
+    let ambience: TVHomeSpotlightAmbience
+    let slides: [TVHomeSpotlightSlide]
+    let initialPosition: Int
+
+    /// One piece: `content` at a quarter of the screen with the card's
+    /// shape cut out of it, blurred live on that small image.
+    private func piece(_ content: some View, down: Bool, opacity: @escaping @Sendable (CGFloat) -> Double) -> some View {
+        let screen = TVHomeSpotlightCarousel.screen
+        let shrink = TVHomeSpotlightCarousel.pullShrink
+        let small = CGSize(width: screen.width / shrink, height: screen.height / shrink)
+        let inset = TVHomeSpotlightCarousel.artworkInset
+        return content
+            .frame(width: small.width, height: small.height)
+            .clipped()
+            .mask {
+                RoundedRectangle(cornerRadius: 22 / shrink)
+                    .padding(.horizontal, inset.x / shrink)
+                    .padding(.vertical, inset.y / shrink)
+            }
+            .drawingGroup()
+            // Blur, opacity and holding it in place, all in this one effect
+            // and read from this view's own layout (see the backdrop).
+            .visualEffect { content, proxy in
+                let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                return content
+                    .blur(radius: TVHomeSpotlightCarousel.pullRadius(travelled: travelled, down: down) / shrink)
+                    .offset(y: travelled / shrink)
+                    .opacity(opacity(travelled))
+            }
+            .scaleEffect(shrink, anchor: .topLeading)
+            .frame(width: screen.width, height: screen.height, alignment: .topLeading)
+    }
+
+    var body: some View {
+        let screen = TVHomeSpotlightCarousel.screen
+        let shrink = TVHomeSpotlightCarousel.pullShrink
+        let small = CGSize(width: screen.width / shrink, height: screen.height / shrink)
+        let down = ambience.pullsDown
+        ZStack(alignment: .topLeading) {
+            if let url = tvHomeSpotlightArtworkURL(ambience, slides: slides, initialPosition: initialPosition) {
+                piece(TVSpotlightBackdropImage(url: url, size: small, fillsViewport: true), down: down) {
+                    TVHomeSpotlightCarousel.pullOpacity(travelled: $0, down: down)
+                }
+                .id(url)
+                piece(Color.black, down: down) {
+                    TVHomeSpotlightCarousel.pullOpacity(travelled: $0, down: down)
+                        * TVHomeSpotlightCarousel.pullShade(travelled: $0, down: down)
+                }
+            }
+        }
+        .frame(width: screen.width, height: screen.height, alignment: .topLeading)
+        // The overlay hangs from the card's top; this lays it out from the
+        // top of the screen instead.
+        .padding(.top, -TVHomeSpotlightCarousel.topInset)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Remember card selection without invalidating the entire feed for every
 /// horizontal focus move. Each row already observes its own focused card.
 private final class TVHomeRowFocusMemory {
@@ -1075,6 +1339,7 @@ private final class TVHomeRowFocusMemory {
 }
 
 private struct TVHomeSpotlightCarousel: View {
+    let ambience: TVHomeSpotlightAmbience
     let slides: [TVHomeSpotlightSlide]
     let enterRequest: Int
     let onFocusChange: (Bool) -> Void
@@ -1093,6 +1358,93 @@ private struct TVHomeSpotlightCarousel: View {
     /// either side of the centred one rest just off screen and only show
     /// while the carousel slides.
     private static let cardSpacing: CGFloat = sideMargin
+    /// The card fills the first screen with the side margin on every edge,
+    /// which leaves a small gap under the tab bar.
+    static let cardHeight: CGFloat = 1080 - sideMargin * 2
+    static let topInset: CGFloat = sideMargin
+    /// How far the full-screen artwork overhangs the card on each side.
+    static let artworkInset = CGPoint(x: sideMargin, y: (1080 - cardHeight) / 2)
+    /// The whole screen. Each card draws its artwork at this size and shows
+    /// the part behind it, so the card and the backdrop are one picture.
+    static let screen = CGSize(width: 1920, height: 1080)
+    // MARK: Focus pull
+    //
+    // Leaving the Spotlight is a focus pull, scrubbed by Home's own scroll
+    // to the rows, so it lasts exactly as long as that scroll and runs back
+    // on the way up. The picture is held still while the rows rise over it.
+    //
+    // 1. A copy of the card's picture comes in over the card while it is
+    //    still sharp, and the card is hidden. Nothing is seen to fade.
+    // 2. The copy blurs and darkens until it matches the blurred backdrop.
+    // 3. The copy steps aside and the backdrop blurs on to its far end,
+    //    and holds there.
+    // 4. Only then, fully out of focus, does it fade into the page.
+    //
+    // Every change of opacity is under a blur that hides it, so it reads
+    // as focus and not as a fade. On the way up the picture arrives fully
+    // blurred and then sharpens. The blur is real and continuous, but only
+    // ever worked on quarter-size images, and never at rest.
+
+    /// How far Home scrolls from the Spotlight to the rows.
+    static let pullTravel: CGFloat = 990
+    /// The pictures the pull blurs are drawn at one over this.
+    static let pullShrink: CGFloat = 4
+    /// The backdrop's blur and shade at rest.
+    static let restRadius: CGFloat = 18
+    static let restShade: Double = 0.5
+    private static let farRadius: CGFloat = 96
+    /// The copy over the card is fully in by this share of the scroll.
+    private static let coverShare: CGFloat = 0.05
+
+    // The pull follows the scroll's position, and Home's scroll starts
+    // fast and slows to a stop in both directions. Going up, the picture
+    // sharpens over the end of the scroll, so it eases gently into focus.
+    // With the same positions going down, the blur would sit at the start
+    // of the scroll and snap in. So going down (`down`, from
+    // `TVHomeSpotlightAmbience.pullsDown`) it is spread across almost the
+    // whole scroll instead, and slows to its far end as the scroll slows.
+
+    /// The share of the scroll by which the blur has reached its far end,
+    /// and the shares across which it then fades into the page.
+    private static func blurShare(down: Bool) -> CGFloat { down ? 0.9 : 0.5 }
+    private static func fadeShare(down: Bool) -> CGFloat { down ? 0.66 : 0.6 }
+    private static let goneShare: CGFloat = 0.97
+
+    /// The blur at this point in the scroll.
+    static func pullRadius(travelled: CGFloat, down: Bool) -> CGFloat {
+        let span = pullTravel * (blurShare(down: down) - coverShare)
+        let u = min(1, max(0, (travelled - pullTravel * coverShare) / span))
+        // Going down the scroll's own slowing shapes it; a little extra
+        // ease keeps the first frames, over the still-sharp card, gentle.
+        // Going up it eases away from the far end and into sharp.
+        return farRadius * (down ? u * (0.35 + 0.65 * u) : u * u * (3 - 2 * u))
+    }
+    /// The backdrop is already blurred to `restRadius`. Blurs add as the
+    /// root of the sum of their squares, so this is the extra it needs.
+    static func backdropExtraRadius(travelled: CGFloat, down: Bool) -> CGFloat {
+        let radius = pullRadius(travelled: travelled, down: down)
+        guard radius > restRadius else { return 0 }
+        return (radius * radius - restRadius * restRadius).squareRoot()
+    }
+    /// The copy over the card: in at once, gone the moment it matches the
+    /// backdrop, which carries on from there.
+    static func pullOpacity(travelled: CGFloat, down: Bool) -> Double {
+        guard travelled > 0, pullRadius(travelled: travelled, down: down) < restRadius else { return 0 }
+        return Double(min(1, travelled / (pullTravel * coverShare)))
+    }
+    /// Its shade, reaching the backdrop's as its blur does.
+    static func pullShade(travelled: CGFloat, down: Bool) -> Double {
+        restShade * Double(min(1, pullRadius(travelled: travelled, down: down) / restRadius))
+    }
+    /// The card: there until the copy has covered it, then not drawn.
+    static func cardOpacity(travelled: CGFloat) -> Double {
+        travelled < pullTravel * coverShare ? 1 : 0
+    }
+    /// The backdrop fading into the page, once it is well out of focus.
+    static func leavingOpacity(travelled: CGFloat, down: Bool) -> Double {
+        let start = pullTravel * fadeShare(down: down)
+        return Double(1 - min(1, max(0, (travelled - start) / (pullTravel * goneShare - start))))
+    }
 
     @State private var visualPosition = 0
     @State private var scrollPosition = ScrollPosition(id: 0, anchor: .center)
@@ -1121,6 +1473,7 @@ private struct TVHomeSpotlightCarousel: View {
     @Environment(\.tvHomeScrollDiagnostics) private var diagnostics
 
     init(
+        ambience: TVHomeSpotlightAmbience,
         slides: [TVHomeSpotlightSlide],
         enterRequest: Int,
         initialPosition: Int,
@@ -1129,6 +1482,7 @@ private struct TVHomeSpotlightCarousel: View {
         onEnterFirstRow: @escaping () -> Void,
         onSelect: @escaping (TVHomeSpotlightSlide, Int) -> Void
     ) {
+        self.ambience = ambience
         self.slides = slides
         self.enterRequest = enterRequest
         _appliedEnterRequest = State(initialValue: enterRequest)
@@ -1160,6 +1514,7 @@ private struct TVHomeSpotlightCarousel: View {
     }
     private var canRotate: Bool {
         initialCardPresented && homeIsOpen && !holdsForSelection && isOnScreen && slides.count > 1 && !scrollIsMoving
+            && !ambience.recessed
             && !voiceOverEnabled && centredPosition == visualPosition
             && readyPositions[visualPosition] == slide(at: visualPosition).id
     }
@@ -1229,19 +1584,37 @@ private struct TVHomeSpotlightCarousel: View {
                                         Color.clear
                                     }
                                 }
-                                .frame(width: cardWidth, height: 785)
+                                .frame(width: cardWidth, height: Self.cardHeight)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                                 .modifier(TVSpotlightZoomSource(id: tvSpotlightZoomSourceID(position: position)))
                                 .overlay(alignment: .bottomTrailing) {
                                     // On the card itself, so it slides with it.
-                                    if slides.count > 1, !voiceOverEnabled, abs(position - visualPosition) <= 1 {
+                                    if slides.count > 1, !voiceOverEnabled, !ambience.recessed, abs(position - visualPosition) <= 1 {
                                         cycleProgressPill(at: position).padding(48)
                                     }
                                 }
+                                // The focus outline is drawn on the card, so it
+                                // fades with it as Home scrolls to the rows.
+                                .overlay {
+                                    // Only the card on show and the focused
+                                    // card carry one. They differ while an
+                                    // automatic advance slides the focused
+                                    // card away, before focus catches up.
+                                    if position == visualPosition || focusedPosition == position {
+                                        TVSpotlightFocusRing(
+                                            artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl,
+                                            isFocused: focusedPosition == position
+                                        )
+                                    }
+                                }
+                                .visualEffect { content, proxy in
+                                    let travelled = max(0, Self.topInset - proxy.frame(in: .scrollView(axis: .vertical)).minY)
+                                    return content
+                                        .offset(y: travelled)
+                                        .opacity(Self.cardOpacity(travelled: travelled))
+                                }
                             }
-                            .buttonStyle(TVSpotlightButtonStyle(
-                                artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
-                            ))
+                            .buttonStyle(TVSpotlightButtonStyle())
                             .focused(focus, equals: position)
                             .onGeometryChange(for: Bool.self) { proxy in
                                 let frame = proxy.frame(in: .named(carouselSpace))
@@ -1309,7 +1682,7 @@ private struct TVHomeSpotlightCarousel: View {
                     onEnterFirstRow()
                 }
             }
-            .frame(height: 785)
+            .frame(height: Self.cardHeight)
         }
         .onChange(of: enterRequest, initial: true) { _, request in
             guard request > appliedEnterRequest else { return }
@@ -1371,6 +1744,11 @@ private struct TVHomeSpotlightCarousel: View {
             } else {
                 pauseCycle()
             }
+        }
+        .onChange(of: ambience.recessed) { _, recessed in
+            guard recessed else { return }
+            cycleElapsed = 0
+            cycleResumedAt = nil
         }
         .onChange(of: slides.map(\.id)) { _, ids in
             pendingPosition = nil
@@ -1464,7 +1842,9 @@ private struct TVHomeSpotlightCarousel: View {
     }
 
     private func pauseCycle() {
-        cycleElapsed = elapsedCycle(at: Date())
+        // Leaving for the rows starts the slide's time again, so it gets its
+        // full six seconds when focus comes back.
+        cycleElapsed = ambience.recessed ? 0 : elapsedCycle(at: Date())
         cycleResumedAt = nil
     }
 
@@ -1563,33 +1943,44 @@ private struct TVSpotlightZoomSource: ViewModifier {
     }
 }
 
-/// A native button with a fixed-size focus outline for the large hero card.
-private struct TVSpotlightButtonStyle: ButtonStyle {
+/// The large hero card's focus outline, drawn on the card itself.
+private struct TVSpotlightFocusRing: View {
     let artworkURL: String?
-    @Environment(\.isFocused) private var isFocused
+    let isFocused: Bool
 
-    func makeBody(configuration: Configuration) -> some View {
+    var body: some View {
         // Read only prepared colour; a missing tint keeps the white outline.
         let tint = artworkURL.flatMap { URL(string: $0) }
             .flatMap { TVHomeMetadataCache.shared.cachedSpotlightTint(for: $0) } ?? .white
-        return configuration.label
-            .overlay {
-                RoundedRectangle(cornerRadius: 22)
-                    .strokeBorder(
-                        LinearGradient(stops: [
-                            .init(color: .white.opacity(0.95), location: 0),
-                            .init(color: tint.opacity(0.45), location: 0.28),
-                            .init(color: .white.opacity(0.15), location: 0.52),
-                            .init(color: tint.opacity(0.4), location: 0.76),
-                            .init(color: .white.opacity(0.8), location: 1)
-                        ], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 1.5
-                    )
-                    .opacity(isFocused ? 1 : 0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-            .opacity(configuration.isPressed ? 0.85 : 1)
+        RoundedRectangle(cornerRadius: 22)
+            .strokeBorder(
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(0.95), location: 0),
+                    .init(color: tint.opacity(0.45), location: 0.28),
+                    .init(color: .white.opacity(0.15), location: 0.52),
+                    .init(color: tint.opacity(0.4), location: 0.76),
+                    .init(color: .white.opacity(0.8), location: 1)
+                ], startPoint: .topLeading, endPoint: .bottomTrailing),
+                lineWidth: 1.5
+            )
+            // Drawn once into a flat image, so fading it only changes that
+            // image's opacity. Without this the gradient outline was redrawn
+            // on the main thread for every frame of the fade, which halved
+            // the frame rate going down.
+            .drawingGroup()
+            .opacity(isFocused ? 1 : 0)
+            // Leaving, it fades as Home scrolls away; arriving, it's there at
+            // once.
+            .animation(isFocused ? nil : .easeInOut(duration: 0.45), value: isFocused)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A native button for the large hero card. The card draws its own outline.
+private struct TVSpotlightButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.85 : 1)
     }
 }
 
@@ -1692,10 +2083,16 @@ private struct TVHomeSpotlightArtwork: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let artworkSize = CGSize(
-                width: min(geometry.size.width, 1800),
-                height: geometry.size.height
-            )
+            // The whole screen's picture, centred on the card, so the card
+            // shows the part of it that sits behind it.
+            let artworkSize = TVHomeSpotlightCarousel.screen
+            // From the card's fixed size, not this view's measured one. The
+            // image loader keeps the first `onLayout` it was given, and on a
+            // first layout this view is briefly narrower than the card, so a
+            // measured inset told the flight to the detail page that the
+            // picture sat about 850 points further left than it does. The
+            // flying copy then showed beside the card's own picture.
+            let inset = TVHomeSpotlightCarousel.artworkInset
             ZStack(alignment: .bottom) {
                 model.tintColor
                 if let url = model.backdropURL {
@@ -1703,9 +2100,11 @@ private struct TVHomeSpotlightArtwork: View {
                                              onReady: { artworkReady = true },
                                              onLayout: { image, crop in
                                                  TVSpotlightLogoFlight.shared.registerBackdrop(
-                                                     sourceID: zoomSourceID, slideID: slide.id, image: image, crop: crop)
+                                                     sourceID: zoomSourceID, slideID: slide.id, image: image,
+                                                     crop: crop.offsetBy(dx: -inset.x, dy: -inset.y))
                                              })
                         .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
                 }
                 LinearGradient(
                     stops: Self.fadeStops,

@@ -145,7 +145,7 @@ Its two soft colour stops reuse the section artwork’s cached tint, retaining w
 This lookup starts no image request or colour analysis and adds no observation callback.
 They sit in a horizontal scroll view, with 60-point side margins and 60-point card spacing, so the neighbouring cards rest just off screen.
 The system moves focus and scrolls between cards.
-Automatic rotation runs while Spotlight is on screen, independently of focus, and pauses when it leaves the vertical viewport.
+Automatic rotation runs while Spotlight is on screen, independently of focus, and pauses when it leaves the vertical viewport or Home has settled on its rows.
 It also stops while a pressed slide opens its page and until Back has landed on Home again (see [Apple TV Browsing](apple-tv-browsing.md#home-and-discovery-spotlight)).
 The carousel remembers its current card when returning from a detail page.
 Cold entry centres card 1 with the last card laid out off screen on its left.
@@ -181,13 +181,21 @@ Moving across the top menu only changes focus; Down returns to the currently sel
 A centre click on a different tab closes the bar around it and opens that page 0.19 seconds later (at once with Reduce Motion); moving focus, pressing Menu, the bar losing focus, or a page or the player opening from elsewhere (such as a Siri search) in that gap drops the choice, so it never overrides Search, Settings or Home (see [Apple TV Browsing](apple-tv-browsing.md)).
 Cache readiness alone cannot advance the carousel during initial placement.
 The rotation countdown resets when the slide changes, and when a slide is pressed, so it gets its full six seconds once Home is back; temporary off-screen or scrolling pauses retain elapsed time.
+Home settling on its rows also resets it, so the slide gets its full six seconds when focus returns to Spotlight.
 Focus changes alone do not pause or reset the counter.
 Visible loop copies keep stable identities throughout navigation.
 
 Each root owns its own sub-tab selection.
 A focus move within Library must not change Calendar's sub-tab.
 Keep card identities stable across paging and artwork eviction.
-Home's spotlight retains a fixed 785-point layout and focus height; the system owns directional movement.
+Home's spotlight retains a fixed 960-point layout and focus height; the system owns directional movement.
+Home's vertical scroll view has a scroll target behaviour with two resting places, the top and the rows page (990 points down, which puts the first row under the tab bar).
+The focus engine still chooses and performs every scroll; the behaviour only moves a target that would end between the two, to the top when the engine is heading within 150 points of it (showing the whole Spotlight card) and otherwise to the rows page.
+It goes by where the engine is heading, not the direction of travel, so moving along the first row or arriving at it from the row below never scrolls back to Spotlight.
+Do not finish or replace that scroll with a programmatic one: it races the focus engine's own scroll and either loses or stutters.
+The spotlight's focus pull during that scroll is drawn with `visualEffect` only, read from each layer's own layout position, so it writes no state and re-evaluates no view while Home moves.
+Its one piece of state, the direction, is written when Home's scroll comes to rest and handed to the effects by value.
+Each layer applies whichever of blur, opacity and hold-in-place offset it needs in one effect (the card has no blur): an effect further out that moves a layer changes the position that layer reads, so a layer held in place by a parent reads the scroll as not having moved.
 Down performs one explicit handoff, to the Studios & Networks row when it is showing and otherwise to the first row, preserving the remembered tile or card independently of a moving Spotlight slide; explicit detail return restores the launching tile or card when it still exists.
 
 Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.

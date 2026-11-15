@@ -24,7 +24,23 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   Rotation stops the moment a slide is pressed, and an advance already under way snaps back to the pressed card without animation, so the zoom leaves from and returns to the card that was chosen.
   It resumes once Back has landed on Home, or after two seconds if no page opened, and the card then gets its full six seconds.
   Each card's saved logo and backdrop record the slide they were drawn for, so a card whose slide has changed since never flies an older slide's artwork, and the flight back is dropped if Search or another page replaces the one that opened, or Vivid resets to Home, the profile picker or sign-in.
-  Its layout height is 785 points, with no page dots under the cards.
+  Its layout height is 960 points, so the card sits 60 points in from every edge of the screen, with no page dots under the cards.
+  Behind the card, the current slide's artwork fills the whole first screen, blurred and darkened.
+  The card draws the same artwork at the same full-screen size and position and shows the part behind it, so it reads as a sharp section of one picture lifted off the screen.
+  The blurred copy's resting blur is worked out once per slide, at a quarter of the screen size, and the copy is then stretched, so at rest nothing is blurred live; only the focus pull described below adds a live blur, on that quarter-size image.
+  It cross-fades over 0.8 seconds when the slide changes (at once with Reduce Motion).
+  It hides while the zoom flight into a title opened from the spotlight is under way and until the flight back has landed; with Reduce Motion, or for a slide with no logo to fly, there is no flight and it stays put.
+  Home's rows start below the first screen, and Home rests on either the spotlight or the rows, never in between: Down from the spotlight is one focus-driven scroll that carries the spotlight off and puts the first row under the tab bar, and Up from the first row returns to the top.
+  Leaving the spotlight is a focus pull, as with a film camera: the picture is held still while the rows rise over it, goes out of focus, and only then fades into the page.
+  It follows the scroll's position, so it lasts exactly as long as the scroll, and Up plays it back, the picture arriving blurred and then sharpening.
+  A copy of the card's picture comes in over the card during the first 5% of the scroll, while it is still sharp, and the card is then hidden, so the card is never seen half faded; the copy blurs and darkens until it matches the blurred artwork around it, which then blurs on to 96 points and fades out.
+  The picture's changes of opacity after that happen under a blur that hides them, so it reads as focus and not as a fade.
+  The one exception is the card's logo, details and outline: the copy is the artwork alone, so they fade out as it comes in over that first 5%, and return the same way at the end of the way up.
+  Home's scroll starts fast and slows to a stop both ways, so the pull is spread differently by direction: going down the blur builds across 5% to 90% of the scroll and slows to its far end, fading out from 66%, and going up the picture sharpens between 50% and 5%, over the slow end of the scroll.
+  The direction is kept per Home feed and set each time Home comes to rest, when the pull is either not showing or fully sharp, so a new feed starts on the way down and reversing in the middle of a scroll plays the same spread back.
+  The blur is live but only ever applied to quarter-size images (480 by 270 points), with the card's shape drawn into the copy once, and the radius is zero while the spotlight is at rest.
+  With Theme Mode on Off or Adaptive the rows then sit on the theme or the Adaptive backdrop; with Spotlight Only, the slide-colour backdrop described below scrolls with Home, so at the rows' resting place it is still solid behind the first 110 points of the screen and fades out over the next 520, with the theme below that.
+  Once Home's scroll has come to rest on the rows, rotation waits and the pill hides, and the slide gets its full six seconds when focus returns.
   Each card instead carries a small pill in its bottom-right corner, 80 by 6 points and 48 points in from both edges, that fills over the card's six seconds, so it's clear the spotlight moves on by itself.
   It stops while rotation is paused and carries on from where it was, starts again from empty when the slide changes, and travels with its card.
   Cards before the current one show a full pill and cards after it an empty one, so moving forward the card leaving goes out full and the one arriving comes in empty; moving back, the card leaving empties as it goes.
@@ -72,7 +88,7 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   A new colour fades in over the one on screen across 0.9 seconds (at once with Reduce Motion), and one that arrives mid-fade starts from the blend that's showing, so quick moves never snap.
   Only opacity animates.
   The colour is kept while the player is open and starts again from the theme for a new profile or sign-in.
-- Each card is 785 points tall and 120 points narrower than the available viewport, with 60-point gaps that match the side margins, so no neighbouring card shows at rest.
+- Each card is 960 points tall and 120 points narrower than the available viewport, with 60-point gaps that match the side margins, so no neighbouring card shows at rest.
   Server backdrops fill the card without stretching (for an episode, its series background when one is known, the same as Home's Continue Watching and Next Up cards; a card keeps the artwork it was built with), using the existing face/head, person and saliency detection to guide cropping.
   Wide framing can still trim the image, especially with multiple subjects; detection cannot guarantee perfect composition.
   There is no spotlight TMDB lookup or blurred neighbouring-image overlay.
@@ -473,18 +489,19 @@ The native-only comparison (`ef2bc5d`) was reported smooth on Apple TV but lost 
 The retained implementation uses the hero and shelf stopping positions, deriving the starting side from the native scroll context’s original target rather than a changing hero-visibility flag.
 SwiftUI still supplies the scroll animation.
 The owner approved this page lock on Apple TV; the complete approved design is saved at `checkpoint/tvos-approved-page-lock` (`bac9b7d`).
-The blur boundary rises towards both sides and dips in the centre; the curved material boundary rises with native scroll progress until it covers the supporting shelves, and descends with the page on return.
+The blur boundary dips in the centre and rises towards both sides, as far as 70% of the way down the screen, with an edge feathered over 11% of the screen height; the curved material boundary rises with native scroll progress until it covers the supporting shelves, and descends with the page on return.
 The material no longer waits for a visibility-triggered fade.
 The artwork remains fixed while the shelves scroll, and on the movie and series pages the logo stays fixed with it, as described under the series shelf below.
 The earlier design let the main logo scroll away with its metadata and controls and faded a separate, smaller logo in at the top centre above the shelves; the owner confirmed that on Apple TV before replacing it.
 Only the loading page still has that centred shelf logo: it fades in over 0.25 seconds once the page has scrolled past the hero logo, fades out over 0.08 seconds on the way back, and changes immediately under Reduce Motion.
 The hero layout is described below; the loading layout matches it.
-A broad elliptical contrast fade replaces the intersecting linear gradients rejected during Apple TV testing.
+A soft elliptical shade sits behind the hero's heading, synopsis and details only, about 50% black across the text and eased out to nothing on one smooth 64-stop curve.
+It replaced a broader three-stop contrast fade centred left of the poster, which shaded the artwork above the poster and showed banding on pale artwork; that fade had itself replaced the intersecting linear gradients rejected during Apple TV testing.
 It moves upward and fades away with scroll progress, with extended-linear rendering intended to reduce banding.
 Scroll-surface state is isolated from the content and focus state.
 The loading page's shelf logo threshold follows the same position.
 The previous pre-contrast design is preserved at Git tag `checkpoint/tvos-before-hero-contrast` (`6619b27`).
-The owner approved this contrast and scroll-linked blur on Apple TV.
+The owner approved the earlier contrast and scroll-linked blur on Apple TV, and the lower, softer material edge and the text-only shade on the Apple TV simulator.
 Apple's sample licence is retained in the source.
 This is an adaptation of Apple's public sample, not the Apple TV app's private source.
 
