@@ -320,7 +320,7 @@ enum TVDetailCurvedBlurBand {
         let bottom = height * lowestEdge + margin
         let rect = CGRect(x: -margin, y: top, width: width + margin * 2, height: bottom - top)
 
-        let content = TVDetailMaterialCurve(lift: 0, bottomFraction: 2)
+        let content = TVDetailMaterialCurve(lift: 0)
             .fill(.black)
             .frame(width: width, height: height)
             .blur(radius: radius)
@@ -334,9 +334,19 @@ enum TVDetailCurvedBlurBand {
 }
 
 /// The region below the material's curved top edge.
+///
+/// The shape runs well past the screen at both sides and below it. Its
+/// straight outer edges used to sit only a tenth of the width beyond the
+/// sides and a fifth of the height below, which a softer blur reaches: the
+/// blurred edge then thinned the material along the sides and bottom of the
+/// screen, and the cached band, which fills in solid below itself, no longer
+/// matched the live blur.
 private struct TVDetailMaterialCurve: Shape {
     var lift: CGFloat
-    var bottomFraction: CGFloat = 1.2
+    var bottomFraction: CGFloat = 2.4
+    /// How far past each side the shape carries on level, as a fraction of
+    /// the width.
+    private static let sideReach: CGFloat = 0.6
 
     func path(in rect: CGRect) -> Path {
         let width = rect.width
@@ -347,15 +357,19 @@ private struct TVDetailMaterialCurve: Shape {
         let low = TVDetailCurvedBlurBand.lowestEdge
         let edge = height * side - lift
         let control = height * (side + (low - side) / 0.75) - lift
+        let left = -Self.sideReach * width
+        let right = (1 + Self.sideReach) * width
         var path = Path()
-        path.move(to: CGPoint(x: -0.1 * width, y: edge))
+        path.move(to: CGPoint(x: left, y: edge))
+        path.addLine(to: CGPoint(x: -0.1 * width, y: edge))
         path.addCurve(
             to: CGPoint(x: 1.1 * width, y: edge),
             control1: CGPoint(x: 0.28 * width, y: control),
             control2: CGPoint(x: 0.72 * width, y: control)
         )
-        path.addLine(to: CGPoint(x: 1.1 * width, y: bottomFraction * height))
-        path.addLine(to: CGPoint(x: -0.1 * width, y: bottomFraction * height))
+        path.addLine(to: CGPoint(x: right, y: edge))
+        path.addLine(to: CGPoint(x: right, y: bottomFraction * height))
+        path.addLine(to: CGPoint(x: left, y: bottomFraction * height))
         path.closeSubpath()
         return path
     }
