@@ -737,14 +737,15 @@ private struct TVSeriesShelfCard: View {
     let onSetFavorite: (Bool) async -> Bool
 
     private static let stillSize = CGSize(width: 400, height: 225)
-    /// Three 24-point lines of overview (about 86 points), kept whether
+    /// Three 22-point lines of overview (about 79 points), kept whether
     /// the episode has three lines, fewer or none, with room for taller
     /// scripts.
-    private static let overviewHeight: CGFloat = 96
+    private static let overviewHeight: CGFloat = 88
 
     @State private var watchedOverride: Bool?
     @State private var favoriteOverride: Bool?
 
+    private var isFocused: Bool { focus.wrappedValue == episode.contentId }
     private var isWatched: Bool { watchedOverride ?? episode.userData?.played ?? false }
     private var isFavoriteShown: Bool { favoriteOverride ?? isFavorite }
 
@@ -836,21 +837,23 @@ private struct TVSeriesShelfCard: View {
     }
 
     private var caption: some View {
-        // Three levels: the number and name lead in the one bold line,
-        // the overview is as bright as the series synopsis but lighter in
-        // weight and a step smaller, and the date is the quiet line.
+        // Set like Home's Continue Watching captions, so an episode reads
+        // the same wherever it appears: the number and name as the card
+        // title, brightening with focus, over the overview and date in the
+        // quieter second-line style.
         VStack(alignment: .leading, spacing: 6) {
             titleText
-                .font(.system(size: 28, weight: .semibold))
+                .font(.vividLandscapeCardTitle)
+                .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
                 .lineLimit(1)
             Text(verbatim: episode.overview ?? "")
-                .font(.system(size: 24))
-                .foregroundStyle(Color.white.opacity(0.92))
+                .font(.vividLandscapeCardMetadata)
+                .foregroundStyle(Color.vividSecondaryText)
                 .lineLimit(3)
                 .frame(height: Self.overviewHeight, alignment: .top)
             Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
-                .font(.system(size: 22))
-                .foregroundStyle(.secondary)
+                .font(.vividLandscapeCardMetadata)
+                .foregroundStyle(Color.vividSecondaryText)
                 .lineLimit(1)
         }
     }
@@ -859,7 +862,7 @@ private struct TVSeriesShelfCard: View {
     private var titleText: Text {
         // A missing or empty title falls back to the episode number.
         if let title = episode.title, !title.isEmpty {
-            return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.white.opacity(0.6))
+            return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.vividSecondaryText)
                 + Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")
