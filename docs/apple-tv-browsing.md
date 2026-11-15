@@ -30,7 +30,13 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   The blurred copy is drawn once per slide at a quarter of the screen size and stretched, not blurred live, and cross-fades over 0.8 seconds when the slide changes (at once with Reduce Motion).
   It hides while the zoom flight into a title opened from the spotlight is under way and until the flight back has landed; with Reduce Motion, or for a slide with no logo to fly, there is no flight and it stays put.
   Home's rows start below the first screen, and Home rests on either the spotlight or the rows, never in between: Down from the spotlight is one focus-driven scroll that carries the spotlight off and puts the first row under the tab bar, and Up from the first row returns to the top.
-  The spotlight and the blurred artwork fade out over the second half of that scroll.
+  Leaving the spotlight is a focus pull, as with a film camera: the picture is held still while the rows rise over it, goes out of focus, and only then fades into the page.
+  It follows the scroll's position, so it lasts exactly as long as the scroll, and Up plays it back, the picture arriving blurred and then sharpening.
+  A copy of the card's picture comes in over the card during the first 5% of the scroll, while it is still sharp, and the card is then hidden, so the card is never seen half faded; the copy blurs and darkens until it matches the blurred artwork around it, which then blurs on to 96 points and fades out.
+  Every change of opacity happens under a blur that hides it, so it reads as focus and not as a fade.
+  Home's scroll starts fast and slows to a stop both ways, so the pull is spread differently by direction: going down the blur builds across 5% to 90% of the scroll and slows to its far end, fading out from 66%, and going up the picture sharpens between 50% and 5%, over the slow end of the scroll.
+  The direction is set each time Home comes to rest, when the pull is either not showing or fully sharp.
+  The blur is live but only ever applied to quarter-size images (480 by 270 points), with the card's shape drawn into the copy once, and the radius is zero while the spotlight is at rest.
   With Theme Mode on Off or Adaptive the rows then sit on the theme or the Adaptive backdrop; with Spotlight Only, the slide-colour backdrop described below scrolls with Home, so at the rows' resting place it is still solid behind the first 110 points of the screen and fades out over the next 520, with the theme below that.
   Once Home's scroll has come to rest on the rows, rotation waits and the pill hides, and the slide gets its full six seconds when focus returns.
   Each card instead carries a small pill in its bottom-right corner, 80 by 6 points and 48 points in from both edges, that fills over the card's six seconds, so it's clear the spotlight moves on by itself.

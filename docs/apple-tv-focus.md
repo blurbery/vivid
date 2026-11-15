@@ -193,6 +193,8 @@ Home's vertical scroll view has a scroll target behaviour with two resting place
 The focus engine still chooses and performs every scroll; the behaviour only moves a target that would end between the two, to the top when the engine is heading within 150 points of it (showing the whole Spotlight card) and otherwise to the rows page.
 It goes by where the engine is heading, not the direction of travel, so moving along the first row or arriving at it from the row below never scrolls back to Spotlight.
 Do not finish or replace that scroll with a programmatic one: it races the focus engine's own scroll and either loses or stutters.
+The spotlight's focus pull during that scroll is drawn with `visualEffect` only, read from each layer's own layout position, so it writes no state and re-evaluates no view while Home moves.
+Each layer applies its blur, opacity and hold-in-place offset in one effect: an effect further out that moves a layer changes the position that layer reads, so a layer held in place by a parent reads the scroll as not having moved.
 Down performs one explicit handoff, to the Studios & Networks row when it is showing and otherwise to the first row, preserving the remembered tile or card independently of a moving Spotlight slide; explicit detail return restores the launching tile or card when it still exists.
 
 Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
