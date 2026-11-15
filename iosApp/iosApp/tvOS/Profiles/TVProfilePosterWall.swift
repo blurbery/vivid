@@ -6,11 +6,21 @@ import UniformTypeIdentifiers
 
 /// Small copies of library posters, kept on this Apple TV so Who's watching
 /// can draw its wall before anyone is signed in and without asking a server.
-/// They come from the signed-in profile's Home rows, never from its Continue
-/// Watching or Next Up rows, so the wall says nothing about what anyone
+/// They come from the rows the signed-in profile shows on Home, never from
+/// its Continue Watching or Next Up rows, so the wall says nothing about what anyone
 /// watched. They stay out of the saved account record and the iCloud vault.
 enum TVPosterWallStore {
     private static let writer = Writer()
+
+    /// Counts the times new posters were saved, so a page showing the wall
+    /// can load them.
+    @MainActor
+    @Observable
+    final class Revision {
+        fileprivate(set) var value = 0
+    }
+
+    @MainActor static let revision = Revision()
     /// Posters kept per profile, and drawn on the wall in all.
     private static let perProfile = 40
     private static let wallLimit = 60
@@ -36,16 +46,16 @@ enum TVPosterWallStore {
         TVSavedAccountStore.shared.hasPIN(account.id) || account.profile?.hasPin == true
     }
 
-    /// Saves posters from a fresh Home response for the signed-in profile.
+    /// Saves posters from the Home rows the signed-in profile shows.
     @MainActor
-    static func capture(_ response: SectionsResponse, scope: String) {
+    static func capture(_ sections: [ResolvedSection], scope: String) {
         guard let account = TVSavedAccountStore.shared.activeAccount,
               Self.scope(for: account) == scope, !isLocked(account) else {
             Task.detached(priority: .utility) { await writer.delete(scope: scope) }
             return
         }
         let history: Set<String> = ["continue_watching", "in_progress", "next_up"]
-        let rows = response.sections
+        let rows = sections
             .filter { !history.contains($0.sectionType.lowercased()) }
             .map { $0.items.filter { $0.type.lowercased() != "episode" && !($0.posterUrl ?? "").isEmpty } }
         let base = MediaServerProvider.active == .silo ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
@@ -105,18 +115,22 @@ enum TVPosterWallStore {
         func save(_ posters: [(name: String, url: URL)], scope: String) async {
             let folder = TVPosterWallStore.folder(scope)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var saved = false
             for poster in posters {
                 let file = folder.appendingPathComponent(poster.name)
                 guard !FileManager.default.fileExists(atPath: file.path),
                       let data = try? await VividImagePipeline.shared.data(
                           for: VividImageRequest(url: poster.url, cacheScope: scope)
                       ) else { continue }
-                Self.writePoster(data, to: file)
+                if Self.writePoster(data, to: file) { saved = true }
             }
             let kept = Set(posters.map(\.name))
             let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
             for name in names where !kept.contains(name) {
                 try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+            }
+            if saved {
+                await MainActor.run { TVPosterWallStore.revision.value += 1 }
             }
         }
 
@@ -124,22 +138,31 @@ enum TVPosterWallStore {
             try? FileManager.default.removeItem(at: TVPosterWallStore.folder(scope))
         }
 
-        /// Saves the poster at the size the wall draws it, as a JPEG.
-        private static func writePoster(_ data: Data, to file: URL) {
+        /// Saves the poster at the size the wall draws it, as a JPEG. It
+        /// is written beside its place and moved in once whole, so a failed
+        /// or interrupted write never leaves a broken poster that counts as
+        /// saved.
+        private static func writePoster(_ data: Data, to file: URL) -> Bool {
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: 600
             ]
+            let partial = file.appendingPathExtension("partial")
             guard let source = CGImageSourceCreateWithData(data as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
                   let destination = CGImageDestinationCreateWithURL(
-                      file as CFURL, UTType.jpeg.identifier as CFString, 1, nil
-                  ) else { return }
+                      partial as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+                  ) else { return false }
             CGImageDestinationAddImage(
                 destination, image, [kCGImageDestinationLossyCompressionQuality: 0.75] as CFDictionary
             )
-            CGImageDestinationFinalize(destination)
+            guard CGImageDestinationFinalize(destination),
+                  (try? FileManager.default.moveItem(at: partial, to: file)) != nil else {
+                try? FileManager.default.removeItem(at: partial)
+                return false
+            }
+            return true
         }
     }
 }

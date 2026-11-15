@@ -1566,7 +1566,7 @@
       }
     },
     "%@, %@, current account" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {

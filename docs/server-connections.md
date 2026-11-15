@@ -105,6 +105,7 @@ Here, a **profile card is a saved server account**, identified by server and use
 Add Profile signs in another Silo, Emby or Jellyfin account.
 A Silo household can also give each family member their own card: see [Silo household profiles](#silo-household-profiles).
 Every card shows its name with the server underneath (the Silo server's name, or Emby or Jellyfin, unless that profile has been given its own server name with Rename Server), on Who’s watching and in Settings.
+On Apple TV Who’s watching the server is in the caption under the centre profile, and the profiles to either side show their names alone.
 In Settings the server follows the profile's role, Admin or User, for example “Admin · Emby”; a signed-out profile shows “Signed out” with its server instead.
 Silo reports the account's role, and Emby and Jellyfin report whether the user is a server administrator.
 A profile saves its role whenever its session is saved, so one Vivid hasn't signed in to since shows only its server until then.
@@ -180,6 +181,7 @@ Normal cached startup does not repeat those setup messages.
 When an account has no active viewing profile, Vivid enters the card's household member, or otherwise its primary profile (or its only profile), and asks for that profile's PIN when one is set.
 Only a new sign-in to a Silo account with several viewing profiles asks which one to use.
 The saved-account selector uses the selected app theme, a centred silver V and “Who’s watching?”.
+On Apple TV it is the title over an arc of profiles and a wall of library posters, without the V (see [App Design](app-design.md)).
 
 Manage Servers and Add Profile share the registered server list.
 Add Profile starts on the type of the server its address is filled from, and its saved-server list shows only servers of the chosen type on mobile and Apple TV.
@@ -263,7 +265,7 @@ On iPhone and iPad Who’s watching, tap a profile to select it.
 Hold and drag to rearrange: the held card follows the finger and the other profiles move aside as it passes over them.
 Release within the profile row to save the previewed order; releasing outside the profiles cancels the move.
 VoiceOver also offers Move earlier and Move later actions.
-On Apple TV Who’s watching, hold a profile to pick it up, move left or right, then press centre to drop and save; Back cancels.
+On Apple TV Who’s watching, hold the profile in the centre to pick it up, move left or right, then press centre to drop and save; Back cancels.
 Rearranging keeps the profile row at its normal height, without Done or delete buttons.
 Delete Profile is inside the profile’s account settings and still requires confirmation.
 The visible profile selector, and the Settings profile rows and Profiles page, refresh iCloud every ten seconds while active and no move is in progress.

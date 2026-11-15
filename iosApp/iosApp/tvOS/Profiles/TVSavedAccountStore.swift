@@ -911,6 +911,9 @@ final class TVSavedAccountStore {
         var cacheCleanupFailed = false
         for account in matching {
             CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID)
+            #if os(tvOS)
+            await TVPosterWallStore.delete(for: account)
+            #endif
             do {
                 try await TVHomeMetadataCache.shared.deleteAccountCache(account)
             } catch {

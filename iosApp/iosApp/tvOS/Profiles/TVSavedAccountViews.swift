@@ -1,6 +1,11 @@
 #if os(tvOS)
 import SwiftUI
 
+private struct WallKey: Hashable {
+    let accounts: [TVSavedAccount]
+    let revision: Int
+}
+
 /// Who's watching: the saved profiles at launch, on an arc over a drifting
 /// wall of library posters. Choosing one plays the startup animation over
 /// the page before the app takes over.
@@ -11,6 +16,7 @@ struct TVSavedProfilesScreen: View {
     @State private var isFinishingHandoff = false
     @State private var path = NavigationPath()
     @State private var posters: [UIImage] = []
+    @State private var wall = TVPosterWallStore.revision
     /// The centred profile's colour, for the wall's glow.
     @State private var glowHue: Double?
     private var handoffDuration: Double { reduceMotion ? 0.2 : 0.55 }
@@ -72,7 +78,9 @@ struct TVSavedProfilesScreen: View {
             }
         }
         .environment(router)
-        .task(id: store.accounts) {
+        // Again when posters are saved while the page is up, as when the
+        // signed-in profile's Home loads behind it at launch.
+        .task(id: WallKey(accounts: store.accounts, revision: wall.value)) {
             posters = await TVPosterWallStore.posters(for: store.accounts)
         }
         .task(id: isFinishingHandoff) {
@@ -80,249 +88,6 @@ struct TVSavedProfilesScreen: View {
             do { try await Task.sleep(for: .seconds(handoffDuration)) } catch { return }
             isFinishingHandoff = false
         }
-    }
-}
-
-/// The row of saved profiles, on the profile picker and in Settings. A long
-/// press arranges them; the order syncs with the iCloud vault.
-struct TVSavedAccountCards: View {
-    var isSettings = true
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var hasRequestedInitialProfileFocus = false
-    @Namespace private var profileFocusScope
-    @FocusState private var focusedAccount: String?
-    @State private var store = TVSavedAccountStore.shared
-    @State private var pinAccount: TVSavedAccount?
-    @State private var isEditingProfiles = false
-    @State private var draftOrder: [String] = []
-    @State private var movingID: String?
-    @Environment(\.scenePhase) private var scenePhase
-    @FocusState private var editingFocused: Bool
-    @State private var profileStore = CurrentProfileStore.shared
-    @Environment(AppRouter.self) private var router
-
-    var body: some View {
-        GeometryReader { viewport in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: metric(32)) {
-                    ForEach(displayedAccounts) { account in
-                        if isEditingProfiles {
-                            if account.id == movingID {
-                                movingCard(account)
-                            } else {
-                                tile(account).modifier(ProfileArrangeWobble(active: true))
-                            }
-                        } else {
-                            Group {
-                                if (isSettings && account.id == store.activeID) || store.needsLogin(account) {
-                                    NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
-                                        .buttonStyle(TVAccountCircleStyle(scale: scale))
-                                        .focused($focusedAccount, equals: account.id)
-                                        .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
-                                } else {
-                                    Button {
-                                        if store.hasPIN(account.id) { pinAccount = account }
-                                        else { Task { await store.select(account, router: router) } }
-                                    } label: { tile(account) }
-                                    .buttonStyle(TVAccountCircleStyle(scale: scale))
-                                    .focused($focusedAccount, equals: account.id)
-                                    .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
-                                }
-                            }
-                            .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
-                            .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
-                        }
-                    }
-                    if store.canAddAccount {
-                        NavigationLink(value: TVAccountRoute.editor(nil)) {
-                            VStack(spacing: metric(14)) {
-                                Image(systemName: "plus").font(.system(size: metric(46), weight: .medium))
-                                    .frame(width: metric(108), height: metric(108))
-                                    .background(.white.opacity(0.12), in: Circle())
-                                Text("Add Profile").font(.system(size: metric(20), weight: .medium))
-                            }.frame(width: metric(142))
-                        }
-                        .buttonStyle(TVAccountCircleStyle(scale: scale))
-                        .disabled(isEditingProfiles)
-                    }
-                }
-                .padding(metric(16))
-                .frame(minWidth: viewport.size.width, alignment: isSettings ? .leading : .center)
-            }
-            .scrollClipDisabled()
-        }
-        .frame(height: metric(222))
-        .disabled(store.busy || pinAccount != nil)
-        .task {
-            await profileStore.refresh(force: true)
-            await store.captureCurrent()
-        }
-        .focusSection()
-        .focusScope(profileFocusScope)
-        .defaultFocus($focusedAccount, store.accounts.first?.id, priority: .userInitiated)
-        .task(id: initialProfileFocusID) {
-            guard let target = initialProfileFocusID, !hasRequestedInitialProfileFocus else { return }
-            // Enabling the row and removing the splash must reach the native
-            // view tree before assigning focus to its first button.
-            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
-            guard !Task.isCancelled, !hasRequestedInitialProfileFocus,
-                  initialProfileFocusID == target else { return }
-            focusedAccount = target
-        }
-        .onChange(of: focusedAccount) { _, accountID in
-            if accountID != nil, initialProfileFocusID != nil {
-                hasRequestedInitialProfileFocus = true
-            }
-        }
-        .task(id: scenePhase == .active && !isEditingProfiles) {
-            guard scenePhase == .active, !isEditingProfiles else { return }
-            while !Task.isCancelled {
-                await VividCloudAccountSync.shared.synchronize(router: router)
-                do { try await Task.sleep(for: .seconds(10)) } catch { return }
-            }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { cancelArrangement() }
-        }
-        .onDisappear { cancelArrangement() }
-        .alert("Profile", isPresented: Binding(
-            get: { store.error != nil }, set: { if !$0 { store.error = nil } }
-        )) {
-            Button("OK", role: .cancel) { store.error = nil }
-        } message: { Text(store.error ?? "") }
-        .fullScreenCover(item: $pinAccount) { account in
-            TVSavedAccountPINPrompt(account: account) { pin in
-                if store.unlock(account.id, pin: pin) {
-                    pinAccount = nil
-                    Task { await store.select(account, router: router) }
-                }
-            }
-        }
-    }
-
-    /// The profile being arranged: the one focus target while arranging.
-    /// Left and Right move it, Select drops it and saves the order, and Menu
-    /// puts it back.
-    private func movingCard(_ account: TVSavedAccount) -> some View {
-        Button { finishArrangement() } label: {
-            tile(account)
-                .overlay(alignment: .top) {
-                    Circle().strokeBorder(.white, lineWidth: 3)
-                        .frame(width: metric(112), height: metric(112))
-                }
-                .modifier(ProfileArrangeWobble(active: true))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .focused($editingFocused)
-        .onAppear { editingFocused = true }
-        .onMoveCommand { direction in
-            switch direction {
-            case .left: moveDraft(account.id, by: -1)
-            case .right: moveDraft(account.id, by: 1)
-            default: break
-            }
-        }
-        .onExitCommand { cancelArrangement() }
-        .accessibilityLabel("Move \(account.displayName). Move left or right, then press centre to drop and save.")
-    }
-
-    /// The row follows the settings scale inside Settings; the profile
-    /// picker keeps its own size.
-    private var scale: CGFloat { isSettings ? TVSettingsLayout.scale : 1 }
-    private func metric(_ value: CGFloat) -> CGFloat { (value * scale).rounded() }
-
-    private var initialProfileFocusID: String? {
-        guard !isSettings, isEnabled, scenePhase == .active, !store.busy, !store.showsAnimation,
-              store.error == nil,
-              pinAccount == nil, !isEditingProfiles else { return nil }
-        return store.accounts.first?.id
-    }
-
-    private var displayedAccounts: [TVSavedAccount] {
-        guard isEditingProfiles else { return store.accounts }
-        let ids = VividCloudPreferencePolicy.ordered(store.accounts.map(\.id), preferred: draftOrder)
-        let byID = Dictionary(uniqueKeysWithValues: store.accounts.map { ($0.id, $0) })
-        return ids.compactMap { byID[$0] }
-    }
-    private func beginArrangement(_ id: String) {
-        guard !store.busy, store.accounts.count > 1 else { return }
-        draftOrder = store.accounts.map(\.id)
-        movingID = id
-        isEditingProfiles = true
-    }
-    private func finishArrangement() {
-        _ = store.saveAccountOrder(draftOrder)
-        cancelArrangement()
-    }
-    private func cancelArrangement() {
-        let returnID = movingID
-        isEditingProfiles = false
-        movingID = nil
-        draftOrder = []
-        if let returnID { focusedAccount = returnID }
-    }
-    private func moveDraft(_ id: String, by offset: Int) {
-        withAnimation(.easeInOut(duration: 0.18)) {
-            draftOrder = VividCloudPreferencePolicy.moving(draftOrder, id: id, by: offset)
-        }
-    }
-    private func serverLabel(for account: TVSavedAccount) -> String {
-        account.serverName ?? account.defaultServerLabel
-    }
-
-    private func tile(_ account: TVSavedAccount) -> some View {
-        VStack(spacing: metric(14)) {
-            ProfileAvatarView(avatar: displayedProfile(account)?.avatarEmoji,
-                              imageUrl: avatarURL(account), name: account.displayName, size: metric(108),
-                              cacheScope: displayedProfile(account).map {
-                                  VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: String($0.id))
-                              })
-                .overlay { TVCurrentAccountRing(isCurrent: isSettings && isCurrentAccount(account)) }
-            VStack(spacing: metric(5)) {
-                Text(account.displayName).font(.system(size: metric(20), weight: .medium)).lineLimit(1)
-                Text(serverLabel(for: account))
-                    .font(.system(size: metric(17))).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                if account.requiresLogin { Text("Signed out").font(.system(size: metric(15))).opacity(0.6) }
-            }
-        }
-        .frame(width: metric(142))
-        .accessibilityLabel(spokenLabel(for: account))
-    }
-    /// A signed-out account is never the current one.
-    private func spokenLabel(for account: TVSavedAccount) -> String {
-        let name = account.displayName
-        let server = serverLabel(for: account)
-        if account.requiresLogin { return String(localized: "\(name), signed out, \(server)") }
-        if isSettings && isCurrentAccount(account) { return String(localized: "\(name), \(server), current account") }
-        return String(localized: "\(name), \(server)")
-    }
-    private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
-        account.id == store.activeID && !account.requiresLogin && AuthService.shared.isLoggedIn
-            && account.serverID == ServerRegistry.shared.activeServerId
-    }
-    private func displayedProfile(_ account: TVSavedAccount) -> UserProfile? {
-        if isCurrentAccount(account), let profile = profileStore.profile,
-           profile.id == AuthService.shared.profileId { return profile }
-        return account.profile
-    }
-    private func avatarURL(_ account: TVSavedAccount) -> String? {
-        guard let raw = displayedProfile(account)?.avatarImageUrl else { return nil }
-        if raw.hasPrefix("/"), let server = ServerRegistry.shared.entry(with: account.serverID) {
-            return server.url + raw
-        }
-        return raw
-    }
-}
-
-/// Marks the signed-in account in Settings. It steps aside while the card
-/// has focus, where the focus ring already circles the avatar and the two
-/// rings would read as one doubled outline.
-private struct TVCurrentAccountRing: View {
-    let isCurrent: Bool
-    @Environment(\.isFocused) private var isFocused
-    var body: some View {
-        Circle().strokeBorder(isCurrent && !isFocused ? Color.white : .clear, lineWidth: 3)
     }
 }
 

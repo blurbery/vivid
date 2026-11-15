@@ -64,7 +64,6 @@ Good local examples:
 
 - `TVCatalogGrid`
 - `TVLibraryCollectionsView`
-- `TVSavedAccountCards`
 
 ### Composite Focus Control
 
@@ -293,10 +292,11 @@ Do not land on Add Profile and then redirect.
 Detail action geometry and loading placeholders share the same fixed baselines.
 The Description popup owns a separate scrollable set of text focus targets and closes with Back.
 
-The Apple TV “Who's watching?” picker initially focuses the first profile in display order, at the left of the first row.
-The remembered-profile badge does not change that target.
-After the populated row mounts and the startup overlay enables it, the picker waits for the scene to be active and account loading to finish, allows 150 ms for the enabled native controls to settle, then assigns its focus binding to the first profile.
-Each tile has one focus binding, and receiving profile focus marks the initial handoff complete.
+The Apple TV “Who's watching?” picker is one composite focus target, the arc of profiles (`TVProfileOrbit`), which starts with the first profile in display order in the centre.
+The remembered-profile badge does not change that starting profile.
+The arc owns Left and Right, which turn it, and no profile on it is a focus target of its own, which is what lets it wrap around.
+After the arc mounts and the startup overlay enables it, the picker waits for the scene to be active and account loading to finish, allows 150 ms for the enabled native control to settle, then gives the arc focus.
+Receiving focus marks the initial handoff complete.
 Refreshes do not repeat these requests, and PIN or sign-out overlays prevent them from taking focus.
 Profile activation and automatic-login preferences remain separate from this focus choice.
 The owner confirmed the initial profile focus and theme selection behaviour on Apple TV.

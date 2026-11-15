@@ -154,6 +154,11 @@ struct TVProfileOrbit: View {
         return places.indices.contains(selectedIndex) ? places[selectedIndex] : nil
     }
 
+    /// The others moving past the profile being arranged.
+    private var shuffle: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.18)
+    }
+
     private var turn: Animation? {
         reduceMotion ? nil : .spring(duration: 0.55, bounce: 0.18)
     }
@@ -186,7 +191,7 @@ struct TVProfileOrbit: View {
         .shadow(color: .black.opacity(0.7), radius: 14)
         .id(place?.id)
         .transition(.opacity)
-        .animation(.easeInOut(duration: 0.25), value: place?.id)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: place?.id)
         .accessibilityHidden(true)
     }
 
@@ -217,7 +222,7 @@ struct TVProfileOrbit: View {
 
     private func move(_ step: Int) {
         if let movingID {
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(shuffle) {
                 draftOrder = VividCloudPreferencePolicy.moving(draftOrder, id: movingID, by: step)
             }
             return
@@ -264,7 +269,7 @@ struct TVProfileOrbit: View {
 
     private func cancelArrangement() {
         guard movingID != nil else { return }
-        withAnimation(.easeInOut(duration: 0.18)) { draftOrder = store.accounts.map(\.id) }
+        withAnimation(shuffle) { draftOrder = store.accounts.map(\.id) }
         endArrangement()
     }
 
