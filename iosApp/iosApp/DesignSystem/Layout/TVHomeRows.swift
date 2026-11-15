@@ -29,8 +29,9 @@ enum TVHomeRowGeometry {
     private static let posterCaptionGap: CGFloat = VividTheme.Skyline.posterCaptionGap
     private static let thumbnailCaptionGap: CGFloat = 14
 
-    /// The caption lines a card of this shape draws: posters use the larger
-    /// poster captions, landscape cards the smaller ones.
+    /// The caption lines a card of this shape draws. Posters and landscape
+    /// cards have their own pair, which are the same size today and kept
+    /// apart so either can change without the other.
     private static func captionText(_ layout: MediaRowLayout) -> (title: TVCardCaptionText, metadata: TVCardCaptionText) {
         switch layout {
         case .poster:

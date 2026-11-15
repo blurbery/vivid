@@ -411,7 +411,7 @@ private struct CollectionPosterCard: View {
     var body: some View {
         let size = size
         let caption = UICustomizationPreferences.shared.cardPresentation.caption
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: VividTheme.Skyline.posterGridCaptionGap) {
             Button(action: action) {
                 poster(size)
                     .frame(width: size.width, height: size.height)

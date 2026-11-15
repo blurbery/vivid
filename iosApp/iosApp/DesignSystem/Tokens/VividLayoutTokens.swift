@@ -67,9 +67,12 @@ extension VividTheme {
         /// rows of the earlier seven-across ones, so the band stays inside
         /// the decoded budget on Apple TVs with less memory.
         static let posterGridArtworkRows = 8
-        /// The gap between a poster and its caption, which leaves room for
-        /// the focus lift of a poster this size.
+        /// The gap between a poster and its caption on Home's rows, which
+        /// leaves room for the focus lift of a poster this size.
         static let posterCaptionGap: CGFloat = 24
+        /// The same gap in grids and detail rails, whose cards sit closer
+        /// together.
+        static let posterGridCaptionGap: CGFloat = 20
         static let collectionGridColumnSpacing: CGFloat = 40
         static let collectionGridRowSpacing: CGFloat = 60
         static let collectionGridGroupHeaderSize: CGFloat = 22

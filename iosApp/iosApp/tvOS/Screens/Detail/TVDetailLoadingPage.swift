@@ -62,11 +62,18 @@ struct TVDetailLoadingPage: View {
 
     // MARK: Standard shape
 
-    /// The older hero the seed's type loads into. An episode shows a
-    /// source row and a facts row, so its hero is a row taller.
-    private var standardLayout: TVDetailHeroLayout {
+    /// An episode under its series title shows a source row and a facts
+    /// row, so its hero is a row taller. The seed doesn't say whether the
+    /// series title will be found, so an episode is assumed to have one,
+    /// as nearly all do; one that doesn't loads into the shorter hero.
+    private var standardMetadataRows: Int {
         let type = seed?.mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-        return .standard(clipsToHeight: true, metadataRows: type == "episode" ? 2 : 1)
+        return type == "episode" ? 2 : 1
+    }
+
+    /// The older hero the seed's type loads into.
+    private var standardLayout: TVDetailHeroLayout {
+        .standard(clipsToHeight: true, metadataRows: standardMetadataRows)
     }
 
     private var standard: some View {
@@ -211,6 +218,11 @@ struct TVDetailLoadingPage: View {
         VStack(alignment: .leading, spacing: TVDetailHeroLayout.standardStackSpacing) {
             loadingTitle(native: false)
                 .frame(width: 650, height: TVDetailHeroLayout.standardTitleHeight, alignment: .bottomLeading)
+            if standardMetadataRows > 1 {
+                // The source row an episode shows above its facts.
+                placeholder(width: 420, height: 22, radius: 6)
+                    .frame(height: TVDetailHeroLayout.standardMetadataHeight, alignment: .leading)
+            }
             loadingMetadata
                 .frame(height: TVDetailHeroLayout.standardMetadataHeight, alignment: .leading)
             loadingSynopsis(lines: 3, width: TVDetailHeroLayout.standardTextWidth)

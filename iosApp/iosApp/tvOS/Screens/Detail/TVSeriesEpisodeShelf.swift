@@ -334,6 +334,7 @@ struct TVSeriesEpisodeShelf: View {
                         } label: {
                             Text("Load Season \(String(season.seasonNumber))")
                         }
+                        .focused($focusedEpisodeId, equals: Self.loadFocusID(season))
                         .frame(width: 400, height: 225)
                     }
                 }
@@ -431,8 +432,22 @@ struct TVSeriesEpisodeShelf: View {
 
     // MARK: Episode focus and scroll season
 
+    /// What the row's focus state holds while a season's Load button has
+    /// focus, so the shown season follows it like an episode.
+    private static func loadFocusID(_ season: Season) -> String {
+        "load-season:\(season.contentId)"
+    }
+
     private func episodeFocusChanged(from oldId: String?, to newId: String?) {
         guard let newId else { return }
+        if let unloaded = seasons.first(where: { Self.loadFocusID($0) == newId }) {
+            // A season that hasn't loaded: show it without selecting it,
+            // which is what pressing the button does.
+            lastFocusedEpisodeId = newId
+            scrollSeasonId = nil
+            browseSeasonId = unloaded.contentId
+            return
+        }
         if oldId == nil, isEnteringFromHero, let playTarget,
            pages[playTarget.seasonNumber]?.contains(where: { $0.contentId == playTarget.contentId }) == true,
            newId != playTarget.contentId {
@@ -471,6 +486,9 @@ struct TVSeriesEpisodeShelf: View {
                 }
             } else {
                 count = 1
+                if (focusedEpisodeId ?? lastFocusedEpisodeId) == Self.loadFocusID(season) {
+                    focusedCentre = (season, CGFloat(slot) * Self.slotWidth + Self.cardCentre)
+                }
             }
             firstSlots.append((season, CGFloat(slot) * Self.slotWidth))
             slot += count

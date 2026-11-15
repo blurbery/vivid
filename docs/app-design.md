@@ -101,7 +101,7 @@ Episodes substitute episode details for the year and keep them with Title Only, 
 Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
 Search keeps six columns across the safe-area width with reduced spacing below its result tabs.
 Every Apple TV poster grid (Search and its Seerr results, the Library tab, library pages, collection and Studios & Networks pages, the Collections tab and Calendar's day view) shows six posters across, each 260 by 390 points.
-Home's poster rows and the rails that match them (the Collections row, More Like This, collection rails, Studios & Networks rails and Cast & Crew) show posters 240 by 360 points, and a person's filmography shows seven posters across.
+Home's poster rows and the rails that match them (the Collections row, More Like This, collection rails, Studios & Networks rails and Cast & Crew) show posters 240 by 360 points, and a person's filmography shows seven posters across at the Standard poster size, or six at Compact or Large.
 
 Detail pages keep their credit, playback-readout and action rows at fixed baselines through loading and episode changes.
 Long-pressing Play or Resume opens a native context menu: Start Over when there's something to resume, and Shuffle on a series page.

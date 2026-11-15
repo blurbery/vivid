@@ -427,7 +427,7 @@ The prompt and speech recognition are Apple's, and depend on Siri and Dictation 
 Vivid receives only the resulting text. iPhone and iPad don't register the intent.
 
 Library requests load seventy items at a time.
-Artwork retention uses a moving ten-row window that follows visible rows, falling back to current focus before visibility is known.
+Artwork retention uses a moving eight-row window that follows visible rows, falling back to current focus before visibility is known.
 It keeps a small look-behind and releases earlier decoded image references as scrolling advances.
 Visible and upcoming posters are warmed before the look-behind, with two requests at a time; queue updates can refill evicted images.
 Visible or focused catalogue cards always remain eligible to load, and distant cards release their image through the same image view without replacing its subtree.
@@ -575,6 +575,7 @@ Focusing an episode updates the selected season.
 
 The route warms remaining season metadata sequentially in nearby-season order, with only six stills per warmed season.
 Missing pages retain a Load Season action.
+While that button has focus the header shows the season it would load, without selecting it.
 Native `.card` buttons provide episode artwork focus; cards include episode number, title, summary and date, with watched/resume and context actions retained.
 Under each 400 by 225 still, the caption has three levels.
 The first line is the episode number and name together, as in “3 · The Long Way Home”, in bold 28-point text on one line with the number a little dimmer.
@@ -628,6 +629,7 @@ Main poster cards and movie thumbnails retain their existing watched indicator w
 
 A single-season series retains the released episode count, excluding future air dates; undated entries count only when a file is available.
 Movie and series skeletons share the loaded title, heading, synopsis, Starring and technical-row geometry.
+An episode's skeleton reserves the two metadata rows an episode under its series title shows; an episode whose series title can't be found loads into the shorter one-row hero, 50 points shorter.
 Other detail pages retain twelve-point gaps between credits, readouts and actions.
 Plots wrap within the hero's text column (900 points on movie and series pages, 750 on the older layout); Read more opens a separate scrollable Description panel.
 Version selection lives in the detail options menu, with Auto and individual files.
