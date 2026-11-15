@@ -50,19 +50,20 @@ final class TVPosterArtworkWindow {
 
     init() {}
 
-    /// Two rows behind the anchor and ten rows in all. The anchor is the
+    /// Two rows behind the anchor and `rows` rows in all. The anchor is the
     /// first visible index, else the focused one, else the start.
     nonisolated static func range(
         firstVisible: Int?,
         focusedIndex: Int? = nil,
         itemCount: Int,
-        columns: Int
+        columns: Int,
+        rows: Int = 10
     ) -> Range<Int> {
         let columns = max(1, columns)
         let count = max(0, itemCount)
         let anchor = min(max(firstVisible ?? focusedIndex ?? 0, 0), max(0, count - 1))
         let start = max(0, (anchor / columns - 2) * columns)
-        let end = min(count, start + 10 * columns)
+        let end = min(count, start + max(1, rows) * columns)
         return start..<max(start, end)
     }
 

@@ -126,12 +126,13 @@ private struct RequestSearchSectionContent: View {
 }
 
 #if os(tvOS)
-/// Seven columns of result cards that exactly fill the grid's width.
+/// Columns of result cards that exactly fill the grid's width, as many
+/// across as the library results above them.
 private struct RequestResultGrid: View {
     let results: [RequestMediaResult]
     @Binding var gridWidth: CGFloat
 
-    private let columnCount = 7
+    private let columnCount = VividTheme.Skyline.posterGridColumns
     private let columnSpacing: CGFloat = 40
 
     private var columns: [GridItem] {

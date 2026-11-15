@@ -203,7 +203,7 @@ extension TVMainTabView {
                     hasMore: hasMore,
                     onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
                     onNearEnd: { _ in Task { await loadPage(reset: false) } },
-                    fixedColumnCount: 7
+                    fixedColumnCount: VividTheme.Skyline.posterGridColumns
                 )
                 .padding(.horizontal, 80)
                 .padding(.bottom, 48)

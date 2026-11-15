@@ -243,7 +243,7 @@ struct EpisodeThumbCard: View {
     private func captionBlock(width: CGFloat, caption: CardCaptionStyle) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: title)
-                .font(.vividPosterTitle)
+                .font(.vividLandscapeCardTitle)
                 .foregroundStyle(isCardFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -251,7 +251,7 @@ struct EpisodeThumbCard: View {
                 .clipped()
             if caption.forEpisodes(EpisodeCardCaption.isEpisode(item)).showsMetadata, let secondLine {
                 Text(verbatim: secondLine)
-                    .font(.vividPosterMetadata)
+                    .font(.vividLandscapeCardMetadata)
                     .foregroundStyle(Color.vividSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -261,7 +261,8 @@ struct EpisodeThumbCard: View {
         }
         .frame(
             width: width,
-            height: inHomeRows ? TVHomeRowGeometry.captionHeight(caption.forEpisodes(rowHasEpisodes)) : nil,
+            height: inHomeRows
+                ? TVHomeRowGeometry.captionHeight(caption.forEpisodes(rowHasEpisodes), layout: .thumbnail) : nil,
             alignment: .topLeading
         )
     }

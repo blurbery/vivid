@@ -34,10 +34,17 @@ struct TVSeriesEpisodeShelf: View {
 
     private static let slotWidth: CGFloat = 440
     private static let cardCentre: CGFloat = 200
-    /// Taller than the pills, season name and synopsis need, so the poster
-    /// beside them is large and the episode row fills the rest of the
-    /// screen, with the next shelf's heading below the bottom edge.
-    private static let headerHeight: CGFloat = 310
+    /// The season name (68), the gap under it (10), the 26-point facts
+    /// line, and four 26-point lines of synopsis, about 241 points in
+    /// Latin text, with room for scripts whose lines stand taller. At the
+    /// fold the episode row's captions then end about 67 points above the
+    /// screen's bottom edge and the next shelf's heading starts below it.
+    /// The poster beside the header hangs from its bottom edge, so it
+    /// rises with the header.
+    private static let headerHeight: CGFloat = 270
+    /// The season synopsis' width. It stops well short of the poster on
+    /// the trailing side.
+    private static let synopsisWidth: CGFloat = 1300
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var selectorFocused: Bool
@@ -124,7 +131,8 @@ struct TVSeriesEpisodeShelf: View {
                 TVSeasonSummary(
                     season: season,
                     showsSynopsis: showsSynopsis(for: season),
-                    seriesOverview: seriesOverview
+                    seriesOverview: seriesOverview,
+                    maxWidth: Self.synopsisWidth
                 )
             }
         }
@@ -475,6 +483,7 @@ private struct TVSeasonSummary: View {
     let season: Season
     let showsSynopsis: Bool
     let seriesOverview: String?
+    let maxWidth: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -504,14 +513,14 @@ private struct TVSeasonSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: facts)
-                .font(.system(size: 22, weight: .medium))
+                .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Text(verbatim: synopsis)
-                .font(.system(size: 22))
+                .font(.system(size: 26))
                 .foregroundStyle(.secondary)
-                .lineLimit(6)
-                .frame(maxWidth: 1100, alignment: .leading)
+                .lineLimit(4)
+                .frame(maxWidth: maxWidth, alignment: .leading)
         }
         .contentTransition(.opacity)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: season.contentId)
@@ -519,13 +528,14 @@ private struct TVSeasonSummary: View {
     }
 }
 
-/// The shown season's poster. It turns over to the next season's poster
-/// when the season changes, and can't be focused or opened.
+/// The shown season's poster, the same size as the hero's. It turns over
+/// to the next season's poster when the season changes, and can't be
+/// focused or opened.
 private struct TVSeasonPosterCard: View {
     let season: Season?
     let seriesPosterUrl: String?
 
-    static let size = CGSize(width: 360, height: 540)
+    static let size = TVDetailHeroLayout.posterSize
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown: Season?
@@ -666,6 +676,8 @@ private struct TVSeasonSelectorStyle: ButtonStyle {
 
 /// One episode on the series shelf: a fixed 400 by 225 still with its
 /// status, and the episode's number, title, overview and air date below.
+/// The caption is about 170 points tall in Latin text, which the shelf's
+/// header height allows for.
 private struct TVSeriesShelfCard: View {
     let episode: EpisodeListItem
     /// Spoken by VoiceOver; the shelf draws no current-episode outline.
@@ -677,6 +689,9 @@ private struct TVSeriesShelfCard: View {
     let onSetFavorite: (Bool) async -> Bool
 
     private static let stillSize = CGSize(width: 400, height: 225)
+    /// Two 24-point lines of overview (about 58 points), kept whether the
+    /// episode has one line, two or none, with room for taller scripts.
+    private static let overviewHeight: CGFloat = 66
 
     @State private var watchedOverride: Bool?
     @State private var favoriteOverride: Bool?
@@ -763,10 +778,10 @@ private struct TVSeriesShelfCard: View {
                 Text("\(runtime)m")
             }
         }
-        .font(.system(size: 18))
+        .font(.system(size: 22))
         .foregroundStyle(.white)
         .fixedSize()
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(Capsule().fill(Color.black.opacity(0.45)))
     }
@@ -774,19 +789,21 @@ private struct TVSeriesShelfCard: View {
     private var caption: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("EPISODE \(String(episode.episodeNumber))")
-                .font(.system(size: 18))
+                .font(.system(size: 22))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             titleText
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .lineLimit(1)
             Text(verbatim: episode.overview ?? "")
-                .font(.system(size: 20))
+                .font(.system(size: 24))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
-                .frame(height: 52, alignment: .top)
+                .frame(height: Self.overviewHeight, alignment: .top)
             Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
-                .font(.system(size: 18))
+                .font(.system(size: 22))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 

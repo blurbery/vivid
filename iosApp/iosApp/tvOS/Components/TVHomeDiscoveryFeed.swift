@@ -1990,8 +1990,11 @@ private struct TVSpotlightButtonStyle: ButtonStyle {
 private struct TVSpotlightOverview: View {
     let text: String
 
-    private static let fontSize: CGFloat = 22
-    private static let width: CGFloat = 760
+    private static let fontSize: CGFloat = 28
+    /// The slide's text column. The title, the details line and the
+    /// overview's own frame use it too, so the fit below measures the
+    /// width the overview is drawn at.
+    static let width: CGFloat = 900
     private static let maxLines = 3
 
     var body: some View {
@@ -2148,14 +2151,14 @@ private struct TVHomeSpotlightArtwork: View {
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                            .frame(maxWidth: 760, alignment: .leading)
+                            .frame(maxWidth: TVSpotlightOverview.width, alignment: .leading)
                             .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
                     Group {
                         if isEpisode {
                             Text(([typeLabel] + slide.content.metaParts
                                   + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
-                                .font(.system(size: 23, weight: .medium))
+                                .font(.system(size: 29, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
@@ -2168,14 +2171,16 @@ private struct TVHomeSpotlightArtwork: View {
                             )
                         }
                     }
-                    // The detail heading's height, so the logo sits at the
-                    // same height for every slide, rated or not.
-                    .frame(width: logo == nil ? 760 : 600, height: 36, alignment: .leading)
+                    // One height for every slide, so the logo sits at the
+                    // same height rated or not: room for the 29-point line
+                    // and its 22-point rating badge. As wide as the
+                    // overview, so two genres and a badge fit at full size.
+                    .frame(width: TVSpotlightOverview.width, height: 44, alignment: .leading)
                     .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
                     if let overview = slide.item.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !overview.isEmpty {
                         TVSpotlightOverview(text: overview)
-                            .frame(width: 760, alignment: .leading)
+                            .frame(width: TVSpotlightOverview.width, alignment: .leading)
                             .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 2)
                     }
                 }

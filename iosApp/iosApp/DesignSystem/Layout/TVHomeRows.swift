@@ -18,23 +18,33 @@ extension ResolvedSection {
 }
 
 /// Fixed measurements for Apple TV Home rows, worked out from the fonts the
-/// cards use.
+/// cards use (`TVCardCaptionText`).
 enum TVHomeRowGeometry {
     static let headingHeight: CGFloat = lineHeight(size: 36, weight: .semibold)
     static let headingSpacing: CGFloat = 20
     static let rowSpacing: CGFloat = 30
     static let cardPadding: CGFloat = 24
 
-    private static let titleHeight: CGFloat = lineHeight(size: 20, weight: .medium)
-    private static let metadataHeight: CGFloat = lineHeight(size: 18, weight: .regular)
     private static let titleToMetadata: CGFloat = 4
-    private static let posterCaptionGap: CGFloat = 22
+    private static let posterCaptionGap: CGFloat = VividTheme.Skyline.posterCaptionGap
     private static let thumbnailCaptionGap: CGFloat = 14
 
-    static func captionHeight(_ style: CardCaptionStyle) -> CGFloat {
+    /// The caption lines a card of this shape draws: posters use the larger
+    /// poster captions, landscape cards the smaller ones.
+    private static func captionText(_ layout: MediaRowLayout) -> (title: TVCardCaptionText, metadata: TVCardCaptionText) {
+        switch layout {
+        case .poster:
+            return (TVCardCaptionText.posterTitle, TVCardCaptionText.posterMetadata)
+        case .thumbnail:
+            return (TVCardCaptionText.landscapeTitle, TVCardCaptionText.landscapeMetadata)
+        }
+    }
+
+    static func captionHeight(_ style: CardCaptionStyle, layout: MediaRowLayout) -> CGFloat {
         guard style.showsTitle else { return 0 }
-        guard style.showsMetadata else { return titleHeight }
-        return titleHeight + titleToMetadata + metadataHeight
+        let text = captionText(layout)
+        guard style.showsMetadata else { return text.title.lineHeight }
+        return text.title.lineHeight + titleToMetadata + text.metadata.lineHeight
     }
 
     /// The height of a whole row of cards, padding included. Rows holding an
@@ -59,7 +69,7 @@ enum TVHomeRowGeometry {
         }
         var height = artworkHeight
         if caption.showsTitle {
-            height += captionGap + captionHeight(caption)
+            height += captionGap + captionHeight(caption, layout: layout)
         }
         return height + cardPadding * 2
     }

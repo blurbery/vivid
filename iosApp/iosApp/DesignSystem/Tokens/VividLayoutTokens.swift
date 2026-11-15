@@ -55,7 +55,21 @@ extension VividTheme {
         static let barTopInset: CGFloat = 0
         static let barHeight: CGFloat = 64
         static let tabSpacing: CGFloat = 8
-        static let densePosterCardWidth: CGFloat = 176
+        /// The poster width of Home rows and the rails that match them,
+        /// before Home's Large scale: 240 by 360 points on screen.
+        static let densePosterCardWidth: CGFloat = 200
+        /// Posters across a catalogue grid: Search, library pages, collection
+        /// and studio pages. Six across the 1,760-point safe width makes each
+        /// poster 260 by 390 points.
+        static let posterGridColumns = 6
+        /// The rows of a catalogue grid kept decoded around the screen. Eight
+        /// rows of six-across posters hold no more decoded pixels than ten
+        /// rows of the earlier seven-across ones, so the band stays inside
+        /// the decoded budget on Apple TVs with less memory.
+        static let posterGridArtworkRows = 8
+        /// The gap between a poster and its caption, which leaves room for
+        /// the focus lift of a poster this size.
+        static let posterCaptionGap: CGFloat = 24
         static let collectionGridColumnSpacing: CGFloat = 40
         static let collectionGridRowSpacing: CGFloat = 60
         static let collectionGridGroupHeaderSize: CGFloat = 22

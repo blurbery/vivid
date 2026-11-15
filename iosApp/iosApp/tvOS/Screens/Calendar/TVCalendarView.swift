@@ -208,7 +208,7 @@ struct TVCalendarView: View {
                         .buttonStyle(TVBrowseControlPillStyle())
                 }
                 let titles = (store.trendingSeries + store.trendingMovies).filter { $0.day == trendingDay }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40, alignment: .top), count: 7), alignment: .leading, spacing: 48) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40, alignment: .top), count: VividTheme.Skyline.posterGridColumns), alignment: .leading, spacing: 48) {
                     ForEach(titles) { title in
                         TVTrendingPoster(title: title) { selectedTitle = title }
                     }
@@ -237,7 +237,7 @@ struct TVCalendarView: View {
                     LazyHStack(alignment: .top, spacing: 40) {
                         ForEach(titles) { title in
                             TVTrendingPoster(title: title) { selectedTitle = title }
-                                .frame(width: 220)
+                                .frame(width: 240)
                         }
                     }
                     .padding(.horizontal, VividTheme.safePadding)
@@ -342,18 +342,18 @@ private struct TVTrendingPoster: View {
     var body: some View {
         // Room under the poster for the card's focus lift, so it never
         // covers the title.
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: VividTheme.Skyline.posterCaptionGap) {
             Button(action: action) { artwork }
                 .buttonStyle(.card)
                 .accessibilityLabel(spokenLabel)
                 .tvAdaptiveFocusReport(title.posterURL?.absoluteString)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.title)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.vividPosterTitle)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(title.kind == .movie ? String(localized: "Movie") : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series"))
-                    .font(.system(size: 19))
+                    .font(.vividPosterMetadata)
                     .foregroundStyle(Color.vividSecondaryText)
             }
         }
@@ -368,7 +368,7 @@ private struct TVTrendingPoster: View {
             ZStack(alignment: .topLeading) {
                 Color.vividSurfaceVariant
                 if let url = title.posterURL {
-                    AsyncImageView(url: url.absoluteString, targetSize: CGSize(width: 220, height: 330), contentMode: .fill)
+                    AsyncImageView(url: url.absoluteString, targetSize: CGSize(width: 260, height: 390), contentMode: .fill)
                 }
                 Text(title.day.formatted(.dateTime.day().month(.abbreviated)).uppercased())
                     .font(.system(size: 18, weight: .bold))

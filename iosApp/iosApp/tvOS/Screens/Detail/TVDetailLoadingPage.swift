@@ -62,15 +62,23 @@ struct TVDetailLoadingPage: View {
 
     // MARK: Standard shape
 
+    /// The older hero the seed's type loads into. An episode shows a
+    /// source row and a facts row, so its hero is a row taller.
+    private var standardLayout: TVDetailHeroLayout {
+        let type = seed?.mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return .standard(clipsToHeight: true, metadataRows: type == "episode" ? 2 : 1)
+    }
+
     private var standard: some View {
-        TVDetailStandardSurface(backdropUrl: seed?.backdropUrl) {
+        let layout = standardLayout
+        return TVDetailStandardSurface(backdropUrl: seed?.backdropUrl) {
             VStack(spacing: 0) {
                 ZStack(alignment: .topLeading) {
-                    standardArtwork
-                    skeletonEditorial(layout: .standard(clipsToHeight: true))
+                    standardArtwork(height: layout.height)
+                    skeletonEditorial(layout: layout)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: TVDetailHeroLayout.defaultHeight, alignment: .topLeading)
+                .frame(height: layout.height, alignment: .topLeading)
                 .clipped()
 
                 placeholderRail
@@ -78,7 +86,7 @@ struct TVDetailLoadingPage: View {
         }
     }
 
-    private var standardArtwork: some View {
+    private func standardArtwork(height: CGFloat) -> some View {
         GeometryReader { proxy in
             let size = TVBackdropArtworkLayout.artworkSize(forViewportWidth: proxy.size.width)
             Group {
@@ -97,9 +105,9 @@ struct TVDetailLoadingPage: View {
             .frame(width: size.width, height: size.height)
             .clipped()
             .mask { TVBackdropArtworkFadeMask(softensLeadingFade: true) }
-            .frame(width: proxy.size.width, height: TVDetailHeroLayout.defaultHeight, alignment: .topTrailing)
+            .frame(width: proxy.size.width, height: height, alignment: .topTrailing)
         }
-        .frame(height: TVDetailHeroLayout.defaultHeight)
+        .frame(height: height)
     }
 
     // MARK: Skeleton editorial
@@ -108,17 +116,17 @@ struct TVDetailLoadingPage: View {
         // The native pages put the poster beside the details; the skeleton
         // keeps its place so the loaded page lands without moving.
         let inset = layout.isCompact ? TVDetailHeroLayout.posterInset : 0
-        let width = TVDetailHeroLayout.editorialWidth + inset
-        return VStack(alignment: .leading, spacing: 12) {
+        let width = layout.textWidth + inset
+        return VStack(alignment: .leading, spacing: TVDetailHeroLayout.rowSpacing) {
             ZStack(alignment: .topLeading) {
                 if layout.isCompact {
                     nativeBlock(inset: inset)
                 } else {
                     standardBlock
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    placeholder(width: 390, height: 18, radius: 5)
-                        .frame(height: 28, alignment: .leading)
+                VStack(alignment: .leading, spacing: TVDetailHeroLayout.rowSpacing) {
+                    placeholder(width: 390, height: 22, radius: 6)
+                        .frame(height: TVDetailHeroLayout.creditHeight, alignment: .leading)
                     Group {
                         if layout.isCompact {
                             TVDetailTechnicalRow(
@@ -130,33 +138,41 @@ struct TVDetailLoadingPage: View {
                             TVDetailPlaybackSummary(values: TVDetailPlaybackSummaryValues(version: nil))
                         }
                     }
-                    .frame(height: 40, alignment: .topLeading)
+                    .frame(height: layout.summaryHeight, alignment: .topLeading)
                 }
                 .padding(.leading, inset)
                 .frame(
                     width: width,
-                    height: TVDetailHeroLayout.editorialHeight,
+                    height: layout.editorialHeight,
                     alignment: .bottomLeading
                 )
             }
             .frame(
                 width: width,
-                height: TVDetailHeroLayout.editorialHeight,
+                height: layout.editorialHeight,
                 alignment: .topLeading
             )
 
             HStack(spacing: 18) {
-                placeholder(width: 280, height: 76, radius: 38)
+                placeholder(
+                    width: TVDetailActionRowLayout.expandedWidth,
+                    height: TVDetailActionRowLayout.controlHeight,
+                    radius: TVDetailActionRowLayout.controlHeight / 2
+                )
                 ForEach(0..<(layout.isCompact ? 4 : 5), id: \.self) { _ in
-                    placeholder(width: 76, height: 76, radius: 38)
+                    placeholder(
+                        width: TVDetailActionRowLayout.controlHeight,
+                        height: TVDetailActionRowLayout.controlHeight,
+                        radius: TVDetailActionRowLayout.controlHeight / 2
+                    )
                 }
             }
             .padding(.leading, inset)
         }
+        // As on the loaded page, the skeleton is as tall as the poster.
         .overlay(alignment: .topLeading) {
             if layout.isCompact {
                 TVDetailHeroPosterTile()
-                    .padding(.top, TVDetailHeroLayout.compactHeadingTop)
             }
         }
         .padding(.top, layout.topInset)
@@ -172,33 +188,37 @@ struct TVDetailLoadingPage: View {
             ? String(localized: "Movie")
             : String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
         return VStack(alignment: .leading, spacing: 0) {
-            Color.clear
-                .frame(height: 160)
             TVDetailCompactHeading(
                 tokens: [token],
                 genres: seed?.genre.map { [$0] } ?? [],
                 contentRating: TVHeroMetadata.contentRating(seed?.contentRating)
             )
-            .frame(height: 36, alignment: .leading)
-            .padding(.top, 10)
+            .frame(height: TVDetailHeroLayout.compactHeadingHeight, alignment: .leading)
             .padding(.leading, inset)
-            loadingSynopsis(lines: 4)
-                .frame(height: 140, alignment: .topLeading)
-                .padding(.top, 12)
+            loadingSynopsis(lines: 4, width: TVDetailHeroLayout.compactTextWidth)
+                .frame(height: TVDetailHeroLayout.compactSynopsisHeight, alignment: .topLeading)
+                .padding(.top, TVDetailHeroLayout.compactSynopsisGap)
                 .padding(.leading, inset)
         }
-        .frame(width: TVDetailHeroLayout.editorialWidth + inset, height: 350, alignment: .topLeading)
+        .frame(
+            width: TVDetailHeroLayout.compactTextWidth + inset,
+            height: TVDetailHeroLayout.compactPrimaryHeight,
+            alignment: .topLeading
+        )
     }
 
     private var standardBlock: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: TVDetailHeroLayout.standardStackSpacing) {
             loadingTitle(native: false)
-                .frame(width: 650, height: 160, alignment: .bottomLeading)
+                .frame(width: 650, height: TVDetailHeroLayout.standardTitleHeight, alignment: .bottomLeading)
             loadingMetadata
-                .frame(height: 36, alignment: .leading)
-            loadingSynopsis(lines: 3)
-                .frame(width: TVDetailHeroLayout.editorialWidth, height: 112, alignment: .topLeading)
-                .clipped()
+                .frame(height: TVDetailHeroLayout.standardMetadataHeight, alignment: .leading)
+            loadingSynopsis(lines: 3, width: TVDetailHeroLayout.standardTextWidth)
+                .frame(
+                    width: TVDetailHeroLayout.standardTextWidth,
+                    height: TVDetailHeroLayout.standardSynopsisHeight,
+                    alignment: .topLeading
+                )
         }
     }
 
@@ -266,21 +286,23 @@ struct TVDetailLoadingPage: View {
     /// lines on movie and series pages, three on the older layout, which
     /// shows Read more under them once loaded.
     @ViewBuilder
-    private func loadingSynopsis(lines: Int) -> some View {
+    private func loadingSynopsis(lines: Int, width: CGFloat) -> some View {
         let overview = seed?.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !overview.isEmpty {
             Text(verbatim: overview)
-                .font(.system(size: 22))
+                .font(.system(size: 28))
                 .foregroundStyle(Color.white.opacity(0.72))
                 .lineLimit(lines)
-                .frame(maxWidth: TVDetailHeroLayout.editorialWidth, alignment: .topLeading)
+                .frame(maxWidth: width, alignment: .topLeading)
         } else {
-            VStack(alignment: .leading, spacing: 13) {
-                placeholder(width: 730, height: 18, radius: 5)
-                placeholder(width: 690, height: 18, radius: 5)
-                placeholder(width: 610, height: 18, radius: 5)
+            // Bars on the pitch of the 28-point lines, a little short of
+            // the column's width.
+            VStack(alignment: .leading, spacing: 11) {
+                placeholder(width: (width * 0.97).rounded(), height: 22, radius: 6)
+                placeholder(width: (width * 0.92).rounded(), height: 22, radius: 6)
+                placeholder(width: (width * 0.81).rounded(), height: 22, radius: 6)
             }
-            .padding(.top, 4)
+            .padding(.top, 6)
         }
     }
 

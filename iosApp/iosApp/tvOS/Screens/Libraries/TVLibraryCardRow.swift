@@ -73,7 +73,7 @@ extension TVMainTabView {
                 .accessibilityHint(Text("Open library"))
                 .accessibilityAction(named: "Rearrange") { arrange(from: library) }
                 Text(verbatim: library.name)
-                    .font(.vividPosterTitle)
+                    .font(.vividLandscapeCardTitle)
                     .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)

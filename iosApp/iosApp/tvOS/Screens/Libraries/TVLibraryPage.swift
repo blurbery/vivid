@@ -96,7 +96,7 @@ extension TVMainTabView {
                     hasMore: model.hasMore,
                     onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
                     onNearEnd: { _ in Task { await model.loadMoreIfNeeded() } },
-                    fixedColumnCount: 7
+                    fixedColumnCount: VividTheme.Skyline.posterGridColumns
                 )
                 .padding(.horizontal, 80)
             }

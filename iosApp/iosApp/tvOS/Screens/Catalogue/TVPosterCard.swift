@@ -99,7 +99,7 @@ struct TVMediaCard: View {
     var body: some View {
         let size = posterFrame
         let caption = TVHomeCardPreferences.shared.presentation.caption
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             posterButton(size)
             if caption.showsTitle {
                 captionView(width: size.width, showsYear: caption.showsMetadata)

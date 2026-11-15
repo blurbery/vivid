@@ -54,14 +54,14 @@ struct DetailMediaSection: View {
 
 private enum DetailMediaPanelSizes {
     #if os(tvOS)
-    static let title: CGFloat = 26
+    static let title: CGFloat = 30
     static let padding: CGFloat = 28
     static let rowSpacing: CGFloat = 24
-    static let label: CGFloat = 16
-    static let value: CGFloat = 22
-    static let fileName: CGFloat = 18
-    static let trackTitle: CGFloat = 22
-    static let unavailable: CGFloat = 22
+    static let label: CGFloat = 20
+    static let value: CGFloat = 26
+    static let fileName: CGFloat = 22
+    static let trackTitle: CGFloat = 26
+    static let unavailable: CGFloat = 26
     #else
     static let title: CGFloat = 16
     static let padding: CGFloat = 16

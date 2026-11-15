@@ -64,9 +64,13 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   The logo, the metadata line and the overview sit on the left of the card, all starting 100 points from the screen's left edge, the same as the detail pages' logo (their heading sits beside the poster), so the logo flies straight up when a title opens.
   They sit over a dark glow from the card's bottom-left corner that keeps them clear of bright artwork.
   The logo fits within 600 by 200 points with a soft shadow, and its transparent margins are trimmed when it loads, so logos with empty space in their image still sit right on the metadata line.
+  The logo's box has no fixed place on the card: the text is stacked up from 48 points above the card's bottom edge, so the logo sits higher the more lines the overview has.
   A movie's or series' metadata line is the detail pages' heading: its type, up to two genres and the content rating in an outlined badge, with no year, runtime or score (a series doesn't show its season count, which the spotlight doesn't have).
-  An episode's line keeps its own format: Episode, its episode code, title and runtime, then its content rating.
-  Under them, the item's overview is left-aligned, 760 points wide and up to three lines.
+  It is set at the heading's own size, 29 points with a 22-point badge, so it reads from across a room.
+  An episode's line keeps its own format: Episode, its episode code, title and runtime, then its content rating, also at 29 points.
+  Either line sits in a slot 44 points tall and 900 points wide, the same for every slide, so two genres and a badge fit without shrinking.
+  Under them, the item's overview is left-aligned, set at 28 points, 900 points wide and up to three lines.
+  A slide with no logo shows its title instead, in up to two lines within the same 900 points.
   When the whole overview won't fit, the slide shows as many complete sentences as do, so a long overview ends at a full stop rather than mid-sentence.
   Only a first sentence too long for three lines on its own still ends in an ellipsis.
   An item without an overview shows none.
@@ -283,6 +287,7 @@ Completed bytes use the existing HTTP cache, and retry budgets, download limits 
 
 Home uses a vertical `VStack` of reserved-height `VividCollectionMediaRow` rails backed by CollectionHStack, with the full metadata cache, expanded artwork cache and nearby-row warming.
 Row dimensions follow Home Sections visibility and the caption setting; Home posters are always Large.
+A Home poster is 240 by 360 points, and a landscape card (Continue Watching, Next Up and episode rows) is 432 by 240 points.
 The six-enabled-rail limit excludes Spotlight; empty enabled rows reserve a slot.
 Row focus updates are isolated from the feed.
 The owner accepted the cleanup and native card effects on Apple TV.
@@ -334,7 +339,7 @@ The four are a random pick from the library's 40 most recently added titles, mad
 A request that fails is made again the next time the card appears; one that succeeds is not repeated, even when it found no posters.
 Until the posters arrive, and when none of those 40 titles has one, the card shows the library's symbol on a plain tile.
 Below the row are the Watchlist, Favourites and Collections sub-tabs the For You tab used to hold.
-Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the same seven-column poster grid the Movies and Series pages had, without the old category dropdowns or mixed Recommended/Browse landing page.
+Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the poster grid the Movies and Series pages had, now six columns across, without the old category dropdowns or mixed Recommended/Browse landing page.
 A mixed library such as Sports is one card, and its page shows movies and series together; it used to appear under both Movies and Series, filtered by type.
 Movie and series libraries still ask the server for their own type; classification depends on the server's metadata.
 A mixed library asks for every type, and its Filter menu adds a Type choice to narrow it to movies or series.
@@ -385,14 +390,16 @@ The library list is the account's, so it can include libraries the profile hides
 A library that fails to load leaves the others on screen, and the page only shows an error when nothing loads.
 Posters load for the rows around the cards on screen; a card the lazy grid drops counts as off screen, so the window follows the scroll instead of staying on rows already passed.
 When no card counts as on screen, as after returning from a collection, the window follows the remembered focus.
-Catalogue grids use seven posters across, with deliberate space above the first row for focus enlargement.
+Catalogue grids use six posters across, each 260 by 390 points, with deliberate space above the first row for focus enlargement.
 
 Calendar is laid out like Library's lists, with Upcoming and Trending sub-tabs and a Calendar pill on the right where Library keeps Filter and A–Z.
 Upcoming shows the same episodes as on iPhone and iPad (see [App Design](app-design.md)), as cards grouped by day, three across; choosing one opens the series.
 Trending shows rails of series and movies coming soon with local date badges, and choosing a poster shows its date and overview.
+Its posters are 240 by 360 points in the rails and six across in a day's releases, with the same 24-point titles and 22-point second lines as other posters.
 The Calendar pill opens a month view of the page's window: on Upcoming, choosing a day with a dot scrolls to it; on Trending, it shows that day's releases with Show all to go back.
 
-Search uses seven posters across the available safe-area width, without the previous extra horizontal insets or width cap.
+Search uses six posters across the available safe-area width, without the previous extra horizontal insets or width cap.
+Seerr's Available to request results use the same six columns.
 The results sit closer to the Top Results, Movies and Series tabs.
 
 ### Siri search
@@ -425,7 +432,9 @@ It keeps a small look-behind and releases earlier decoded image references as sc
 Visible and upcoming posters are warmed before the look-behind, with two requests at a time; queue updates can refill evicted images.
 Visible or focused catalogue cards always remain eligible to load, and distant cards release their image through the same image view without replacing its subtree.
 Lightweight item metadata remains available for navigation; this is not a fixed total app-memory limit.
-Seven-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives.
+Six-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives.
+A page of seventy doesn't fill a whole number of six-poster rows, so the last row can be part filled until the next page arrives and completes it.
+The grids keep posters decoded for eight rows around the screen, two of them behind the first visible row.
 Native card controls, focus styling and layout are unchanged.
 The owner confirmed that the installed scrolling follow-up resolved the Movies and Series focus/artwork issue.
 
@@ -496,6 +505,7 @@ The earlier design let the main logo scroll away with its metadata and controls 
 Only the loading page still has that centred shelf logo: it fades in over 0.25 seconds once the page has scrolled past the hero logo, fades out over 0.08 seconds on the way back, and changes immediately under Reduce Motion.
 The hero layout is described below; the loading layout matches it.
 A soft elliptical shade sits behind the hero's heading, synopsis and details only, about 50% black across the text and eased out to nothing on one smooth 64-stop curve.
+Its size and position come from the hero's text block, from the heading down to the action row, so it follows that block when the layout changes.
 It replaced a broader three-stop contrast fade centred left of the poster, which shaded the artwork above the poster and showed banding on pale artwork; that fade had itself replaced the intersecting linear gradients rejected during Apple TV testing.
 It moves upward and fades away with scroll progress, with extended-linear rendering intended to reduce banding.
 Scroll-surface state is isolated from the content and focus state.
@@ -510,8 +520,10 @@ Logo images have their transparent margins trimmed when they load, so a logo's v
 The left edge is trimmed to where the logo turns solid (over half opaque), as long as that removes no more than 15% of its visible width, so a soft shadow or glow baked into the image doesn't push it in.
 A logo with a deliberately faint left part keeps it, so its solid part sits a little in from the edge; the other edges keep anything more than faintly visible.
 The poster sits under the logo, from the top of the heading line to the bottom of the action row, with the heading, synopsis, credit line, technical row and action row shifted right beside it.
+It is 290 by 435 points, so the heading starts 535 points above the screen's bottom edge, and the text beside it runs in a 900-point column.
 The action row ends 100 points above the screen's bottom edge, matching the left margin.
 A title without a poster keeps a plain tile in its place, and the poster's size is fixed rather than measured, so the details never move.
+The hero's sizes all come from `TVDetailHeroLayout`: the poster's height sets where the heading starts, and each row has a fixed box with room for scripts whose lines stand taller than Latin ones.
 Pages with few shelves still scroll the whole hero away.
 
 The action row (Play or Resume, Audio Tracks, Subtitles, Watchlist and More) shows one control wide with its label and the rest as circles, so the row keeps one width and nothing beside or above it moves.
@@ -532,16 +544,16 @@ Moving up onto the episode row alone leaves the page where it is.
 On the movie page, coming back up to the first shelf settles on the fold through the same snapping.
 Only the loading page still uses the smaller centred shelf logo, if it is scrolled before the title loads.
 The season selector is the shown season's name (Season 4, or Specials) in large text, fixed at the top of the shelf under the logo.
-Below it are the season's own title (when it has one), its episode count and year, and up to six lines of its synopsis.
+Below it are the season's own title (when it has one), its episode count and year, and up to four lines of its synopsis, all in 26-point text, with the synopsis up to 1,300 points wide.
 It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
 Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
 The name reserves the width of the widest season name with the same number of digits, so the arrows sit close to the name, level with it, hold one place across the single-digit seasons and step out once for the two-digit ones.
 A step shows the new season's name, synopsis and poster straight away, then selects the season and jumps the episodes after 150 milliseconds on the same season, so holding a direction doesn't load every season passed.
 Stepping away and back to the season already being browsed selects nothing and leaves the episode row where it was.
 Select opens a menu of every season with its episode count and a tick on the shown season; picking one jumps to it immediately.
-The shown season's poster stands on the trailing side, 360 by 540 points, from near the top of the screen to the bottom of the season header.
+The shown season's poster stands on the trailing side, 290 by 435 points like the hero's poster (both use one size), with its bottom edge on the bottom of the season header.
 It turns over to the next poster when the season changes (a plain swap under Reduce Motion), falls back to the series poster when the season has none, and never takes focus or opens anything.
-The header's height is fixed, so the selector and the episode row never move with the synopsis length, and the next shelf's heading starts below the screen's bottom edge.
+The header's height is fixed at 270 points, so the selector and the episode row never move with the synopsis length, and the next shelf's heading starts below the screen's bottom edge.
 A season with no synopsis of its own shows the series synopsis in its place.
 With Hide Episode Spoilers on, numbered seasons after the one the viewer is up to show the series synopsis instead of their own.
 Specials are never held back and always show their own synopsis when they have one.
@@ -561,8 +573,9 @@ Focusing an episode updates the selected season.
 The route warms remaining season metadata sequentially in nearby-season order, with only six stills per warmed season.
 Missing pages retain a Load Season action.
 Native `.card` buttons provide episode artwork focus; cards include episode number, title, summary and date, with watched/resume and context actions retained.
+Under each 400 by 225 still, the episode number and air date are 22 points, the title is 28 points on one line and the summary is 24 points on two lines; the runtime and watched capsule on the still is 22 points.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
-Separate episode and season detail pages retain their existing layouts.
+Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.
 
 The owner supplied an 89-second Apple TV reference recording.
 It establishes the requested appearance and interaction; it does not measure Apple's internal rendering performance.
@@ -570,7 +583,8 @@ The owner approved the overall page flow on Apple TV.
 The owner confirmed the season selector and the rail's movement on season changes on an Apple TV 4K (3rd generation); Reduce Motion, startup, memory and the full playback regression checks remain unverified.
 No claim of matching Apple's frame timing is made.
 
-Outside the continuous series shelf, TV card captions share 20-point titles and 18-point secondary text, aligned to the left.
+Outside the continuous series shelf, captions under posters use 24-point titles and 22-point secondary text, aligned to the left.
+Continue Watching, Next Up, the other landscape episode rows on Home and the Library row's library cards keep 20-point titles and 18-point secondary text.
 The same caption setting applies to catalogue posters, Home, Continue Watching and series episode cards.
 Long titles remain truncated.
 Emby season selectors use numbered labels such as Season 4, with Specials for season zero; Silo’s season titles are unchanged.
@@ -592,7 +606,8 @@ Cached movie playback fields hydrate before the first render.
 
 Play owns initial detail focus, with synopsis focus enabled only after Play has received focus.
 Play stays focusable while the title loads and does nothing until it knows what to play, so focus starts on it rather than landing on another control and jumping back.
-The main synopsis aligns with the other editorial text, is set at 22 points like the Home spotlight's overview, shows up to four lines on movie and series pages (three above Read more on the older layout that season and episode pages use; the loading page shows the same number of lines for each) and gains only a white focus ring, without a focused fill or shadow.
+The main synopsis aligns with the other editorial text, is set at 28 points like the Home spotlight's overview, shows up to four lines on movie and series pages (three above Read more on the older layout that season and episode pages use; the loading page shows the same number of lines for each) and gains only a white focus ring, without a focused fill or shadow.
+The sizes are chosen to read from across the room: the heading is 29 points, the credit line 27 points, and the technical row 29 points with 22-point badges.
 Selecting it opens a compact Liquid Glass panel sized to the description, with scrolling for longer text.
 Starring retains its fixed baseline.
 The bottom row shows year and runtime, white-filled resolution badges, including 1080P and 4K, with outlined dynamic-range, ATMOS and CC badges.
@@ -608,7 +623,7 @@ Main poster cards and movie thumbnails retain their existing watched indicator w
 A single-season series retains the released episode count, excluding future air dates; undated entries count only when a file is available.
 Movie and series skeletons share the loaded title, heading, synopsis, Starring and technical-row geometry.
 Other detail pages retain twelve-point gaps between credits, readouts and actions.
-Plots wrap within the action row width; Read more opens a separate scrollable Description panel.
+Plots wrap within the hero's text column (900 points on movie and series pages, 750 on the older layout); Read more opens a separate scrollable Description panel.
 Version selection lives in the detail options menu, with Auto and individual files.
 On series pages this is the three-dot More menu, with Favourites followed by Episode, Season and Series watched actions.
 Long-pressing the primary movie or series action opens a native menu with Start Over when it says Resume, and Shuffle on a series.
@@ -723,6 +738,7 @@ Person details reuse the active profile’s response cache while refreshing in t
 Missing biographies and photos still depend on server enrichment.
 
 Movie and series detail pages order the supporting sections as Trailers, Cast & Crew, More Like This and Media Information, omitting unavailable sections.
+Their text is sized for the couch too: cast names are 24 points with 21-point roles and group labels, trailer titles are 25 points over a 21-point second line, and Media Information uses 30-point panel titles, 20-point labels, 26-point values and track titles and a 22-point file name.
 
 The season selector's menu ends with Mark Season Watched or Unwatched for the shown season.
 The series More menu has Shuffle after Start Over, and orders watched actions as Episode, Season, then Series, targeting the Play/Resume episode.

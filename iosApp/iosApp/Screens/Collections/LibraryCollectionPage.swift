@@ -97,7 +97,7 @@ struct LibraryCollectionDetailView: View {
             hasMore: hasMore,
             onItemTap: open,
             onNearEnd: { _ in loadNextPage() },
-            fixedColumnCount: 7
+            fixedColumnCount: VividTheme.Skyline.posterGridColumns
         )
         #endif
     }

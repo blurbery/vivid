@@ -110,10 +110,10 @@ struct TVSeasonDetailPage: View {
             layout: .standard(clipsToHeight: true),
             backdropUrl: detail.backdropUrl,
             backdropThumbhash: detail.backdropThumbhash,
+            eyebrow: detail.seriesTitle,
             creditLine: TVHeroMetadata.creditLine(detail)
         ) {
             TVDetailStandardPrimary(
-                eyebrow: detail.seriesTitle,
                 treatment: .logo(url: nil, title: detail.title),
                 metadata: TVDetailMetadataSlots(
                     separatesSourceRow: false,
