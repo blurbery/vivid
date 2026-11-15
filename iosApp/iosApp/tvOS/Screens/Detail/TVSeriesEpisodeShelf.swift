@@ -37,7 +37,7 @@ struct TVSeriesEpisodeShelf: View {
     /// The season name (68), the gap under it (10), the 26-point facts
     /// line, and four 28-point lines of synopsis, about 251 points in
     /// Latin text, with a little room for scripts whose lines stand taller. At the
-    /// fold the episode row's captions then end about 67 points above the
+    /// fold the episode row's captions then end about 80 points above the
     /// screen's bottom edge and the next shelf's heading starts below it.
     /// The poster beside the header hangs from its bottom edge, so it
     /// rises with the header.
@@ -442,7 +442,11 @@ struct TVSeriesEpisodeShelf: View {
         guard let newId else { return }
         if let unloaded = seasons.first(where: { Self.loadFocusID($0) == newId }) {
             // A season that hasn't loaded: show it without selecting it,
-            // which is what pressing the button does.
+            // which is what pressing the button does. Focus has arrived in
+            // the row, so entry from the hero is over, as for an episode.
+            isEnteringFromHero = false
+            pendingSeasonJump = nil
+            pendingEpisodeJump = nil
             lastFocusedEpisodeId = newId
             scrollSeasonId = nil
             browseSeasonId = unloaded.contentId
@@ -724,7 +728,7 @@ private struct TVSeasonSelectorStyle: ButtonStyle {
 
 /// One episode on the series shelf: a fixed 400 by 225 still with its
 /// status, and the episode's number, title, overview and air date below.
-/// The caption is about 170 points tall in Latin text, which the shelf's
+/// The caption is about 156 points tall in Latin text, which the shelf's
 /// header height allows for.
 private struct TVSeriesShelfCard: View {
     let episode: EpisodeListItem
