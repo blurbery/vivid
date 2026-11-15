@@ -719,9 +719,10 @@ private struct TVSeriesShelfCard: View {
     let onSetFavorite: (Bool) async -> Bool
 
     private static let stillSize = CGSize(width: 400, height: 225)
-    /// Two 24-point lines of overview (about 58 points), kept whether the
-    /// episode has one line, two or none, with room for taller scripts.
-    private static let overviewHeight: CGFloat = 66
+    /// Three 24-point lines of overview (about 86 points), kept whether
+    /// the episode has three lines, fewer or none, with room for taller
+    /// scripts.
+    private static let overviewHeight: CGFloat = 96
 
     @State private var watchedOverride: Bool?
     @State private var favoriteOverride: Bool?
@@ -817,18 +818,17 @@ private struct TVSeriesShelfCard: View {
     }
 
     private var caption: some View {
+        // Three levels: the number and name lead in the one bold line,
+        // the overview is as bright as the series synopsis but lighter in
+        // weight and a step smaller, and the date is the quiet line.
         VStack(alignment: .leading, spacing: 6) {
-            Text("EPISODE \(String(episode.episodeNumber))")
-                .font(.system(size: 22))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             titleText
                 .font(.system(size: 28, weight: .semibold))
                 .lineLimit(1)
             Text(verbatim: episode.overview ?? "")
                 .font(.system(size: 24))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineLimit(3)
                 .frame(height: Self.overviewHeight, alignment: .top)
             Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
                 .font(.system(size: 22))
@@ -837,10 +837,12 @@ private struct TVSeriesShelfCard: View {
         }
     }
 
+    /// "3 · The Long Way Home", the number a little dimmer than the name.
     private var titleText: Text {
         // A missing or empty title falls back to the episode number.
         if let title = episode.title, !title.isEmpty {
-            return Text(verbatim: title)
+            return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.white.opacity(0.6))
+                + Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")
     }

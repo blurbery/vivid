@@ -576,7 +576,10 @@ Focusing an episode updates the selected season.
 The route warms remaining season metadata sequentially in nearby-season order, with only six stills per warmed season.
 Missing pages retain a Load Season action.
 Native `.card` buttons provide episode artwork focus; cards include episode number, title, summary and date, with watched/resume and context actions retained.
-Under each 400 by 225 still, the episode number and air date are 22 points, the title is 28 points on one line and the summary is 24 points on two lines; the runtime and watched capsule on the still is 22 points.
+Under each 400 by 225 still, the caption has three levels.
+The first line is the episode number and name together, as in “3 · The Long Way Home”, in bold 28-point text on one line with the number a little dimmer.
+The summary is 24 points on up to three lines in the same near-white as the series synopsis, lighter in weight and a step smaller than the name so the name still leads.
+The air date is the quiet line, 22 points in grey, and the runtime and watched capsule on the still is 22 points.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
 Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.
 
