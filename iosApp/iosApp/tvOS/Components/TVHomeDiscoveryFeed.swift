@@ -997,6 +997,12 @@ private final class TVHomeSpotlightAmbience {
     var recessed = false
     /// Home is scrolled off its top. Not observed.
     @ObservationIgnored var scrolledDown = false
+    /// Which way Home is heading next: down to the rows, or back up. It
+    /// only changes when Home's scroll comes to rest, where the focus pull
+    /// is either not showing at all or fully sharp, so the layers that
+    /// redraw for it show no change. They read it here and hand it to
+    /// their effects by value, so nothing shared is read while Home moves.
+    var pullsDown = true
 
     /// Home's scroll came to rest. `recessed` redraws the carousel, so it
     /// follows the scroll actually stopping on the rows: never the middle of
@@ -1004,7 +1010,7 @@ private final class TVHomeSpotlightAmbience {
     func scrollSettled() {
         if recessed != scrolledDown { recessed = scrolledDown }
         // At rest on the rows the next move is back up; at the top, down.
-        TVHomeSpotlightCarousel.pullsDown = !scrolledDown
+        if pullsDown == scrolledDown { pullsDown = !scrolledDown }
     }
 
     /// Focus is back on the Spotlight; don't wait for the scroll to finish.
@@ -1192,7 +1198,7 @@ private struct TVHomeSpotlightBlurBackdrop: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private func picture(_ url: String) -> some View {
+    private func picture(_ url: String, down: Bool) -> some View {
         let screen = TVHomeSpotlightCarousel.screen
         let shrink = TVHomeSpotlightCarousel.pullShrink
         let small = CGSize(width: screen.width / shrink, height: screen.height / shrink)
@@ -1219,9 +1225,9 @@ private struct TVHomeSpotlightBlurBackdrop: View {
             .visualEffect { content, proxy in
                 let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
                 return content
-                    .blur(radius: TVHomeSpotlightCarousel.backdropExtraRadius(travelled: travelled) / shrink)
+                    .blur(radius: TVHomeSpotlightCarousel.backdropExtraRadius(travelled: travelled, down: down) / shrink)
                     .offset(y: travelled / shrink)
-                    .opacity(TVHomeSpotlightCarousel.leavingOpacity(travelled: travelled))
+                    .opacity(TVHomeSpotlightCarousel.leavingOpacity(travelled: travelled, down: down))
             }
             .scaleEffect(shrink, anchor: .topLeading)
             .frame(width: screen.width, height: screen.height, alignment: .topLeading)
@@ -1229,9 +1235,10 @@ private struct TVHomeSpotlightBlurBackdrop: View {
 
     var body: some View {
         let artworkURL = tvHomeSpotlightArtworkURL(ambience, slides: slides, initialPosition: initialPosition)
+        let down = ambience.pullsDown
         ZStack(alignment: .top) {
             if let artworkURL {
-                picture(artworkURL)
+                picture(artworkURL, down: down)
                     .id(artworkURL)
                     .transition(.opacity)
             }
@@ -1270,7 +1277,7 @@ private struct TVHomeSpotlightFocusPull: View {
 
     /// One piece: `content` at a quarter of the screen with the card's
     /// shape cut out of it, blurred live on that small image.
-    private func piece(_ content: some View, opacity: @escaping @Sendable (CGFloat) -> Double) -> some View {
+    private func piece(_ content: some View, down: Bool, opacity: @escaping @Sendable (CGFloat) -> Double) -> some View {
         let screen = TVHomeSpotlightCarousel.screen
         let shrink = TVHomeSpotlightCarousel.pullShrink
         let small = CGSize(width: screen.width / shrink, height: screen.height / shrink)
@@ -1289,7 +1296,7 @@ private struct TVHomeSpotlightFocusPull: View {
             .visualEffect { content, proxy in
                 let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
                 return content
-                    .blur(radius: TVHomeSpotlightCarousel.pullRadius(travelled: travelled) / shrink)
+                    .blur(radius: TVHomeSpotlightCarousel.pullRadius(travelled: travelled, down: down) / shrink)
                     .offset(y: travelled / shrink)
                     .opacity(opacity(travelled))
             }
@@ -1301,14 +1308,16 @@ private struct TVHomeSpotlightFocusPull: View {
         let screen = TVHomeSpotlightCarousel.screen
         let shrink = TVHomeSpotlightCarousel.pullShrink
         let small = CGSize(width: screen.width / shrink, height: screen.height / shrink)
+        let down = ambience.pullsDown
         ZStack(alignment: .topLeading) {
             if let url = tvHomeSpotlightArtworkURL(ambience, slides: slides, initialPosition: initialPosition) {
-                piece(TVSpotlightBackdropImage(url: url, size: small, fillsViewport: true)) {
-                    TVHomeSpotlightCarousel.pullOpacity(travelled: $0)
+                piece(TVSpotlightBackdropImage(url: url, size: small, fillsViewport: true), down: down) {
+                    TVHomeSpotlightCarousel.pullOpacity(travelled: $0, down: down)
                 }
                 .id(url)
-                piece(Color.black) {
-                    TVHomeSpotlightCarousel.pullOpacity(travelled: $0) * TVHomeSpotlightCarousel.pullShade(travelled: $0)
+                piece(Color.black, down: down) {
+                    TVHomeSpotlightCarousel.pullOpacity(travelled: $0, down: down)
+                        * TVHomeSpotlightCarousel.pullShade(travelled: $0, down: down)
                 }
             }
         }
@@ -1387,57 +1396,54 @@ private struct TVHomeSpotlightCarousel: View {
     /// The copy over the card is fully in by this share of the scroll.
     private static let coverShare: CGFloat = 0.05
 
-    /// Which way Home is heading: down to the rows, or back up. Set when
-    /// Home's scroll comes to rest, at which point the pull is either not
-    /// showing at all or fully sharp, so switching it never shows.
-    ///
-    /// The pull follows the scroll's position, and Home's scroll starts
-    /// fast and slows to a stop in both directions. Going up, the picture
-    /// sharpens over the end of the scroll, so it eases gently into focus.
-    /// With the same positions going down, the blur would sit at the start
-    /// of the scroll and snap in. So going down it is spread across almost
-    /// the whole scroll instead, and slows to its far end as the scroll
-    /// slows, the way the way up slows into focus.
-    nonisolated(unsafe) static var pullsDown = true
+    // The pull follows the scroll's position, and Home's scroll starts
+    // fast and slows to a stop in both directions. Going up, the picture
+    // sharpens over the end of the scroll, so it eases gently into focus.
+    // With the same positions going down, the blur would sit at the start
+    // of the scroll and snap in. So going down (`down`, from
+    // `TVHomeSpotlightAmbience.pullsDown`) it is spread across almost the
+    // whole scroll instead, and slows to its far end as the scroll slows.
 
     /// The share of the scroll by which the blur has reached its far end,
     /// and the shares across which it then fades into the page.
-    private static var blurShare: CGFloat { pullsDown ? 0.9 : 0.5 }
-    private static var fadeShare: CGFloat { pullsDown ? 0.66 : 0.6 }
+    private static func blurShare(down: Bool) -> CGFloat { down ? 0.9 : 0.5 }
+    private static func fadeShare(down: Bool) -> CGFloat { down ? 0.66 : 0.6 }
     private static let goneShare: CGFloat = 0.97
 
     /// The blur at this point in the scroll.
-    static func pullRadius(travelled: CGFloat) -> CGFloat {
-        let u = min(1, max(0, (travelled - pullTravel * coverShare) / (pullTravel * (blurShare - coverShare))))
+    static func pullRadius(travelled: CGFloat, down: Bool) -> CGFloat {
+        let span = pullTravel * (blurShare(down: down) - coverShare)
+        let u = min(1, max(0, (travelled - pullTravel * coverShare) / span))
         // Going down the scroll's own slowing shapes it; a little extra
         // ease keeps the first frames, over the still-sharp card, gentle.
         // Going up it eases away from the far end and into sharp.
-        return farRadius * (pullsDown ? u * (0.35 + 0.65 * u) : u * u * (3 - 2 * u))
+        return farRadius * (down ? u * (0.35 + 0.65 * u) : u * u * (3 - 2 * u))
     }
     /// The backdrop is already blurred to `restRadius`. Blurs add as the
     /// root of the sum of their squares, so this is the extra it needs.
-    static func backdropExtraRadius(travelled: CGFloat) -> CGFloat {
-        let radius = pullRadius(travelled: travelled)
+    static func backdropExtraRadius(travelled: CGFloat, down: Bool) -> CGFloat {
+        let radius = pullRadius(travelled: travelled, down: down)
         guard radius > restRadius else { return 0 }
         return (radius * radius - restRadius * restRadius).squareRoot()
     }
     /// The copy over the card: in at once, gone the moment it matches the
     /// backdrop, which carries on from there.
-    static func pullOpacity(travelled: CGFloat) -> Double {
-        guard travelled > 0, pullRadius(travelled: travelled) < restRadius else { return 0 }
+    static func pullOpacity(travelled: CGFloat, down: Bool) -> Double {
+        guard travelled > 0, pullRadius(travelled: travelled, down: down) < restRadius else { return 0 }
         return Double(min(1, travelled / (pullTravel * coverShare)))
     }
     /// Its shade, reaching the backdrop's as its blur does.
-    static func pullShade(travelled: CGFloat) -> Double {
-        restShade * Double(min(1, pullRadius(travelled: travelled) / restRadius))
+    static func pullShade(travelled: CGFloat, down: Bool) -> Double {
+        restShade * Double(min(1, pullRadius(travelled: travelled, down: down) / restRadius))
     }
     /// The card: there until the copy has covered it, then not drawn.
     static func cardOpacity(travelled: CGFloat) -> Double {
         travelled < pullTravel * coverShare ? 1 : 0
     }
-    /// The backdrop fading into the page, once it is fully out of focus.
-    static func leavingOpacity(travelled: CGFloat) -> Double {
-        Double(1 - min(1, max(0, (travelled - pullTravel * fadeShare) / (pullTravel * (goneShare - fadeShare)))))
+    /// The backdrop fading into the page, once it is well out of focus.
+    static func leavingOpacity(travelled: CGFloat, down: Bool) -> Double {
+        let start = pullTravel * fadeShare(down: down)
+        return Double(1 - min(1, max(0, (travelled - start) / (pullTravel * goneShare - start))))
     }
 
     @State private var visualPosition = 0
