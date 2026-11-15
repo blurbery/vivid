@@ -52,6 +52,10 @@ struct TVSeriesEpisodeShelf: View {
 
     @State private var browseSeasonId: String?
     @State private var scrollSeasonId: String?
+    /// The episode focus was last on. Focus is nowhere for a moment while
+    /// it moves between cards, and the season in view still follows this
+    /// card then, rather than whichever season is at the leading edge.
+    @State private var lastFocusedEpisodeId: String?
     @State private var isEnteringFromHero = true
     @State private var pendingSeasonJump: Int?
     @State private var pendingEpisodeJump: String?
@@ -440,6 +444,7 @@ struct TVSeriesEpisodeShelf: View {
         isEnteringFromHero = false
         pendingSeasonJump = nil
         pendingEpisodeJump = nil
+        lastFocusedEpisodeId = newId
         scrollSeasonId = nil
         browseSeasonId = season.contentId
         if selectedSeason?.contentId != season.contentId {
@@ -459,7 +464,8 @@ struct TVSeriesEpisodeShelf: View {
             if let page {
                 guard !page.isEmpty else { continue }
                 count = page.count
-                if let focusedEpisodeId, let index = page.firstIndex(where: { $0.contentId == focusedEpisodeId }) {
+                if let anchorId = focusedEpisodeId ?? lastFocusedEpisodeId,
+                   let index = page.firstIndex(where: { $0.contentId == anchorId }) {
                     focusedCentre = (season, CGFloat(slot + index) * Self.slotWidth + Self.cardCentre)
                 }
             } else {
