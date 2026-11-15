@@ -173,8 +173,8 @@ struct TVDetailFoldFade: ViewModifier {
     }
 }
 
-/// The material that rises behind the scrolling shelves, with the contrast
-/// gradient that keeps the hero text readable over the backdrop.
+/// The material that rises behind the scrolling shelves, with the shade
+/// that keeps the hero text readable over the backdrop.
 struct TVDetailScrollMaterialLayer: View {
     let viewportSize: CGSize
     let showcaseHeight: CGFloat
@@ -194,22 +194,37 @@ struct TVDetailScrollMaterialLayer: View {
                     )
                 }
 
+
+            // A soft shade just behind the hero's text, so white text stays
+            // readable over bright artwork. It hugs the heading, synopsis and
+            // details only, so the rest of the picture keeps its own light,
+            // and it fades on one smooth curve with no visible steps.
             EllipticalGradient(
-                stops: [
-                    .init(color: .black.opacity(0.60), location: 0),
-                    .init(color: .black.opacity(0.56), location: 0.4),
-                    .init(color: .clear, location: 1)
-                ],
-                center: UnitPoint(x: 0.12, y: 0.68 - offset / max(1, viewportSize.height)),
+                stops: Self.textShadeStops,
+                center: .center,
                 startRadiusFraction: 0,
-                endRadiusFraction: 0.8
+                endRadiusFraction: 0.5
             )
+            .frame(width: viewportSize.width * 0.86, height: viewportSize.height * 0.56)
             .drawingGroup(opaque: false, colorMode: .extendedLinear)
+            .position(x: viewportSize.width * 0.36, y: viewportSize.height * 0.735 - offset)
             .opacity(1 - progress)
         }
         .frame(width: viewportSize.width, height: viewportSize.height)
         .clipped()
     }
+
+    /// Level across the middle, where the text sits, then eased out to
+    /// nothing at the edge.
+    private static let textShadeStops: [Gradient.Stop] = {
+        let steps = 64
+        return (0...steps).map { step in
+            let x = Double(step) / Double(steps)
+            let t = min(1, max(0, (x - 0.25) / 0.75))
+            let eased = t * t * t * (t * (t * 6 - 15) + 10)
+            return .init(color: .black.opacity(0.5 * (1 - eased)), location: x)
+        }
+    }()
 }
 
 // MARK: - Curved mask
@@ -275,8 +290,18 @@ enum TVDetailCurvedBlurBand {
         return band
     }
 
+    /// Where the material's edge meets the sides of the screen, as a
+    /// fraction of the height. It only rises a little from its lowest point
+    /// in the middle, so the frosting stays low and doesn't climb the sides.
+    static let sideEdge: CGFloat = 0.70
+    /// The curve's lowest point, in the middle of the screen.
+    static let lowestEdge: CGFloat = 0.885
+    /// How soft the edge is, as a fraction of the height: wide enough that
+    /// the frosting comes in gradually instead of reading as a blurred band.
+    static let softness: CGFloat = 0.11
+
     static func blurRadius(for viewportSize: CGSize) -> CGFloat {
-        viewportSize.height * 0.065
+        viewportSize.height * softness
     }
 
     static func livePath(viewportSize: CGSize, lift: CGFloat) -> some View {
@@ -291,9 +316,8 @@ enum TVDetailCurvedBlurBand {
         let height = viewportSize.height
         let radius = blurRadius(for: viewportSize)
         let margin = radius * 4
-        // 0.885 of the height is the curve's lowest point.
-        let top = height * 0.48 - margin
-        let bottom = height * 0.885 + margin
+        let top = height * sideEdge - margin
+        let bottom = height * lowestEdge + margin
         let rect = CGRect(x: -margin, y: top, width: width + margin * 2, height: bottom - top)
 
         let content = TVDetailMaterialCurve(lift: 0, bottomFraction: 2)
@@ -317,8 +341,12 @@ private struct TVDetailMaterialCurve: Shape {
     func path(in rect: CGRect) -> Path {
         let width = rect.width
         let height = rect.height
-        let edge = height * 0.48 - lift
-        let control = height * 1.02 - lift
+        // A cubic with both controls at the same height dips three quarters
+        // of the way to them, so this puts the dip on `lowestEdge`.
+        let side = TVDetailCurvedBlurBand.sideEdge
+        let low = TVDetailCurvedBlurBand.lowestEdge
+        let edge = height * side - lift
+        let control = height * (side + (low - side) / 0.75) - lift
         var path = Path()
         path.move(to: CGPoint(x: -0.1 * width, y: edge))
         path.addCurve(
