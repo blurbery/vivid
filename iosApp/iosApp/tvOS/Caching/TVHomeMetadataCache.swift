@@ -242,7 +242,7 @@ final class TVHomeMetadataCache {
     /// feed. An unchanged response only retries artwork and preparation.
     func store(_ response: SectionsResponse) {
         activate()
-        guard loadedScope != nil else { return }
+        guard let loadedScope else { return }
         let previousArtwork = artworkURLs(in: snapshot)
         #if os(iOS)
         let previousSlideItems = Dictionary(snapshot.spotlight.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
@@ -254,6 +254,10 @@ final class TVHomeMetadataCache {
         home.refresh()
         spotlight.initializeIfNeeded(from: limited.sections)
         let rows = limited.sections.filter { home.isVisible($0.id) }
+        #if os(tvOS)
+        // Only the rows this profile shows on Home feed Who's watching.
+        TVPosterWallStore.capture(rows, scope: loadedScope)
+        #endif
         let slides = spotlight.slides(from: limited.sections)
         if snapshot.rows.map(\.section) == rows, snapshot.spotlight == slides,
            snapshot.spotlightUpdatedAt != nil, storageError == nil {

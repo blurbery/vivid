@@ -257,6 +257,7 @@ Settings → Metadata lists Spotlight and the enabled Home rows, including Conti
 Each entry has a separate clear-cache button.
 Only enabled Home rows are retained, capped at twenty items per row; the spotlight is capped at ten.
 Disabling a row or receiving refreshed content removes obsolete entries and artwork references.
+Each Home load also saves up to 40 small poster copies for Who's watching, from the enabled rows other than Continue Watching and Next Up; a profile with a PIN saves none (see [App Design](app-design.md)).
 
 `TVHomeMetadataCache` stores versioned snapshots in the Apple TV cache directory, isolated by server and viewing profile.
 A snapshot saved in another language isn't used, because it holds row titles Vivid named itself.
@@ -466,7 +467,7 @@ Playback uses the same Intro & Credit Skipper toggle as mobile; Settings > Subti
 The Episodes group also offers Hide Episode Spoilers, which covers episodes after the viewer’s position on the series and season pages as described in [Playback](playback/README.md).
 The Audio group between Playback and Episodes holds Audio Language, Volume Boost, Boost Level (dimmed and skipped by focus while Volume Boost is off, like the custom subtitle appearance rows) and Enhanced Dialogue, as on mobile; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
 Playback and subtitle pages read Vivid’s local preferences without loading server-managed player settings.
-On Who’s watching a ring around the saved-account avatar identifies the signed-in account, and Settings > Profiles ticks it.
+Settings > Profiles ticks the signed-in account; Who’s watching doesn't mark it, and the white ring there is the focus ring on the centre profile.
 Settings uses the selected app theme, neutral grey grouped panels, inset dividers and subtly outlined icon tiles.
 The overview separates the joined Profiles panel from one joined category group; secondary pages use the same grouped treatment.
 The TV retains its white focus highlight and existing control geometry.
