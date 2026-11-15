@@ -336,11 +336,12 @@ enum TVDetailCurvedBlurBand {
 /// The region below the material's curved top edge.
 ///
 /// The shape runs well past the screen at both sides and below it. Its
-/// straight outer edges used to sit only a tenth of the width beyond the
-/// sides and a fifth of the height below, which a softer blur reaches: the
-/// blurred edge then thinned the material along the sides and bottom of the
-/// screen, and the cached band, which fills in solid below itself, no longer
-/// matched the live blur.
+/// straight side edges used to sit only a tenth of the width beyond the
+/// screen, and the live shape's bottom edge a fifth of the height below it
+/// (the cached band's was already a full height below). A softer blur
+/// reaches those: the blurred edges thinned the material along the sides
+/// of the screen and, live, along the bottom, and the cached band, which
+/// fills in solid below itself, no longer matched the live blur.
 private struct TVDetailMaterialCurve: Shape {
     var lift: CGFloat
     var bottomFraction: CGFloat = 2.4
