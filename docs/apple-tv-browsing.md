@@ -312,6 +312,7 @@ It shares the profile setting with the iPhone and iPad Calendar tab.
 Dividers separate Search and Profile.
 While focus is below the bar it closes to Search, the selected tab's symbol in the highlight and the avatar.
 Once the bar has focus the other tabs come back as their symbols, the same ones as on iPhone and iPad.
+For the first quarter of a second they, Search and the avatar are drawn but can't take focus, so entering the bar always lands on the selected tab (see [Apple TV Focus](apple-tv-focus.md)).
 A tab shows its name only while it has focus, so opening and closing the bar change its width and nothing else.
 Search opens from its magnifying glass to "Search" while it has focus, and the avatar gives way to "Settings", both inside the shared highlight.
 One white highlight glides from tab to tab, the symbol fades out before the name fades in, and the whole bar follows focus on one spring animation (none with Reduce Motion).

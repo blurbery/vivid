@@ -177,7 +177,8 @@ The whole top bar declares the selected page tab as its default focus destinatio
 Until focus has rested in the bar for about a quarter of a second, the selected tab is also the bar's only focusable item, so a touch surface swipe up lands on it exactly as a click does and cannot angle or carry across to Search or Settings.
 When a root page is scrolled more than about 60 points from its top and the bar has no focus and no tab opening, the notch tucks down to the current tab's symbol.
 It opens again when the bar takes focus (for example on Menu) or the page returns to its top, so tucking needs no focus handling of its own (see [Apple TV Browsing](apple-tv-browsing.md#tabs-and-catalogue-pages)).
-Movement within the bar remains native.
+The Left and Right hand-offs between the tabs and the utilities wait for the same quarter second, on purpose: they do nothing until the bar has settled.
+Once settled, movement within the bar remains native.
 Moving across the top menu only changes focus; Down returns to the currently selected page.
 A centre click on a different tab closes the bar around it and opens that page 0.19 seconds later (at once with Reduce Motion); moving focus, pressing Menu, the bar losing focus, or a page or the player opening from elsewhere (such as a Siri search) in that gap drops the choice, so it never overrides Search, Settings or Home (see [Apple TV Browsing](apple-tv-browsing.md)).
 Cache readiness alone cannot advance the carousel during initial placement.
