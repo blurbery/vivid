@@ -585,7 +585,7 @@ The owner confirmed the season selector and the rail's movement on season change
 No claim of matching Apple's frame timing is made.
 
 Outside the continuous series shelf, captions under posters use 24-point titles and 22-point secondary text, aligned to the left.
-Continue Watching, Next Up, the other landscape episode rows on Home and the Library row's library cards keep 20-point titles and 18-point secondary text.
+Continue Watching, Next Up, the other landscape episode rows on Home and the Library row's library cards use the same 24-point titles and 22-point secondary text, on cards that keep their size.
 The same caption setting applies to catalogue posters, Home, Continue Watching and series episode cards.
 Long titles remain truncated.
 Emby season selectors use numbered labels such as Season 4, with Specials for season zero; Silo’s season titles are unchanged.

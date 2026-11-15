@@ -59,8 +59,8 @@ struct TVCardCaptionText: Sendable {
 
     static let posterTitle = TVCardCaptionText(size: 24, weight: .medium)
     static let posterMetadata = TVCardCaptionText(size: 22, weight: .regular)
-    static let landscapeTitle = TVCardCaptionText(size: 20, weight: .medium)
-    static let landscapeMetadata = TVCardCaptionText(size: 18, weight: .regular)
+    static let landscapeTitle = TVCardCaptionText(size: 24, weight: .medium)
+    static let landscapeMetadata = TVCardCaptionText(size: 22, weight: .regular)
 
     var font: Font {
         switch weight {

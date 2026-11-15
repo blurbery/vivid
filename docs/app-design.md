@@ -96,7 +96,7 @@ Account settings uses the same canvas and labelled fields, while profile selecti
 More Like This on tvOS uses Home’s Large poster size.
 TV captions use one local server/profile setting across Search, Home, Library, library pages, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only.
 Under posters, titles use 24-point medium text and secondary captions use 22-point text, both left aligned and on one line each, so they read from across the room.
-Continue Watching, Next Up, the other landscape episode rows on Home and the Library tab's library cards keep 20-point titles and 18-point secondary captions.
+Continue Watching, Next Up, the other landscape episode rows on Home and the Library tab's library cards use the same 24-point titles and 22-point secondary captions, on cards that keep their size.
 Episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
 Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
 Search keeps six columns across the safe-area width with reduced spacing below its result tabs.

@@ -204,7 +204,7 @@ The Home Sections editor retains hidden row definitions even when Emby skips the
 Home uses the discovery feed.
 Its visible rows reserve a stable card-strip height using Home's Large poster size and the caption setting.
 Poster and landscape rows retain different artwork heights; missing metadata still reserves its caption line.
-The reserved caption height follows the card type: poster rows reserve the 24-point and 22-point poster caption lines, and landscape rows the 20-point and 18-point ones, from the same sizes the cards draw with.
+The reserved caption height follows the card type: poster and landscape rows both reserve 24-point and 22-point caption lines, each from the sizes its own cards draw with.
 Cards align at their top edge and row headings reserve one fixed line.
 Current Home uses a VStack with row heights reserved from the existing card and caption geometry, with up to six enabled media rails plus Spotlight.
 All normal Home rails use VividCollectionMediaRow with the same CollectionHStack revision as Swiftfin, UIKit cell reuse and continuous leading-edge scrolling.
