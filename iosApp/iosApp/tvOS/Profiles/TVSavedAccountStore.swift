@@ -761,6 +761,7 @@ final class TVSavedAccountStore {
         for account in selected { CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID) }
         do {
             for account in selected { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
+            for account in selected { await TVPosterWallStore.delete(for: account) }
         } catch {
             self.error = String(localized: "Couldn’t clear the account cache. Try deleting again.")
             return false

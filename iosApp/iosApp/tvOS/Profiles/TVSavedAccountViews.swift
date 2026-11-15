@@ -1,35 +1,46 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Who's watching: the saved profiles at launch. Choosing one plays the
-/// startup animation over the row before the app takes over.
+/// Who's watching: the saved profiles at launch, on an arc over a drifting
+/// wall of library posters. Choosing one plays the startup animation over
+/// the page before the app takes over.
 struct TVSavedProfilesScreen: View {
     let router: AppRouter
     @State private var store = TVSavedAccountStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isFinishingHandoff = false
+    @State private var path = NavigationPath()
+    @State private var posters: [UIImage] = []
+    /// The centred profile's colour, for the wall's glow.
+    @State private var glowHue: Double?
     private var handoffDuration: Double { reduceMotion ? 0.2 : 0.55 }
 
     var body: some View {
         ZStack {
             TVAppBackdrop()
-            NavigationStack {
-                VStack(spacing: 28) {
-                    VividLogoView(size: 280)
+            NavigationStack(path: $path) {
+                VStack(spacing: 0) {
                     Text("Who’s watching?")
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    TVSavedAccountCards(isSettings: false)
-                        .frame(maxWidth: 1720)
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.top, 84)
+                    Spacer(minLength: 0)
+                    TVProfileOrbit { route in
+                        path.append(route)
+                    } onSelectionChange: { account in
+                        glowHue = account.map(TVProfileOrbitPlace.hue(for:))
+                    }
+                    Spacer(minLength: 0)
                     if let error = store.error {
                         Text(error).font(.system(size: 22))
                             .foregroundStyle(.white.opacity(0.7))
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 1000)
                     }
+                    Spacer().frame(height: 120)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background { TVAppBackdrop() }
+                .background { TVPosterWall(posters: posters, glowHue: glowHue) }
                 .overlay(alignment: .bottom) {
                     VividCopyrightFooter()
                         .padding(.bottom, 40)
@@ -61,6 +72,9 @@ struct TVSavedProfilesScreen: View {
             }
         }
         .environment(router)
+        .task(id: store.accounts) {
+            posters = await TVPosterWallStore.posters(for: store.accounts)
+        }
         .task(id: isFinishingHandoff) {
             guard isFinishingHandoff else { return }
             do { try await Task.sleep(for: .seconds(handoffDuration)) } catch { return }

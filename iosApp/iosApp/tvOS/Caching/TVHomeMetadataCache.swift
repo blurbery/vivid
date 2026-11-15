@@ -242,7 +242,10 @@ final class TVHomeMetadataCache {
     /// feed. An unchanged response only retries artwork and preparation.
     func store(_ response: SectionsResponse) {
         activate()
-        guard loadedScope != nil else { return }
+        guard let loadedScope else { return }
+        #if os(tvOS)
+        TVPosterWallStore.capture(response, scope: loadedScope)
+        #endif
         let previousArtwork = artworkURLs(in: snapshot)
         #if os(iOS)
         let previousSlideItems = Dictionary(snapshot.spotlight.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
