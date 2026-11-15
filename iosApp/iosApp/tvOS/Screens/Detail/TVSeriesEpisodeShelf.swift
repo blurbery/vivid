@@ -35,8 +35,8 @@ struct TVSeriesEpisodeShelf: View {
     private static let slotWidth: CGFloat = 440
     private static let cardCentre: CGFloat = 200
     /// The season name (68), the gap under it (10), the 26-point facts
-    /// line, and four 26-point lines of synopsis, about 241 points in
-    /// Latin text, with room for scripts whose lines stand taller. At the
+    /// line, and four 28-point lines of synopsis, about 251 points in
+    /// Latin text, with a little room for scripts whose lines stand taller. At the
     /// fold the episode row's captions then end about 67 points above the
     /// screen's bottom edge and the next shelf's heading starts below it.
     /// The poster beside the header hangs from its bottom edge, so it
@@ -530,9 +530,11 @@ private struct TVSeasonSummary: View {
                 .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            // The same size and brightness as the series synopsis in the
+            // hero, so the two read as one voice.
             Text(verbatim: synopsis)
-                .font(.system(size: 26))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 28))
+                .foregroundStyle(Color.white.opacity(0.92))
                 .lineLimit(4)
                 .frame(maxWidth: maxWidth, alignment: .leading)
         }

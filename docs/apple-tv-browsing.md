@@ -544,7 +544,8 @@ Moving up onto the episode row alone leaves the page where it is.
 On the movie page, coming back up to the first shelf settles on the fold through the same snapping.
 Only the loading page still uses the smaller centred shelf logo, if it is scrolled before the title loads.
 The season selector is the shown season's name (Season 4, or Specials) in large text, fixed at the top of the shelf under the logo.
-Below it are the season's own title (when it has one), its episode count and year, and up to four lines of its synopsis, all in 26-point text, with the synopsis up to 1,300 points wide.
+Below it are the season's own title (when it has one), its episode count and year in 26-point text, and up to four lines of its synopsis, up to 1,300 points wide.
+The season synopsis is set like the series synopsis in the hero, at 28 points in the same near-white.
 It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
 Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
 The name reserves the width of the widest season name with the same number of digits, so the arrows sit close to the name, level with it, hold one place across the single-digit seasons and step out once for the two-digit ones.
