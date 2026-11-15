@@ -741,6 +741,7 @@ Read [focus ownership rules](apple-tv-focus.md) before changing navigation.
 Preserve series season/episode focus, context-menu restoration, and cancellation of obsolete artwork work.
 
 Cast and crew filmography uses Home’s dense poster width and shared title/year captions.
+The portrait at the top of a person's page uses the same dense width, 200 by 300 points.
 Watchlist and Favourites no longer show Movie or Series pills on iOS or tvOS; the Filter menu's Show choice separates them instead.
 Library’s secondary tabs scroll with Watchlist, Favourites and Collections.
 Person details reuse the active profile’s response cache while refreshing in the background; filmography and filter availability load alongside the person request.
