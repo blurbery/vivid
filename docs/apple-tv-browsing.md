@@ -583,6 +583,7 @@ The summary, on up to three lines, and the air date under it use the 22-point gr
 The runtime and watched capsule on the still is 22 points.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
 Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.
+Their episode rail's captions are larger too: titles are 28 points and runtimes 22.
 
 The owner supplied an 89-second Apple TV reference recording.
 It establishes the requested appearance and interaction; it does not measure Apple's internal rendering performance.
