@@ -27,10 +27,12 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   Its layout height is 960 points, so the card sits 60 points in from every edge of the screen, with no page dots under the cards.
   Behind the card, the current slide's artwork fills the whole first screen, blurred and darkened.
   The card draws the same artwork at the same full-screen size and position and shows the part behind it, so it reads as a sharp section of one picture lifted off the screen.
-  The blurred copy is drawn once per slide at a quarter of the screen size and stretched, not blurred live, cross-fades over 0.8 seconds when the slide changes (at once with Reduce Motion), and hides while a title opened from the spotlight is on screen.
+  The blurred copy is drawn once per slide at a quarter of the screen size and stretched, not blurred live, and cross-fades over 0.8 seconds when the slide changes (at once with Reduce Motion).
+  It hides while the zoom flight into a title opened from the spotlight is under way and until the flight back has landed; with Reduce Motion, or for a slide with no logo to fly, there is no flight and it stays put.
   Home's rows start below the first screen, and Home rests on either the spotlight or the rows, never in between: Down from the spotlight is one focus-driven scroll that carries the spotlight off and puts the first row under the tab bar, and Up from the first row returns to the top.
-  The spotlight and the blurred artwork fade out over the second half of that scroll, leaving the rows on the theme or Theme Mode backdrop.
-  Once Home has settled on the rows, rotation waits and the pill hides, and the slide gets its full six seconds when focus returns.
+  The spotlight and the blurred artwork fade out over the second half of that scroll.
+  With Theme Mode on Off or Adaptive the rows then sit on the theme or the Adaptive backdrop; with Spotlight Only, the slide-colour backdrop described below scrolls with Home, so at the rows' resting place it is still solid behind the first 110 points of the screen and fades out over the next 520, with the theme below that.
+  Once Home's scroll has come to rest on the rows, rotation waits and the pill hides, and the slide gets its full six seconds when focus returns.
   Each card instead carries a small pill in its bottom-right corner, 80 by 6 points and 48 points in from both edges, that fills over the card's six seconds, so it's clear the spotlight moves on by itself.
   It stops while rotation is paused and carries on from where it was, starts again from empty when the slide changes, and travels with its card.
   Cards before the current one show a full pill and cards after it an empty one, so moving forward the card leaving goes out full and the one arriving comes in empty; moving back, the card leaving empties as it goes.

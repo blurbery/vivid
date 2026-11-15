@@ -72,11 +72,7 @@ struct TVHomeDiscoveryFeed: View {
                                     rowArtworkWindow.focus(index: 0)
                                 }
                             },
-                            onEnterFirstRow: {
-                                // Pauses once focus has left for the rows.
-                                spotlightAmbience.recess()
-                                enterStudiosNetworks()
-                            },
+                            onEnterFirstRow: enterStudiosNetworks,
                             onSelect: { slide, position in
                                 spotlightOpenedDetail = true
                                 studiosNetworksOpenedDetail = false
@@ -195,11 +191,16 @@ struct TVHomeDiscoveryFeed: View {
             // moves that scroll's resting place to the rows page, so the
             // engine carries the Spotlight off in its one move.
             .scrollTargetBehavior(TVHomeSpotlightPaging(rowsOffset: slides.isEmpty ? 0 : TVHomeSpotlightPaging.rowsOffset))
-            // Any scroll off the top means focus has gone down to the rows.
+            // Home off its top and at rest means it has settled on the rows.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top > 20
             } action: { _, scrolledDown in
-                if scrolledDown { spotlightAmbience.recess() } else { spotlightAmbience.comeForward() }
+                spotlightAmbience.scrolledDown = scrolledDown
+                if !scrolledDown { spotlightAmbience.comeForward() }
+            }
+            .onScrollPhaseChange { (_: ScrollPhase, phase: ScrollPhase) in
+                let isIdle = phase == .idle
+                if isIdle { spotlightAmbience.scrollSettled() }
             }
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
@@ -984,28 +985,21 @@ private struct TVHomeSpotlightPaging: ScrollTargetBehavior {
 @Observable
 private final class TVHomeSpotlightAmbience {
     var position: Int?
-    /// Home has left the Spotlight for its rows: the carousel waits, with
-    /// its progress pill hidden and the slide's time reset.
+    /// Home has settled on its rows: the carousel waits, with its progress
+    /// pill hidden and the slide's time reset.
     var recessed = false
-    @ObservationIgnored private var leaving = false
-    @ObservationIgnored private var run = 0
+    /// Home is scrolled off its top. Not observed.
+    @ObservationIgnored var scrolledDown = false
 
-    /// `recessed` redraws the carousel, so it follows once the scroll to the
-    /// rows has finished instead of landing in the middle of it.
-    func recess() {
-        guard !leaving else { return }
-        leaving = true
-        run += 1
-        let token = run
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(0.55))
-            if token == run, leaving { recessed = true }
-        }
+    /// Home's scroll came to rest. `recessed` redraws the carousel, so it
+    /// follows the scroll actually stopping on the rows: never the middle of
+    /// the move, and never a Down press that had no row to go to.
+    func scrollSettled() {
+        if recessed != scrolledDown { recessed = scrolledDown }
     }
 
+    /// Focus is back on the Spotlight; don't wait for the scroll to finish.
     func comeForward() {
-        leaving = false
-        run += 1
         if recessed { recessed = false }
     }
 }
@@ -1428,8 +1422,11 @@ private struct TVHomeSpotlightCarousel: View {
                                 // The focus outline is drawn on the card, so it
                                 // fades with it as Home scrolls to the rows.
                                 .overlay {
-                                    // Only the card on show carries one.
-                                    if position == visualPosition {
+                                    // Only the card on show and the focused
+                                    // card carry one. They differ while an
+                                    // automatic advance slides the focused
+                                    // card away, before focus catches up.
+                                    if position == visualPosition || focusedPosition == position {
                                         TVSpotlightFocusRing(
                                             artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl,
                                             isFocused: focusedPosition == position
