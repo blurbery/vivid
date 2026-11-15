@@ -53,11 +53,8 @@ struct TVSeriesEpisodeShelf: View {
     @State private var browseSeasonId: String?
     @State private var scrollSeasonId: String?
     /// The episode focus was last on in the row, cleared when the season
-    /// selector takes focus. While it is set, the shown season is that
-    /// episode's: focus is nowhere for a moment between two cards, and on
-    /// a quick run of moves the focused card is ahead of what the row has
-    /// scrolled to, so neither the focus state nor the scroll position
-    /// alone says which season the viewer is on.
+    /// selector takes focus. Focus is nowhere for a moment between two
+    /// cards, and the season in view keeps following this card then.
     @State private var lastFocusedEpisodeId: String?
     @State private var isEnteringFromHero = true
     @State private var pendingSeasonJump: Int?
@@ -479,11 +476,17 @@ struct TVSeriesEpisodeShelf: View {
             slot += count
         }
 
-        // The focused episode decides, wherever the row has scrolled to.
-        // Moving quickly, the row is still catching up and its leading
-        // edge is in the season before, which made the header and poster
-        // flick back a season on every move just after a season change.
-        if let focusedCentre {
+        // The focused episode decides while the row is on it or still
+        // scrolling to it: a card up to two slots past either edge is one
+        // the row is on its way to, even with a second move queued behind
+        // the first. Without that reach, the row's leading edge spoke
+        // while it caught up, and just after a season change that edge is
+        // in the season before, so the header and poster flicked back a
+        // season on every move. Further off than that, the row has been
+        // flung past the focused card and its leading edge decides.
+        let reach = 2 * Self.slotWidth
+        if let focusedCentre, focusedCentre.centre >= visible.minX - reach,
+           focusedCentre.centre <= visible.maxX + reach {
             return focusedCentre.season.contentId
         }
         let leadingCentre = max(0, visible.minX) + Self.cardCentre

@@ -566,6 +566,7 @@ The owner approved this layout on an Apple TV simulator and on an Apple TV 4K (3
 
 Episode focus updates the shown season immediately.
 During accelerated remote scrolling, scroll geometry keeps the shown season on the visible rail when the previously focused episode has moved offscreen, without changing playback selection or triggering season jumps.
+An episode up to two cards past either edge still counts as on the rail, because the row is on its way to it, so the season and its poster change once at a season boundary and don't flick back while the row catches up.
 The last shown season remains when focus moves down to the lower shelves.
 Moving up to the action row prepares the shelf for entry again, so it shows the Play target's season.
 Rapid boundary crossings still need confirmation on Apple TV.
