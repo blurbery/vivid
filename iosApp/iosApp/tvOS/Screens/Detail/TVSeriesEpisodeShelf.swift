@@ -529,8 +529,8 @@ private struct TVSeasonSummary: View {
 }
 
 /// The shown season's poster, the same size as the hero's. It turns over
-/// to the next season's poster when the season changes, and can't be
-/// focused or opened.
+/// to the next season's poster when the season changes and the picture is
+/// a different one, and can't be focused or opened.
 private struct TVSeasonPosterCard: View {
     let season: Season?
     let seriesPosterUrl: String?
@@ -542,13 +542,21 @@ private struct TVSeasonPosterCard: View {
     @State private var angle: Double = 0
     @State private var turn: Task<Void, Never>?
 
-    private var seasonPosterUrl: String? {
-        let url = shown?.posterUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    private var seasonPosterUrl: String? { Self.posterUrl(of: shown) }
+
+    private static func posterUrl(of season: Season?) -> String? {
+        let url = season?.posterUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return url.isEmpty ? nil : url
     }
 
+    /// The picture a season shows: its own poster, or the series' when it
+    /// has none.
+    private func artwork(for season: Season?) -> String {
+        Self.posterUrl(of: season) ?? seriesPosterUrl ?? ""
+    }
+
     var body: some View {
-        let url = seasonPosterUrl ?? seriesPosterUrl ?? ""
+        let url = artwork(for: shown)
         CachedAsyncImage(
             url: url,
             targetSize: Self.size,
@@ -575,7 +583,10 @@ private struct TVSeasonPosterCard: View {
 
     private func show(_ season: Season?) {
         turn?.cancel()
-        guard shown != nil, !reduceMotion else {
+        // A season with the same picture as the one showing, such as two
+        // seasons that both fall back to the series poster, changes without
+        // a turn: the poster would only spin round to itself.
+        guard shown != nil, !reduceMotion, artwork(for: season) != artwork(for: shown) else {
             angle = 0
             shown = season
             return

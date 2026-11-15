@@ -553,6 +553,7 @@ Stepping away and back to the season already being browsed selects nothing and l
 Select opens a menu of every season with its episode count and a tick on the shown season; picking one jumps to it immediately.
 The shown season's poster stands on the trailing side, 290 by 435 points like the hero's poster (both use one size), with its bottom edge on the bottom of the season header.
 It turns over to the next poster when the season changes (a plain swap under Reduce Motion), falls back to the series poster when the season has none, and never takes focus or opens anything.
+It doesn't turn when the next season shows the same picture, such as two seasons that both fall back to the series poster.
 The header's height is fixed at 270 points, so the selector and the episode row never move with the synopsis length, and the next shelf's heading starts below the screen's bottom edge.
 A season with no synopsis of its own shows the series synopsis in its place.
 With Hide Episode Spoilers on, numbered seasons after the one the viewer is up to show the series synopsis instead of their own.
