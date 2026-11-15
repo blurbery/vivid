@@ -527,6 +527,7 @@ The logo leaves with the shelves once the page scrolls on past the first shelf (
 Coming back up to the season selector returns the page to that same resting position, the fold, with the logo whole.
 The system's focus scroll brings the page up.
 When that scroll would stop less than 300 points below the fold, the fold snapping moves its stopping position to the fold.
+That applies only to a scroll heading up: a short scroll down is left alone, so moving down to the Cast & Crew row on a movie with trailers brings the names under the portraits on screen and moving across the row keeps the page there.
 When the page is already 200 points or less below the fold, the selector is on screen and focus doesn't scroll, so the page scrolls itself back to the fold.
 Moving up onto the episode row alone leaves the page where it is.
 On the movie page, coming back up to the first shelf settles on the fold through the same snapping.
