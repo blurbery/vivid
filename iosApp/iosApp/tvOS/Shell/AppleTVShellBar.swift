@@ -327,6 +327,13 @@ extension TVMainTabView {
         @State private var pendingRoot: Root?
         /// Opens `pendingRoot`. Cancelled if anything else happens first.
         @State private var pendingOpen: DispatchWorkItem?
+        /// True once focus has rested in the bar for a moment. Until then
+        /// the selected tab is the bar's only focusable item, so a touch
+        /// surface swipe up from the page lands on it like a click does,
+        /// and can't angle or carry across to Search or Settings.
+        @State private var entrySettled = false
+        /// Turns `entrySettled` on. Cancelled when focus leaves the bar.
+        @State private var entrySettle: DispatchWorkItem?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         enum Item: Hashable {
@@ -374,6 +381,7 @@ extension TVMainTabView {
                 // Moving off the chosen tab before its page opens drops it.
                 if let pendingRoot, focus != .root(pendingRoot) { cancelPendingOpen() }
                 followFocus()
+                updateEntrySettle()
                 isFocused = focus != nil
                 if focus == nil { onContentHandOff() }
             }
@@ -486,7 +494,9 @@ extension TVMainTabView {
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
             .focused($focus, equals: .root(root))
+            .disabled(!entrySettled && !isSelected)
             .onMoveCommand { direction in
+                guard entrySettled else { return }
                 if direction == .left, root == roots.first { focus = leadingUtility }
             }
             .accessibilityLabel(Text("\(root.title), tab, \(position) of \(roots.count)"))
@@ -510,6 +520,7 @@ extension TVMainTabView {
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
             .focused($focus, equals: .search)
+            .disabled(!entrySettled)
             .onMoveCommand { direction in
                 if swapsUtilities {
                     if direction == .left, let last = roots.last { focus = .root(last) }
@@ -527,6 +538,7 @@ extension TVMainTabView {
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
             .focused($focus, equals: .profile)
+            .disabled(!entrySettled)
             .onMoveCommand { direction in
                 if swapsUtilities {
                     if direction == .right, let first = roots.first { focus = .root(first) }
@@ -545,6 +557,24 @@ extension TVMainTabView {
 
         private func followFocus() {
             withAnimation(tabAnimation) { shownFocus = focus }
+        }
+
+        /// Opens the rest of the bar to focus shortly after focus enters
+        /// it, and closes it again at once when focus leaves.
+        private func updateEntrySettle() {
+            guard focus != nil else {
+                entrySettle?.cancel()
+                entrySettle = nil
+                entrySettled = false
+                return
+            }
+            guard !entrySettled, entrySettle == nil else { return }
+            let work = DispatchWorkItem {
+                entrySettle = nil
+                if focus != nil { entrySettled = true }
+            }
+            entrySettle = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
         }
 
         private func select(_ root: Root) {
