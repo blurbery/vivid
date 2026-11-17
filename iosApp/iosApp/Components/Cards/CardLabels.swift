@@ -43,7 +43,11 @@ func episodeRailAccessibilityLabel(
     isPlayed: Bool
 ) -> String {
     var parts = [EpisodeCardCaption.spokenPosition(season: seasonNumber, episode: episodeNumber)]
-    if let title, !title.isEmpty { parts.append(title) }
+    // A blank or whitespace-only title is no title, the same as on the
+    // card itself, where it falls back to the episode number.
+    if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+        parts.append(title)
+    }
     if let metadata, !metadata.isEmpty { parts.append(metadata) }
     if isCurrent {
         parts.append(String(localized: "Now viewing", comment: "Spoken status of the episode whose page is open"))
