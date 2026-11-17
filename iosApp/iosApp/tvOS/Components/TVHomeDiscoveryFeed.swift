@@ -1929,6 +1929,11 @@ private struct TVHomeSpotlightCarousel: View {
         let previousIndex = index
         alignmentAttempted = false
         visualPosition = position
+        // The backdrop, shading and pill follow the card now on show: if
+        // its picture or logo isn't in yet, they wait with it and come in
+        // together, as on first opening Home.
+        let ready = readyPositions[position] == slide(at: position).id
+        if ambience.ready != ready { ambience.ready = ready }
         // The parent restores this exact native card after leaving the spotlight.
         onPositionChange(position)
         if index != previousIndex {
@@ -2387,7 +2392,9 @@ private struct TVHomeSpotlightArtwork: View {
                             .frame(width: Self.logoBox.width, height: Self.logoBox.height, alignment: .bottomLeading)
                             // A light one close in for definition; the long
                             // one on the picture does the lifting.
-                            .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
+                            .shadow(color: .black.opacity(Double(TVSpotlightLogoFlight.closeShadowOpacity)),
+                                    radius: TVSpotlightLogoFlight.closeShadowRadius,
+                                    x: 0, y: TVSpotlightLogoFlight.closeShadowDrop)
                     } else if !logoReady {
                         // Still loading: hold the logo's place, and show no
                         // title that the logo would then replace.
@@ -2434,7 +2441,7 @@ private struct TVHomeSpotlightArtwork: View {
                     }
                 }
                 .foregroundStyle(.white)
-                // The logo's box ends 40 points under the picture, so the
+                // The logo's box ends 60 points under the picture, so the
                 // logo straddles its bottom edge.
                 .padding(.top, Self.textTop)
                 .padding(.leading, Self.contentLeadingInset)

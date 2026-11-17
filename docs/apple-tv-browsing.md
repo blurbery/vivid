@@ -28,12 +28,13 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   The picture is a wide band at the top of that space, 1,800 by 720 points (2.5:1), and the logo, details line and overview sit under it on the blurred artwork.
   Behind the card, the current slide's artwork fills the whole first screen, blurred and darkened by 28%.
   The picture draws the same artwork at the same full-screen size and position and shows the part behind it, so the two are one picture.
-  The picture's edges fall into a soft shadow, the same on all four sides, and the space around it darkens from nothing at the picture to half black at the screen's edges in one smooth falloff, so the picture reads as the far wall of a recess rather than a card lifted off the screen.
+  The picture's edges fall into a soft shadow, the same on all four sides, and the space around it darkens from nothing at the picture towards the screen's edges in one smooth falloff, to about a fifth black at the top and sides and nearer two fifths at the bottom, so the picture reads as the far wall of a recess rather than a card lifted off the screen.
   That shading is drawn once, steps aside while the carousel slides (it is fitted to a picture at rest) and returns over half a second once the slide has landed.
   The blurred copy's resting blur is worked out once per slide, at a quarter of the screen size, and the copy is then stretched, so at rest nothing is blurred live; only the focus pull described below adds a live blur, on that quarter-size image.
   It cross-fades over 0.8 seconds when the slide changes (at once with Reduce Motion).
   It hides when a slide is pressed and returns as Back starts, fading in over 0.3 seconds while the picture shrinks back into the card; with Reduce Motion, or for a slide with no logo to fly, there is no flight and it stays put.
   Nothing of the spotlight shows until the current card's picture and logo are ready: the card, its text, the blurred artwork and the shading then fade in together over 0.4 seconds, and the countdown pill waits for them, so Home never opens on a block of the slide's colour.
+  The same holds when focus moves to a card that isn't ready yet: the blurred artwork, shading and pill wait with it.
   Home's rows start below the first screen, and Home rests on either the spotlight or the rows, never in between: Down from the spotlight is one focus-driven scroll that carries the spotlight off and puts the first row under the tab bar, and Up from the first row returns to the top.
   Leaving the spotlight is a focus pull, as with a film camera: the picture is held still while the rows rise over it, goes out of focus, and only then fades into the page.
   It follows the scroll's position, so it lasts exactly as long as the scroll, and Up plays it back, the picture arriving blurred and then sharpening.
@@ -69,6 +70,7 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   The logo, the metadata line and the overview sit on the left under the picture, all starting 100 points from the screen's left edge, the same as the detail pages' logo (their heading sits beside the poster), so the logo flies straight up when a title opens.
   The picture carries no darkening for them.
   The logo hangs over the picture's bottom edge and casts a soft shadow on the picture only, down and to the right by up to 38 points and never more than about a third of the logo's height, which puts it in front of the picture.
+  The logo also keeps a faint close shadow of its own for definition, which its flying copy carries too.
   The focus outline has a soft gap where the logo or title crosses that edge, taking in the bottom-left corner, so no line shows through the letters.
   The logo fits within 680 by 225 points, and its transparent margins are trimmed when it loads, so logos with empty space in their image still sit right on the metadata line.
   The logo's box ends 60 points below the picture's bottom edge on every slide, and the details line and overview are stacked down from it.
@@ -87,7 +89,8 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   Over the zoom, the picture opens out to the full screen as its corners square off and its edge shadow clears, the logo flies from the card to the page's logo corner, and the page's text, poster and buttons fade in once the backdrop is in place; Back runs the same in reverse.
   These are copies drawn above the app (`TVSpotlightLogoFlight`): the move takes about half a second and the backdrop copy then fades out over a quarter of a second, so they're on screen for about 0.8 seconds.
   The logo's copy is put on screen, still, in the same update that hides the real logo, at both ends, so the logo never blinks.
-  It has no shadow of its own: the card's shadow of the logo stays on the picture under the picture's copy, so it fades out as that copy covers the card and back in as it uncovers it.
+  It casts no shadow of its own on the picture: the card's shadow of the logo stays on the picture under the picture's copy, so it fades out as that copy covers the card and back in as it uncovers it.
+  Only the logo's close shadow travels with the copy, clearing on the way to the page, whose logo has none.
   They're moved by Core Animation so they keep pace with the system zoom while the page is being built, with the real card and page logos hidden while they're in the air.
   The tab bar fades out and back in with the transition.
   Other ways into a detail page, and Reduce Motion, keep the standard push.

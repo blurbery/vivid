@@ -82,6 +82,14 @@ final class TVSpotlightLogoFlight {
         return CGSize(width: down * 24 / 38, height: down)
     }
 
+    /// The logo's own close shadow, for definition. The card's logo and
+    /// its flying copy both carry it, so nothing changes when one takes
+    /// over from the other; the detail page's logo has none, so the copy's
+    /// clears on the way there and builds on the way back.
+    static let closeShadowOpacity: Float = 0.35
+    static let closeShadowRadius: CGFloat = 3
+    static let closeShadowDrop: CGFloat = 2
+
     /// The shadow the picture's edges fall into: a rounded rectangle's
     /// inner shadow, the same on every side, as an image whose middle
     /// stretches.
@@ -148,22 +156,30 @@ final class TVSpotlightLogoFlight {
         guard !UIAccessibility.isReduceMotionEnabled, let logo = logos[sourceID], logo.slideID == slideID else { return }
         hiddenSourceID = sourceID
         hidesHomeBackdrop = true
-        stage(logo, at: logo.frame)
+        stage(logo, at: logo.frame, closeShadow: Self.closeShadowOpacity)
     }
 
     /// Puts the logo's copy on screen, still, where the real logo is, in
     /// the same update that hides the real one. The flight starts a turn of
     /// the run loop later; without this the logo was gone for that frame
     /// and blinked.
-    private func stage(_ logo: Logo, at frame: CGRect) {
+    private func stage(_ logo: Logo, at frame: CGRect, closeShadow: Float) {
         clearViews()
         guard let window = Self.keyWindow else { return }
         let view = UIImageView(image: logo.image)
         view.contentMode = .scaleToFill
         view.isUserInteractionEnabled = false
         view.frame = frame
+        Self.setCloseShadow(on: view, opacity: closeShadow)
         window.addSubview(view)
         flyingViews.append(view)
+    }
+
+    private static func setCloseShadow(on view: UIView, opacity: Float) {
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowRadius = closeShadowRadius
+        view.layer.shadowOffset = CGSize(width: 0, height: closeShadowDrop)
+        view.layer.shadowOpacity = opacity
     }
 
     /// Starts the flight to the detail page for the card being opened.
@@ -201,7 +217,7 @@ final class TVSpotlightLogoFlight {
         hiddenSourceID = sourceID
         hidesDetailLogo = true
         hidesHomeBackdrop = false
-        if let logo = logos[sourceID] { stage(logo, at: Self.detailLogoFrame(for: logo.image.size)) }
+        if let logo = logos[sourceID] { stage(logo, at: Self.detailLogoFrame(for: logo.image.size), closeShadow: 0) }
         generation += 1
         let flight = generation
         DispatchQueue.main.async { [weak self] in
@@ -251,9 +267,17 @@ final class TVSpotlightLogoFlight {
         logoView.contentMode = .scaleToFill
         logoView.isUserInteractionEnabled = false
         logoView.frame = toDetail ? logo.frame : detailLogo
-        // No shadow of its own. The card's shadow of the logo stays on the
-        // picture, under the picture's copy, so it fades out from under the
-        // logo as the copy covers the card, and back in as it uncovers it.
+        // No cast shadow of its own. The card's shadow of the logo stays on
+        // the picture, under the picture's copy, so it fades out from under
+        // the logo as the copy covers the card, and back in as it uncovers
+        // it. Only the logo's close shadow travels with the copy.
+        let close: (Float, Float) = toDetail ? (Self.closeShadowOpacity, 0) : (0, Self.closeShadowOpacity)
+        Self.setCloseShadow(on: logoView, opacity: close.1)
+        let fade = CABasicAnimation(keyPath: "shadowOpacity")
+        fade.fromValue = close.0
+        fade.toValue = close.1
+        fade.duration = Self.duration
+        logoView.layer.add(fade, forKey: "shadowOpacity")
         window.addSubview(logoView)
         flyingViews.append(logoView)
 
