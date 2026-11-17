@@ -33,6 +33,8 @@ final class ServerRegistrySaveTests: XCTestCase {
         XCTAssertEqual(ServerRegistry.address(forServerID: "jellyfin:" + id), address)
         XCTAssertNil(ServerRegistry.address(forServerID: "server-a"))
         XCTAssertNil(ServerRegistry.address(forServerID: "emby:"))
+        XCTAssertNil(ServerRegistry.address(forServerID: ""))
+        XCTAssertNil(ServerRegistry.address(forServerID: "emby:" + ServerRegistry.serverId(for: "not an address")))
     }
 
     func testMissingProfileServerIsPutBackFromItsIDOnly() throws {

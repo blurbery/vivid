@@ -283,13 +283,18 @@ final class TVSavedAccountStore {
     }
 
     /// Puts back the server of any saved profile whose server has gone
-    /// missing from this device's list. Without it, the profile's sign-in
+    /// missing from this Apple TV's list. Without it, the profile's sign-in
     /// page showed the active server's address, a sign-in there went to the
-    /// wrong server and switching to the profile failed.
+    /// wrong server and switching to the profile failed. It waits while a
+    /// sign-in or deletion is running, which can leave a profile without its
+    /// server for a moment on purpose.
     func restoreMissingServers() {
+        #if os(tvOS)
+        guard !busy else { return }
         for serverID in Set(accounts.map(\.serverID)) {
             ServerRegistry.shared.restoreEntry(forServerID: serverID)
         }
+        #endif
     }
 
     /// Saves the live session into the saved profile that owns it. Routine
@@ -504,7 +509,9 @@ final class TVSavedAccountStore {
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
         do {
+            #if os(tvOS)
             ServerRegistry.shared.restoreEntry(forServerID: account.serverID)
+            #endif
             if activeID != account.id || ServerRegistry.shared.activeServerId != account.serverID
                 || !AuthService.shared.isLoggedIn {
                 try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)

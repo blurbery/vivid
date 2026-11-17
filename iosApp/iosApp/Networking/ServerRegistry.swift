@@ -155,6 +155,8 @@ final class ServerRegistry {
     private let launchPreferences: ProfileLaunchPreferences
     private let persistenceOverride: (([ServerEntry], String?) -> Bool)?
     private var needsRegistryReadRetry = false
+    /// The Apple TV registry was there but couldn't be decoded.
+    private var hasUndecodableRegistry = false
     private var needsProfileMigrationRetry = false
 
     init(
@@ -503,19 +505,22 @@ final class ServerRegistry {
             .replacingOccurrences(of: "_", with: "/")
         encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
         guard let data = Data(base64Encoded: encoded), let address = String(data: data, encoding: .utf8),
-              serverId(for: address) == String(id.dropFirst(prefix.count)) else { return nil }
+              serverId(for: address) == String(id.dropFirst(prefix.count)),
+              // Only an http or https address with a host, never an empty one.
+              canonicalComparisonURL(for: address) != nil else { return nil }
         return address
     }
 
     /// Puts back a saved profile's server when its entry has gone missing,
     /// from the address in its ID, so the profile's sign-in and switching
-    /// use its own server instead of falling back to the active one. Does
-    /// nothing while the Apple TV registry couldn't be read.
+    /// use its own server instead of falling back to the active one. On
+    /// Apple TV it does nothing while the registry couldn't be read or
+    /// decoded, so a partial list is never saved over it.
     @discardableResult
     func restoreEntry(forServerID id: String) -> ServerEntry? {
         if let entry = entry(with: id) { return entry }
         #if os(tvOS)
-        guard !needsRegistryReadRetry else { return nil }
+        guard !needsRegistryReadRetry, !hasUndecodableRegistry else { return nil }
         #endif
         guard let address = Self.address(forServerID: id) else { return nil }
         recordRegistryEvent(phase: "restoreServer", outcome: "attempted", reason: "missingForSavedProfile")
@@ -546,8 +551,8 @@ final class ServerRegistry {
         components.host = components.host?.lowercased()
         guard let lowered = components.string else { return trimmed }
         let candidate = Self.normalize(url: lowered)
-        // Addresses are compared rather than IDs: Emby and Jellyfin IDs carry
-        // a provider prefix that can't be turned back into an address.
+        // Addresses are compared rather than IDs: an ID is made from one exact
+        // spelling, so it wouldn't match the same server typed differently.
         if let canonical = Self.canonicalComparisonURL(for: candidate),
            let saved = entries.first(where: { Self.canonicalComparisonURL(for: $0.url) == canonical }) {
             return saved.url
@@ -606,9 +611,12 @@ final class ServerRegistry {
     private func loadTVRegistry() throws {
         let currentKeychain = keychain.withAudience(.currentUser)
         let legacyKeychain = keychain.withAudience(.userIndependent)
-        if let encoded = try currentKeychain.getChecked(Self.currentTVRegistryAccount),
-           let data = encoded.data(using: .utf8),
-           let state = try? JSONDecoder().decode(SharedRegistryState.self, from: data) {
+        let currentEncoded = try currentKeychain.getChecked(Self.currentTVRegistryAccount)
+        let currentState = currentEncoded.flatMap { $0.data(using: .utf8) }.flatMap {
+            try? JSONDecoder().decode(SharedRegistryState.self, from: $0)
+        }
+        hasUndecodableRegistry = currentEncoded != nil && currentState == nil
+        if let state = currentState {
             entries = state.entries
             activeServerId = defaults.string(forKey: SharedStorage.activeServerIdKey)
         } else if let data = defaults.data(forKey: Self.defaultsKey),
