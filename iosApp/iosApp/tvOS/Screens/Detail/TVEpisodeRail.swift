@@ -147,9 +147,9 @@ private struct TVEpisodeRailDefaultFocus: ViewModifier {
     }
 }
 
-/// One episode in the rail: its still with the status row (episode code,
-/// resume bar, and time left or the watched tick), and the title below when
-/// the interface's caption choice shows one.
+/// One episode in the rail: its still with the status row (the resume bar
+/// on its bottom edge, and a pill with the time left or the watched tick),
+/// and the title below when the interface's caption choice shows one.
 private struct TVEpisodeRailCard: View {
     let episode: EpisodeListItem
     let cardWidth: CGFloat
@@ -228,9 +228,6 @@ private struct TVEpisodeRailCard: View {
                 duration: episode.userData?.durationSeconds,
                 progress: resumeProgress?.fraction,
                 runtimeMinutes: episode.runtime,
-                episodeCode: EpisodeCardCaption.compactCode(
-                    season: episode.seasonNumber, episode: episode.episodeNumber
-                ),
                 metrics: .standard
             )
         }

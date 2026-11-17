@@ -575,7 +575,7 @@ An episode up to two cards past either edge still counts as on the rail, because
 The last shown season remains when focus moves down to the lower shelves.
 Moving up to the action row prepares the shelf for entry again, so it shows the Play target's season.
 Rapid boundary crossings still need confirmation on Apple TV.
-Episode artwork shows a compact duration or minutes-remaining badge, watched state and an inset progress bar when applicable.
+Episode artwork shows a compact duration or minutes-remaining badge, watched state and a progress bar along its bottom edge when applicable.
 Focusing an episode updates the selected season.
 
 The route warms remaining season metadata sequentially in nearby-season order, with only six stills per warmed season.
@@ -583,12 +583,12 @@ Missing pages retain a Load Season action.
 While that button has focus the header shows the season it would load, without selecting it.
 Native `.card` buttons provide episode artwork focus; cards include the episode's number, title, summary and date, with watched/resume and context actions retained.
 Under each 400 by 225 still, the caption is set like Home's Continue Watching captions.
-The first line is the episode's name in the 24-point card title style on one line, brightening with focus.
+The first line is the episode number and name together, as in “3 · The Long Way Home”, in the 24-point card title style on one line, with the number in the Secondary level and the name brightening with focus.
 The summary, on up to three lines, is 22 points in the synopsis' Body level, and the air date under it is the same size in the quiet facts level, so name, summary and date are three distinct levels.
-The still carries Home's status row: the season and episode number in an 18-point pill on the left, as in `S1E7`, the resume bar, and a matching pill on the right, the same size as on Home's cards with the minutes left, or the watched tick alone.
+The still carries Home's status row: an 18-point pill in the bottom-right corner, the same size as on Home's cards, with the minutes left or the watched tick alone, and a 6-point resume bar along the still's bottom edge from one side to the other, clipped by the still's rounded corners.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
 Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.
-Their episode rail's titles are larger too, at 28 points, and its stills carry the same status row in place of a caption runtime and a green watched badge.
+Their episode rail's titles are larger too, at 28 points, and its stills carry the same status row, the pill and the edge-to-edge bar, in place of a caption runtime and a green watched badge.
 
 The owner supplied an 89-second Apple TV reference recording.
 It establishes the requested appearance and interaction; it does not measure Apple's internal rendering performance.
@@ -661,7 +661,7 @@ Poster, collection, episode, trailer and cast cards use native `.card` focus wit
 Trailer and cast captions sit outside the artwork buttons; cast portraits retain circular button borders.
 Resume progress is part of the native artwork label and moves with it.
 Watched mutations hide the bar immediately, with rollback on failure.
-Watched posters keep their translucent tick pill, and a watched episode still shows the tick alone in its status row's right-hand pill.
+Watched posters keep their translucent tick pill, and a watched episode still shows the tick alone in its status row's pill.
 Episode buttons own the rail focus binding, accessibility description and context actions so focus-driven season updates, Play/Pause and VoiceOver activation address the same control.
 Movie and series pages now end with Media Information for the selected file or episode: separate Video & File and Audio glass panels.
 Video & File has up to five equal-width columns; audio has up to four.

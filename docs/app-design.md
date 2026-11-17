@@ -97,8 +97,8 @@ More Like This on tvOS uses Home’s Large poster size.
 TV captions use one local server/profile setting across Search, Home, Library, library pages, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only.
 Under posters, titles use 24-point medium text and secondary captions use 22-point text, both left aligned and on one line each, so they read from across the room.
 Continue Watching, Next Up, the other landscape episode rows on Home and the Library tab's library cards use the same 24-point titles and 22-point secondary captions, on cards that keep their size.
-Episodes substitute their episode title for the year and keep it with Title Only, because their title is the series name.
-Only Artwork Only hides an episode's title line, and rows holding an episode keep room for that line.
+Episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
+Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
 Search keeps six columns across the safe-area width with reduced spacing below its result tabs.
 Every Apple TV poster grid (Search and its Seerr results, the Library tab, library pages, collection and Studios & Networks pages, the Collections tab and Calendar's day view) shows six posters across, each 260 by 390 points.
 Home's poster rows and the rails that match them (the Collections row, More Like This, collection rails, Studios & Networks rails and Cast & Crew) show posters 240 by 360 points, and a person's filmography shows seven posters across at the Standard poster size, or six at Compact or Large.
@@ -140,7 +140,7 @@ Home, Library, Downloads and Settings use the saved theme.
 Movie and series details retain their original artwork-colour and glass surfaces regardless of the selected theme.
 Browsing cards use Home’s title size with left-aligned titles and years directly underneath the rendered title, without reserving an empty second title line.
 The shared Captions setting offers Title & Year (the default), Title Only and Artwork Only across Home, Search, Library and library pages; episode cards retain episode information instead of a year, including with Title Only.
-Artwork Only hides it, except that Continue Watching stills, and Next Up stills on Emby and Jellyfin, always keep their series title and episode title.
+Artwork Only hides it, except that Continue Watching stills, and Next Up stills on Emby and Jellyfin, always keep their series title and episode line.
 The Downloads page uses glass storage and transfer cards, live byte and speed progress, and locally fetched movie or main-series posters.
 Mobile headings use 30-point rounded bold text and smaller section labels; TV headings stay at 40 points, or 50 in Apple TV Settings.
 
@@ -271,17 +271,19 @@ Reduce Motion disables automatic rotation and progress animation.
 Continue Watching has no play icon in its heading.
 Watched posters show a small translucent pill with a white circled tick in the top-right corner.
 Episode cards and Continue Watching movies carry one status row along the bottom of the artwork, on iPhone, iPad and Apple TV, on Home and on the detail pages' episode cards.
-An episode's season and episode number sits in a pill on the left, as in `S1E7`, unpadded; a movie has no left pill.
-A pill of the same size on the right shows the minutes left, which is the full runtime before the title is started.
-Once the title is watched, the right pill shows the same white circled tick on its own, with no minutes; a rewatch in progress shows its minutes left instead.
-The resume bar fills the space between the two pills, so a movie's bar starts at the row's inset, where an episode's left pill sits.
+One pill in the artwork's bottom-right corner shows the minutes left, which is the full runtime before the title is started.
+Once the title is watched, the pill shows the same white circled tick on its own, with no minutes; a rewatch in progress shows its minutes left instead.
+The pill's text is 18 points on Apple TV, 12 on iPhone and iPad and 10 on the small thumbnails of episode list rows, and the pill sits 12 points in from the artwork's right and bottom edges (7 on those thumbnails), in the same place whether or not there is a resume bar, so the cards of a row line up.
+The resume bar runs along the artwork's bottom edge from one side to the other, the same length on an episode as on a movie: a square-ended white fill on a 30% white track with no label, clipped by the card's own rounded corners.
+It is 6 points tall on Apple TV, 4 on iPhone and iPad and 3 on the list-row thumbnails, so the pill always stands clear of it, and a watched title shows its tick without a bar.
+On iPhone and iPad Home, a downloaded title's mark moves to the bottom-left corner of a card with the status row, leaving the right corner to the pill.
 Wide stills on Home that aren't episodes or Continue Watching movies keep green circles with white ticks.
 The Movie and Series pills on Favourites and Watchlist use the same borderless translucent capsule, tinted blue or purple.
 Home's episode cards name the episode beneath the series title.
-That line is the episode's title alone, because the number is in the pill on the artwork; an episode with no title of its own shows `Episode 7`.
-An episode missing its season or episode number has no pill.
-In Continue Watching, and Next Up on Emby and Jellyfin, its caption keeps whichever number it has, as in `S1 – Episode title` or `E3 – Episode title`; other rows show the episode's title alone.
-Partly watched Home thumbnails and the detail pages' episode cards share an inset white resume bar on a grey track.
+On a card with the status row that line is the unpadded season and episode number, a middle dot and the episode's title, as in `S3 E7 · Episode title`; an episode with no title of its own shows `S3 E7`.
+An episode missing its season or episode number keeps whichever it has, as in `S3 · Episode title` or `E7 · Episode title`.
+On the detail pages the number is in the caption too: `3 · Episode title` on the Apple TV series shelf, and a small `EPISODE 3` line above the title on iPhone and iPad.
+Partly watched Home artwork without the status row keeps an inset white resume bar on a grey track, with the minutes left beside it.
 
 ### Studios & Networks
 

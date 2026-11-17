@@ -65,9 +65,10 @@ struct MobileEpisodeStill: View {
     }
 }
 
-/// The status row over an episode's still: its code, the resume bar when
-/// it's part watched, and the time left or the watched tick. It brings its
-/// own padding.
+/// The status row over an episode's still: the resume bar on its bottom
+/// edge when it's part watched, and a pill with the time left or the watched
+/// tick. It brings its own padding, and spans the still so the bar reaches
+/// both sides.
 struct MobileEpisodeStatus: View {
     let episode: EpisodeListItem
     var isCompact = false
@@ -78,7 +79,6 @@ struct MobileEpisodeStatus: View {
             duration: episode.userData?.durationSeconds,
             progress: MobileEpisodeText.progress(episode),
             runtimeMinutes: episode.runtime,
-            episodeCode: EpisodeCardCaption.compactCode(season: episode.seasonNumber, episode: episode.episodeNumber),
             metrics: isCompact ? .compact : .standard
         )
     }
@@ -176,6 +176,9 @@ struct MobileEpisodeCarousel: View {
                     still(episode, size: stillSize, isCurrent: isCurrent)
                     if caption.showsTitle {
                         VStack(alignment: .leading, spacing: 4) {
+                            Text("EPISODE \(String(episode.episodeNumber))")
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(Color.vividSecondaryText)
                             Text(verbatim: MobileEpisodeText.title(episode))
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(isCurrent ? Color.vividTextPrimary : Color.vividTextStrong)
@@ -253,6 +256,7 @@ struct MobileEpisodeCarouselSkeleton: View {
                             .frame(width: width, height: width * 9 / 16)
                         if caption.showsTitle {
                             VStack(alignment: .leading, spacing: 4) {
+                                Self.bar(width: 62, height: 8, opacity: 0.12)
                                 Self.bar(width: 0.68 * width, height: 12, opacity: 0.16)
                                 if caption.showsMetadata {
                                     Self.bar(width: 0.42 * width, height: 9, opacity: 0.10)

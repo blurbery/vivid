@@ -73,6 +73,9 @@ struct MobileEpisodeList: View {
                 .overlay(shape.stroke(isCurrent ? Color.white.opacity(0.80) : .clear, lineWidth: 2))
 
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("EPISODE \(String(episode.episodeNumber))")
+                        .font(.caption)
+                        .foregroundStyle(Color.vividSecondaryText)
                     Text(verbatim: MobileEpisodeText.title(episode))
                         .font(.headline)
                         .foregroundStyle(isCurrent ? Color.vividTextPrimary : Color.vividTextStrong)

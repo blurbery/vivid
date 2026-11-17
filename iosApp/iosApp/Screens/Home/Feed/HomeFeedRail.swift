@@ -166,28 +166,13 @@ struct HomeStillCard: View {
         (item.positionSeconds ?? 0) > 0 ? "Resume" : "Play"
     }
 
-    /// The code in the artwork's left pill, on cards with the status row.
-    private var episodeCode: String? {
-        showsRuntimeStatus ? EpisodeCardCaption.compactCode(for: item) : nil
-    }
-
     private var secondLine: String? {
-        // The pill carries the season and episode, so the line is the
-        // episode's title alone.
-        if episodeCode != nil { return EpisodeCardCaption.titleLine(for: item) }
-        guard isResumeCard || showsEpisodeDetails, EpisodeCardCaption.isEpisode(item) else {
-            return HomeFeedMeta.secondLine(for: item)
+        // Every episode still has the status row, so its line reads
+        // "S3 E7 · Episode title". Movies keep the year.
+        if showsRuntimeStatus, EpisodeCardCaption.isEpisode(item) {
+            return EpisodeCardCaption.statusCardLine(for: item)
         }
-        var code: [String] = []
-        if let season = item.seasonNumber {
-            code.append(String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1"))
-        }
-        if let episode = item.episodeNumber {
-            code.append(String(localized: "E\(String(episode))", comment: "Episode number in an episode code, e.g. E2"))
-        }
-        let codeText = code.joined(separator: " ")
-        let parts = [codeText.isEmpty ? nil : codeText, EpisodeCardCaption.episodeTitle(for: item)].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " \u{2013} ")
+        return HomeFeedMeta.secondLine(for: item)
     }
 
     private var artwork: (url: String, thumbhash: String?) {
@@ -216,7 +201,7 @@ struct HomeStillCard: View {
         if showsRuntimeStatus {
             if let fraction = playedOverride == nil ? progress : nil,
                let resume = ResumePresentation(fraction: fraction, duration: item.durationSeconds) {
-                // What the right pill shows while the title is part watched,
+                // What the pill shows while the title is part watched,
                 // a rewatch included.
                 parts.append(String(localized: "Resume, \(resume.minutesRemaining) minutes remaining"))
             } else if let minutes = MediaRuntimeStatusOverlay.displayedRuntime(
@@ -288,8 +273,7 @@ struct HomeStillCard: View {
                     // Marking it watched or unwatched here hides the bar
                     // until the row refreshes.
                     progress: playedOverride == nil ? progress : nil,
-                    runtimeMinutes: item.runtime,
-                    episodeCode: episodeCode
+                    runtimeMinutes: item.runtime
                 )
             } else if let progress {
                 if isResumeCard {
@@ -310,8 +294,14 @@ struct HomeStillCard: View {
             }
         }
         .overlay {
-            DownloadedBadgeOverlay(contentId: item.contentId, padding: 6)
-                .padding(.bottom, 10)
+            // The status row's pill has the bottom-right corner, so the
+            // download mark takes the left one on those cards.
+            DownloadedBadgeOverlay(
+                contentId: item.contentId,
+                padding: 6,
+                alignment: showsRuntimeStatus ? .bottomLeading : .bottomTrailing
+            )
+            .padding(.bottom, 10)
         }
     }
 

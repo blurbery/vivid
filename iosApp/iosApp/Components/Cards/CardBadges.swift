@@ -20,42 +20,26 @@ struct WatchedCheckPill: View {
 }
 
 /// A thin resume bar along the bottom of artwork, with the minutes left
-/// beside it when the duration is known and `showsMinutes` is on.
+/// beside it when the duration is known.
 struct ResumeProgressBar: View {
     let value: Double
     let duration: Double?
     let height: CGFloat
     let inset: CGFloat
-    /// Off where a status pill beside the bar already gives the time left.
-    let showsMinutes: Bool
 
     #if os(tvOS)
-    init(
-        value: Double,
-        duration: Double? = nil,
-        height: CGFloat = 8,
-        inset: CGFloat = 20,
-        showsMinutes: Bool = true
-    ) {
+    init(value: Double, duration: Double? = nil, height: CGFloat = 8, inset: CGFloat = 20) {
         self.value = value
         self.duration = duration
         self.height = height
         self.inset = inset
-        self.showsMinutes = showsMinutes
     }
     #else
-    init(
-        value: Double,
-        duration: Double? = nil,
-        height: CGFloat = 5,
-        inset: CGFloat = 14,
-        showsMinutes: Bool = true
-    ) {
+    init(value: Double, duration: Double? = nil, height: CGFloat = 5, inset: CGFloat = 14) {
         self.value = value
         self.duration = duration
         self.height = height
         self.inset = inset
-        self.showsMinutes = showsMinutes
     }
     #endif
 
@@ -82,7 +66,7 @@ struct ResumeProgressBar: View {
             }
             .frame(height: height)
 
-            if showsMinutes, let minutes = ResumePresentation(fraction: value, duration: duration)?.minutesLabel {
+            if let minutes = ResumePresentation(fraction: value, duration: duration)?.minutesLabel {
                 Text(verbatim: minutes)
                     .font(.system(size: minutesFontSize, weight: .semibold))
                     .monospacedDigit()
@@ -98,45 +82,42 @@ struct ResumeProgressBar: View {
     }
 }
 
-/// The sizes of a card's status row. The episode pill and the time pill are
-/// the same size.
+/// The sizes of a card's status row.
 struct MediaStatusRowMetrics: Equatable {
-    /// The font size of both pills.
     var pillFontSize: CGFloat
     var pillHorizontalPadding: CGFloat = 8
+    /// The height of the resume bar on the artwork's bottom edge.
     var barHeight: CGFloat
-    /// The gap between the row and the artwork's edges.
+    /// The gap between the pill and the artwork's right and bottom edges.
+    /// At least 3 points more than `barHeight`, so the pill clears the bar.
     var padding: CGFloat = 12
-    /// The gap between the pills and the bar.
-    var spacing: CGFloat = 10
 
     #if os(tvOS)
     /// Home's landscape cards and the detail pages' episode cards, so the
-    /// pills are one size everywhere.
-    static let standard = MediaStatusRowMetrics(pillFontSize: 18, barHeight: 8)
+    /// pill is one size everywhere.
+    static let standard = MediaStatusRowMetrics(pillFontSize: 18, barHeight: 6)
     #else
     /// Home's stills and the episode carousel.
-    static let standard = MediaStatusRowMetrics(pillFontSize: 12, barHeight: 5)
+    static let standard = MediaStatusRowMetrics(pillFontSize: 12, barHeight: 4)
     /// The small thumbnails of episode list rows.
-    static let compact = MediaStatusRowMetrics(pillFontSize: 10, barHeight: 5, padding: 7, spacing: 6)
+    static let compact = MediaStatusRowMetrics(pillFontSize: 10, barHeight: 3, padding: 7)
     #endif
 }
 
-/// The status row along the bottom of landscape artwork: the episode code in
-/// a pill on the left, the resume bar filling the gap, and a matching pill on
-/// the right with the time left or the watched tick. Movies have no code, so
-/// their bar starts at the left edge. Callers pin it to the bottom.
+/// The status row along the bottom of landscape artwork: one pill in the
+/// bottom-right corner with the time left or the watched tick, and the
+/// resume bar along the artwork's bottom edge, from one side to the other.
+/// The pill sits in the same place with or without a bar. Callers pin the
+/// row to the bottom at the artwork's full width, inside the view that clips
+/// the artwork's corners, so the bar's ends follow them.
 struct MediaRuntimeStatusOverlay: View {
     let isPlayed: Bool
     let duration: Double?
     var progress: Double? = nil
     var runtimeMinutes: Int? = nil
-    /// "S1E7" from `EpisodeCardCaption.compactCode`; nil for movies and for
-    /// episodes missing a number.
-    var episodeCode: String? = nil
     var metrics: MediaStatusRowMetrics = .standard
 
-    /// What the right-hand pill shows.
+    /// What the pill shows.
     struct TimePill: Equatable {
         let showsTick: Bool
         let minutes: Int?
@@ -178,25 +159,10 @@ struct MediaRuntimeStatusOverlay: View {
             duration: duration,
             runtimeMinutes: runtimeMinutes
         )
-        HStack(spacing: metrics.spacing) {
-            if let episodeCode {
-                Text(verbatim: episodeCode)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .modifier(MediaStatusPillStyle(
-                        fontSize: metrics.pillFontSize,
-                        horizontalPadding: metrics.pillHorizontalPadding,
-                        verticalPadding: 4
-                    ))
-                    .layoutPriority(1)
-            }
+        ZStack(alignment: .bottomTrailing) {
+            // A watched title shows its tick without a bar.
             if let progress, progress > 0, time?.showsTick != true {
-                // The bar gives way before either pill does. A watched
-                // title shows its tick without a bar.
-                ResumeProgressBar(value: progress, height: metrics.barHeight, inset: 0, showsMinutes: false)
-                    .frame(minWidth: 12)
-            } else {
-                Spacer(minLength: 0)
+                bar(share: progress.isFinite ? min(progress, 1) : 0)
             }
             if let time {
                 HStack(spacing: 3) {
@@ -214,12 +180,27 @@ struct MediaRuntimeStatusOverlay: View {
                     horizontalPadding: metrics.pillHorizontalPadding,
                     verticalPadding: 4
                 ))
-                .layoutPriority(1)
+                .padding(.trailing, metrics.padding)
+                .padding(.bottom, metrics.padding)
             }
         }
-        .padding(metrics.padding)
+        .frame(maxWidth: .infinity, alignment: .bottomTrailing)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// A square-ended bar the width of the artwork; the card's own corner
+    /// clip rounds its ends.
+    private func bar(share: Double) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color.white.opacity(0.30))
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: proxy.size.width * share)
+            }
+        }
+        .frame(height: metrics.barHeight)
     }
 }
 
@@ -241,10 +222,12 @@ private struct MediaStatusPillStyle: ViewModifier {
 }
 
 #if os(iOS)
-/// A small download mark pinned bottom-trailing once the item is on the device.
+/// A small download mark pinned to a bottom corner (the trailing one unless
+/// told otherwise) once the item is on the device.
 struct DownloadedBadgeOverlay: View {
     let contentId: String?
     let padding: CGFloat
+    var alignment: Alignment = .bottomTrailing
 
     var body: some View {
         if let contentId, DownloadManager.shared.isDownloaded(contentId: contentId) {
@@ -254,7 +237,7 @@ struct DownloadedBadgeOverlay: View {
                 .foregroundStyle(.white, .green)
                 .shadow(color: .black.opacity(0.3), radius: 4)
                 .padding(padding)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
         }
     }
 }

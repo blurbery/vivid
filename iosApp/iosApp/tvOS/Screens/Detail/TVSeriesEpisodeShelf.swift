@@ -727,7 +727,7 @@ private struct TVSeasonSelectorStyle: ButtonStyle {
 }
 
 /// One episode on the series shelf: a fixed 400 by 225 still with its
-/// status row, and the episode's title, overview and air date below.
+/// status row, and the episode's number, title, overview and air date below.
 /// The caption is about 156 points tall in Latin text, which the shelf's
 /// header height allows for.
 private struct TVSeriesShelfCard: View {
@@ -803,26 +803,25 @@ private struct TVSeriesShelfCard: View {
         )
         .frame(width: Self.stillSize.width, height: Self.stillSize.height)
         .spoilerCovered(hidesSpoilers, symbolSize: 40)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(alignment: .bottom) {
             MediaRuntimeStatusOverlay(
                 isPlayed: isWatched,
                 duration: episode.userData?.durationSeconds,
                 progress: progress?.fraction,
                 runtimeMinutes: episode.runtime,
-                episodeCode: EpisodeCardCaption.compactCode(
-                    season: episode.seasonNumber, episode: episode.episodeNumber
-                ),
                 metrics: .standard
             )
         }
+        // After the status row, so the resume bar's ends follow the still's
+        // corners.
+        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
     private var caption: some View {
         // Set like Home's Continue Watching captions, so an episode reads
-        // the same wherever it appears: the name as the card title,
-        // brightening with focus, over the overview and the quieter date.
-        // The season and episode number sit in the pill on the still.
+        // the same wherever it appears: the number and name as the card
+        // title, brightening with focus, over the overview and the quieter
+        // date.
         VStack(alignment: .leading, spacing: 6) {
             titleText
                 .font(.vividLandscapeCardTitle)
@@ -840,10 +839,12 @@ private struct TVSeriesShelfCard: View {
         }
     }
 
+    /// "3 · The Long Way Home", the number a little dimmer than the name.
     private var titleText: Text {
         // A missing or empty title falls back to the episode number.
         if let title = episode.title, !title.isEmpty {
-            return Text(verbatim: title)
+            return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.vividSecondaryText)
+                + Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")
     }

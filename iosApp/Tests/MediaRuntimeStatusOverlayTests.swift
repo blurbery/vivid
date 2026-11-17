@@ -82,7 +82,7 @@ final class MediaRuntimeStatusOverlayTests: XCTestCase {
         XCTAssertNil(timePill(progress: 0.5))
     }
 
-    // MARK: Episode code and caption line
+    // MARK: Home caption line
 
     private func items() throws -> [SectionItem] {
         try JSONDecoder().decode([SectionItem].self, from: Data(#"""
@@ -95,28 +95,15 @@ final class MediaRuntimeStatusOverlayTests: XCTestCase {
         """#.utf8))
     }
 
-    func testCompactEpisodeCodeIsNotZeroPadded() {
-        XCTAssertEqual(EpisodeCardCaption.compactCode(season: 1, episode: 7), "S1E7")
-        XCTAssertEqual(EpisodeCardCaption.compactCode(season: 10, episode: 24), "S10E24")
-        XCTAssertEqual(EpisodeCardCaption.compactCode(season: 0, episode: 3), "S0E3")
-        XCTAssertNil(EpisodeCardCaption.compactCode(season: nil, episode: 7))
-        XCTAssertNil(EpisodeCardCaption.compactCode(season: 1, episode: nil))
-    }
-
-    func testCompactEpisodeCodeIsOnlyForNumberedEpisodes() throws {
+    func testTheLineUnderAStatusRowCardIsTheUnpaddedNumbersThenTheTitle() throws {
         let items = try items()
-        XCTAssertEqual(EpisodeCardCaption.compactCode(for: items[0]), "S1E7")
-        XCTAssertEqual(EpisodeCardCaption.compactCode(for: items[1]), "S10E24")
-        XCTAssertNil(EpisodeCardCaption.compactCode(for: items[2]))
-        XCTAssertNil(EpisodeCardCaption.compactCode(for: items[3]))
+        XCTAssertEqual(EpisodeCardCaption.statusCardLine(for: items[0]), "S1 E7 \u{00B7} Another chapter")
+        // No title of its own: the numbers alone.
+        XCTAssertEqual(EpisodeCardCaption.statusCardLine(for: items[1]), "S10 E24")
+        // A missing number leaves the other.
+        XCTAssertEqual(EpisodeCardCaption.statusCardLine(for: items[2]), "S2 \u{00B7} A lost chapter")
+        XCTAssertNil(EpisodeCardCaption.statusCardLine(for: items[3]))
         // Poster captions keep the zero-padded code.
         XCTAssertEqual(EpisodeCardCaption.line(for: items[0]), "S01E07 \u{00B7} Another chapter")
-    }
-
-    func testTheLineUnderACardWithTheCodePillIsTheTitleAlone() throws {
-        let items = try items()
-        XCTAssertEqual(EpisodeCardCaption.titleLine(for: items[0]), "Another chapter")
-        XCTAssertEqual(EpisodeCardCaption.titleLine(for: items[1]), "Episode 24")
-        XCTAssertNil(EpisodeCardCaption.titleLine(for: items[3]))
     }
 }

@@ -71,15 +71,9 @@ struct EpisodeThumbCard: View {
 
     private var title: String { item.seriesTitle ?? item.title }
 
-    /// The code in the artwork's left pill, on cards with the status row.
-    private var episodeCode: String? {
-        usesRuntimeStatus ? EpisodeCardCaption.compactCode(for: item) : nil
-    }
-
     private var secondLine: String? {
-        // The pill carries the season and episode, so the line is the
-        // episode's title alone.
-        if episodeCode != nil { return EpisodeCardCaption.titleLine(for: item) }
+        // An episode card with the status row reads "S3 E7 · Episode title".
+        if usesRuntimeStatus, let line = EpisodeCardCaption.statusCardLine(for: item) { return line }
         let isResumeCard = onRemoveFromContinueWatching != nil
         if (isResumeCard || showsEpisodeDetails) && EpisodeCardCaption.isEpisode(item) {
             var codeParts: [String] = []
@@ -121,7 +115,7 @@ struct EpisodeThumbCard: View {
             let shownProgress = showProgress ? progressFraction : nil
             if let fraction = shownProgress,
                let resume = ResumePresentation(fraction: fraction, duration: item.durationSeconds) {
-                // What the right pill shows while the title is part watched,
+                // What the pill shows while the title is part watched,
                 // a rewatch included.
                 parts.append(String(localized: "Resume, \(resume.minutesRemaining) minutes remaining"))
             } else if let runtime = MediaRuntimeStatusOverlay.displayedRuntime(
@@ -202,14 +196,12 @@ struct EpisodeThumbCard: View {
             AsyncImageView(url: source.url, thumbhash: source.thumbhash, targetSize: size, contentMode: .fill)
                 .frame(width: size.width, height: size.height)
                 .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 12))
             if usesRuntimeStatus {
                 MediaRuntimeStatusOverlay(
                     isPlayed: isWatched,
                     duration: item.durationSeconds,
                     progress: showProgress ? progressFraction : nil,
-                    runtimeMinutes: item.runtime,
-                    episodeCode: episodeCode
+                    runtimeMinutes: item.runtime
                 )
             }
             if isWatched && !usesRuntimeStatus {
@@ -222,6 +214,9 @@ struct EpisodeThumbCard: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        // Clips the status row with the artwork, so the resume bar's ends
+        // follow the card's corners.
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder
