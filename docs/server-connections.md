@@ -196,6 +196,7 @@ Manage Servers and Add Profile share the registered server list.
 Add Profile starts on the type of the server its address is filled from, and its saved-server list shows only servers of the chosen type on mobile and Apple TV.
 Switching type swaps a saved server of another type for the most recent saved server of the new type, or clears the address when there isn't one.
 A typed address that matches a saved server is treated like a picked one; any other typed address is used as entered.
+A saved profile's sign-in page always shows and signs in to that profile's own server, and on Apple TV a profile whose server has dropped out of the list gets it back from the address saved with the profile.
 If that address isn't a Jellyfin server, Quick Connect says the server doesn't offer Quick Connect when the route is missing or its answer isn't `true` or `false`; other failures, such as a refused request, a server error or no connection, show their own message, and a password sign-in fails as before.
 Selecting or adding a Silo connection through either flow keeps it available to the other.
 Silo, Emby and Jellyfin can be added on mobile and Apple TV.

@@ -492,6 +492,36 @@ final class ServerRegistry {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    /// The address a server ID was made from, with or without its Emby or
+    /// Jellyfin prefix. Nil when the ID isn't one `serverId(for:)` makes.
+    static func address(forServerID id: String) -> String? {
+        let provider = MediaServerProvider.forServerID(id)
+        let prefix = provider.usesNativeUser ? provider.rawValue + ":" : ""
+        guard id.hasPrefix(prefix) else { return nil }
+        var encoded = String(id.dropFirst(prefix.count))
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded), let address = String(data: data, encoding: .utf8),
+              serverId(for: address) == String(id.dropFirst(prefix.count)) else { return nil }
+        return address
+    }
+
+    /// Puts back a saved profile's server when its entry has gone missing,
+    /// from the address in its ID, so the profile's sign-in and switching
+    /// use its own server instead of falling back to the active one. Does
+    /// nothing while the Apple TV registry couldn't be read.
+    @discardableResult
+    func restoreEntry(forServerID id: String) -> ServerEntry? {
+        if let entry = entry(with: id) { return entry }
+        #if os(tvOS)
+        guard !needsRegistryReadRetry else { return nil }
+        #endif
+        guard let address = Self.address(forServerID: id) else { return nil }
+        recordRegistryEvent(phase: "restoreServer", outcome: "attempted", reason: "missingForSavedProfile")
+        return addOrUpdate(ServerEntry(id: id, url: address, fetchedName: nil, lastUsedAt: .distantPast))
+    }
+
     /// The address to keep when a profile form switches to `provider`: a
     /// saved server of another type is swapped for the most recent saved
     /// server of this type, or cleared. A typed address is kept as entered.

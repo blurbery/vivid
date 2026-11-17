@@ -341,7 +341,14 @@ struct TVSavedAccountEditor: View {
         }
         .onAppear {
             username = account?.username ?? ""
-            serverURL = account.flatMap { ServerRegistry.shared.entry(with: $0.serverID)?.url } ?? (addingServer ? "" : ServerRegistry.shared.activeServerUrl)
+            // A saved profile always shows and signs in to its own server,
+            // never the active one.
+            if let account {
+                serverURL = ServerRegistry.shared.restoreEntry(forServerID: account.serverID)?.url
+                    ?? ServerRegistry.address(forServerID: account.serverID) ?? ""
+            } else {
+                serverURL = addingServer ? "" : ServerRegistry.shared.activeServerUrl
+            }
             // Start on the type of the server the address is filled from.
             if account == nil, selectedServerProvider == nil, !addingServer, let active = registry.activeServer {
                 provider = MediaServerProvider.forServerID(active.id).name
