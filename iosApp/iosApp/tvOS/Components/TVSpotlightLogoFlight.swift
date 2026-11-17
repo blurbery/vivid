@@ -59,10 +59,60 @@ final class TVSpotlightLogoFlight {
 
     /// The Spotlight card whose own logo is hidden.
     private(set) var hiddenSourceID: String?
+    /// Hides Home's blurred backdrop around the card: from the press that
+    /// opens a title until Back starts. It returns as the flight back
+    /// begins, not when it lands, so the space around the card is already
+    /// the backdrop while the picture shrinks into it.
+    private(set) var hidesHomeBackdrop = false
     /// Hides the detail page's logo while the copy is in the air.
     private(set) var hidesDetailLogo = false
 
     private init() {}
+
+    // MARK: Shared looks
+    //
+    // The card and the flying copies draw these the same way, so nothing
+    // changes at the moment one takes over from the other.
+
+    /// The logo's shadow on the picture, drawn by the card.
+    static let shadowRadius: CGFloat = 24
+    static let shadowOpacity: Float = 0.72
+    static func shadowOffset(logoHeight: CGFloat) -> CGSize {
+        let down = min(38, logoHeight * 0.3)
+        return CGSize(width: down * 24 / 38, height: down)
+    }
+
+    /// The logo's own close shadow, for definition. The card's logo and
+    /// its flying copy both carry it, so nothing changes when one takes
+    /// over from the other; the detail page's logo has none, so the copy's
+    /// clears on the way there and builds on the way back.
+    static let closeShadowOpacity: Float = 0.35
+    static let closeShadowRadius: CGFloat = 3
+    static let closeShadowDrop: CGFloat = 2
+
+    /// The shadow the picture's edges fall into: a rounded rectangle's
+    /// inner shadow, the same on every side, as an image whose middle
+    /// stretches.
+    static let recessCap: CGFloat = 110
+    static let recessOpacity: Double = 0.45
+    static let recessShade: UIImage = {
+        let side = recessCap * 2 + 20
+        let rect = CGRect(x: 0, y: 0, width: side, height: side)
+        let image = UIGraphicsImageRenderer(size: rect.size).image { renderer in
+            let shape = UIBezierPath(roundedRect: rect, cornerRadius: 22)
+            shape.addClip()
+            // Everything outside the shape, casting its shadow inwards.
+            let outside = UIBezierPath(rect: rect.insetBy(dx: -120, dy: -120))
+            outside.append(shape)
+            outside.usesEvenOddFillRule = true
+            renderer.cgContext.setShadow(offset: .zero, blur: 56, color: UIColor.black.cgColor)
+            UIColor.black.setFill()
+            outside.fill()
+        }
+        return image.resizableImage(
+            withCapInsets: UIEdgeInsets(top: recessCap, left: recessCap, bottom: recessCap, right: recessCap),
+            resizingMode: .stretch)
+    }()
 
     // MARK: Sources
 
@@ -103,8 +153,33 @@ final class TVSpotlightLogoFlight {
     /// Hides the card's logo ahead of `open(sourceID:)`, which follows on
     /// the next turn of the run loop with the push.
     func prepare(sourceID: String, slideID: String) {
-        guard !UIAccessibility.isReduceMotionEnabled, logos[sourceID]?.slideID == slideID else { return }
+        guard !UIAccessibility.isReduceMotionEnabled, let logo = logos[sourceID], logo.slideID == slideID else { return }
         hiddenSourceID = sourceID
+        hidesHomeBackdrop = true
+        stage(logo, at: logo.frame, closeShadow: Self.closeShadowOpacity)
+    }
+
+    /// Puts the logo's copy on screen, still, where the real logo is, in
+    /// the same update that hides the real one. The flight starts a turn of
+    /// the run loop later; without this the logo was gone for that frame
+    /// and blinked.
+    private func stage(_ logo: Logo, at frame: CGRect, closeShadow: Float) {
+        clearViews()
+        guard let window = Self.keyWindow else { return }
+        let view = UIImageView(image: logo.image)
+        view.contentMode = .scaleToFill
+        view.isUserInteractionEnabled = false
+        view.frame = frame
+        Self.setCloseShadow(on: view, opacity: closeShadow)
+        window.addSubview(view)
+        flyingViews.append(view)
+    }
+
+    private static func setCloseShadow(on view: UIView, opacity: Float) {
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowRadius = closeShadowRadius
+        view.layer.shadowOffset = CGSize(width: 0, height: closeShadowDrop)
+        view.layer.shadowOpacity = opacity
     }
 
     /// Starts the flight to the detail page for the card being opened.
@@ -141,6 +216,8 @@ final class TVSpotlightLogoFlight {
         // the two logos never show together.
         hiddenSourceID = sourceID
         hidesDetailLogo = true
+        hidesHomeBackdrop = false
+        if let logo = logos[sourceID] { stage(logo, at: Self.detailLogoFrame(for: logo.image.size), closeShadow: 0) }
         generation += 1
         let flight = generation
         DispatchQueue.main.async { [weak self] in
@@ -176,9 +253,10 @@ final class TVSpotlightLogoFlight {
             image.contentMode = .scaleToFill
             image.frame = toDetail ? backdrop.cardCrop : backdrop.screenCrop
             container.addSubview(image)
-            let shade = TVSpotlightFlightShade(frame: container.bounds)
+            let shade = UIImageView(image: Self.recessShade)
+            shade.frame = container.bounds
             shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            shade.alpha = toDetail ? 1 : 0
+            shade.alpha = toDetail ? Self.recessOpacity : 0
             container.addSubview(shade)
             window.addSubview(container)
             flyingViews.append(container)
@@ -189,14 +267,15 @@ final class TVSpotlightLogoFlight {
         logoView.contentMode = .scaleToFill
         logoView.isUserInteractionEnabled = false
         logoView.frame = toDetail ? logo.frame : detailLogo
-        logoView.layer.shadowColor = UIColor.black.cgColor
-        logoView.layer.shadowRadius = 22
-        logoView.layer.shadowOffset = CGSize(width: 0, height: 6)
-        let shadow: (Float, Float) = toDetail ? (0.5, 0) : (0, 0.5)
-        logoView.layer.shadowOpacity = shadow.1
+        // No cast shadow of its own. The card's shadow of the logo stays on
+        // the picture, under the picture's copy, so it fades out from under
+        // the logo as the copy covers the card, and back in as it uncovers
+        // it. Only the logo's close shadow travels with the copy.
+        let close: (Float, Float) = toDetail ? (Self.closeShadowOpacity, 0) : (0, Self.closeShadowOpacity)
+        Self.setCloseShadow(on: logoView, opacity: close.1)
         let fade = CABasicAnimation(keyPath: "shadowOpacity")
-        fade.fromValue = shadow.0
-        fade.toValue = shadow.1
+        fade.fromValue = close.0
+        fade.toValue = close.1
         fade.duration = Self.duration
         logoView.layer.add(fade, forKey: "shadowOpacity")
         window.addSubview(logoView)
@@ -215,7 +294,7 @@ final class TVSpotlightLogoFlight {
                 views.container.frame = toDetail ? screen : backdrop.card
                 views.container.layer.cornerRadius = toDetail ? 0 : 22
                 views.image.frame = toDetail ? backdrop.screenCrop : backdrop.cardCrop
-                views.shade.alpha = toDetail ? 0 : 1
+                views.shade.alpha = toDetail ? 0 : Self.recessOpacity
             }
         } completion: { [weak self] _ in
             guard let self, self.generation == flight else { return }
@@ -253,6 +332,7 @@ final class TVSpotlightLogoFlight {
         openedSlideID = nil
         land()
         hiddenSourceID = nil
+        hidesHomeBackdrop = false
     }
 
     // MARK: Geometry
@@ -297,22 +377,4 @@ final class TVSpotlightLogoFlight {
     }
 }
 
-/// The card's darkening, approximated, so the backdrop copy starts out
-/// looking like the card it covers.
-private final class TVSpotlightFlightShade: UIView {
-    override class var layerClass: AnyClass { CAGradientLayer.self }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        guard let gradient = layer as? CAGradientLayer else { return }
-        let stops: [(Double, CGFloat)] = [(0, 0), (0.28, 0.02), (0.45, 0.08), (0.5, 0.1), (0.72, 0.5), (1, 0.9)]
-        gradient.colors = stops.map { UIColor.black.withAlphaComponent($0.1).cgColor }
-        gradient.locations = stops.map { NSNumber(value: $0.0) }
-        gradient.startPoint = CGPoint(x: 0.5, y: 0)
-        gradient.endPoint = CGPoint(x: 0.5, y: 1)
-    }
-
-    required init?(coder: NSCoder) { nil }
-}
 #endif
