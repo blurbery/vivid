@@ -168,9 +168,11 @@ struct HomeStillCard: View {
 
     private var secondLine: String? {
         // Every episode still has the status row, so its line reads
-        // "S3 E7 · Episode title". Movies keep the year.
-        if showsRuntimeStatus, EpisodeCardCaption.isEpisode(item) {
-            return EpisodeCardCaption.statusCardLine(for: item)
+        // "S3 E7 · Episode title". An episode with neither a number nor a
+        // title of its own falls back with the movies, which keep the year.
+        if showsRuntimeStatus, EpisodeCardCaption.isEpisode(item),
+           let line = EpisodeCardCaption.statusCardLine(for: item) {
+            return line
         }
         return HomeFeedMeta.secondLine(for: item)
     }
