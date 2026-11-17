@@ -217,6 +217,13 @@ final class VividTransferPriority: NSObject, URLSessionTaskDelegate, @unchecked 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         VividImageMetricsDelegate.shared.urlSession(session, task: task, didFinishCollecting: metrics)
     }
+
+    /// Follows redirects as before, except from HTTPS down to plain HTTP on a
+    /// public host, which App Transport Security used to refuse.
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(PlainHTTPRedirectGuard.allows(from: response.url, to: request.url) ? request : nil)
+    }
 }
 
 // MARK: - Pipeline

@@ -33,7 +33,8 @@ extension VividAPI {
 
     /// Artwork, subtitle files and series posters. Emby and Jellyfin fetch
     /// through the connection that matches the identity; Silo only from its
-    /// own origin, or from storage it signed when the path is a bare https URL.
+    /// own origin, or from storage it signed when the path is a bare https URL
+    /// (or http, for a plain-HTTP Silo server).
     func fetchDownloadAssetData(path: String, auth: CapturedOrdinaryRequestAuth) async throws -> Data {
         switch MediaServerProvider.forServerID(auth.account.serverId) {
         case .jellyfin:
@@ -45,7 +46,7 @@ extension VividAPI {
             do {
                 location = try DownloadEngine.AssetLocation(path, serverURL: auth.account.serverURL)
             } catch {
-                guard let signed = DownloadEngine.AssetLocation.signedArtworkURL(path) else { throw error }
+                guard let signed = DownloadEngine.AssetLocation.signedArtworkURL(path, serverURL: auth.account.serverURL) else { throw error }
                 return try await Self.signedArtworkData(signed)
             }
             return try await http.getData(location.path, query: location.query, expectedAuth: auth)
@@ -236,9 +237,12 @@ extension DownloadEngine {
         }
 
         /// A location Silo signed onto its storage: an absolute https URL with
-        /// a host and no user or password.
-        static func signedArtworkURL(_ text: String) -> URL? {
-            guard let url = URL(string: text), url.scheme?.lowercased() == "https", url.host != nil,
+        /// a host and no user or password, or a plain http one when the Silo
+        /// server itself is plain HTTP.
+        static func signedArtworkURL(_ text: String, serverURL: String) -> URL? {
+            let serverIsPlainHTTP = URL(string: serverURL)?.scheme?.lowercased() == "http"
+            guard let url = URL(string: text), let scheme = url.scheme?.lowercased(),
+                  scheme == "https" || (scheme == "http" && serverIsPlainHTTP), url.host != nil,
                   url.user == nil, url.password == nil else { return nil }
             return url
         }
@@ -252,6 +256,6 @@ extension DownloadEngine {
         configuration.urlCache = nil
         configuration.urlCredentialStorage = nil
         configuration.timeoutIntervalForRequest = 30
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: PlainHTTPRedirectGuard.SessionDelegate.shared, delegateQueue: nil)
     }()
 }

@@ -81,6 +81,9 @@ actor PlaybackRealtimeClient {
                 try Task.checkCancellation()
 
                 let socket = session.webSocketTask(with: request)
+                // The request carries the bearer or ticket, so it never
+                // follows a redirect down to plain HTTP on a public host.
+                socket.delegate = PlainHTTPRedirectGuard.SessionDelegate.shared
                 self.socket = socket
                 seenCommandIds.removeAll()
                 socket.resume()

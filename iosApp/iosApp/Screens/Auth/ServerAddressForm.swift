@@ -1,7 +1,8 @@
 import Foundation
 import os
 
-/// How the address form reaches the server. Auto tries HTTPS, then HTTP.
+/// How the address form reaches the server. Auto tries HTTPS, then HTTP
+/// for a local address.
 enum ServerProtocolChoice: CaseIterable, Hashable {
     case auto, https, http
 
@@ -149,6 +150,7 @@ final class ServerAddressForm {
         from candidates: [String], provider: MediaServerProvider,
         check: (String) async throws -> Answer
     ) async -> Answer? {
+        let choice = protocolChoice, typed = address
         var errors: [Error] = []
         for candidate in candidates {
             guard !Task.isCancelled else { return nil }
@@ -168,40 +170,21 @@ final class ServerAddressForm {
         let tried = candidates.joined(separator: ", ")
         let reason = errors.last?.localizedDescription ?? ""
         Self.log.error("No server answered at \(tried, privacy: .private): \(reason, privacy: .private)")
-        if Self.wasBlockedAsPlainHTTP(errors) {
-            message = String(localized: "Could not reach a \(provider.name) server at that address. Plain HTTP only works with local addresses, so use this server's HTTPS address.")
+        if Self.autoSkippedPlainHTTP(candidates: candidates, choice: choice, typed: typed) {
+            message = String(localized: "Could not reach a \(provider.name) server at that address. If it uses plain HTTP, choose HTTP or type the address with http://.")
         } else {
             message = String(localized: "Could not reach a \(provider.name) server at that address.")
         }
         return nil
     }
 
-    /// True when App Transport Security refused every address, which only
-    /// happens when all of them were plain HTTP to a public host name. Auto
-    /// always adds plain HTTP addresses after HTTPS, so a public host that
-    /// fails for any other reason also collects ATS refusals; those keep the
-    /// general message.
-    nonisolated static func wasBlockedAsPlainHTTP(_ errors: [Error]) -> Bool {
-        let causes = errors.map(transportCauses(of:))
-        return !causes.isEmpty && causes.allSatisfy { chain in
-            chain.contains { HTTPDiagnosticsErrorCode.classify(transport: $0) == "app_transport_security_blocked" }
-        }
-    }
-
-    /// The error, what `HTTPError.network` wraps (Silo requests) and their
-    /// underlying errors. Emby and Jellyfin throw the `URLError` itself.
-    private nonisolated static func transportCauses(of error: Error) -> [Error] {
-        var causes: [Error] = []
-        var next: Error? = error
-        while let current = next, causes.count < 6 {
-            if let wrapped = current as? HTTPError, case .network(let underlying) = wrapped {
-                next = underlying
-                continue
-            }
-            causes.append(current)
-            next = (current as NSError).userInfo[NSUnderlyingErrorKey] as? Error
-        }
-        return causes
+    /// True when Auto tried only HTTPS because the host is public and no
+    /// scheme was typed, so a plain-HTTP server needs HTTP chosen instead.
+    nonisolated static func autoSkippedPlainHTTP(candidates: [String], choice: ServerProtocolChoice, typed: String) -> Bool {
+        choice == .auto
+            && !typed.trimmingCharacters(in: .whitespacesAndNewlines).contains("://")
+            && !candidates.isEmpty
+            && candidates.allSatisfy { $0.lowercased().hasPrefix("https://") }
     }
 
     /// The addresses to try for what was typed, in order, without
@@ -249,14 +232,19 @@ final class ServerAddressForm {
             return components.string
         }
 
+        // Auto only falls back to plain HTTP on its own for a local address.
+        // A public host gets plain HTTP only when it was asked for, so a
+        // failed HTTPS connection never quietly sends the password in the
+        // clear over the internet.
         let scheme = typedScheme ? parts.scheme?.lowercased() : nil
-        let schemes = choice.forcedScheme.map { [$0] } ?? scheme.map { [$0] } ?? ["https", "http"]
+        let plainFallback = LocalNetworkHost.contains(host) || scheme == "http"
+        let schemes = choice.forcedScheme.map { [$0] } ?? scheme.map { [$0] } ?? (plainFallback ? ["https", "http"] : ["https"])
         var addresses: [String] = []
         for scheme in schemes {
             guard let built = address(scheme: scheme, port: port) else { return .failure(.invalidHost) }
             addresses.append(built)
         }
-        if choice == .auto, port == nil, provider == .silo || scheme == nil {
+        if choice == .auto, port == nil, provider == .silo || scheme == nil, plainFallback {
             guard let fallback = address(scheme: "http", port: provider == .silo ? 8090 : 8096) else { return .failure(.invalidHost) }
             addresses.append(fallback)
         }

@@ -140,6 +140,10 @@ targets:
       - path: Tests/SiloStoredSubtitleTests.swift
       # Audio through reloads, next episodes and Emby and Jellyfin reports.
       - path: Tests/PlayerAudioContinuityTests.swift
+      # Plain HTTP servers: the address form's candidates and the HTTPS to
+      # plain HTTP redirect guard.
+      - path: Tests/ServerAddressCandidatesTests.swift
+      - path: Tests/PlainHTTPRedirectGuardTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

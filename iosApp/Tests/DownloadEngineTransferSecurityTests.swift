@@ -147,6 +147,18 @@ final class DownloadEngineTransferSecurityTests: XCTestCase {
         }
     }
 
+    /// Signed storage artwork stays on https, except that a plain-HTTP Silo
+    /// server may sign plain-HTTP storage links.
+    func testSignedArtworkLinksFollowTheServerScheme() {
+        let https = "https://media.example.test", http = "http://media.example.test:8090"
+        XCTAssertNotNil(DownloadEngine.AssetLocation.signedArtworkURL("https://storage.example.test/p.jpg?sig=1", serverURL: https))
+        XCTAssertNotNil(DownloadEngine.AssetLocation.signedArtworkURL("https://storage.example.test/p.jpg?sig=1", serverURL: http))
+        XCTAssertNotNil(DownloadEngine.AssetLocation.signedArtworkURL("http://storage.example.test/p.jpg?sig=1", serverURL: http))
+        XCTAssertNil(DownloadEngine.AssetLocation.signedArtworkURL("http://storage.example.test/p.jpg?sig=1", serverURL: https))
+        XCTAssertNil(DownloadEngine.AssetLocation.signedArtworkURL("http://user:pw@storage.example.test/p.jpg", serverURL: http))
+        XCTAssertNil(DownloadEngine.AssetLocation.signedArtworkURL("ftp://storage.example.test/p.jpg", serverURL: http))
+    }
+
     /// Networking's request path check, kept with the downloads tests.
     func testRequestPathsAreValidated() throws {
         for rejected in ["/api/v1/items/%", "/api/v1/items/%2", "/api/v1/items/%GG", "/api/v1/items/a b",
