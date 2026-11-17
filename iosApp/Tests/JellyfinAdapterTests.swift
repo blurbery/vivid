@@ -1219,6 +1219,29 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertNil(sources?.first?[JellyfinAdapter.mediaSegmentsKey])
     }
 
+    /// A refused segments request is sent, then quietly leaves the source
+    /// without markers. `optionalData` never goes through `handle()`, the 401
+    /// handling that retires the token and signs out, while the main requests
+    /// still do.
+    func testRefusedMediaSegmentsNeverSignOut() async throws {
+        for status in [401, 403, 500] {
+            var paths: [String] = []
+            let adapter = adapter { request in paths.append(request.url!.path); return (status, [:]) }
+            let raw: [String: Any] = ["Id": item, "MediaSources": [["Id": source]]]
+            let result = await adapter.addingMediaSegments(to: raw)
+            XCTAssertNil((result["MediaSources"] as? [[String: Any]])?.first?[JellyfinAdapter.mediaSegmentsKey], "\(status)")
+            let optional = await adapter.connection.optionalData("/MediaSegments/\(source)")
+            XCTAssertNil(optional, "\(status)")
+            XCTAssertEqual(paths, Array(repeating: "/jellyfin/MediaSegments/\(source)", count: 2), "\(status)")
+            session?.invalidateAndCancel()
+        }
+        let adapter = adapter { _ in (401, [:]) }
+        do {
+            _ = try await adapter.rawItem(item)
+            XCTFail("A main request still reports the refused sign-in")
+        } catch JellyfinError.signInRequired { }
+    }
+
     func testOneNullProviderIDKeepsTheOthers() throws {
         let adapter = adapter { _ in (200, [:]) }
         let value = try adapter.item([

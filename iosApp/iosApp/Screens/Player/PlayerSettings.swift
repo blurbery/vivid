@@ -868,11 +868,20 @@ actor VividIntroDBClient {
     }
 }
 
+/// Real credits don't start in the first half of a file, so a credits marker
+/// that does is taken to be wrong and isn't used for Skip Credits, automatic
+/// skipping, Next Up or the watched mark.
+enum CreditsPlausibility {
+    static func isPlausible(_ credits: TimeRange, duration: Double) -> Bool {
+        duration.isFinite && duration > 0 && credits.start.isFinite && credits.start >= duration / 2
+    }
+}
+
 /// Vivid's own watched rule, applied on top of each server's resume rules.
 /// Partial progress has no Vivid threshold: the server decides what to keep.
 enum PlaybackCompletionPolicy {
-    /// Complete at 90% of the duration, at a valid credits marker, or at a
-    /// natural end with any progress.
+    /// Complete at 90% of the duration, at a valid credits marker (one that
+    /// starts in the second half), or at a natural end with any progress.
     static func isComplete(position: Double, duration: Double, credits: TimeRange? = nil,
                            endedNaturally: Bool = false) -> Bool {
         guard position.isFinite, position >= 0 else { return false }
@@ -881,7 +890,8 @@ enum PlaybackCompletionPolicy {
         if position / duration >= 0.9 { return true }
         guard let credits, credits.start.isFinite, credits.end.isFinite,
               credits.start > 0, credits.end > credits.start,
-              credits.end <= duration else { return false }
+              credits.end <= duration,
+              CreditsPlausibility.isPlausible(credits, duration: duration) else { return false }
         return position >= credits.start
     }
 }

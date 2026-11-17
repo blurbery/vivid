@@ -159,6 +159,7 @@ IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb.
 Both use season/episode numbers through the shared Intro & Credit Skipper toggle and separate automatic-skip switches.
 Emby's own skip markers come from the item's chapter markers: `MarkerType` `IntroStart` to the next `IntroEnd` is the intro, and `CreditsStart` to the end of the file is the credits.
 Without a later `IntroEnd`, Vivid ends the intro at the next chapter, but only when that chapter starts within three minutes.
+Emby keeps chapters on the item, from its main file, so when an item has several versions, only a version whose runtime is within two seconds of the item's (the same cut, such as a 4K and a 1080p copy) gets these markers; a longer or shorter cut, or a version whose runtime isn't known, gets neither the markers nor the chapter list rather than the main file's.
 Emby has no recap marker.
 While the Intro & Credit Skipper is on, these fill only the kinds TheIntroDB and IntroDB lack; while it is off, they are used alone.
 See [marker timing](../playback/architecture.md#introdb-marker-timing).

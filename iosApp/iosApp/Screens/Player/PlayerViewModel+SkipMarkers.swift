@@ -144,7 +144,21 @@ extension PlayerViewModel {
     private func publishMarkerRanges(from segments: VividIntroDBClient.Segments?) {
         recapRange = segments?.recap?.range(duration: duration)
         applyMarkerRanges(intro: segments?.intro?.range(duration: duration),
-                          credits: segments?.outro?.range(duration: duration))
+                          credits: segments.flatMap(plausibleCredits(from:)))
+    }
+
+    /// The chosen credits, or the selected file's own when a looked-up
+    /// marker starts in the first half and is taken to be wrong.
+    private func plausibleCredits(from segments: VividIntroDBClient.Segments) -> TimeRange? {
+        let candidates = [segments.outro?.range(duration: duration),
+                          VividIntroDBClient.Segment(range: currentSelectedVersion?.credits)?.range(duration: duration)]
+        for case let range? in candidates {
+            if CreditsPlausibility.isPlausible(range, duration: duration) { return range }
+            Self.logger.info(
+                "[CMP-MARKERS] credits ignored: start=\(range.start, privacy: .public) is in the first half of duration=\(self.duration, privacy: .public)"
+            )
+        }
+        return nil
     }
 
     private func applyMarkerRanges(intro: TimeRange?, credits: TimeRange?) {

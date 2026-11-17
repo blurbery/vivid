@@ -396,6 +396,7 @@ A sync asked for while another is sending runs once straight afterwards.
 An acknowledgement only counts once the queue has been saved: a stop whose answer never arrived, because the response was lost or the app closed before the queue was saved, stays queued and can be sent again.
 If the device is streaming from the same server at that moment, the server's now-playing entry for this device clears until the next progress report; other devices' sessions are untouched.
 Completion is separate for every movie and episode: reaching 90% of the duration, reaching a valid credits marker, or a verified natural end marks the item watched however little of it was watched.
+A credits marker only counts when it starts in the second half of the file.
 Seeking does not add a from-start requirement.
 Completion latches for the current item without stopping playback or triggering Next Up.
 Selected-file credits are preferred; loaded fallback credits apply when available.

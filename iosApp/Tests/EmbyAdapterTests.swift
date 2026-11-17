@@ -1174,6 +1174,40 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(EmbyAdapter.legacyHomeSectionTypes(settings:settings),["collections","nextup","resume"])
     }
 
+    /// Emby's chapters come from the item's main file, so only versions of
+    /// the same cut get its markers.
+    func testChapterMarkersOnlyReachTheSameCut() throws {
+        let item: [String: Any] = ["RunTimeTicks": 60_000_000_000, "MediaSources": [
+            ["Id": "main", "RunTimeTicks": 60_000_000_000],
+            ["Id": "uhd", "RunTimeTicks": 60_015_000_000],
+            ["Id": "extended", "RunTimeTicks": 72_000_000_000],
+            ["Id": "unknown"],
+        ]]
+        let sources = EmbyAdapter.versionSources(item, duration: 6_000)
+        XCTAssertEqual(sources.map { $0.source["Id"] as? String }, ["main", "uhd", "extended", "unknown"])
+        XCTAssertEqual(sources.map(\.usesItemChapters), [true, true, false, false])
+
+        let single: [String: Any] = ["RunTimeTicks": 60_000_000_000, "MediaSources": [["Id": "only", "RunTimeTicks": 72_000_000_000]]]
+        XCTAssertEqual(EmbyAdapter.versionSources(single, duration: 6_000).map(\.usesItemChapters), [true],
+                       "A single version always gets the item's markers")
+        XCTAssertTrue(EmbyAdapter.versionSources(["MediaSources": "bad"], duration: 6_000).isEmpty)
+
+        // Through the item builder: the extended cut gets no markers.
+        let chapters: [[String: Any]] = [
+            ["Name": "Intro", "StartPositionTicks": 300_000_000, "MarkerType": "IntroStart"],
+            ["Name": "Intro End", "StartPositionTicks": 1_200_000_000, "MarkerType": "IntroEnd"],
+            ["Name": "Credits", "StartPositionTicks": 55_000_000_000, "MarkerType": "CreditsStart"],
+        ]
+        let raw: [String: Any] = ["Id": "movie", "Name": "Example", "Type": "Movie", "RunTimeTicks": 60_000_000_000,
+                                  "Chapters": chapters, "MediaSources": [
+                                      ["Id": "main", "RunTimeTicks": 60_000_000_000],
+                                      ["Id": "extended", "RunTimeTicks": 72_000_000_000]]]
+        let versions = try XCTUnwrap(adapter.item(raw, watchlist: [])["versions"] as? [[String: Any]])
+        let decoded: [FileVersion] = try versions.map { try EmbyAdapter.decode($0) }
+        XCTAssertEqual(decoded.map(\.intro), [TimeRange(start: 30, end: 120), nil])
+        XCTAssertEqual(decoded.map(\.credits), [TimeRange(start: 5500, end: 6000), nil])
+    }
+
     func testChapterMarkersBecomeTheVersionsSkipMarkers() throws {
         let chapters: [[String: Any]] = [
             ["Name": "Chapter 1", "StartPositionTicks": 0, "MarkerType": "Chapter"],

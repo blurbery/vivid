@@ -129,6 +129,7 @@ Jellyfin can remember these selections for the user's other clients, depending o
 
 When playback loads, Vivid requests `GET /MediaSegments/{mediaSourceId}` (Jellyfin 10.10 and later) for each media source, in parallel and capped at two seconds.
 An older server, an error or a slow reply leaves that source without server markers and never fails playback.
+A refusal of this optional request, even a 401, never signs anyone out; only the main requests do that.
 `Intro`, `Outro` (credits) and `Recap` segments become the file's skip markers: the earliest valid segment of each kind is used, converted from ticks to seconds.
 Plugins that write media segments, such as Intro Skipper, are picked up this way.
 While the Intro & Credit Skipper is on, these fill only the kinds TheIntroDB and IntroDB lack; while it is off, they are used alone.
