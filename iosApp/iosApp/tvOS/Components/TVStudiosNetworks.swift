@@ -269,7 +269,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
             .clipsToBounds(false)
             .insets(horizontal: Self.inset, vertical: 30)
             .itemSpacing(Self.columnSpacing)
-            .scrollBehavior(.continuousLeadingEdge)
+            .scrollBehavior(.continuous)
             .focusSection()
         }
     }

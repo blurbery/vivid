@@ -83,7 +83,7 @@ struct VividCollectionMediaRow: View, Equatable {
             .clipsToBounds(false)
             .insets(horizontal: VividTheme.safePadding, vertical: TVHomeRowGeometry.cardPadding)
             .itemSpacing(40)
-            .scrollBehavior(.continuousLeadingEdge)
+            .scrollBehavior(.continuous)
         }
         .focusSection()
         .onChange(of: focusRequest, initial: true) { _, request in
