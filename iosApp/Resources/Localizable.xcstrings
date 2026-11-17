@@ -19020,7 +19020,7 @@
         }
       }
     },
-    "Could not reach a %@ server at that address. Plain HTTP only works with local addresses, so use this server's HTTPS address." : {
+    "Could not reach a %@ server at that address. If it uses plain HTTP, choose HTTP or type the address with http://." : {
       "extractionState" : "manual"
     },
     "Could not reach the server. Check that it is running and try again." : {
@@ -44483,6 +44483,76 @@
         }
       }
     },
+    "Play Theme Music" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titelmusik abspielen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir música temática"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire la musique du générique"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマ曲を再生"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放主题曲"
+          }
+        }
+      }
+    },
+    "Play a title’s theme song quietly while its page is open." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spielt die Titelmusik eines Titels leise ab, solange seine Seite geöffnet ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduce en voz baja la música temática de un título mientras su página está abierta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joue discrètement la musique du générique d’un titre tant que sa page est ouverte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作品のページを開いている間、テーマ曲を小さな音量で再生します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在作品页面打开时，以较低音量播放其主题曲。"
+          }
+        }
+      }
+    },
     "Play from Beginning" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46009,6 +46079,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 秒后播放下一集"
+          }
+        }
+      }
+    },
+    "Plays a title’s theme song from your server quietly while its page is open, and stops when a video starts. Saved for this profile on this Apple TV." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spielt die Titelmusik eines Titels von deinem Server leise ab, solange seine Seite geöffnet ist, und stoppt, sobald ein Video startet. Wird für dieses Profil auf diesem Apple TV gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduce en voz baja la música temática de un título desde tu servidor mientras su página está abierta y se detiene al empezar un vídeo. Se guarda para este perfil en este Apple TV."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joue discrètement la musique du générique d’un titre depuis votre serveur tant que sa page est ouverte, et s’arrête quand une vidéo démarre. Enregistré pour ce profil sur cette Apple TV."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作品のページを開いている間、サーバーのテーマ曲を小さな音量で再生し、ビデオの再生が始まると停止します。この Apple TV のこのプロファイルに保存されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在作品页面打开时，以较低音量播放服务器中的主题曲，视频开始播放时停止。仅保存在此 Apple TV 的此个人资料中。"
           }
         }
       }
@@ -62835,6 +62940,41 @@
         }
       }
     },
+    "THEME MUSIC" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TITELMUSIK"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MÚSICA TEMÁTICA"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MUSIQUE DU GÉNÉRIQUE"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマ曲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题曲"
+          }
+        }
+      }
+    },
     "THEMES" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -66111,6 +66251,111 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主题模式"
+          }
+        }
+      }
+    },
+    "Theme Music" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titelmusik"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Música temática"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musique du générique"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマ曲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题曲"
+          }
+        }
+      }
+    },
+    "Theme Music Volume" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lautstärke der Titelmusik"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volumen de la música temática"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume de la musique du générique"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマ曲の音量"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题曲音量"
+          }
+        }
+      }
+    },
+    "Theme songs come from your server and stop when a video starts. Saved for this profile on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titelmusik kommt von deinem Server und stoppt, sobald ein Video startet. Wird für dieses Profil auf diesem Gerät gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La música temática procede de tu servidor y se detiene al empezar un vídeo. Se guarda para este perfil en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La musique du générique provient de votre serveur et s’arrête quand une vidéo démarre. Enregistré pour ce profil sur cet appareil."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマ曲はサーバーから再生され、ビデオの再生が始まると停止します。このデバイスのこのプロファイルに保存されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题曲来自你的服务器，视频开始播放时停止。仅保存在此设备的此个人资料中。"
           }
         }
       }

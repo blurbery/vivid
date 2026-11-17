@@ -13,6 +13,7 @@ The connection supplies metadata and playable sources to Vivid's shared player; 
 
 `JellyfinProvider.swift` owns Jellyfin discovery, sign-in and authenticated transport, with its catalogue mapping in `JellyfinProvider+Items.swift` and `JellyfinProvider+Routes.swift`.
 `JellyfinPlayback.swift` owns playback negotiation and reporting.
+`JellyfinProvider+ThemeSongs.swift` finds and opens theme songs, using the reply and container rules in `EmbyProvider+ThemeSongs.swift`.
 `JellyfinDownloads.swift` and `JellyfinLocalPreferences.swift` keep download records and client preferences separate from other providers.
 Shared Vivid code selects the provider and presents its results.
 Silo and Emby wire implementations remain unchanged.
@@ -70,6 +71,7 @@ The core follows the [official Jellyfin API specification](https://api.jellyfin.
 | Artwork | `GET /Items/{id}/Images/{type}` |
 | Playback negotiation | `POST /Items/{id}/PlaybackInfo` |
 | Skip markers | `GET /MediaSegments/{mediaSourceId}` |
+| Theme music | `GET /Items/{id}/ThemeSongs`, `GET /Audio/{id}/stream.{container}` |
 | Original stream and original-file downloads | `GET /Videos/{id}/stream` |
 | Smaller downloads | `GET /Videos/{id}/stream.mp4` |
 | Subtitle files beside the media | `GET /Videos/{id}/{sourceId}/Subtitles/{index}/Stream.{format}` |
@@ -136,6 +138,18 @@ While the Intro & Credit Skipper is on, these fill only the kinds TheIntroDB and
 See [marker timing](../playback/architecture.md#introdb-marker-timing).
 `ProviderIds` are read one ID at a time, so a null or non-text value for one provider doesn't drop the series' IMDb and TMDb IDs the lookups use.
 The media-segment path hasn't been checked against a live Jellyfin server.
+
+When a movie, series, season or episode detail page opens, Vivid asks `GET /Items/{id}/ThemeSongs` for its theme song.
+`inheritFromParent` is turned on only for seasons and episodes, so a movie or series without a theme doesn't pick one up from the folders above it.
+`OwnerId` (a GUID on Jellyfin) says which title the song belongs to; a missing or empty value means the title itself.
+The first song is downloaded from `/Audio/{id}/stream.{container}?static=true`.
+Of a container list such as `mov,mp4,m4a`, the first one Apple's player opens is used.
+A container it can't open, such as Ogg or Opus, is asked for as an mp3 conversion (`/Audio/{id}/stream.mp3?audioCodec=mp3`), which needs the account to be allowed to transcode audio.
+When Jellyfin doesn't name the container, the file comes from `/Audio/{id}/stream?static=true` and its `Content-Type` or first bytes decide its format; one Apple's player doesn't open is asked for again as mp3.
+`/universal` isn't used because it answers with a redirect, which the connection refuses.
+The song is downloaded with the account's authorisation header, never a token in the URL, and played from a temporary file, of which the three newest are kept.
+The lookup gives up after four seconds and the download after 20, a song over 32 MB is refused, and any failure, even a 401, just means no music: it never signs anyone out.
+The theme music path hasn't been checked against a live Jellyfin server.
 
 Library browsing requests card metadata without cast, media sources, streams or chapters; detail and playback requests retain the full fields.
 Seasons, episodes and collections keep the full fields.
@@ -254,7 +268,7 @@ These checks did not submit watched-progress changes.
   Before the `ChildCount` check was added, the fixed seasons route and a season detail returned the episode-list counts for every season with versions, and a series without versions kept matching counts.
   The check itself is covered by focused provider tests and a simulator build, not a further live run.
   Watched counts for seasons with versions are covered by provider tests only, as no watched state was changed on the server.
-- Full on-device settings coverage, saved-account switching, native Apple TV user switching, live tvOS playback, media-segment skip markers and older Jellyfin server versions still need verification.
+- Full on-device settings coverage, saved-account switching, native Apple TV user switching, live tvOS playback, media-segment skip markers, theme music and older Jellyfin server versions still need verification.
 
 
 For an iOS Debug test launch, `VIVID_SHOW_SERVER_SETUP=1` opens the provider chooser before account restoration.

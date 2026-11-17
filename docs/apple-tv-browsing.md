@@ -491,7 +491,8 @@ Below its introduction, Acknowledgements also says that Vivid is independent and
 The Contact page shows an email QR code.
 Playback uses the same Intro & Credit Skipper toggle as mobile; Settings > Subtitles owns local subtitle language, behaviour and appearance.
 The Episodes group also offers Hide Episode Spoilers, which covers episodes after the viewer’s position on the series and season pages as described in [Playback](playback/README.md).
-The Audio group between Playback and Episodes holds Audio Language, Volume Boost, Boost Level (dimmed and skipped by focus while Volume Boost is off, like the custom subtitle appearance rows) and Enhanced Dialogue, as on mobile; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+The Audio group after Playback holds Audio Language, Volume Boost, Boost Level (dimmed and skipped by focus while Volume Boost is off, like the custom subtitle appearance rows) and Enhanced Dialogue, as on mobile; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+The Theme Music group between Audio and Episodes holds Play Theme Music and a Volume menu of 10% to 100% in 10% steps (dimmed and skipped by focus while Play Theme Music is off, like Boost Level); a volume saved between steps shows as the nearest one, and the default is 30%.
 Playback and subtitle pages read Vivid’s local preferences without loading server-managed player settings.
 Settings > Profiles ticks the signed-in account; Who’s watching doesn't mark it, and the white ring there is the focus ring on the centre profile.
 Settings uses the selected app theme, neutral grey grouped panels, inset dividers and subtly outlined icon tiles.
@@ -550,6 +551,11 @@ The focused control is the wide one; the last control used stays wide while its 
 Play is wide when the page opens.
 Icons stay fixed where they sit in the circle; a label is centred between the drawn edge of its symbol and the end of the pill.
 The controls use the tinted glass of the iOS Play button with no fill, and the focused control adds that button's bright gradient rim at 2.5 points.
+
+Movie, series, season and episode pages play the title's theme song from the server quietly in the background while Settings > Playback > Play Theme Music is on, as described in [Detail pages and validation](app-design.md#detail-pages-and-validation).
+The song fades in when the page opens, plays once, carries on while moving between a show, its seasons and its episodes when they share it, and fades out when the page closes.
+Playing a video stops it, and it doesn't start again when the video ends.
+It pauses while Vivid is in the background.
 
 Series episodes form one native horizontal shelf across seasons.
 On the movie and series pages the hero's logo stays fixed in its corner at the same size while the page moves between the hero and the shelves: the hero fades out under it and the shelves fade in below it.

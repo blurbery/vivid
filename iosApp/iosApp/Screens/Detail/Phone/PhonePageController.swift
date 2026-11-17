@@ -42,6 +42,7 @@ struct MobileDetailPage: View {
             .task(id: contentId) {
                 await session.load(contentId: contentId, resumeContext: resumeContext, scrollState: scrollState)
             }
+            .themeMusicClaim(session.model.detail.map { ThemeMusicItem($0) })
             .onChange(of: router.presentedPlayer?.id) { previous, current in
                 guard previous != nil, current == nil, session.refreshesWhenPlayerCloses else { return }
                 session.refreshesWhenPlayerCloses = false

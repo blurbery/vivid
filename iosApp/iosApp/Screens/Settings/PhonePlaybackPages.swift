@@ -7,6 +7,8 @@ extension SettingsView {
     struct PlaybackPage: View {
         let model: SettingsViewModel
         @State private var player = PlayerSettings.shared
+        /// The Theme Music volume while the slider is being dragged.
+        @State private var themeVolumeDraft: Double?
 
         private var audioUnsetLabel: String {
             SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.displayUnsetLabel ?? String(localized: "No preference")
@@ -47,6 +49,7 @@ extension SettingsView {
                     .settingsPageHeaderRow()
                 streamingSection
                 audioSection
+                themeMusicSection
                 episodesSection
                 Section {
                     Button(role: .destructive) {
@@ -117,6 +120,45 @@ extension SettingsView {
                 Text("Changes apply the next time a video starts. While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
                     .foregroundStyle(Color.vividSecondaryText)
             }
+        }
+
+        private var themeMusicSection: some View {
+            Section {
+                Toggle(isOn: live(\.themeMusicEnabled, model.setThemeMusicEnabled)) {
+                    described("Play Theme Music", "Play a title’s theme song quietly while its page is open.")
+                }
+                .foregroundStyle(Color.vividOnSurface)
+                themeVolumeRow
+                    .disabled(!model.themeMusicEnabled)
+                    .opacity(model.themeMusicEnabled ? 1 : 0.45)
+            } header: {
+                PhoneSettingsSectionHeader("Theme Music")
+            } footer: {
+                Text("Theme songs come from your server and stop when a video starts. Saved for this profile on this device.")
+                    .foregroundStyle(Color.vividSecondaryText)
+            }
+        }
+
+        private var themeVolumeRow: some View {
+            let value = themeVolumeDraft ?? Double(model.themeMusicVolumePercent)
+            return HStack(spacing: 12) {
+                Text("Volume").foregroundStyle(Color.vividOnSurface)
+                Slider(value: Binding(get: { value }, set: { themeVolumeDraft = $0 }), in: 5...100, step: 5, onEditingChanged: { editing in
+                    guard !editing, let draft = themeVolumeDraft else { return }
+                    themeVolumeDraft = nil
+                    let percent = Int(draft.rounded())
+                    model.themeMusicVolumePercent = percent
+                    Task { model.setThemeMusicVolumePercent(percent) }
+                })
+                .tint(.white)
+                Text((value / 100).formatted(.percent.precision(.fractionLength(0))))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.vividSecondaryText)
+                    .frame(minWidth: 44, alignment: .trailing)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Theme Music Volume")
+            .accessibilityValue(Text("\(Int(value)) percent"))
         }
 
         private var episodesSection: some View {

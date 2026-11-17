@@ -1371,6 +1371,128 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertNil(server.recap)
     }
 
+    // MARK: Theme music
+
+    func testThemeSongLookupInheritsOnlyForSeasonsAndEpisodesAndReadsNumericOwner() async throws {
+        var queries: [[String: String]] = []
+        let adapter = stubbedAdapter { request in
+            XCTAssertEqual(request.url?.path, "/emby/Items/100/ThemeSongs")
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            queries.append(Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") }))
+            return (200, [
+                "Items": [["Id": "200", "MediaSources": [["Container": "MP3"]]]],
+                "TotalRecordCount": 1, "OwnerId": 55,
+            ])
+        }
+        for type in ["movie", "series", "season", "episode"] {
+            let item = ThemeMusicItem(contentID: "100", type: type, seriesID: nil)
+            let lookup = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
+            XCTAssertEqual(lookup, ThemeSongLookup(ownerID: "55", songID: "200", container: "mp3"), type)
+        }
+        XCTAssertEqual(queries.map { $0["InheritFromParent"] }, ["false", "false", "true", "true"],
+                       "A movie or series without a theme must not walk up into its folders")
+        XCTAssertEqual(Set(queries.compactMap { $0["UserId"] }), ["user-1"])
+        XCTAssertEqual(Set(queries.compactMap { $0["Fields"] }), ["MediaSources"])
+
+        // No owner (or Emby's zero) means the title itself; no songs means no theme.
+        EmbyReviewRequestStub.handler = { _ in (200, ["Items": [["Id": "200", "Container": "flac"]], "OwnerId": 0]) }
+        let own = await EmbyThemeMusic.lookup(for: ThemeMusicItem(contentID: "100", type: "movie", seriesID: nil),
+                                              connection: adapter.connection)
+        XCTAssertEqual(own, ThemeSongLookup(ownerID: "100", songID: "200", container: "flac"))
+        EmbyReviewRequestStub.handler = { _ in (200, ["Items": [], "TotalRecordCount": 0, "OwnerId": 100]) }
+        let none = await EmbyThemeMusic.lookup(for: ThemeMusicItem(contentID: "100", type: "movie", seriesID: nil),
+                                               connection: adapter.connection)
+        XCTAssertNil(none)
+    }
+
+    func testThemeSongLookupFailureIsQuietAndNeverTakesTheSignOutPath() async throws {
+        var requests = 0
+        let adapter = stubbedAdapter { _ in requests += 1; return (401, [:]) }
+        let item = ThemeMusicItem(contentID: "100", type: "episode", seriesID: "90")
+        let refused = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
+        XCTAssertNil(refused)
+        XCTAssertEqual(requests, 1)
+        // The same refusal on an ordinary request is the one that signs out.
+        do {
+            _ = try await adapter.connection.data("GET", "/Items/100/ThemeSongs")
+            XCTFail("An ordinary request treats a 401 as an expired sign-in")
+        } catch EmbyError.signInRequired { }
+        EmbyReviewRequestStub.handler = { _ in (500, [:]) }
+        let failed = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
+        XCTAssertNil(failed)
+    }
+
+    func testThemeSongStreamDownloadsWithHeaderAuthToAPlayableFile() async throws {
+        var requests: [String] = []
+        let stub = stubbedAdapter { request in
+            requests.append(request.url!.absoluteString)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Emby-Token"), "secret-token")
+            XCTAssertFalse(request.url!.absoluteString.lowercased().contains("api_key"))
+            XCTAssertFalse(request.url!.absoluteString.contains("secret-token"))
+            return (200, ["song": "bytes"])
+        }
+        let connection = EmbyConnection(serverURL: "https://media.example.test", token: "secret-token", userID: "user-1",
+                                        identity: nil, sessionOverride: stub.connection.sessionOverride)
+        let stream = await EmbyThemeMusic.stream(
+            for: ThemeSongLookup(ownerID: "100", songID: "200", container: "mp3"), connection: connection)
+        let file = try XCTUnwrap(stream?.url)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertTrue(file.isFileURL)
+        XCTAssertEqual(file.pathExtension, "mp3")
+        XCTAssertEqual(stream?.headers, [:], "A local file needs no headers")
+        XCTAssertEqual(try Data(contentsOf: file), try JSONSerialization.data(withJSONObject: ["song": "bytes"]))
+        XCTAssertEqual(requests, ["https://media.example.test/emby/Audio/200/stream.mp3?Static=true"])
+
+        // An unnamed container whose download isn't a playable format is asked for again as mp3.
+        requests.removeAll()
+        let converted = await EmbyThemeMusic.stream(
+            for: ThemeSongLookup(ownerID: "100", songID: "200", container: nil), connection: connection)
+        let convertedFile = try XCTUnwrap(converted?.url)
+        defer { try? FileManager.default.removeItem(at: convertedFile) }
+        XCTAssertEqual(convertedFile.pathExtension, "mp3")
+        XCTAssertEqual(requests, [
+            "https://media.example.test/emby/Audio/200/stream?Static=true",
+            "https://media.example.test/emby/Audio/200/stream.mp3?AudioCodec=mp3",
+        ])
+
+        // A refusal is quiet, and a bad song ID never reaches the server.
+        requests.removeAll()
+        EmbyReviewRequestStub.handler = { request in requests.append(request.url!.absoluteString); return (401, [:]) }
+        let refused = await EmbyThemeMusic.stream(
+            for: ThemeSongLookup(ownerID: "100", songID: "200", container: "flac"), connection: connection)
+        XCTAssertNil(refused)
+        let invalid = await EmbyThemeMusic.stream(
+            for: ThemeSongLookup(ownerID: "100", songID: "../200", container: "mp3"), connection: connection)
+        XCTAssertNil(invalid)
+        XCTAssertEqual(requests.count, 1)
+
+        XCTAssertEqual(try EmbyThemeMusic.streamURL(serverURL: "https://media.example.test", songID: "200", container: "ogg").absoluteString,
+                       "https://media.example.test/emby/Audio/200/stream.mp3?AudioCodec=mp3")
+    }
+
+    func testThemeSongFilesKeepTheNewestThreeAndNameTheFormat() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ThemeMusicTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var files: [URL] = []
+        for index in 0..<5 {
+            files.append(try XCTUnwrap(ThemeSongFiles.store(Data([UInt8(index)]), fileExtension: "MP3", in: folder)))
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).count, ThemeSongFiles.keptFiles)
+        XCTAssertEqual(files.map { FileManager.default.fileExists(atPath: $0.path) }, [false, false, true, true, true])
+        XCTAssertEqual(files.last?.pathExtension, "mp3")
+        XCTAssertNil(ThemeSongFiles.store(Data(), fileExtension: "mp3", in: folder))
+        XCTAssertNil(ThemeSongFiles.store(Data([1]), fileExtension: "../mp3", in: folder))
+        XCTAssertNil(ThemeSongFiles.store(Data(count: ThemeSongFiles.maximumBytes + 1), fileExtension: "mp3", in: folder))
+
+        XCTAssertEqual(ThemeSongFiles.fileExtension(contentType: "audio/MPEG; charset=binary", data: Data()), "mp3")
+        XCTAssertEqual(ThemeSongFiles.fileExtension(contentType: "application/octet-stream", data: Data("fLaC....".utf8)), "flac")
+        XCTAssertEqual(ThemeSongFiles.fileExtension(contentType: nil, data: Data("RIFF....WAVE".utf8)), "wav")
+        XCTAssertEqual(ThemeSongFiles.fileExtension(contentType: nil, data: Data("....ftypM4A ".utf8)), "m4a")
+        XCTAssertEqual(ThemeSongFiles.fileExtension(contentType: nil, data: Data([0xFF, 0xFB, 0x90, 0x00])), "mp3")
+        XCTAssertNil(ThemeSongFiles.fileExtension(contentType: "audio/ogg", data: Data("OggS".utf8)))
+    }
+
 }
 
 private final class LoadedRows: @unchecked Sendable {

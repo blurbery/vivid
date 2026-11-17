@@ -58,6 +58,8 @@ final class SettingsViewModel {
     var volumeBoostEnabled: Bool
     var volumeBoostPercent: Int
     var enhancedDialogueEnabled: Bool
+    var themeMusicEnabled: Bool
+    var themeMusicVolumePercent: Int
     var subtitleAppearance: SubtitleAppearance
     var usesCustomSubtitleAppearance: Bool
     var followsDeviceCaptions: Bool
@@ -75,6 +77,8 @@ final class SettingsViewModel {
         volumeBoostEnabled = settings.volumeBoostEnabled
         volumeBoostPercent = settings.volumeBoostPercent
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
+        themeMusicEnabled = settings.themeMusicEnabled
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
         subtitleAppearance = settings.subtitleAppearance
         usesCustomSubtitleAppearance = settings.subtitleUsesDeviceAppearanceOverride
         followsDeviceCaptions = settings.subtitleMatchesSystemAppearance
@@ -175,6 +179,16 @@ final class SettingsViewModel {
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
     }
 
+    func setThemeMusicEnabled(_ value: Bool) {
+        settings.setThemeMusicEnabled(value)
+        themeMusicEnabled = settings.themeMusicEnabled
+    }
+
+    func setThemeMusicVolumePercent(_ value: Int) {
+        settings.setThemeMusicVolumePercent(value)
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
+    }
+
     func setSubtitleAppearance(_ appearance: SubtitleAppearance) async {
         await settings.setSubtitleAppearance(appearance)
         subtitleAppearance = settings.subtitleAppearance
@@ -207,6 +221,8 @@ final class SettingsViewModel {
         volumeBoostEnabled = settings.volumeBoostEnabled
         volumeBoostPercent = settings.volumeBoostPercent
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
+        themeMusicEnabled = settings.themeMusicEnabled
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
         subtitleAppearance = settings.subtitleAppearance
         usesCustomSubtitleAppearance = settings.subtitleUsesDeviceAppearanceOverride
     }
@@ -227,6 +243,8 @@ final class SettingsViewModel {
         volumeBoostEnabled = settings.volumeBoostEnabled
         volumeBoostPercent = settings.volumeBoostPercent
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
+        themeMusicEnabled = settings.themeMusicEnabled
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
         subtitleAppearance = settings.subtitleAppearance
         usesCustomSubtitleAppearance = settings.subtitleUsesDeviceAppearanceOverride
         followsDeviceCaptions = settings.subtitleMatchesSystemAppearance
@@ -249,6 +267,8 @@ final class TVSettingsViewModel {
     var volumeBoostEnabled: Bool
     var volumeBoostPercent: Int
     var enhancedDialogueEnabled: Bool
+    var themeMusicEnabled: Bool
+    var themeMusicVolumePercent: Int
     var subtitleAppearance: SubtitleAppearance
     var usesCustomSubtitleAppearance: Bool
     var followsDeviceCaptions: Bool
@@ -265,6 +285,8 @@ final class TVSettingsViewModel {
         volumeBoostEnabled = settings.volumeBoostEnabled
         volumeBoostPercent = settings.volumeBoostPercent
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
+        themeMusicEnabled = settings.themeMusicEnabled
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
         subtitleAppearance = settings.subtitleAppearance
         usesCustomSubtitleAppearance = settings.subtitleUsesDeviceAppearanceOverride
         followsDeviceCaptions = settings.subtitleMatchesSystemAppearance
@@ -357,6 +379,16 @@ final class TVSettingsViewModel {
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
     }
 
+    func setThemeMusicEnabled(_ value: Bool) {
+        settings.setThemeMusicEnabled(value)
+        themeMusicEnabled = settings.themeMusicEnabled
+    }
+
+    func setThemeMusicVolumePercent(_ value: Int) {
+        settings.setThemeMusicVolumePercent(value)
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
+    }
+
     func setSubtitleAppearance(_ appearance: SubtitleAppearance) async {
         await settings.setSubtitleAppearance(appearance)
         subtitleAppearance = settings.subtitleAppearance
@@ -396,6 +428,8 @@ final class TVSettingsViewModel {
         volumeBoostEnabled = settings.volumeBoostEnabled
         volumeBoostPercent = settings.volumeBoostPercent
         enhancedDialogueEnabled = settings.enhancedDialogueEnabled
+        themeMusicEnabled = settings.themeMusicEnabled
+        themeMusicVolumePercent = settings.themeMusicVolumePercent
         subtitleAppearance = settings.subtitleAppearance
         usesCustomSubtitleAppearance = settings.subtitleUsesDeviceAppearanceOverride
         followsDeviceCaptions = settings.subtitleMatchesSystemAppearance

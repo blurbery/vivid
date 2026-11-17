@@ -783,6 +783,26 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertEqual(PlayerTimeFormatter.formatHMS(3_661), "1:01:01")
         XCTAssertEqual(PlayerTimeFormatter.formatHMS(61), "1:01")
     }
+
+    func testThemeMusicDefaultsPersistsClampsAndResets() async throws {
+        let harness = try PlayerSettingsHarness()
+        let settings = harness.settings
+        XCTAssertTrue(settings.themeMusicEnabled, "Theme Music is on by default")
+        XCTAssertEqual(settings.themeMusicVolumePercent, 30)
+        settings.setThemeMusicEnabled(false)
+        settings.setThemeMusicVolumePercent(65)
+        let restored = PlayerSettings(defaults: harness.defaults)
+        XCTAssertFalse(restored.themeMusicEnabled)
+        XCTAssertEqual(restored.themeMusicVolumePercent, 65)
+        for (requested, kept) in [(0, 5), (4, 5), (5, 5), (100, 100), (500, 100), (Int.min, 5), (Int.max, 100)] {
+            settings.setThemeMusicVolumePercent(requested)
+            XCTAssertEqual(settings.themeMusicVolumePercent, kept)
+        }
+        await settings.resetAllDeviceSettings()
+        let reset = PlayerSettings(defaults: harness.defaults)
+        XCTAssertTrue(reset.themeMusicEnabled)
+        XCTAssertEqual(reset.themeMusicVolumePercent, 30)
+    }
 }
 
 @MainActor

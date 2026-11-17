@@ -286,7 +286,7 @@ extension TVSettingsView {
         /// The first row of a page.
         case top
         case generalLanguage, theme, spotlight, homeSections, collections, customiseTabBar
-        case audioLanguage, boostLevel, showNextUp
+        case audioLanguage, boostLevel, themeMusicVolume, showNextUp
         case backupLanguage, behavior, useDeviceSettings
         case fontSize, fontColor, backgroundStyle, backgroundOpacity, backgroundColor, position
         case manageServers

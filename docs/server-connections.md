@@ -634,6 +634,13 @@ Download registries and monitors consume every cursor page before reconciliation
 Native v2 progress bootstrap stages a complete account/profile replacement before publishing it, preserving pending offline events and downloaded files.
 The older progress flow remains available for v1 servers.
 
+Silo theme music is v2 only.
+Detail pages read `themes` from `GET /api/v2/catalog/items/{id}` and play the first song when `GET /api/v2/catalog/themes/capabilities` reports `available` without refusing the profile.
+The short-lived audio URL comes from `POST /api/v2/catalog/items/{owner}/themes/{theme}/playback` just before the song plays; a `converted` stream is downloaded to a temporary file first, because it has no length for `AVPlayer` to stream.
+Unlike video, a theme grant may be an absolute URL on a proxy node's origin, and Vivid plays it when it's http or https; a root-relative one is resolved against the server like artwork.
+These requests carry the normal account and profile headers but never start a token refresh, so a refused theme can't sign anyone out.
+See the [Silo core](cores/silo.md) for the details.
+
 The compatibility work follows the Silo v2 contract deployed from `dd8c474b40d1cc485bf37d3117f7c148a891d4a6`.
 Cast and crew identifiers remain strings, watch-state timing fields map to Vivid's existing models, and batched settings use repeated query parameters.
 Playback mutation IDs use the server's canonical UUID format, and related-title queries retain a consistent page size within each catalogue window.

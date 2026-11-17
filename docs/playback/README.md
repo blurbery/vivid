@@ -147,6 +147,10 @@ AC-3 and E-AC-3 use compressed output at normal speed; other formats use decoded
 Receiver output requires device verification.
 Settings > Playback > Audio holds Audio Language, Volume Boost (125%, 150%, 175% or 200% of the standard level) and Enhanced Dialogue, which lowers music and effects so voices stand out.
 While either enhancement is on, AC-3 and E-AC-3 are decoded at every speed, so Dolby Atmos plays as surround sound; see [Volume Boost and Enhanced Dialogue](../cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+Settings > Playback > Theme Music, right after Audio, holds Play Theme Music, on by default, and its Volume, from 5% to 100% with 30% as the default.
+iPhone and iPad set the volume with a slider in 5% steps, and Apple TV with a menu of 10% steps that shows the nearest step for any other saved value.
+Both are saved per device and profile like the other playback preferences, and Reset Playback Settings on iPhone and iPad turns Theme Music back on at 30%.
+While it is on, a movie, series, season or episode page plays the title's theme song from the server (Silo, Emby or Jellyfin) quietly in the background, as described in [Detail pages and validation](../app-design.md#detail-pages-and-validation).
 The Intro & Credit Skipper toggle controls the public TheIntroDB and IntroDB lookups, with separate automatic intro/credit skip switches that stay available while it is off.
 Hide Episode Spoilers, off by default, blurs the preview and scrambles the description of episodes after the viewer’s current position, keeping the episode title readable, in the series, season and episode page lists on iPhone, iPad and Apple TV, for Silo, Emby and Jellyfin alike.
 The position is the episode in progress, otherwise the first unwatched episode of the season the viewer is up to; watched, in-progress and current episodes stay readable, Specials are never covered, and opening a covered episode shows its page as normal.

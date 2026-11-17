@@ -231,6 +231,37 @@ struct EmbyConnection: Sendable {
         return object
     }
 
+    /// A GET whose reply is optional: nil for any failure or non-2xx answer.
+    /// Unlike ``data(_:_:query:body:)``, a 401 here never retires the token
+    /// or signs anyone out, because a proxy or an older server can refuse an
+    /// optional route while the sign-in is still good.
+    func optionalData(_ path: String, query: [String: String] = [:]) async -> Data? {
+        await optionalReply(path, query: query, accept: "application/json")?.0
+    }
+
+    /// An optional file, such as a theme song, with its `Content-Type`: nil
+    /// as for ``optionalData(_:query:)``, or when the reply is larger than
+    /// `maximumBytes`.
+    func optionalFile(_ path: String, query: [String: String] = [:], maximumBytes: Int) async -> (data: Data, contentType: String?)? {
+        guard let reply = await optionalReply(path, query: query, accept: "*/*"),
+              reply.1.expectedContentLength <= Int64(maximumBytes),
+              reply.0.count <= maximumBytes else { return nil }
+        return (reply.0, reply.1.value(forHTTPHeaderField: "Content-Type"))
+    }
+
+    private func optionalReply(_ path: String, query: [String: String], accept: String) async -> (Data, HTTPURLResponse)? {
+        guard (try? await validate()) != nil,
+              let url = try? Self.url(serverURL: serverURL, path: path, query: query) else { return nil }
+        var request = URLRequest(url: url)
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
+        request.setValue(accept, forHTTPHeaderField: "Accept")
+        guard let reply = try? await (sessionOverride ?? Self.session).data(for: request),
+              (try? await validate()) != nil,
+              let response = reply.1 as? HTTPURLResponse,
+              (200..<300).contains(response.statusCode) else { return nil }
+        return (reply.0, response)
+    }
+
     // MARK: Sign-in
 
     private static func anonymous(_ serverURL: String, token: String? = nil, session: URLSession? = nil) -> Self {

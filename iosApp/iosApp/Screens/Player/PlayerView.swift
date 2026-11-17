@@ -323,6 +323,7 @@ struct PlayerView: View {
     // MARK: Presentation
 
     private func presentationDidAppear() {
+        ThemeMusicCenter.shared.videoPlayerDidAppear()
         #if os(tvOS)
         // Keep the screen awake for as long as the player is up, paused or
         // not. Playback state has no say over the idle timer here.
@@ -366,6 +367,7 @@ struct PlayerView: View {
     }
 
     private func presentationDidDisappear() {
+        ThemeMusicCenter.shared.videoPlayerDidDisappear()
         #if os(tvOS)
         isOnScreen = false
         UIApplication.shared.isIdleTimerDisabled = false

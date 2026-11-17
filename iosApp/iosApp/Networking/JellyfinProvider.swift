@@ -310,11 +310,23 @@ struct JellyfinConnection: Sendable {
     /// Unlike ``data(_:_:query:body:)``, a 401 here never retires the token
     /// or signs anyone out, because a proxy or an older server can refuse an
     /// optional route while the sign-in is still good.
-    func optionalData(_ path: String) async -> Data? {
+    func optionalData(_ path: String, query: [String: String] = [:]) async -> Data? {
         guard (try? await validate()) != nil,
-              let reply = try? await send("GET", path, query: [:], body: nil),
+              let reply = try? await send("GET", path, query: query, body: nil),
               (200..<300).contains(reply.1.statusCode) else { return nil }
         return reply.0
+    }
+
+    /// An optional file, such as a theme song, with its `Content-Type`: nil
+    /// as for ``optionalData(_:query:)``, or when the reply is larger than
+    /// `maximumBytes`.
+    func optionalFile(_ path: String, query: [String: String] = [:], maximumBytes: Int) async -> (data: Data, contentType: String?)? {
+        guard (try? await validate()) != nil,
+              let reply = try? await send("GET", path, query: query, body: nil),
+              (200..<300).contains(reply.1.statusCode),
+              reply.1.expectedContentLength <= Int64(maximumBytes),
+              reply.0.count <= maximumBytes else { return nil }
+        return (reply.0, reply.1.value(forHTTPHeaderField: "Content-Type"))
     }
 
     /// Sends one request. The connection's own user always goes as `UserId`.
