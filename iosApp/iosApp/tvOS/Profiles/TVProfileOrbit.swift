@@ -98,9 +98,13 @@ struct TVProfileOrbit: View {
             reportSelection()
         }
         .onAppear { reportSelection() }
-        .task(id: places.map(\.avatarURL)) {
-            for place in places where glowColours[place.glowKey] == nil {
+        // The centred profile's colour first. Turning the arc runs it again,
+        // which retries a picture that couldn't be read before.
+        .task(id: [selectedPlace?.glowKey ?? ""] + places.map(\.glowKey)) {
+            let centre = selectedPlace.map { [$0] } ?? []
+            for place in centre + places where glowColours[place.glowKey] == nil {
                 if let colour = await TVProfileGlow.colour(for: place) { glowColours[place.glowKey] = colour }
+                if Task.isCancelled { return }
             }
         }
         .task(id: scenePhase == .active && movingID == nil) {
@@ -357,8 +361,9 @@ struct TVProfileOrbitPlace: Identifiable, Equatable {
         lhs.id == rhs.id && lhs.name == rhs.name && lhs.account == rhs.account && lhs.avatarURL == rhs.avatarURL
     }
 
-    /// Tells the glow's colours apart: a new picture takes a new colour.
-    var glowKey: String { id + "|" + (avatarURL ?? "") }
+    /// Tells the glow's colours apart: a new picture, from its image URL or
+    /// an image stored as the avatar, takes a new colour.
+    var glowKey: String { [id, avatarURL ?? "", profile?.avatarEmoji ?? ""].joined(separator: "|") }
 
     /// A steady colour of the profile's own, for the glow of a profile
     /// whose picture gives none, from 0 to 1.

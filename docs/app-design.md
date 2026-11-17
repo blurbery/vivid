@@ -447,7 +447,7 @@ Behind it a wall of library posters, tilted nine degrees, drifts slowly with alt
 A soft glow sits behind the chosen profile's picture in its main colour, or in a steady colour of the profile's own when it has an emoji or initial, and fades out on Add Profile.
 The posters are small copies Vivid saves on the Apple TV, up to 40 per profile, each time the signed-in profile's Home loads, so the page needs no sign-in or server request; they stay out of the saved profile record and never go to iCloud.
 They come from the rows the profile shows on Home, other than Continue Watching and Next Up, so the wall shows nothing about what anyone watched.
-The wall shows only the chosen profile's own posters, so a child's profile never shows posters from a grown-up's library, and turning the arc to another profile shuffles its posters in tile by tile; Add Profile keeps the wall it finds.
+Once the arc settles on a profile, the wall shows only that profile's own posters, so a child's profile never shows posters from a grown-up's library; the outgoing profile's posters stay until the new ones shuffle in tile by tile, and Add Profile keeps the wall it finds.
 A profile with a Vivid PIN or a Silo profile PIN adds no posters, and deleting a profile, on this Apple TV or on another device through iCloud, removes its posters.
 Plain tiles stand in for a profile with a PIN, and for one whose Home hasn't loaded on that Apple TV yet.
 With Reduce Motion the wall holds still and cross-fades between profiles' posters, the arc turns and rearranges without animation, the caption changes without a fade and the chosen profile doesn't float.

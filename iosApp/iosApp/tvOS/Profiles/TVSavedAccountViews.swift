@@ -23,7 +23,12 @@ struct TVSavedProfilesScreen: View {
     @State private var wall = TVPosterWallStore.revision
     /// The profile in the centre of the arc, whose posters the wall shows;
     /// nil on Add Profile, which keeps the wall it finds.
-    @State private var wallAccount: TVSavedAccount?
+    @State private var wallAccountID: String?
+    /// Read from the saved profiles each time, so a profile filled in or
+    /// given a PIN after it reached the centre is the one the wall uses.
+    private var wallAccount: TVSavedAccount? {
+        wallAccountID.flatMap { id in store.accounts.first { $0.id == id } }
+    }
     private var handoffDuration: Double { reduceMotion ? 0.2 : 0.55 }
 
     var body: some View {
@@ -35,7 +40,7 @@ struct TVSavedProfilesScreen: View {
                 TVProfileOrbit { route in
                     path.append(route)
                 } onSelectionChange: { account in
-                    wallAccount = account
+                    wallAccountID = account?.id
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .top) {
