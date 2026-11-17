@@ -2,55 +2,62 @@
 import SwiftUI
 
 private struct WallKey: Hashable {
-    let accounts: [TVSavedAccount]
+    let account: TVSavedAccount?
+    /// A Vivid PIN set while the page is up hides the profile's posters.
+    let isLocked: Bool
     let revision: Int
 }
 
 /// Who's watching: the saved profiles at launch, on an arc over a drifting
-/// wall of library posters. Choosing one plays the startup animation over
-/// the page before the app takes over.
+/// wall of the centred profile's library posters. Choosing one plays the
+/// startup animation over the page before the app takes over.
 struct TVSavedProfilesScreen: View {
     let router: AppRouter
     @State private var store = TVSavedAccountStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isFinishingHandoff = false
     @State private var path = NavigationPath()
-    @State private var posters: [UIImage] = []
+    @State private var posters = TVPosterWallSet.empty
+    @State private var postersGeneration = 0
+    @State private var hasLoadedWall = false
     @State private var wall = TVPosterWallStore.revision
-    /// The centred profile's colour, for the wall's glow.
-    @State private var glowHue: Double?
+    /// The profile in the centre of the arc, whose posters the wall shows;
+    /// nil on Add Profile, which keeps the wall it finds.
+    @State private var wallAccount: TVSavedAccount?
     private var handoffDuration: Double { reduceMotion ? 0.2 : 0.55 }
 
     var body: some View {
         ZStack {
             TVAppBackdrop()
             NavigationStack(path: $path) {
-                VStack(spacing: 0) {
+                // The arc and the centred profile's name sit in the middle of
+                // the screen, with the title and footer laid over the edges.
+                TVProfileOrbit { route in
+                    path.append(route)
+                } onSelectionChange: { account in
+                    wallAccount = account
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) {
                     Text("Who’s watching?")
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.85))
                         .padding(.top, 84)
-                    Spacer(minLength: 0)
-                    TVProfileOrbit { route in
-                        path.append(route)
-                    } onSelectionChange: { account in
-                        glowHue = account.map(TVProfileOrbitPlace.hue(for:))
-                    }
-                    Spacer(minLength: 0)
-                    if let error = store.error {
-                        Text(error).font(.system(size: 22))
-                            .foregroundStyle(.white.opacity(0.7))
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 1000)
-                    }
-                    Spacer().frame(height: 120)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background { TVPosterWall(posters: posters, glowHue: glowHue) }
                 .overlay(alignment: .bottom) {
-                    VividCopyrightFooter()
-                        .padding(.bottom, 40)
+                    VStack(spacing: 0) {
+                        if let error = store.error {
+                            Text(error).font(.system(size: 22))
+                                .foregroundStyle(.white.opacity(0.7))
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 1000)
+                                .padding(.bottom, 80)
+                        }
+                        VividCopyrightFooter()
+                    }
+                    .padding(.bottom, 40)
                 }
+                .background { TVPosterWall(posters: posters.images, generation: postersGeneration) }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: TVAccountRoute.self) { route in
                     switch route {
@@ -80,11 +87,22 @@ struct TVSavedProfilesScreen: View {
         .environment(router)
         // Again when posters are saved while the page is up, as when the
         // signed-in profile's Home loads behind it at launch.
-        .task(id: WallKey(accounts: store.accounts, revision: wall.value)) {
+        .task(id: WallKey(
+            account: wallAccount, isLocked: wallAccount.map { store.hasPIN($0.id) } ?? false, revision: wall.value
+        )) {
+            guard let account = wallAccount else { return }
+            if hasLoadedWall {
+                // Waits for the arc to settle, so turning past several
+                // profiles shuffles the wall once.
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            }
             // A load overtaken by a newer one doesn't replace its wall.
-            let loaded = await TVPosterWallStore.posters(for: store.accounts)
+            let loaded = await TVPosterWallStore.posters(for: account)
             guard !Task.isCancelled else { return }
+            hasLoadedWall = true
+            guard loaded != posters else { return }
             posters = loaded
+            postersGeneration += 1
         }
         .task(id: isFinishingHandoff) {
             guard isFinishingHandoff else { return }
