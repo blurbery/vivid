@@ -57,7 +57,7 @@ enum CreditsNextUpPolicy {
               credits.start.isFinite, credits.end.isFinite,
               credits.end > credits.start,
               credits.end >= duration - endToleranceSeconds,
-              credits.start >= duration / 2 else {
+              CreditsPlausibility.isPlausible(credits, duration: duration) else {
             return nil
         }
         return credits

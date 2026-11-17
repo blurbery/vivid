@@ -131,7 +131,7 @@ struct EmbyAdapter {
                 "positionSeconds": position,
                 "durationSeconds": duration,
             ],
-            "versions": try (raw["MediaSources"] as? [[String: Any]] ?? []).map { try version($0, chapters: chapters) },
+            "versions": try Self.versionSources(raw, duration: duration).map { try version($0.source, chapters: $0.usesItemChapters ? chapters : []) },
         ]
         for (source, target) in Self.copiedItemFields { value[target] = raw[source] }
         value["cast"] = cast(raw["People"] as? [[String: Any]] ?? [])
@@ -242,6 +242,25 @@ struct EmbyAdapter {
     }
 
     // MARK: - Skip markers
+
+    /// Seconds a version's runtime may differ from the item's and still be
+    /// the same cut.
+    static let sameCutToleranceSeconds: Double = 2
+
+    /// The item's media sources, each marked with whether the item's chapter
+    /// markers belong to it. Emby keeps chapters on the item, from its main
+    /// file, so another version gets them only when it's the same cut (the
+    /// same runtime, such as a 4K and a 1080p copy); a longer or shorter cut
+    /// gets no markers rather than the main file's.
+    static func versionSources(_ raw: [String: Any], duration: Double) -> [(source: [String: Any], usesItemChapters: Bool)] {
+        let sources = raw["MediaSources"] as? [[String: Any]] ?? []
+        guard sources.count > 1 else { return sources.map { ($0, true) } }
+        return sources.map { source in
+            let runtime = seconds(source["RunTimeTicks"])
+            let sameCut = duration > 0 && runtime > 0 && abs(runtime - duration) <= sameCutToleranceSeconds
+            return (source, sameCut)
+        }
+    }
 
     /// The longest intro taken from an `IntroStart` with no `IntroEnd`.
     static let maximumUnendedIntroSeconds: Double = 180

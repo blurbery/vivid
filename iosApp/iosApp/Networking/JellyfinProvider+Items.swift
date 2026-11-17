@@ -301,7 +301,8 @@ struct JellyfinAdapter {
     /// The item with each media source's segments attached, for playback.
     /// Segments are optional: an older server, a failed request or one that
     /// takes longer than two seconds leaves a source without them, so this
-    /// never fails or holds up playback for long.
+    /// never fails or holds up playback for long. A refusal (even a 401)
+    /// never signs anyone out.
     func addingMediaSegments(to raw: [String: Any]) async -> [String: Any] {
         guard var sources = raw["MediaSources"] as? [[String: Any]] else { return raw }
         let ids = Set(sources.compactMap { $0["Id"] as? String }.filter { (try? JellyfinConnection.id($0)) != nil })
@@ -311,7 +312,8 @@ struct JellyfinAdapter {
         let found = await withTaskGroup(of: Outcome.self) { group -> [String: Data] in
             for id in ids {
                 group.addTask {
-                    guard let data = try? await connection.data("GET", "/MediaSegments/\(JellyfinConnection.id(id))") else {
+                    guard let path = try? "/MediaSegments/\(JellyfinConnection.id(id))",
+                          let data = await connection.optionalData(path) else {
                         return .missing
                     }
                     return .found(id, data)

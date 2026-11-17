@@ -306,6 +306,17 @@ struct JellyfinConnection: Sendable {
         return try await handle(fallback)
     }
 
+    /// A GET whose reply is optional: nil for any failure or non-2xx answer.
+    /// Unlike ``data(_:_:query:body:)``, a 401 here never retires the token
+    /// or signs anyone out, because a proxy or an older server can refuse an
+    /// optional route while the sign-in is still good.
+    func optionalData(_ path: String) async -> Data? {
+        guard (try? await validate()) != nil,
+              let reply = try? await send("GET", path, query: [:], body: nil),
+              (200..<300).contains(reply.1.statusCode) else { return nil }
+        return reply.0
+    }
+
     /// Sends one request. The connection's own user always goes as `UserId`.
     private func send(_ method: String, _ path: String, query: [String: String], body: Any?) async throws -> (Data, HTTPURLResponse) {
         let scopedQuery = userID.map { query.merging(["UserId": $0]) { _, captured in captured } } ?? query

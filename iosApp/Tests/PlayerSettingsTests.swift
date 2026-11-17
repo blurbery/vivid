@@ -25,6 +25,68 @@ final class PlayerSettingsTests: XCTestCase {
         }
     }
 
+    /// Credits that start in the first half are taken to be wrong, so they
+    /// can't mark anything watched early.
+    func testEarlyCreditsCannotComplete() {
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 45, duration: 100, credits: TimeRange(start: 40, end: 99)))
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 55, duration: 100, credits: TimeRange(start: 49.9, end: 99)))
+        XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 55, duration: 100, credits: TimeRange(start: 50, end: 99)))
+        XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 95, duration: 100, credits: TimeRange(start: 10, end: 99)),
+                      "90% still completes")
+    }
+
+    /// The file's own credits come first, but an unusable one gives way to
+    /// the looked-up credits Skip Credits is using.
+    func testCompletionUsesTheFirstUsableCredits() {
+        let early = TimeRange(start: 20, end: 100), file = TimeRange(start: 88, end: 100), lookedUp = TimeRange(start: 80, end: 100)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([file, lookedUp], duration: 100), file)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([early, lookedUp], duration: 100), lookedUp)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([nil, lookedUp], duration: 100), lookedUp)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([TimeRange(start: 80, end: 101), lookedUp], duration: 100), lookedUp)
+        XCTAssertNil(PlaybackCompletionPolicy.usableCredits([early, nil], duration: 100))
+        XCTAssertNil(PlaybackCompletionPolicy.usableCredits([file], duration: 0))
+    }
+
+    func testCreditsPlausibility() {
+        XCTAssertTrue(CreditsPlausibility.isPlausible(TimeRange(start: 50, end: 100), duration: 100))
+        XCTAssertFalse(CreditsPlausibility.isPlausible(TimeRange(start: 49, end: 100), duration: 100))
+        XCTAssertFalse(CreditsPlausibility.isPlausible(TimeRange(start: 90, end: 100), duration: 0))
+        XCTAssertFalse(CreditsPlausibility.isPlausible(TimeRange(start: 90, end: 100), duration: .nan))
+        XCTAssertFalse(CreditsPlausibility.isPlausible(TimeRange(start: .nan, end: 100), duration: 100))
+    }
+
+    /// Early credits from any source never reach Skip Credits or automatic
+    /// skipping, and plausible ones still do.
+    func testEarlyCreditsMarkersAreIgnored() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.duration = 100
+        model.updateIntroDBSegments(.init(imdb_id: "", season: 1, episode: 1,
+            intro: .init(start_ms: 5_000, end_ms: 20_000), outro: .init(start_ms: 30_000, end_ms: 100_000)))
+        XCTAssertNil(model.creditsRange)
+        XCTAssertEqual(model.introRange, TimeRange(start: 5, end: 20), "Only the credits are dropped")
+        model.updateIntroDBSegments(.init(imdb_id: "", season: 1, episode: 1,
+            intro: nil, outro: .init(start_ms: 85_000, end_ms: 100_000)))
+        XCTAssertEqual(model.creditsRange, TimeRange(start: 85, end: 100))
+    }
+
+    /// When a looked-up credits marker is ignored, the selected file's own
+    /// credits take over if they're plausible.
+    func testIgnoredLookedUpCreditsFallBackToTheFilesOwn() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.currentSelectedVersion = FileVersion(
+            fileId: 1, fileName: nil, resolution: nil, codecVideo: nil, codecAudio: nil, hdr: nil, container: nil,
+            fileSize: nil, duration: nil, bitrate: nil, videoTracks: nil, audioTracks: nil, subtitleTracks: nil,
+            chapters: nil, credits: TimeRange(start: 88, end: 100))
+        model.duration = 100
+        model.updateIntroDBSegments(.init(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: nil, outro: .init(start_ms: 20_000, end_ms: 100_000)))
+        XCTAssertEqual(model.creditsRange, TimeRange(start: 88, end: 100))
+        model.updateIntroDBSegments(nil)
+        XCTAssertNil(model.creditsRange, "Nothing falls back once the markers are cleared")
+    }
+
     func testNaturalShortEndAndUnresolvedDuration() {
         XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 25, duration: 25, endedNaturally: true))
         XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 25, duration: 0, endedNaturally: true))
