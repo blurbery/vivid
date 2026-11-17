@@ -158,6 +158,7 @@ Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby p
 IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb.
 Both use season/episode numbers through the shared Intro & Credit Skipper toggle and separate automatic-skip switches.
 Emby's own skip markers come from the item's chapter markers: `MarkerType` `IntroStart` to the next `IntroEnd` is the intro, and `CreditsStart` to the end of the file is the credits.
+Without an `IntroEnd`, the intro runs to the next chapter, as in Emby's own player.
 Emby has no recap marker.
 While the Intro & Credit Skipper is on, these fill only the kinds TheIntroDB and IntroDB lack; while it is off, they are used alone.
 See [marker timing](../playback/architecture.md#introdb-marker-timing).

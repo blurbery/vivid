@@ -1228,6 +1228,139 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(value["tmdbId"] as? String, "1396")
         XCTAssertEqual(value["imdbId"] as? String, "tt0903747")
     }
+
+    /// Replies shaped as Jellyfin 10.10 and 10.11 serialise them (PascalCase,
+    /// N-format GUIDs, string enums, tick counts as numbers, nulls left out)
+    /// go through playback's metadata load and the skip lookup's series read
+    /// exactly as `JellyfinPlayback.loadMetadata` and `loadVividMarkers` use
+    /// them, and end with a TheIntroDB identity.
+    func testRealJellyfinRepliesReachTheSkipLookup() async throws {
+        let series = "6f2c5d1e8b3a4c7d9e0f1a2b3c4d5e6f"
+        let season = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+        let episode = "9e8d7c6b5a4f40312e1d0c9b8a7f6e5d"
+        let episodeJSON = """
+        {"Name":"Pilot","ServerId":"0123456789abcdef0123456789abcdef","Id":"\(episode)",
+         "Etag":"5b3f0e2c9a8d7e6f","DateCreated":"2024-03-02T10:15:30.1234567Z","CanDelete":false,"CanDownload":true,
+         "HasSubtitles":true,"Container":"mkv","SortName":"001 - 0001 - Pilot",
+         "PremiereDate":"2008-01-20T00:00:00.0000000Z","ExternalUrls":[],
+         "MediaSources":[{"Protocol":"File","Id":"\(episode)","Path":"/media/tv/Show/Season 01/S01E01.mkv",
+           "Type":"Default","Container":"mkv","Size":2147483648,"Name":"S01E01","IsRemote":false,
+           "ETag":"7c1d","RunTimeTicks":34923520000,"ReadAtNativeFramerate":false,"IgnoreDts":false,
+           "IgnoreIndex":false,"GenPtsInput":false,"SupportsTranscoding":true,"SupportsDirectStream":true,
+           "SupportsDirectPlay":true,"IsInfiniteStream":false,"RequiresOpening":false,"RequiresClosing":false,
+           "RequiresLooping":false,"SupportsProbing":true,"VideoType":"VideoFile",
+           "MediaStreams":[
+             {"Codec":"h264","TimeBase":"1/1000","VideoRange":"SDR","VideoRangeType":"SDR","DisplayTitle":"1080p H264 SDR",
+              "IsInterlaced":false,"BitRate":7300000,"BitDepth":8,"RefFrames":1,"IsDefault":true,"IsForced":false,
+              "IsHearingImpaired":false,"Height":1080,"Width":1920,"AverageFrameRate":23.976025,
+              "RealFrameRate":23.976025,"Profile":"High","Type":"Video","AspectRatio":"16:9","Index":0,
+              "IsExternal":false,"IsTextSubtitleStream":false,"SupportsExternalStream":false,"PixelFormat":"yuv420p",
+              "Level":41,"IsAnamorphic":false},
+             {"Codec":"ac3","Language":"eng","TimeBase":"1/1000","DisplayTitle":"English - Dolby Digital - 5.1 - Default",
+              "IsInterlaced":false,"ChannelLayout":"5.1","BitRate":640000,"Channels":6,"SampleRate":48000,
+              "IsDefault":true,"IsForced":false,"IsHearingImpaired":false,"Type":"Audio","Index":1,"IsExternal":false,
+              "IsTextSubtitleStream":false,"SupportsExternalStream":false,"Level":0},
+             {"Codec":"subrip","Language":"eng","TimeBase":"1/1000","DisplayTitle":"English - SUBRIP",
+              "IsInterlaced":false,"IsDefault":false,"IsForced":false,"IsHearingImpaired":false,"Type":"Subtitle",
+              "Index":2,"IsExternal":false,"IsTextSubtitleStream":true,"SupportsExternalStream":true,"Level":0}],
+           "MediaAttachments":[],"Formats":[],"Bitrate":7940000,"RequiredHttpHeaders":{},
+           "TranscodingSubProtocol":"http","DefaultAudioStreamIndex":1,"DefaultSubtitleStreamIndex":-1,
+           "HasSegments":true}],
+         "Path":"/media/tv/Show/Season 01/S01E01.mkv","Overview":"A teacher turns to crime.","Taglines":[],
+         "Genres":["Drama"],"CommunityRating":8.2,"RunTimeTicks":34923520000,"PlayAccess":"Full",
+         "ProductionYear":2008,"IndexNumber":1,"ParentIndexNumber":1,"RemoteTrailers":[],
+         "ProviderIds":{"Tvdb":"349232","Imdb":"tt0959621","Tmdb":"62085"},"IsHD":true,"IsFolder":false,
+         "ParentId":"\(season)","Type":"Episode","People":[],"Studios":[],"GenreItems":[],
+         "ParentLogoItemId":"\(series)","ParentBackdropItemId":"\(series)","ParentBackdropImageTags":["b4c1"],
+         "LocalTrailerCount":0,"UserData":{"PlaybackPositionTicks":0,"PlayCount":0,"IsFavorite":false,
+           "Played":false,"Key":"81189001001","ItemId":"\(episode)"},
+         "SeriesName":"Show","SeriesId":"\(series)","SeasonId":"\(season)","SpecialFeatureCount":0,
+         "PrimaryImageAspectRatio":1.7777777777777777,"SeriesPrimaryImageTag":"a9e2","SeasonName":"Season 1",
+         "VideoType":"VideoFile","ImageTags":{"Primary":"e3f4"},"BackdropImageTags":[],"ParentLogoImageTag":"c7d8",
+         "Chapters":[{"StartPositionTicks":0,"Name":"Chapter 1","ImageDateModified":"0001-01-01T00:00:00.0000000Z"}],
+         "LocationType":"FileSystem","MediaType":"Video","LockedFields":[],"LockData":false,"Width":1920,"Height":1080}
+        """
+        let seriesJSON = """
+        {"Name":"Show","ServerId":"0123456789abcdef0123456789abcdef","Id":"\(series)","Etag":"1f2e",
+         "DateCreated":"2024-03-02T10:15:30.1234567Z","DateLastMediaAdded":"2024-03-02T10:20:00.0000000Z",
+         "CanDelete":false,"CanDownload":false,"SortName":"Show","PremiereDate":"2008-01-20T00:00:00.0000000Z",
+         "ExternalUrls":[{"Name":"IMDb","Url":"https://www.imdb.com/title/tt0903747"}],"Path":"/media/tv/Show",
+         "EnableMediaSourceDisplay":true,"OfficialRating":"TV-MA","Overview":"A chemistry teacher.",
+         "Taglines":[],"Genres":["Drama","Crime"],"CommunityRating":8.9,"CriticRating":96,
+         "CumulativeRunTimeTicks":2700000000000,"RunTimeTicks":27000000000,"PlayAccess":"Full",
+         "ProductionYear":2008,"RemoteTrailers":[],
+         "ProviderIds":{"Tmdb":"1396","Imdb":"tt0903747","Tvdb":"81189","TvRage":"18164"},
+         "IsFolder":true,"ParentId":"f0e1d2c3b4a5968778695a4b3c2d1e0f","Type":"Series",
+         "People":[{"Name":"Lead Actor","Id":"1234abcd5678ef901234abcd5678ef90","Role":"Teacher","Type":"Actor",
+           "PrimaryImageTag":"9a8b"}],
+         "Studios":[{"Name":"Network","Id":"abcdefabcdefabcdefabcdefabcdefab"}],"GenreItems":[],
+         "LocalTrailerCount":0,"UserData":{"UnplayedItemCount":62,"PlaybackPositionTicks":0,"PlayCount":0,
+           "IsFavorite":false,"Played":false,"Key":"81189","ItemId":"\(series)"},
+         "RecursiveItemCount":62,"ChildCount":5,"SpecialFeatureCount":0,"Status":"Ended","AirDays":[],
+         "PrimaryImageAspectRatio":0.6666666666666666,"ImageTags":{"Primary":"p1","Logo":"l1"},
+         "BackdropImageTags":["b1"],"LocationType":"FileSystem","MediaType":"Unknown",
+         "EndDate":"2013-09-29T00:00:00.0000000Z","LockedFields":[],"LockData":false}
+        """
+        // Intro Skipper's segments as `GET /MediaSegments/{itemId}` returns them.
+        let segmentsJSON = """
+        {"Items":[
+          {"Id":"5d4c3b2a19087f6e5d4c3b2a19087f6e","ItemId":"\(episode)","Type":"Intro",
+           "StartTicks":612000000,"EndTicks":1129000000},
+          {"Id":"6e5d4c3b2a19087f6e5d4c3b2a19087f","ItemId":"\(episode)","Type":"Outro",
+           "StartTicks":33000000000,"EndTicks":34923520000}],
+         "TotalRecordCount":2,"StartIndex":0}
+        """
+        var paths: [String] = []
+        let adapter = adapter { request in
+            let path = request.url!.path
+            paths.append(path)
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            XCTAssertEqual(query.first { $0.name == "UserId" }?.value, self.user)
+            let body: String
+            switch path {
+            case "/jellyfin/Items/\(episode)": body = episodeJSON
+            case "/jellyfin/Items/\(series)": body = seriesJSON
+            case "/jellyfin/MediaSegments/\(episode)": body = segmentsJSON
+            default: return (404, [:])
+            }
+            return (200, try JSONSerialization.jsonObject(with: Data(body.utf8)))
+        }
+
+        // Playback's metadata load: the item, its segments, then the watch
+        // detail through a plain decoder.
+        let raw = await adapter.addingMediaSegments(to: try await adapter.rawItem(episode))
+        let watch = try JSONDecoder().decode(
+            WatchDetail.self,
+            from: JSONSerialization.data(withJSONObject: adapter.watch(raw, preferences: [:])))
+        XCTAssertEqual(watch.type, "episode")
+        XCTAssertEqual(watch.seriesId, series)
+        XCTAssertEqual(watch.seasonNumber, 1)
+        XCTAssertEqual(watch.episodeNumber, 1)
+        let version = try XCTUnwrap(watch.versions.first)
+        XCTAssertEqual(version.fileId, JellyfinAdapter.numberID(episode))
+        XCTAssertEqual(try XCTUnwrap(version.duration), 3492.352, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(version.intro?.start), 61.2, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(version.intro?.end), 112.9, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(version.credits?.start), 3300, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(version.credits?.end), 3492.352, accuracy: 0.0001)
+
+        // The lookup's series read: the catalogue route, decoded as the
+        // shared HTTP client decodes it.
+        let seriesID = try XCTUnwrap(watch.seriesId)
+        let reply = try await adapter.route(method: "GET", path: "/api/v1/catalog/items/\(seriesID)", query: [:], body: nil)
+        let detail = try HTTPClient.makeJSONDecoder().decode(
+            ItemDetail.self, from: JSONSerialization.data(withJSONObject: reply, options: [.fragmentsAllowed]))
+        XCTAssertEqual(detail.type, "series")
+        XCTAssertEqual(detail.tmdbId, "1396", "The series' TMDB ID, never the episode's")
+        XCTAssertEqual(detail.imdbId, "tt0903747")
+        let identity = VividIntroDBClient.Episode(
+            imdbID: detail.imdbId ?? "", season: try XCTUnwrap(watch.seasonNumber),
+            episode: try XCTUnwrap(watch.episodeNumber), tmdbID: detail.tmdbId.flatMap(Int.init))
+        XCTAssertEqual(identity.theIntroDBIdentifier, URLQueryItem(name: "tmdb_id", value: "1396"))
+        XCTAssertEqual(paths, [
+            "/jellyfin/Items/\(episode)", "/jellyfin/MediaSegments/\(episode)", "/jellyfin/Items/\(series)",
+        ])
+    }
 }
 
 private final class JellyfinRequestStub: URLProtocol {

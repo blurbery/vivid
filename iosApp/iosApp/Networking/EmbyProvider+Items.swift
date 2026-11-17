@@ -244,17 +244,21 @@ struct EmbyAdapter {
     // MARK: - Skip markers
 
     /// The intro and credits from Emby's chapter markers, as `{start, end}`
-    /// ranges in seconds: `IntroStart` to the next `IntroEnd`, and
+    /// ranges in seconds: `IntroStart` to the next `IntroEnd` (or, as Emby's
+    /// own player does, to the next chapter when there's no end marker), and
     /// `CreditsStart` to the end of the file. Emby has no recap marker.
     static func markers(chapters: [[String: Any]], duration: Double) -> [String: Any] {
-        func starts(_ type: String) -> [Double] {
-            chapters.filter { ($0["MarkerType"] as? String)?.lowercased() == type.lowercased() }
-                .compactMap { $0["StartPositionTicks"] is NSNumber ? seconds($0["StartPositionTicks"]) : nil }
-                .sorted()
+        func starts(_ type: String?) -> [Double] {
+            chapters.filter { chapter in
+                guard let type else { return true }
+                return (chapter["MarkerType"] as? String)?.lowercased() == type.lowercased()
+            }
+            .compactMap { $0["StartPositionTicks"] is NSNumber ? seconds($0["StartPositionTicks"]) : nil }
+            .sorted()
         }
         var value: [String: Any] = [:]
         if let start = starts("IntroStart").first,
-           let end = starts("IntroEnd").first(where: { $0 > start }) {
+           let end = starts("IntroEnd").first(where: { $0 > start }) ?? starts(nil).first(where: { $0 > start }) {
             value["intro"] = ["start": start, "end": end]
         }
         if let start = starts("CreditsStart").first, duration > start {

@@ -1187,7 +1187,11 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(version.credits, TimeRange(start: 2400, end: 2500), "Credits run to the end of the file")
         XCTAssertNil(version.recap)
         let plain: FileVersion = try EmbyAdapter.decode(adapter.version(raw, chapters: [chapters[0], chapters[1]]))
-        XCTAssertNil(plain.intro, "An intro start without an end is no marker")
+        XCTAssertNil(plain.intro, "An intro start with nothing after it is no marker")
+        let nextChapter: [String: Any] = ["Name": "Chapter 2", "StartPositionTicks": 900_000_000, "MarkerType": "Chapter"]
+        let unended: FileVersion = try EmbyAdapter.decode(
+            adapter.version(raw, chapters: [chapters[0], chapters[1], nextChapter]))
+        XCTAssertEqual(unended.intro, TimeRange(start: 30, end: 90), "Without an IntroEnd the intro runs to the next chapter")
         XCTAssertNil(plain.credits)
     }
 
@@ -1198,6 +1202,135 @@ final class EmbyAdapterTests: XCTestCase {
         ])
         XCTAssertEqual(value["tmdbId"] as? String, "1396")
         XCTAssertEqual(value["imdbId"] as? String, "tt0903747")
+
+        // Some series carry their IMDb ID under an upper-case `IMDB` key,
+        // and no TMDB ID; the skip lookup then falls back to IMDb.
+        let upper = try adapter.item([
+            "Id": "series", "Name": "Show", "Type": "Series",
+            "ProviderIds": ["Tvdb": "313131", "IMDB": "tt9876543", "TV Maze": "5151"],
+        ])
+        XCTAssertEqual(upper["imdbId"] as? String, "tt9876543")
+        XCTAssertNil(upper["tmdbId"])
+        let lookup = VividIntroDBClient.Episode(
+            imdbID: upper["imdbId"] as? String ?? "", season: 1, episode: 2,
+            tmdbID: (upper["tmdbId"] as? String).flatMap(Int.init)
+        )
+        XCTAssertEqual(lookup.theIntroDBIdentifier, URLQueryItem(name: "imdb_id", value: "tt9876543"))
+    }
+
+    // MARK: - Skip lookups, end to end
+
+    /// A Series item in the shape a real Emby 4.10 server returns for
+    /// `/Users/{id}/Items/{id}` with `EmbyAdapter.fields`. Titles and IDs
+    /// are made up.
+    private static let embySeriesJSON = """
+    {"Name":"Example Show","ServerId":"server-a","Id":"700001","Etag":"etag-a",
+     "DateCreated":"2024-01-02T03:04:05.0000000Z","PremiereDate":"2019-04-01T00:00:00.0000000Z",
+     "OfficialRating":"TV-MA","Overview":"An example.","Taglines":[],"Genres":["Drama","Crime"],
+     "CommunityRating":8.4,"RunTimeTicks":27000000000,"ProductionYear":2019,
+     "ProviderIds":{"Tvdb":"313131","Imdb":"tt9876543","Tmdb":"424242","TvMaze":"5151",
+                    "Official Website":"https://show.example.test"},
+     "IsFolder":true,"ParentId":"600001","Type":"Series",
+     "People":[{"Name":"Actor One","Id":"800001","Role":"Lead","Type":"Actor","PrimaryImageTag":"tag-p"},
+               {"Name":"Director One","Id":"800002","Type":"Director"}],
+     "Studios":[{"Name":"Example Network","Id":900001}],"GenreItems":[{"Name":"Drama","Id":900002}],
+     "UserData":{"UnplayedItemCount":10,"PlaybackPositionTicks":0,"PlayCount":0,"IsFavorite":false,"Played":false},
+     "ChildCount":2,"RecursiveItemCount":20,"Status":"Continuing","AirDays":["Sunday"],
+     "ImageTags":{"Primary":"tag-a","Logo":"tag-b"},"BackdropImageTags":["tag-c"],"SortName":"Example Show"}
+    """
+
+    /// An Episode item in the same shape, with one media source and Emby's
+    /// chapter markers mixed in with ordinary chapters.
+    private static let embyEpisodeJSON = """
+    {"Name":"Example Episode","ServerId":"server-a","Id":"700101","DateCreated":"2024-01-02T03:04:05.0000000Z",
+     "Container":"mkv","PremiereDate":"2019-04-08T00:00:00.0000000Z","Overview":"An example.",
+     "CommunityRating":7.9,"RunTimeTicks":30120000000,"ProductionYear":2019,"IndexNumber":2,"ParentIndexNumber":1,
+     "ProviderIds":{"Tvdb":"717171","Imdb":"tt9876544","Tmdb":"1234567"},
+     "IsFolder":false,"ParentId":"700011","Type":"Episode","People":[],"Studios":[],"GenreItems":[],
+     "ParentLogoItemId":"700001","ParentLogoImageTag":"tag-b",
+     "ParentBackdropItemId":"700001","ParentBackdropImageTags":["tag-c"],
+     "UserData":{"PlaybackPositionTicks":0,"PlayCount":0,"IsFavorite":false,"Played":false},
+     "SeriesName":"Example Show","SeriesId":"700001","SeasonId":"700011","SeriesPrimaryImageTag":"tag-a",
+     "SeasonName":"Season 1",
+     "MediaSources":[{"Protocol":"File","Id":"mediasource_700101","Path":"/media/example.mkv","Type":"Default",
+       "Container":"mkv","Size":1500000000,"Name":"Example Episode","IsRemote":false,"RunTimeTicks":30120000000,
+       "SupportsTranscoding":true,"SupportsDirectStream":true,"SupportsDirectPlay":true,"IsInfiniteStream":false,
+       "RequiresOpening":false,"RequiresClosing":false,"RequiresLooping":false,"SupportsProbing":false,
+       "MediaStreams":[
+         {"Codec":"h264","IsInterlaced":false,"BitRate":3800000,"RefFrames":1,"IsDefault":true,"IsForced":false,
+          "Height":1080,"Width":1920,"Type":"Video","Index":0,"VideoRange":"SDR","DisplayTitle":"1080p H264"},
+         {"Codec":"eac3","Language":"eng","ChannelLayout":"5.1","BitRate":640000,"Channels":6,"SampleRate":48000,
+          "IsDefault":true,"IsForced":false,"Type":"Audio","Index":1,"DisplayTitle":"English EAC3 5.1"},
+         {"Codec":"subrip","Language":"eng","IsDefault":false,"IsForced":false,"IsExternal":false,
+          "IsHearingImpaired":false,"Type":"Subtitle","Index":2,"DisplayTitle":"English (SUBRIP)"}],
+       "Formats":[],"Bitrate":4440000,"RequiredHttpHeaders":{},"DefaultAudioStreamIndex":1}],
+     "Chapters":[
+       {"StartPositionTicks":0,"Name":"Chapter 1","MarkerType":"Chapter","ChapterIndex":0},
+       {"StartPositionTicks":450000000,"Name":"Intro","MarkerType":"IntroStart","ChapterIndex":1},
+       {"StartPositionTicks":1350000000,"Name":"Intro End","MarkerType":"IntroEnd","ChapterIndex":2},
+       {"StartPositionTicks":6000000000,"Name":"Chapter 2","MarkerType":"Chapter","ChapterIndex":3},
+       {"StartPositionTicks":28800000000,"Name":"Credits","MarkerType":"CreditsStart","ChapterIndex":4}]}
+    """
+
+    private static func embyJSON(_ text: String) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    }
+
+    /// The player reads the series through the catalogue route and the
+    /// shared HTTP decoder, then builds TheIntroDB's lookup from its IDs.
+    func testSeriesDetailRouteGivesTheSkipLookupTheSeriesIDs() async throws {
+        let paths = LoadedRows()
+        let series = try Self.embyJSON(Self.embySeriesJSON)
+        let adapter = stubbedAdapter { request in
+            paths.append(request.url!.path)
+            return (200, series)
+        }
+        let routed = try await adapter.route(method: "GET", path: "/api/v1/catalog/items/700001", query: [:], body: nil)
+        XCTAssertEqual(paths.take(sorted: false), ["/emby/Users/user-1/Items/700001"])
+        let data = try JSONSerialization.data(withJSONObject: routed, options: [.fragmentsAllowed])
+        let detail = try HTTPClient.makeJSONDecoder().decode(ItemDetail.self, from: data)
+        XCTAssertEqual(detail.type, "series")
+        XCTAssertEqual(detail.tmdbId, "424242")
+        XCTAssertEqual(detail.imdbId, "tt9876543")
+        XCTAssertEqual(detail.tvdbId, "313131")
+
+        // As `PlayerViewModel.loadVividMarkers` builds it.
+        let episode = VividIntroDBClient.Episode(
+            imdbID: detail.imdbId ?? "", season: 1, episode: 2, tmdbID: detail.tmdbId.flatMap(Int.init)
+        )
+        XCTAssertEqual(episode.tmdbID, 424242)
+        XCTAssertEqual(episode.theIntroDBIdentifier, URLQueryItem(name: "tmdb_id", value: "424242"))
+    }
+
+    /// The episode's watch detail, converted and decoded as
+    /// `EmbyPlayback.loadMetadata` does, carries what the skip lookup needs
+    /// and the selected version's own markers.
+    func testEpisodeWatchDetailCarriesTheLookupFieldsAndChapterMarkers() throws {
+        let raw = try Self.embyJSON(Self.embyEpisodeJSON)
+        let payload = try adapter.watch(raw, preferences: [:])
+        let detail = try JSONDecoder().decode(WatchDetail.self, from: JSONSerialization.data(withJSONObject: payload))
+        XCTAssertEqual(detail.type, "episode")
+        XCTAssertEqual(detail.seriesId, "700001")
+        XCTAssertEqual(detail.seasonNumber, 1)
+        XCTAssertEqual(detail.episodeNumber, 2)
+
+        let version = try XCTUnwrap(detail.versions.first)
+        XCTAssertEqual(detail.versions.count, 1)
+        XCTAssertEqual(version.fileId, EmbyAdapter.numberID("mediasource_700101"))
+        XCTAssertEqual(version.duration, 3012)
+        XCTAssertEqual(version.chapters?.count, 5)
+        XCTAssertEqual(version.intro, TimeRange(start: 45, end: 135))
+        XCTAssertEqual(version.credits, TimeRange(start: 2880, end: 3012))
+        XCTAssertNil(version.recap)
+
+        // The server markers the player publishes first.
+        let server = VividIntroDBClient.Segments(
+            imdb_id: "", season: 1, episode: 2,
+            intro: .init(range: version.intro), outro: .init(range: version.credits), recap: .init(range: version.recap)
+        )
+        XCTAssertEqual(server.intro?.range(duration: 3012), TimeRange(start: 45, end: 135))
+        XCTAssertEqual(server.outro?.range(duration: 3012), TimeRange(start: 2880, end: 3012))
+        XCTAssertNil(server.recap)
     }
 
 }
