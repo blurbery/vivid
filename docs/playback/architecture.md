@@ -405,11 +405,12 @@ Other-season episode warming waits until the active selectors and adjacent playb
 Request identity and account/profile checks reject stale results; refreshes do not overwrite manual version or track choices.
 
 Episode resume buttons on both platforms identify the playback target above the bar as S1 E46, without leading zeros.
-Home Continue Watching uses the same unpadded season and episode numbers. iOS episode cards follow the tvOS metadata order: episode number, title, overview and air date, with the runtime and white watched check in a dark pill beside the shorter in-artwork progress bar.
-Movie and episode cards place minutes remaining beside a shorter bar inside the artwork.
+Episode cards on Home and the detail pages use the same unpadded numbers, without the space, in a pill on the artwork, as in `S1E46`.
+Episode cards and Continue Watching movies share one status row inside the artwork (`MediaRuntimeStatusOverlay`): that pill on the left, the resume bar, and a pill of the same size on the right with the minutes left, or the watched tick alone (see [App Design](../app-design.md)).
+iOS episode cards follow the tvOS caption order: title, overview and air date.
 Apple TV media cards and series episode cards use native `.card` focus; Spotlight retains its separate decorative outline.
 Resume progress stays inside the artwork button and moves with the native effect, as described in [focus ownership](../apple-tv-focus.md#current-tab-and-settings-ownership).
-On tvOS series shelves, the runtime/watched pill, shorter progress bar and remaining-time label share a row so they cannot overlap.
+The pills and the bar share that one row on every platform, so they cannot overlap; the bar gives way before either pill does.
 
 Long-pressing a detail page's Play button offers Start Over when there's something to resume, using the existing restart action, and Shuffle on a series (see [Shuffle](README.md#shuffle)).
 Version selection is under the detail options menu, retaining Auto and individual files; on tvOS series pages this menu uses the three-dot More trigger.

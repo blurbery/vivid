@@ -49,8 +49,8 @@ struct TVDetailCompactHeading: View {
 
     private var headingText: Text {
         // The kind of title is the line's anchor: semibold and primary. The
-        // facts and genres after it keep the line's medium weight, at body
-        // level.
+        // facts and genres after it keep the line's medium weight, at the
+        // tertiary (facts) level.
         var heading = AttributedString(tokens.first ?? "")
         heading.swiftUI.font = .system(size: 29, weight: .semibold)
         heading.swiftUI.foregroundColor = Color.vividTextPrimary

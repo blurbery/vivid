@@ -119,9 +119,10 @@ struct EpisodeThumbCard: View {
         if isWatched { parts.append(String(localized: "Watched", comment: "Spoken status of a watched title")) }
         if usesRuntimeStatus {
             let shownProgress = showProgress ? progressFraction : nil
-            if !isWatched, let fraction = shownProgress,
+            if let fraction = shownProgress,
                let resume = ResumePresentation(fraction: fraction, duration: item.durationSeconds) {
-                // What the right pill shows while the title is part watched.
+                // What the right pill shows while the title is part watched,
+                // a rewatch included.
                 parts.append(String(localized: "Resume, \(resume.minutesRemaining) minutes remaining"))
             } else if let runtime = MediaRuntimeStatusOverlay.displayedRuntime(
                 minutes: item.runtime, duration: item.durationSeconds

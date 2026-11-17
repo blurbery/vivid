@@ -339,16 +339,18 @@ struct HomeStillCard: View {
                     .lineLimit(1, reservesSpace: true)
                     .truncationMode(.tail)
             }
+            // A card with the status row shows its time left in the pill.
+            let timeLeft = showsRuntimeStatus ? nil : resumeCaption
             if showsMetadata, !isResumeCard,
-               (opensResumeContext && HorizontalMediaRailLayout.isPhone) || resumeCaption != nil {
+               (opensResumeContext && HorizontalMediaRailLayout.isPhone) || timeLeft != nil {
                 // Without a caption the line is kept, invisible, so the
                 // cards of a row line up.
-                Text(verbatim: resumeCaption ?? "0m left")
+                Text(verbatim: timeLeft ?? "0m left")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(Color.vividTextTertiary)
                     .lineLimit(1)
-                    .opacity(resumeCaption == nil ? 0 : 1)
-                    .accessibilityHidden(resumeCaption == nil)
+                    .opacity(timeLeft == nil ? 0 : 1)
+                    .accessibilityHidden(timeLeft == nil)
             }
         }
         .frame(width: width, alignment: .leading)

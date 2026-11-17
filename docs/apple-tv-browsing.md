@@ -661,7 +661,7 @@ Poster, collection, episode, trailer and cast cards use native `.card` focus wit
 Trailer and cast captions sit outside the artwork buttons; cast portraits retain circular button borders.
 Resume progress is part of the native artwork label and moves with it.
 Watched mutations hide the bar immediately, with rollback on failure.
-Watched artwork retains its green tick badge.
+Watched posters keep their translucent tick pill, and a watched episode still shows the tick alone in its status row's right-hand pill.
 Episode buttons own the rail focus binding, accessibility description and context actions so focus-driven season updates, Play/Pause and VoiceOver activation address the same control.
 Movie and series pages now end with Media Information for the selected file or episode: separate Video & File and Audio glass panels.
 Video & File has up to five equal-width columns; audio has up to four.

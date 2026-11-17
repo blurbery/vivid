@@ -397,7 +397,7 @@ private struct MobileTabletHeading: View {
     }
 
     /// The first part semibold and primary, the rest at the line's medium
-    /// weight and body level after a middle dot, as on Apple TV.
+    /// weight and tertiary (facts) level after a middle dot, as on Apple TV.
     private static func heading(first: String, rest: [String]) -> AttributedString {
         var text = AttributedString(first)
         text.swiftUI.font = .system(size: 15, weight: .semibold)

@@ -2232,7 +2232,7 @@ private struct TVHomeSpotlightArtwork: View {
 
     /// An episode slide's details line, split like `TVDetailCompactHeading`:
     /// the type label semibold and primary, the rest at the line's medium
-    /// weight and body level.
+    /// weight and tertiary (facts) level.
     private var episodeHeadingText: Text {
         var heading = AttributedString(typeLabel)
         heading.swiftUI.font = .system(size: 29, weight: .semibold)

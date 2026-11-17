@@ -274,12 +274,13 @@ Episode cards and Continue Watching movies carry one status row along the bottom
 An episode's season and episode number sits in a pill on the left, as in `S1E7`, unpadded; a movie has no left pill.
 A pill of the same size on the right shows the minutes left, which is the full runtime before the title is started.
 Once the title is watched, the right pill shows the same white circled tick on its own, with no minutes; a rewatch in progress shows its minutes left instead.
-The resume bar fills the space between the two pills, so a movie's bar starts at the artwork's left edge.
+The resume bar fills the space between the two pills, so a movie's bar starts at the row's inset, where an episode's left pill sits.
 Wide stills on Home that aren't episodes or Continue Watching movies keep green circles with white ticks.
 The Movie and Series pills on Favourites and Watchlist use the same borderless translucent capsule, tinted blue or purple.
 Home's episode cards name the episode beneath the series title.
 That line is the episode's title alone, because the number is in the pill on the artwork; an episode with no title of its own shows `Episode 7`.
-An episode missing its season or episode number has no pill and keeps its number in the caption, as in `S01E03 · Episode title`.
+An episode missing its season or episode number has no pill.
+In Continue Watching, and Next Up on Emby and Jellyfin, its caption keeps whichever number it has, as in `S1 – Episode title` or `E3 – Episode title`; other rows show the episode's title alone.
 Partly watched Home thumbnails and the detail pages' episode cards share an inset white resume bar on a grey track.
 
 ### Studios & Networks
@@ -402,7 +403,7 @@ Strong, at 92%, is for names at rest, scores and values.
 Body, at 72%, is for every synopsis: the hero's, a season's and an episode card's.
 Secondary, at 60%, is for credit lines, cast roles, a Home card's second line and small uppercase labels.
 Tertiary, at 50%, is for facts: the genres, year and runtime on a heading line, a season's episode count and year, air dates, dividers and idle arrows.
-A synopsis is therefore always a clear step apart from the name above it and the facts beside it: an episode card's name, summary and air date are Strong, Body and Tertiary, and so are a season's name, synopsis and facts line.
+A synopsis is therefore always a clear step apart from the name above it and the facts beside it: an episode card's name, summary and air date are Strong, Body and Tertiary, and a season's synopsis and facts line are Body and Tertiary under its name, which is Primary as the current season.
 Intro & Credit Skipper remains a native toggle, and Episodes ends with the Hide Episode Spoilers toggle described in [Playback](playback/README.md).
 An Audio section between Streaming and Episodes holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
 On iPhone and iPad, Audio Language, Boost Level and Show Next Up open their own pages in the Settings theme, like Quality, rather than a plain pushed list, and choosing an option returns to Playback as before; Apple TV keeps its native menus.
