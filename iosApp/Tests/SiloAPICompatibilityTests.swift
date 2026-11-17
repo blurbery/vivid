@@ -207,7 +207,7 @@ final class SiloAPICompatibilityTests: XCTestCase {
              "height":1080,"interlaced":false}],
            "audio_tracks":[{"language":"eng","codec":"eac3","channels":6,"default":true}],
            "chapters":[{"index":1,"title":"Opening","start_seconds":0,"end_seconds":300,"source":"embedded"}],
-           "intro":{"start_seconds":0,"end_seconds":90}}],
+           "intro":{"start_seconds":0,"end_seconds":90},"recap":{"start_seconds":5,"end_seconds":60}}],
          "playback_variants":[{"variant_id":"v1","part_count":1,"default_file_id":"42",
            "parts":[{"part_index":0,"default_file_id":"42","versions":[]}]}],
          "subtitles":[{"source":"embedded","language":"eng","forced":false,"hearing_impaired":false}],
@@ -222,6 +222,8 @@ final class SiloAPICompatibilityTests: XCTestCase {
         let watch = try decoder.decode(WatchDetail.self, from: converted)
         XCTAssertEqual(watch.versions.first?.duration, 10_200)
         XCTAssertEqual(watch.versions.first?.intro?.end, 90)
+        XCTAssertEqual(watch.versions.first?.recap?.start, 5)
+        XCTAssertEqual(watch.versions.first?.recap?.end, 60)
         XCTAssertEqual(watch.credits?.start, 10_000)
         XCTAssertEqual(watch.versions.first?.chapters?.first?.endSeconds, 300)
         XCTAssertEqual(watch.userData?.positionSeconds, 1_325.5)

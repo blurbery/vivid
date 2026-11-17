@@ -288,7 +288,7 @@ The player view reads the playback position only inside the views that display i
 
 The Intro & Credit Skipper toggle controls the public TheIntroDB and IntroDB lookups on iOS and tvOS.
 The server's own valid markers for the selected file are published first, whether the toggle is on or off, so a prompt can appear while a lookup runs; item-level markers from another edition are not used.
-Silo supplies the selected file's intro and credits, Jellyfin its media segments (intro, credits and recap) and Emby its chapter markers (intro and credits); see the [Silo](../cores/silo.md), [Jellyfin](../cores/jellyfin.md#playback-and-limits) and [Emby](../cores/emby.md#playback-and-settings) cores.
+Silo supplies the selected file's intro, credits and recap, Jellyfin its media segments (intro, credits and recap) and Emby its chapter markers (intro and credits); see the [Silo](../cores/silo.md), [Jellyfin](../cores/jellyfin.md#playback-and-limits) and [Emby](../cores/emby.md#playback-and-settings) cores.
 While the toggle is on, every streamed episode with season and episode numbers and a series TMDb or IMDb ID gets a public TheIntroDB `/v4/media` lookup, whose markers take priority over the server's and are published immediately.
 If TheIntroDB lacks an intro, credits or recap, an independent IntroDB lookup fills only those kinds, preserving TheIntroDB's ranges.
 The server's markers then fill only the kinds neither service supplied.
