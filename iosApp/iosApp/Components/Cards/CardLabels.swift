@@ -55,8 +55,10 @@ func episodeRailAccessibilityLabel(
 /// The episode code and title cards show under episode artwork.
 enum EpisodeCardCaption {
     /// An episode's own title, counting a blank or whitespace-only one as
-    /// none. Every card falls back to the episode number without one, and
-    /// VoiceOver reads it the same way.
+    /// none. The detail pages' episode cards fall back to the episode
+    /// number without one, on iPhone, iPad and the Apple TV rail and shelf,
+    /// and VoiceOver reads them the same way. Home's cards leave a blank
+    /// title out of their caption and show the code on its own instead.
     static func ownTitle(_ title: String?) -> String? {
         guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else { return nil }
