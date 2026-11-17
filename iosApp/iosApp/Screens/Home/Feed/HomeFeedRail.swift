@@ -166,7 +166,15 @@ struct HomeStillCard: View {
         (item.positionSeconds ?? 0) > 0 ? "Resume" : "Play"
     }
 
+    /// The code in the artwork's left pill, on cards with the status row.
+    private var episodeCode: String? {
+        showsRuntimeStatus ? EpisodeCardCaption.compactCode(for: item) : nil
+    }
+
     private var secondLine: String? {
+        // The pill carries the season and episode, so the line is the
+        // episode's title alone.
+        if episodeCode != nil { return EpisodeCardCaption.titleLine(for: item) }
         guard isResumeCard || showsEpisodeDetails, EpisodeCardCaption.isEpisode(item) else {
             return HomeFeedMeta.secondLine(for: item)
         }
@@ -269,8 +277,11 @@ struct HomeStillCard: View {
                 MediaRuntimeStatusOverlay(
                     isPlayed: isPlayed,
                     duration: item.durationSeconds,
-                    progress: progress,
-                    runtimeMinutes: item.runtime
+                    // Marking it watched or unwatched here hides the bar
+                    // until the row refreshes.
+                    progress: playedOverride == nil ? progress : nil,
+                    runtimeMinutes: item.runtime,
+                    episodeCode: episodeCode
                 )
             } else if let progress {
                 if isResumeCard {
@@ -318,12 +329,12 @@ struct HomeStillCard: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: HomeFeedMeta.title(for: item))
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.vividOnSurface)
+                .foregroundStyle(Color.vividTextStrong)
                 .lineLimit(1)
             if showsSecondLine || isResumeCard || showsEpisodeDetails {
                 Text(verbatim: secondLine ?? "")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.7))
+                    .foregroundStyle(Color.vividSecondaryText)
                     .monospacedDigit()
                     .lineLimit(1, reservesSpace: true)
                     .truncationMode(.tail)
@@ -334,7 +345,7 @@ struct HomeStillCard: View {
                 // cards of a row line up.
                 Text(verbatim: resumeCaption ?? "0m left")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.55))
+                    .foregroundStyle(Color.vividTextTertiary)
                     .lineLimit(1)
                     .opacity(resumeCaption == nil ? 0 : 1)
                     .accessibilityHidden(resumeCaption == nil)

@@ -67,30 +67,26 @@ struct MobileEpisodeList: View {
                     MobileEpisodeStill(episode: episode, size: thumbnailSize, symbolSize: 18)
                         .accessibilityHidden(true)
                     MobileEpisodeStatus(episode: episode, isCompact: true)
-                        .padding(7)
                 }
                 .frame(width: thumbnailSize.width, height: thumbnailSize.height)
                 .clipShape(shape)
                 .overlay(shape.stroke(isCurrent ? Color.white.opacity(0.80) : .clear, lineWidth: 2))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("EPISODE \(String(episode.episodeNumber))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     Text(verbatim: MobileEpisodeText.title(episode))
                         .font(.headline)
-                        .foregroundStyle(Color.vividOnSurface)
+                        .foregroundStyle(isCurrent ? Color.vividTextPrimary : Color.vividTextStrong)
                         .lineLimit(1)
                     if let overview = episode.overview, !overview.isEmpty {
                         Text(verbatim: overview)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.vividSecondaryText)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
                     Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.vividTextTertiary)
                 }
                 .padding(.vertical, 2)
                 .frame(maxWidth: .infinity, alignment: .leading)

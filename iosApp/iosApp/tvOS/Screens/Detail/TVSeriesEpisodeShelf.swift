@@ -553,13 +553,13 @@ private struct TVSeasonSummary: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: facts)
                 .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.vividSecondaryText)
                 .lineLimit(1)
-            // The same size and brightness as the series synopsis in the
-            // hero, so the two read as one voice.
+            // The same size and text level (`vividTextBody`) as the series
+            // synopsis in the hero, so the two read as one voice.
             Text(verbatim: synopsis)
                 .font(.system(size: 28))
-                .foregroundStyle(Color.white.opacity(0.92))
+                .foregroundStyle(Color.vividTextBody)
                 .lineLimit(4)
                 .frame(maxWidth: maxWidth, alignment: .leading)
         }
@@ -706,7 +706,7 @@ private struct TVSeasonSelectorLabel: View {
                         .opacity(hasNext ? 1 : 0.3)
                 }
                 .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(Color.white.opacity(isFocused ? 1 : 0.45))
+                .foregroundStyle(isFocused ? Color.white : Color.vividTextTertiary)
                 // Level with the name, not with the room under it for
                 // the focus bar.
                 .padding(.bottom, 8)
@@ -727,7 +727,7 @@ private struct TVSeasonSelectorStyle: ButtonStyle {
 }
 
 /// One episode on the series shelf: a fixed 400 by 225 still with its
-/// status, and the episode's number, title, overview and air date below.
+/// status row, and the episode's title, overview and air date below.
 /// The caption is about 156 points tall in Latin text, which the shelf's
 /// header height allows for.
 private struct TVSeriesShelfCard: View {
@@ -804,51 +804,29 @@ private struct TVSeriesShelfCard: View {
         .frame(width: Self.stillSize.width, height: Self.stillSize.height)
         .spoilerCovered(hidesSpoilers, symbolSize: 40)
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(alignment: .bottomLeading) {
-            statusCapsule
-                .padding(12)
-                .opacity(progress == nil ? 1 : 0)
+        .overlay(alignment: .bottom) {
+            MediaRuntimeStatusOverlay(
+                isPlayed: isWatched,
+                duration: episode.userData?.durationSeconds,
+                progress: progress?.fraction,
+                runtimeMinutes: episode.runtime,
+                episodeCode: EpisodeCardCaption.compactCode(
+                    season: episode.seasonNumber, episode: episode.episodeNumber
+                ),
+                metrics: .standard
+            )
         }
-        .overlay(alignment: .bottomLeading) {
-            if let progress {
-                HStack(spacing: 12) {
-                    statusCapsule
-                    ResumeProgressBar(value: progress.fraction, duration: progress.duration, height: 8, inset: 0)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-                .frame(width: Self.stillSize.width, height: Self.stillSize.height, alignment: .bottom)
-                .allowsHitTesting(false)
-            }
-        }
-    }
-
-    private var statusCapsule: some View {
-        HStack(spacing: 6) {
-            if isWatched {
-                Image(systemName: "checkmark.circle.fill")
-            }
-            if let runtime = episode.runtime, runtime > 0 {
-                Text("\(runtime)m")
-            }
-        }
-        .font(.system(size: 22))
-        .foregroundStyle(.white)
-        .fixedSize()
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.black.opacity(0.45)))
     }
 
     private var caption: some View {
         // Set like Home's Continue Watching captions, so an episode reads
-        // the same wherever it appears: the number and name as the card
-        // title, brightening with focus, over the overview and date in the
-        // quieter second-line style.
+        // the same wherever it appears: the name as the card title,
+        // brightening with focus, over the overview and the quieter date.
+        // The season and episode number sit in the pill on the still.
         VStack(alignment: .leading, spacing: 6) {
             titleText
                 .font(.vividLandscapeCardTitle)
-                .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
+                .foregroundStyle(isFocused ? Color.vividTextPrimary : Color.vividTextStrong)
                 .lineLimit(1)
             Text(verbatim: episode.overview ?? "")
                 .font(.vividLandscapeCardMetadata)
@@ -857,17 +835,15 @@ private struct TVSeriesShelfCard: View {
                 .frame(height: Self.overviewHeight, alignment: .top)
             Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
                 .font(.vividLandscapeCardMetadata)
-                .foregroundStyle(Color.vividSecondaryText)
+                .foregroundStyle(Color.vividTextTertiary)
                 .lineLimit(1)
         }
     }
 
-    /// "3 · The Long Way Home", the number a little dimmer than the name.
     private var titleText: Text {
         // A missing or empty title falls back to the episode number.
         if let title = episode.title, !title.isEmpty {
-            return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.vividSecondaryText)
-                + Text(verbatim: title)
+            return Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")
     }

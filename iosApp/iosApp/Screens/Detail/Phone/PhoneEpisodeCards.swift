@@ -65,35 +65,22 @@ struct MobileEpisodeStill: View {
     }
 }
 
-/// The watched mark and running time in a dark capsule, then the resume
-/// bar when the episode is part watched.
+/// The status row over an episode's still: its code, the resume bar when
+/// it's part watched, and the time left or the watched tick. It brings its
+/// own padding.
 struct MobileEpisodeStatus: View {
     let episode: EpisodeListItem
     var isCompact = false
 
     var body: some View {
-        HStack(spacing: isCompact ? 6 : 10) {
-            HStack(spacing: 4) {
-                if episode.userData?.played == true {
-                    Image(systemName: "checkmark.circle.fill")
-                }
-                if let runtime = episode.runtime, runtime > 0 {
-                    Text("\(runtime)m")
-                }
-            }
-            .font(.system(size: isCompact ? 10 : 12))
-            .foregroundStyle(.white)
-            .fixedSize()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(Color.black.opacity(0.45)))
-            if let progress = MobileEpisodeText.progress(episode) {
-                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds, height: 5, inset: 0)
-            } else {
-                Spacer(minLength: 0)
-            }
-        }
-        .allowsHitTesting(false)
+        MediaRuntimeStatusOverlay(
+            isPlayed: episode.userData?.played == true,
+            duration: episode.userData?.durationSeconds,
+            progress: MobileEpisodeText.progress(episode),
+            runtimeMinutes: episode.runtime,
+            episodeCode: EpisodeCardCaption.compactCode(season: episode.seasonNumber, episode: episode.episodeNumber),
+            metrics: isCompact ? .compact : .standard
+        )
     }
 }
 
@@ -189,12 +176,9 @@ struct MobileEpisodeCarousel: View {
                     still(episode, size: stillSize, isCurrent: isCurrent)
                     if caption.showsTitle {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("EPISODE \(String(episode.episodeNumber))")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(.secondary)
                             Text(verbatim: MobileEpisodeText.title(episode))
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(isCurrent ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
+                                .foregroundStyle(isCurrent ? Color.vividTextPrimary : Color.vividTextStrong)
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if caption.showsMetadata {
@@ -207,7 +191,7 @@ struct MobileEpisodeCarousel: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
                                     .font(.system(size: 12, weight: .regular))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color.vividTextTertiary)
                             }
                         }
                     }
@@ -242,7 +226,6 @@ struct MobileEpisodeCarousel: View {
         return ZStack(alignment: .bottom) {
             MobileEpisodeStill(episode: episode, size: size)
             MobileEpisodeStatus(episode: episode)
-                .padding(12)
         }
         .frame(width: size.width, height: size.height)
         .clipShape(shape)
@@ -270,7 +253,6 @@ struct MobileEpisodeCarouselSkeleton: View {
                             .frame(width: width, height: width * 9 / 16)
                         if caption.showsTitle {
                             VStack(alignment: .leading, spacing: 4) {
-                                Self.bar(width: 62, height: 8, opacity: 0.12)
                                 Self.bar(width: 0.68 * width, height: 12, opacity: 0.16)
                                 if caption.showsMetadata {
                                     Self.bar(width: 0.42 * width, height: 9, opacity: 0.10)

@@ -25600,7 +25600,7 @@
       }
     },
     "EPISODE %@" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52063,7 +52063,7 @@
       }
     },
     "S%@E%@" : {
-      "comment" : "Episode code with zero-padded season and episode numbers, e.g. S01E02",
+      "comment" : "Episode code from season and episode numbers, zero-padded (S01E02) or compact (S1E2)",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {

@@ -66,6 +66,8 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   The logo fits within 600 by 200 points with a soft shadow, and its transparent margins are trimmed when it loads, so logos with empty space in their image still sit right on the metadata line.
   The logo's box has no fixed place on the card: the text is stacked up from 48 points above the card's bottom edge, so the logo sits higher the more lines the overview has.
   A movie's or series' metadata line is the detail pages' heading: its type, up to two genres and the content rating in an outlined badge, with no year, runtime or score (a series doesn't show its season count, which the spotlight doesn't have).
+  The type is semibold in the brightest text level and the genres after it are medium in the softer Body level; an episode's line is split the same way after the word Episode.
+  The overview under it is in that same Body level, as every synopsis on the detail pages is.
   It is set at the heading's own size, 29 points with a 22-point badge, so it reads from across a room.
   An episode's line keeps its own format: Episode, its episode code, title and runtime, then its content rating, also at 29 points.
   Either line sits in a slot 44 points tall and 900 points wide, the same for every slide, so two genres and a badge fit without shrinking.
@@ -548,7 +550,7 @@ On the movie page, coming back up to the first shelf settles on the fold through
 Only the loading page still uses the smaller centred shelf logo, if it is scrolled before the title loads.
 The season selector is the shown season's name (Season 4, or Specials) in large text, fixed at the top of the shelf under the logo.
 Below it are the season's own title (when it has one), its episode count and year in 26-point text, and up to four lines of its synopsis, up to 1,300 points wide.
-The season synopsis is set like the series synopsis in the hero, at 28 points in the same near-white.
+The season synopsis is set like the series synopsis in the hero, at 28 points in the same Body level of the [text scale](app-design.md).
 It is the only season control and takes focus across the shelf's whole width, so focus reaches it from any episode and from anywhere on the action row.
 Left and Right step to the previous and next season; two arrows after the name show which ways are open, and a bar sits under the name while it has focus.
 The name reserves the width of the widest season name with the same number of digits, so the arrows sit close to the name, level with it, hold one place across the single-digit seasons and step out once for the two-digit ones.
@@ -579,14 +581,14 @@ Focusing an episode updates the selected season.
 The route warms remaining season metadata sequentially in nearby-season order, with only six stills per warmed season.
 Missing pages retain a Load Season action.
 While that button has focus the header shows the season it would load, without selecting it.
-Native `.card` buttons provide episode artwork focus; cards include episode number, title, summary and date, with watched/resume and context actions retained.
+Native `.card` buttons provide episode artwork focus; cards include the episode's number, title, summary and date, with watched/resume and context actions retained.
 Under each 400 by 225 still, the caption is set like Home's Continue Watching captions.
-The first line is the episode number and name together, as in “3 · The Long Way Home”, in the 24-point card title style on one line, with the number in grey and the name brightening with focus.
-The summary, on up to three lines, and the air date under it use the 22-point grey second-line style.
-The runtime and watched capsule on the still is 22 points.
+The first line is the episode's name in the 24-point card title style on one line, brightening with focus.
+The summary, on up to three lines, uses the 22-point grey second-line style, and the air date under it is the same size in a quieter grey, so name, summary and date are three distinct levels.
+The still carries Home's status row: the season and episode number in an 18-point pill on the left, as in `S1E7`, the resume bar, and a matching pill on the right, the same size as on Home's cards with the minutes left, or the watched tick and the runtime.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
 Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.
-Their episode rail's captions are larger too: titles are 28 points and runtimes 22.
+Their episode rail's titles are larger too, at 28 points, and its stills carry the same status row in place of a caption runtime and a green watched badge.
 
 The owner supplied an 89-second Apple TV reference recording.
 It establishes the requested appearance and interaction; it does not measure Apple's internal rendering performance.

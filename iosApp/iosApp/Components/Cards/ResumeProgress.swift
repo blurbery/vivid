@@ -22,7 +22,9 @@ struct ResumePresentation {
 
     init?(fraction: Double, duration: Double?) {
         guard let duration else { return nil }
-        self.init(position: fraction * duration, duration: duration)
+        // Whole milliseconds, so a fraction built from a position gives
+        // back the same minute as the position itself.
+        self.init(position: (fraction * duration * 1000).rounded() / 1000, duration: duration)
     }
 }
 

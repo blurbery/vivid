@@ -246,7 +246,7 @@ struct MediaCard: View {
         } else {
             Text(verbatim: title)
                 .font(titleFont)
-                .foregroundStyle(Color.vividOnSurface)
+                .foregroundStyle(Color.vividTextStrong)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .frame(width: width, alignment: .leading)
@@ -362,7 +362,7 @@ struct MediaCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: title)
                 .font(.vividPosterTitle)
-                .foregroundStyle(isCardFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
+                .foregroundStyle(isCardFocused ? Color.vividTextPrimary : Color.vividTextStrong)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: width, alignment: .leading)

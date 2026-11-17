@@ -96,7 +96,7 @@ extension View {
     /// The title under a Home poster.
     func homePosterTitleStyle() -> some View {
         font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color.vividOnSurface)
+            .foregroundStyle(Color.vividTextStrong)
             .lineLimit(1)
             .truncationMode(.tail)
     }
@@ -104,7 +104,7 @@ extension View {
     /// The year or episode line under a Home poster's title.
     func homePosterSecondLineStyle() -> some View {
         font(.system(size: 11, weight: .regular))
-            .foregroundStyle(Color.vividOnSurface.opacity(0.5))
+            .foregroundStyle(Color.vividSecondaryText)
             .monospacedDigit()
             .lineLimit(1)
             .truncationMode(.tail)

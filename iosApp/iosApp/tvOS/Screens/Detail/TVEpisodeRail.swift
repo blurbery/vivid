@@ -147,8 +147,9 @@ private struct TVEpisodeRailDefaultFocus: ViewModifier {
     }
 }
 
-/// One episode in the rail: its still with watched and progress marks, and
-/// the interface's caption choice below.
+/// One episode in the rail: its still with the status row (episode code,
+/// resume bar, and time left or the watched tick), and the title below when
+/// the interface's caption choice shows one.
 private struct TVEpisodeRailCard: View {
     let episode: EpisodeListItem
     let cardWidth: CGFloat
@@ -222,20 +223,18 @@ private struct TVEpisodeRailCard: View {
                     .foregroundStyle(Color.vividSecondaryText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if isWatched {
-                Color.black.opacity(0.35)
-            }
-            if let progress = resumeProgress {
-                ResumeProgressBar(value: progress.fraction, duration: progress.duration)
-            }
+            MediaRuntimeStatusOverlay(
+                isPlayed: isWatched,
+                duration: episode.userData?.durationSeconds,
+                progress: resumeProgress?.fraction,
+                runtimeMinutes: episode.runtime,
+                episodeCode: EpisodeCardCaption.compactCode(
+                    season: episode.seasonNumber, episode: episode.episodeNumber
+                ),
+                metrics: .standard
+            )
         }
         .frame(width: stillSize.width, height: stillSize.height)
-        .overlay(alignment: .topTrailing) {
-            if isWatched {
-                TVWatchedBadge()
-                    .padding(10)
-            }
-        }
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay {
             if isCurrent, !isFocused {
@@ -254,21 +253,12 @@ private struct TVEpisodeRailCard: View {
     }
 
     private var captionView: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                titleText
-                    .font(.system(size: 28, weight: .semibold))
-                    .lineLimit(1)
-                    .foregroundStyle(isCurrent || isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
-                Spacer(minLength: 8)
-                if caption.showsMetadata, let runtime = episode.runtime, runtime > 0 {
-                    Text(verbatim: TVHeroMetadata.shortRuntime(runtime))
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(Color.vividSecondaryText)
-                        .lineLimit(1)
-                }
-            }
-        }
+        // The runtime sits in the pill on the still.
+        titleText
+            .font(.system(size: 28, weight: .semibold))
+            .lineLimit(1)
+            .foregroundStyle(isCurrent || isFocused ? Color.vividTextPrimary : Color.vividTextStrong)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var titleText: Text {

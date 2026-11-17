@@ -28,9 +28,10 @@ struct MobileSeasonFacts: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(verbatim: fact.label.uppercased())
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.vividSecondaryText)
                             Text(verbatim: fact.value)
                                 .font(.system(size: 14, weight: .regular))
+                                .foregroundStyle(Color.vividTextStrong)
                                 .lineLimit(3)
                         }
                         .frame(width: 170, alignment: .leading)

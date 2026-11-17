@@ -54,13 +54,27 @@ func episodeRailAccessibilityLabel(
 
 /// The episode code and title cards show under episode artwork.
 enum EpisodeCardCaption {
-    private static func code(season: Int, episode: Int) -> String {
-        let seasonText = String(format: "%02ld", season)
-        let episodeText = String(format: "%02ld", episode)
+    /// "S01E02" under posters, or "S1E2" unpadded for the pill on artwork.
+    private static func code(season: Int, episode: Int, padded: Bool) -> String {
+        let seasonText = padded ? String(format: "%02ld", season) : String(season)
+        let episodeText = padded ? String(format: "%02ld", episode) : String(episode)
         return String(
             localized: "S\(seasonText)E\(episodeText)",
-            comment: "Episode code with zero-padded season and episode numbers, e.g. S01E02"
+            comment: "Episode code from season and episode numbers, zero-padded (S01E02) or compact (S1E2)"
         )
+    }
+
+    /// The compact code in the pill on episode artwork, "S1E7". Nil when
+    /// either number is missing.
+    static func compactCode(season: Int?, episode: Int?) -> String? {
+        guard let season, let episode else { return nil }
+        return code(season: season, episode: episode, padded: false)
+    }
+
+    /// The compact code for an episode on Home; nil for anything else.
+    static func compactCode(for item: SectionItem) -> String? {
+        guard isEpisode(item) else { return nil }
+        return compactCode(season: item.seasonNumber, episode: item.episodeNumber)
     }
 
     static func isEpisode(_ item: SectionItem) -> Bool {
@@ -69,7 +83,7 @@ enum EpisodeCardCaption {
 
     private static func code(for item: SectionItem) -> String? {
         guard isEpisode(item), let season = item.seasonNumber, let episode = item.episodeNumber else { return nil }
-        return code(season: season, episode: episode)
+        return code(season: season, episode: episode, padded: true)
     }
 
     /// The episode's own title, unless it only repeats the series title.
@@ -82,6 +96,16 @@ enum EpisodeCardCaption {
             return nil
         }
         return title
+    }
+
+    /// The line under the series name on a card whose artwork carries the
+    /// episode code: the episode's own title, or "Episode 7" when it has
+    /// none.
+    static func titleLine(for item: SectionItem) -> String? {
+        guard isEpisode(item) else { return nil }
+        if let title = episodeTitle(for: item) { return title }
+        guard let episode = item.episodeNumber else { return nil }
+        return String(localized: "Episode \(String(episode))", comment: "Fallback title for an untitled episode")
     }
 
     static func line(for item: SectionItem) -> String? {
