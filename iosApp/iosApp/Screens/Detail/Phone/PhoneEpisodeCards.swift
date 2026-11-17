@@ -12,9 +12,7 @@ enum MobileEpisodeText {
     /// empty title from the server reads as "Episode 4" rather than as a
     /// blank line.
     static func ownTitle(_ episode: EpisodeListItem) -> String? {
-        guard let title = episode.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !title.isEmpty else { return nil }
-        return title
+        EpisodeCardCaption.ownTitle(episode.title)
     }
 
     /// Whether the episode has a title of its own. Without one the title

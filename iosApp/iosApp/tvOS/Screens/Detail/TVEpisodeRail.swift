@@ -259,8 +259,8 @@ private struct TVEpisodeRailCard: View {
     }
 
     private var titleText: Text {
-        // A missing or empty title falls back to the episode number.
-        if let title = episode.title, !title.isEmpty {
+        // A missing or blank title falls back to the episode number.
+        if let title = EpisodeCardCaption.ownTitle(episode.title) {
             return Text(verbatim: title)
         }
         return Text("Episode \(String(episode.episodeNumber))")

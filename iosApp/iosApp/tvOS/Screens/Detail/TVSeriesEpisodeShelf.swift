@@ -841,8 +841,8 @@ private struct TVSeriesShelfCard: View {
 
     /// "3 · The Long Way Home", the number a little dimmer than the name.
     private var titleText: Text {
-        // A missing or empty title falls back to the episode number.
-        if let title = episode.title, !title.isEmpty {
+        // A missing or blank title falls back to the episode number.
+        if let title = EpisodeCardCaption.ownTitle(episode.title) {
             return Text(verbatim: "\(episode.episodeNumber) \u{00B7} ").foregroundStyle(Color.vividSecondaryText)
                 + Text(verbatim: title)
         }

@@ -43,11 +43,7 @@ func episodeRailAccessibilityLabel(
     isPlayed: Bool
 ) -> String {
     var parts = [EpisodeCardCaption.spokenPosition(season: seasonNumber, episode: episodeNumber)]
-    // A blank or whitespace-only title is no title, the same as on the
-    // card itself, where it falls back to the episode number.
-    if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-        parts.append(title)
-    }
+    if let title = EpisodeCardCaption.ownTitle(title) { parts.append(title) }
     if let metadata, !metadata.isEmpty { parts.append(metadata) }
     if isCurrent {
         parts.append(String(localized: "Now viewing", comment: "Spoken status of the episode whose page is open"))
@@ -58,6 +54,15 @@ func episodeRailAccessibilityLabel(
 
 /// The episode code and title cards show under episode artwork.
 enum EpisodeCardCaption {
+    /// An episode's own title, counting a blank or whitespace-only one as
+    /// none. Every card falls back to the episode number without one, and
+    /// VoiceOver reads it the same way.
+    static func ownTitle(_ title: String?) -> String? {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return nil }
+        return title
+    }
+
     private static func code(season: Int, episode: Int) -> String {
         let seasonText = String(format: "%02ld", season)
         let episodeText = String(format: "%02ld", episode)
