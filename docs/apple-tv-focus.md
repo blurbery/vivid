@@ -209,7 +209,7 @@ The reserved caption height follows the card type: poster and landscape rows bot
 Cards align at their top edge and row headings reserve one fixed line.
 Current Home uses a VStack with row heights reserved from the existing card and caption geometry, with up to six enabled media rails plus Spotlight.
 All normal Home rails use VividCollectionMediaRow with the same CollectionHStack revision as Swiftfin, UIKit cell reuse and plain continuous scrolling.
-The focus engine picks each resting offset, so the last card of a row comes fully on screen inside the right gutter; this was checked on the Apple TV 4K simulator for Continue Watching and a poster row with Large posters.
+The focus engine picks each resting offset, so the last card of a row comes fully on screen with its focus lift; this was checked on the Apple TV 4K simulator for Continue Watching and a poster row with Large posters. Where the row then rests against the right gutter was not measured.
 Do not go back to the package's leading-edge snapping: it re-aligns every scroll to a card's left edge and only reaches the end of a row on an exact match, which left the last card of a row running off the right edge (88 points short for Large landscape cards, 160 for Large posters).
 The rails on a studio or network page use the same setting, but their row ends have not been checked on a device or simulator.
 Rows built on a SwiftUI `ScrollView` keep their side gutter as a scroll content margin (`contentMargins`), not as padding inside the content, so the row scrolls far enough to show it after the last card.
