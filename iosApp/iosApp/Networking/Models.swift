@@ -708,7 +708,7 @@ struct FileVersion: Codable, Identifiable, Hashable {
     let chapters: [VersionChapter]?
     let intro: TimeRange?
     let credits: TimeRange?
-    /// Only Jellyfin's media segments supply a recap.
+    /// Silo's recap marker and Jellyfin's recap media segment; Emby has none.
     let recap: TimeRange?
     /// Server-current edition fields. `editionRaw` is the display label,
     /// while `editionKey` is the stable grouping key.

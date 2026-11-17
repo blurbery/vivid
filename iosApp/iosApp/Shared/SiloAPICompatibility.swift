@@ -325,7 +325,7 @@ enum SiloAPICompatibility {
     /// Text IDs become integers again, and marker times gain their v1 names.
     private static func decodeIDs(_ value: Any, key: String?, hasObjectIDs: Bool) -> Any {
         if var object = value as? [String: Any] {
-            if key == "intro" || key == "credits" {
+            if key == "intro" || key == "credits" || key == "recap" {
                 copyIfMissing(&object, from: "start_seconds", to: "start")
                 copyIfMissing(&object, from: "end_seconds", to: "end")
             }
