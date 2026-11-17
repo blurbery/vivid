@@ -716,6 +716,8 @@ final class ServerRegistry {
             let currentKeychain = keychain.withAudience(.currentUser)
             guard currentKeychain.set(encoded, for: Self.currentTVRegistryAccount),
                   currentKeychain.get(Self.currentTVRegistryAccount) == encoded else { return false }
+            // A list that couldn't be decoded has now been replaced by a good one.
+            hasUndecodableRegistry = false
             defaults.removeObject(forKey: Self.defaultsKey)
             if let activeServerId {
                 defaults.set(activeServerId, forKey: SharedStorage.activeServerIdKey)

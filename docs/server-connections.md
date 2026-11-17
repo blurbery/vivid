@@ -198,7 +198,7 @@ Switching type swaps a saved server of another type for the most recent saved se
 A typed address that matches a saved server is treated like a picked one; any other typed address is used as entered.
 If that address isn't a Jellyfin server, Quick Connect says the server doesn't offer Quick Connect when the route is missing or its answer isn't `true` or `false`; other failures, such as a refused request, a server error or no connection, show their own message, and a password sign-in fails as before.
 A saved profile's sign-in page always shows and signs in to that profile's own server.
-On Apple TV, a profile whose server has dropped out of the list gets it back from the address in the profile's server ID; a server ID that doesn't hold an address can't be restored.
+On Apple TV, a profile whose server has dropped out of the list gets it back from the address in the profile's server ID, once the saved server list can be read and nothing is signing in, switching or deleting; a server ID that doesn't hold an address can't be restored.
 Selecting or adding a Silo connection through either flow keeps it available to the other.
 Silo, Emby and Jellyfin can be added on mobile and Apple TV.
 Jellyfin uses its own [native core](cores/jellyfin.md).
