@@ -214,13 +214,14 @@ actor HTTPClient {
     /// headers, so a response fetched for one profile (or a cached 401) could
     /// be served to another. The timeout is the longest quiet gap between
     /// bytes, not a total, so a slow but live server is unaffected while a
-    /// dead one fails in seconds rather than a minute.
+    /// dead one fails in seconds rather than a minute. Redirects are
+    /// followed, except from HTTPS down to plain HTTP on a public host.
     private static func makeSession(requestTimeout: TimeInterval) -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = requestTimeout
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: PlainHTTPRedirectGuard.SessionDelegate.shared, delegateQueue: nil)
     }
 
     // MARK: - Requests

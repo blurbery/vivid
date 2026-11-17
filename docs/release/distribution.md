@@ -258,7 +258,9 @@ Guideline 2.1(a) needs Apple's prior approval for a built-in demo mode, so Vivid
 - Use a Silo, Emby or Jellyfin server reachable from the internet at a public hostname, not an IP address, local name or VPN address.
   Reviewers can't join a VPN.
 - Serve it over HTTPS with a publicly trusted certificate, such as one from Let's Encrypt.
-  App Transport Security only relaxes its rules for local addresses, and the player checks certificates against the system trust store, so a self-signed or private certificate stops sign-in and playback.
+  Vivid allows plain HTTP, but the review account's password shouldn't cross the internet unencrypted, and the player checks certificates against the system trust store, so a self-signed or private certificate stops sign-in and playback.
+- Vivid sets `NSAllowsArbitraryLoads` so people can use servers they reach at a plain-HTTP public address, and App Review may ask why.
+  Explain it in the App Review notes: Vivid connects to media servers that people run themselves, at addresses they type in, and many of those servers don't support secure connections.
 - Make it reachable over IPv6, because App Review tests on IPv6-only networks.
   Give the hostname an AAAA record if you can, and check sign-in and playback from an IPv6-only network before submitting.
 - Use a review account that doesn't expire and has no PIN, or give the PIN in the review notes.
