@@ -35,6 +35,18 @@ final class PlayerSettingsTests: XCTestCase {
                       "90% still completes")
     }
 
+    /// The file's own credits come first, but an unusable one gives way to
+    /// the looked-up credits Skip Credits is using.
+    func testCompletionUsesTheFirstUsableCredits() {
+        let early = TimeRange(start: 20, end: 100), file = TimeRange(start: 88, end: 100), lookedUp = TimeRange(start: 80, end: 100)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([file, lookedUp], duration: 100), file)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([early, lookedUp], duration: 100), lookedUp)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([nil, lookedUp], duration: 100), lookedUp)
+        XCTAssertEqual(PlaybackCompletionPolicy.usableCredits([TimeRange(start: 80, end: 101), lookedUp], duration: 100), lookedUp)
+        XCTAssertNil(PlaybackCompletionPolicy.usableCredits([early, nil], duration: 100))
+        XCTAssertNil(PlaybackCompletionPolicy.usableCredits([file], duration: 0))
+    }
+
     func testCreditsPlausibility() {
         XCTAssertTrue(CreditsPlausibility.isPlausible(TimeRange(start: 50, end: 100), duration: 100))
         XCTAssertFalse(CreditsPlausibility.isPlausible(TimeRange(start: 49, end: 100), duration: 100))

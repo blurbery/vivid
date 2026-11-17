@@ -888,10 +888,19 @@ enum PlaybackCompletionPolicy {
         if endedNaturally { return position > 0 }
         guard duration.isFinite, duration > 0 else { return false }
         if position / duration >= 0.9 { return true }
-        guard let credits, credits.start.isFinite, credits.end.isFinite,
-              credits.start > 0, credits.end > credits.start,
-              credits.end <= duration,
-              CreditsPlausibility.isPlausible(credits, duration: duration) else { return false }
+        guard let credits, isUsable(credits, duration: duration) else { return false }
         return position >= credits.start
+    }
+
+    /// The first credits marker that can count towards completion, in the
+    /// caller's order of preference.
+    static func usableCredits(_ candidates: [TimeRange?], duration: Double) -> TimeRange? {
+        candidates.lazy.compactMap { $0 }.first { isUsable($0, duration: duration) }
+    }
+
+    /// Finite, inside the duration, and starting in the second half.
+    static func isUsable(_ credits: TimeRange, duration: Double) -> Bool {
+        credits.start.isFinite && credits.end.isFinite && credits.start > 0 && credits.end > credits.start
+            && credits.end <= duration && CreditsPlausibility.isPlausible(credits, duration: duration)
     }
 }

@@ -47,7 +47,8 @@ extension PlayerViewModel {
               ["movie", "episode"].contains(detail.type),
               PlaybackCompletionPolicy.isComplete(
                   position: position, duration: duration,
-                  credits: currentSelectedVersion?.credits ?? creditsRange,
+                  credits: PlaybackCompletionPolicy.usableCredits(
+                      [currentSelectedVersion?.credits, creditsRange], duration: duration),
                   endedNaturally: endedNaturally) else {
             return false
         }
