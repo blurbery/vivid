@@ -45,7 +45,9 @@ struct MobilePlayerGlassButtonStyle: ButtonStyle {
 
 /// Grows a button's tap target to a square around its glass. It has to sit
 /// inside the button style: a frame or content shape added outside a
-/// `Button` doesn't widen what it responds to.
+/// `Button` doesn't widen what it responds to. Only the interaction shape
+/// grows, so the pointer highlight, focus ring and VoiceOver frame keep
+/// the circle.
 private struct MobilePlayerHitTarget: ViewModifier {
     let size: CGFloat?
 
@@ -53,7 +55,7 @@ private struct MobilePlayerHitTarget: ViewModifier {
         if let size {
             content
                 .frame(width: size, height: size)
-                .contentShape(Rectangle())
+                .contentShape(.interaction, Rectangle())
         } else {
             content
         }

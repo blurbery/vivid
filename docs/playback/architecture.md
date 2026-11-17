@@ -46,6 +46,7 @@ Credential updates use Vivid’s existing reload boundary.
 
 The iOS target uses the same pinned media package and Lucid Engine adapter as tvOS.
 It exposes the sample-buffer layer through the existing PiP coordinator, forwards PiP compositing state and honours the background-playback preference.
+Whenever the engine's play state or duration changes, the coordinator tells the Picture in Picture window to read them again, so its play and pause button always matches the player.
 The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation configuration remains platform-specific.
 
 Credential changes use Vivid’s reload boundary on both platforms.
