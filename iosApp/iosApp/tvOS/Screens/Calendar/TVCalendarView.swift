@@ -240,9 +240,11 @@ struct TVCalendarView: View {
                                 .frame(width: 240)
                         }
                     }
-                    .padding(.horizontal, VividTheme.safePadding)
                     .padding(.vertical, 24)
                 }
+                // The gutter is a scroll margin, so the rail scrolls far
+                // enough to show it after the last poster.
+                .contentMargins(.horizontal, VividTheme.safePadding, for: .scrollContent)
                 .scrollClipDisabled()
             }
             .focusSection()

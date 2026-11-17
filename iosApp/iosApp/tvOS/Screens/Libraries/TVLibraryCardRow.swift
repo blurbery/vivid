@@ -39,9 +39,11 @@ extension TVMainTabView {
                         card(library, size: size).id(library.id)
                     }
                 }
-                .padding(.horizontal, VividTheme.safePadding)
                 .padding(.vertical, TVHomeRowGeometry.cardPadding)
             }
+            // The gutter is a scroll margin, so the row scrolls far enough
+            // to show it after the last card.
+            .contentMargins(.horizontal, VividTheme.safePadding, for: .scrollContent)
             .scrollIndicators(.hidden)
             .scrollClipDisabled()
             .focusSection()
