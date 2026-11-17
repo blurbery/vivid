@@ -142,13 +142,19 @@ final class ThemeMusicCenter {
     /// The switch as last seen, so turning it back on can start a song.
     private var wasEnabled = true
 
-    private var videoPlayersOnScreen = 0
+    /// Only one video player is ever on screen, so the latest appear or
+    /// disappear wins. A plain flag can't get stuck the way a count could if
+    /// an appear ever fired twice.
+    private var isVideoPlayerOnScreen = false
     private var lastVideoPlayerExit: ContinuousClock.Instant?
 
     private var lastSessionIdentity: SessionIdentity
 
     private var itemObservers: [NSObjectProtocol] = []
     private var itemStatusObservation: NSKeyValueObservation?
+    /// Waits for a newly loaded song to actually start before fading it in,
+    /// so a remote stream that buffers for a moment still fades in.
+    private var playbackStartObservation: NSKeyValueObservation?
 
     private init() {
         lastSessionIdentity = .current
@@ -224,12 +230,12 @@ final class ThemeMusicCenter {
     /// Every video player calls this as it appears. Theme music stops at once,
     /// the song counts as played, and nothing starts while the player is up.
     func videoPlayerDidAppear() {
-        videoPlayersOnScreen += 1
+        isVideoPlayerOnScreen = true
         stopNow()
     }
 
     func videoPlayerDidDisappear() {
-        videoPlayersOnScreen = max(0, videoPlayersOnScreen - 1)
+        isVideoPlayerOnScreen = false
         lastVideoPlayerExit = .now
     }
 
@@ -250,6 +256,7 @@ final class ThemeMusicCenter {
         let identity = SessionIdentity.current
         defer { lastSessionIdentity = identity }
         guard !signedIn || identity != lastSessionIdentity else { return }
+        isVideoPlayerOnScreen = false
         endClaim()
         stopPlayer(markFinished: false)
         finishedKey = nil
@@ -355,7 +362,7 @@ final class ThemeMusicCenter {
             isPictureInPictureEngaged: isPictureInPictureEngaged,
             isOtherAudioPlaying: AVAudioSession.sharedInstance().secondaryAudioShouldBeSilencedHint,
             isServerReachable: ConnectionMonitor.shared.isServerReachable,
-            isVideoPlayerOnScreen: videoPlayersOnScreen > 0,
+            isVideoPlayerOnScreen: isVideoPlayerOnScreen,
             isAppActive: UIApplication.shared.applicationState == .active
         )
     }
@@ -390,7 +397,18 @@ final class ThemeMusicCenter {
         playingKey = key
         isPausedForInactiveApp = false
         Self.log.debug("Theme music started")
-        fadeIn()
+        player.play()
+        // Fade in from the moment audio is actually playing, not from when
+        // the item was loaded.
+        playbackStartObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+            guard player.timeControlStatus == .playing else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.playbackStartObservation != nil, self.player.currentItem === item else { return }
+                self.playbackStartObservation?.invalidate()
+                self.playbackStartObservation = nil
+                self.fadeIn()
+            }
+        }
     }
 
     private func fadeIn() {
@@ -412,6 +430,9 @@ final class ThemeMusicCenter {
             return nil
         }
         isFadingOutToStop = true
+        // A song still buffering must not fade in once it starts.
+        playbackStartObservation?.invalidate()
+        playbackStartObservation = nil
         return startFade(over: Self.fadeOutDuration, to: { 0 }) { [weak self] in
             self?.stopPlayer(markFinished: false)
         }
@@ -504,6 +525,8 @@ final class ThemeMusicCenter {
         itemObservers = []
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
+        playbackStartObservation?.invalidate()
+        playbackStartObservation = nil
     }
 
     /// Played to the end, or failed: either way it plays once, so the same
@@ -586,7 +609,7 @@ final class ThemeMusicCenter {
         if !wasEnabled, playingKey == nil, let currentClaim, currentItem != nil {
             // Switched back on with a page open.
             update(currentClaim, item: currentItem)
-        } else if playingKey != nil, fadeTask == nil, !isPausedForInactiveApp {
+        } else if playingKey != nil, fadeTask == nil, playbackStartObservation == nil, !isPausedForInactiveApp {
             // A running fade picks the new volume up on its next step.
             player.volume = ThemeMusicPolicy.targetVolume(percent: volumePercent)
         }
