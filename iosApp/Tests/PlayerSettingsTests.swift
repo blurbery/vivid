@@ -116,6 +116,21 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertNil(primary.fillingMissing(from: wrongEpisode).outro)
     }
 
+    func testLookedUpMarkersWinOverTheServersAndTheServersFillTheGaps() {
+        typealias Client = VividIntroDBClient
+        let server = Client.Segments(imdb_id: "", season: 1, episode: 1,
+            intro: .init(start_ms: 5_000, end_ms: 25_000),
+            outro: .init(start_ms: 80_000, end_ms: 100_000),
+            recap: .init(start_ms: 0, end_ms: 4_000))
+        let lookedUp = Client.Segments(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: .init(start_ms: 10_000, end_ms: 30_000), outro: nil)
+        let combined = PlayerViewModel.preferring(lookedUp, over: server)
+        XCTAssertEqual(combined.intro?.range(duration: 100), TimeRange(start: 10, end: 30))
+        XCTAssertEqual(combined.outro?.range(duration: 100), TimeRange(start: 80, end: 100))
+        XCTAssertEqual(combined.recap?.range(duration: 100), TimeRange(start: 0, end: 4))
+        XCTAssertEqual(combined.imdb_id, "tt1234567")
+    }
+
     func testFallbackDecodesNullBoundsAndKeepsSeparateSegments() throws {
         let data = Data(#"{"intro":[{"start_ms":-1,"end_ms":50},{"start_ms":null,"end_ms":20000}],"credits":[{"start_ms":90000,"end_ms":null},{"start_ms":70000,"end_ms":80000}]}"#.utf8)
         let response = try JSONDecoder().decode(VividIntroDBClient.TheIntroDBResponse.self, from: data)

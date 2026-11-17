@@ -133,19 +133,17 @@ extension SettingsView {
                 }
                 .foregroundStyle(Color.vividOnSurface)
                 Toggle(isOn: $player.introDBEnabled) {
-                    described("Intro & Credit Skipper", "Show intro and credit skip prompts when timestamps are available.")
+                    described("Intro & Credit Skipper", "Look up skip timestamps on TheIntroDB and IntroDB. When it’s off, your server’s own markers are used.")
                 }
                 .foregroundStyle(Color.vividOnSurface)
                 Toggle(isOn: live(\.autoSkipIntro, model.setAutoSkipIntro)) {
                     described("Auto-Skip Intros & Recaps", "Automatically skip intros and recaps when timestamps are available.")
                 }
                 .foregroundStyle(Color.vividOnSurface)
-                .disabled(!player.introDBEnabled)
                 Toggle(isOn: live(\.autoSkipCredits, model.setAutoSkipCredits)) {
                     described("Auto-Skip Credits", "Automatically skip credits when timestamps are available.")
                 }
                 .foregroundStyle(Color.vividOnSurface)
-                .disabled(!player.introDBEnabled)
                 Toggle(isOn: $player.hideFutureEpisodeSpoilers) {
                     described("Hide Episode Spoilers", "Blur the preview and scramble the description of episodes you haven’t reached yet.")
                 }

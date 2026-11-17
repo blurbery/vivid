@@ -321,12 +321,14 @@ class PlayerViewModel {
     var activeIntroSkipRange: TimeRange? { isRecapSkipActive ? recapRange : introRange }
     var openingSkipRanges: [TimeRange] { [recapRange, introRange].compactMap { $0 } }
 
+    /// Prompts follow whatever markers loaded: TheIntroDB and IntroDB while
+    /// the Intro & Credit Skipper is on, the server's own otherwise.
     var showIntroSkip: Bool {
-        settings.introDBEnabled && (skipWindow.inRecap || skipWindow.inIntro)
+        skipWindow.inRecap || skipWindow.inIntro
     }
 
     var showCreditsSkip: Bool {
-        settings.introDBEnabled && skipWindow.inCredits
+        skipWindow.inCredits
     }
 
     private func refreshCurrentChapter() {

@@ -34251,6 +34251,41 @@
         }
       }
     },
+    "Look up skip timestamps on TheIntroDB and IntroDB. When it’s off, your server’s own markers are used." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sucht Zeitmarken zum Überspringen bei TheIntroDB und IntroDB. Ist die Option aus, werden die eigenen Marker deines Servers verwendet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busca marcas de tiempo para omitir en TheIntroDB e IntroDB. Si está desactivado, se usan los marcadores de tu servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher les horodatages de saut sur TheIntroDB et IntroDB. Si l’option est désactivée, les marqueurs de votre serveur sont utilisés."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TheIntroDB と IntroDB でスキップ用のタイムスタンプを検索します。オフの場合は、サーバー自身のマーカーを使用します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 TheIntroDB 和 IntroDB 查找跳过时间戳。关闭时使用服务器自身的标记。"
+          }
+        }
+      }
+    },
     "Low contrast — dark text without a box or outline can be hard to read." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57287,41 +57322,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示全部"
-          }
-        }
-      }
-    },
-    "Show intro and credit skip prompts when timestamps are available." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zeigt Hinweise zum Überspringen von Intro und Abspann, wenn Zeitmarken verfügbar sind."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muestra avisos para omitir la intro y los créditos cuando haya marcas de tiempo disponibles."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Proposer de passer l’intro et le générique lorsque des horodatages sont disponibles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タイムスタンプがある場合、イントロとクレジットをスキップする案内を表示します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "有时间戳时显示跳过片头和片尾的提示。"
           }
         }
       }

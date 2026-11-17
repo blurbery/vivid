@@ -3,13 +3,15 @@ import OSLog
 
 /// Recap, intro and credits markers, and their skips.
 ///
-/// The selected file's own markers are published first. For an episode,
-/// TheIntroDB then fills what the file lacks, and IntroDB fills anything
-/// still missing. Each lookup is fenced to the playback session, item and
-/// file it started for, and none of them ever blocks playback. Automatic
-/// skips happen at most once per session, file and marker range: the intro
-/// (or recap) after a five-second countdown the viewer can cancel, credits
-/// straight away.
+/// The selected file's own markers from the server are published first, so a
+/// prompt is there straight away. While the Intro & Credit Skipper is on, an
+/// episode's TheIntroDB markers then take priority, IntroDB fills any kind
+/// TheIntroDB lacks, and the server's markers only fill what neither has.
+/// With it off, only the server's markers are used. Each lookup is fenced to
+/// the playback session, item and file it started for, and none of them ever
+/// blocks playback. Automatic skips happen at most once per session, file and
+/// marker range: the intro (or recap) after a five-second countdown the viewer
+/// can cancel, credits straight away.
 extension PlayerViewModel {
     // MARK: - Loading markers
 
@@ -18,23 +20,28 @@ extension PlayerViewModel {
         if let detail = currentWatchDetail {
             loadVividMarkers(for: detail)
         } else {
-            applyMarkerRanges(intro: nil, credits: nil)
+            updateIntroDBSegments(nil)
         }
     }
 
     func loadVividMarkers(for detail: WatchDetail) {
         introDBLookupTask?.cancel()
         updateIntroDBSegments(nil)
-        guard VividSkipSource.isEnabled, offlinePlaybackContext == nil else { return }
+        guard offlinePlaybackContext == nil else { return }
         // Only the selected file's markers, never another edition's
         // item-level ones. They stay up if a public lookup fails.
-        let fileMarkers = VividIntroDBClient.Segments(
+        let serverMarkers = VividIntroDBClient.Segments(
             imdb_id: "", season: detail.seasonNumber ?? 0, episode: detail.episodeNumber ?? 0,
             intro: .init(range: currentSelectedVersion?.intro),
-            outro: .init(range: currentSelectedVersion?.credits))
-        updateIntroDBSegments(fileMarkers)
-        guard detail.type == "episode", let seriesID = detail.seriesId,
-              let season = detail.seasonNumber, let episode = detail.episodeNumber else { return }
+            outro: .init(range: currentSelectedVersion?.credits),
+            recap: .init(range: currentSelectedVersion?.recap))
+        updateIntroDBSegments(serverMarkers)
+        guard VividSkipSource.isEnabled, detail.type == "episode" else { return }
+        guard let seriesID = detail.seriesId,
+              let season = detail.seasonNumber, let episode = detail.episodeNumber else {
+            Self.logger.info("[CMP-MARKERS] public lookup skipped: the episode has no series, season or episode number")
+            return
+        }
         let sessionID = activePlaybackSessionId
         let fileID = currentSelectedVersion?.fileId
         introDBLookupTask = Task { @MainActor [weak self] in
@@ -55,26 +62,69 @@ extension PlayerViewModel {
                 let imdb = series.imdbId ?? ""
                 let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode,
                                                           tmdbID: series.tmdbId.flatMap(Int.init))
-                guard identity.theIntroDBIdentifier != nil else { return }
-                // TheIntroDB first; its result is published straight away.
-                let fetched = try? await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
-                let markers = VividIntroDBClient.Segments(
+                guard identity.theIntroDBIdentifier != nil else {
+                    Self.logger.info("[CMP-MARKERS] public lookup skipped: the series has no TMDB or IMDb ID")
+                    return
+                }
+                // TheIntroDB first; its result is published straight away,
+                // over the server's markers.
+                let theIntroDB = await Self.publicMarkers("TheIntroDB") {
+                    try await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
+                }
+                let fetched = VividIntroDBClient.Segments(
                     imdb_id: imdb, season: season, episode: episode,
-                    intro: fileMarkers.intro, outro: fileMarkers.outro, tmdb_id: identity.tmdbID
-                ).fillingMissing(from: fetched)
+                    intro: nil, outro: nil, tmdb_id: identity.tmdbID
+                ).fillingMissing(from: theIntroDB)
                 guard let self, isCurrent(self) else { return }
-                self.updateIntroDBSegments(markers)
-                // IntroDB only fills what's still missing, so a slow or failed
-                // lookup never delays a prompt that's already there.
-                guard markers.intro == nil || markers.outro == nil || markers.recap == nil else { return }
-                let gaps = try? await VividIntroDBClient.shared.introDBSegments(for: identity)
+                self.updateIntroDBSegments(Self.preferring(fetched, over: serverMarkers))
+                // IntroDB only fills what TheIntroDB lacks, so a slow or
+                // failed lookup never delays a prompt that's already there.
+                guard fetched.intro == nil || fetched.outro == nil || fetched.recap == nil else { return }
+                let gaps = await Self.publicMarkers("IntroDB") {
+                    try await VividIntroDBClient.shared.introDBSegments(for: identity)
+                }
                 guard isCurrent(self),
                       let gaps, gaps.intro != nil || gaps.outro != nil || gaps.recap != nil else { return }
-                self.updateIntroDBSegments(markers.fillingMissing(from: gaps))
+                self.updateIntroDBSegments(Self.preferring(fetched.fillingMissing(from: gaps), over: serverMarkers))
+            } catch is CancellationError {
+                // A newer item or setting change took over.
             } catch {
-                // Missing markers or a service outage never block playback.
+                // The series lookup failed. Missing markers never block
+                // playback. Only the error's type is logged, never its text,
+                // which can name the server.
+                Self.logger.info("[CMP-MARKERS] series lookup failed: \(String(describing: type(of: error)), privacy: .public)")
             }
         }
+    }
+
+    /// One public service's markers, or nil when it has none or fails. A
+    /// failure (other than cancellation) logs the service and the error's
+    /// type, never its text; a service with no markers answers nil itself.
+    static func publicMarkers(
+        _ service: String,
+        _ lookup: () async throws -> VividIntroDBClient.Segments?
+    ) async -> VividIntroDBClient.Segments? {
+        do {
+            return try await lookup()
+        } catch is CancellationError {
+            return nil
+        } catch {
+            // A cancelled task's request fails with URLError, not a
+            // CancellationError, and isn't a service failure.
+            guard !Task.isCancelled else { return nil }
+            logger.info("[CMP-MARKERS] \(service, privacy: .public) lookup failed: \(String(describing: type(of: error)), privacy: .public)")
+            return nil
+        }
+    }
+
+    /// The looked-up markers, with any kind they lack taken from the
+    /// server's markers for the selected file.
+    static func preferring(_ lookedUp: VividIntroDBClient.Segments,
+                           over server: VividIntroDBClient.Segments) -> VividIntroDBClient.Segments {
+        VividIntroDBClient.Segments(
+            imdb_id: lookedUp.imdb_id, season: lookedUp.season, episode: lookedUp.episode,
+            intro: lookedUp.intro ?? server.intro, outro: lookedUp.outro ?? server.outro,
+            recap: lookedUp.recap ?? server.recap, tmdb_id: lookedUp.tmdb_id)
     }
 
     /// Publishes a lookup's markers. The raw segments are kept so they can be
@@ -130,7 +180,7 @@ extension PlayerViewModel {
     /// Starts the intro (or recap) countdown on entering its range, and
     /// cancels it on leaving.
     func autoSkipIntroIfNeeded(at time: Double) {
-        guard settings.introDBEnabled, settings.autoSkipIntro,
+        guard settings.autoSkipIntro,
               !isLoading,
               !hasReachedEndOfFile,
               let introRange = activeIntroSkipRange,
@@ -180,7 +230,7 @@ extension PlayerViewModel {
 
             guard let self,
                   !Task.isCancelled,
-                  self.settings.introDBEnabled, self.settings.autoSkipIntro,
+                  self.settings.autoSkipIntro,
                   !self.isLoading,
                   !self.hasReachedEndOfFile,
                   self.pendingAutoSkipIntroKey == key,
@@ -222,7 +272,7 @@ extension PlayerViewModel {
         guard !isLoadingNextUpEpisode else { return }
         let key = creditsRange.flatMap(currentCreditsSkipKey(for:))
         guard let target = CreditsAutoSkipPolicy.target(
-            enabled: settings.introDBEnabled && settings.autoSkipCredits,
+            enabled: settings.autoSkipCredits,
             playbackEligible: !isLoading && !hasReachedEndOfFile,
             time: time,
             range: creditsRange,
