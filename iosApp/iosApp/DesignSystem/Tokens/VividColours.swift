@@ -17,6 +17,25 @@ extension Color {
     static let vividPrimary = srgb(237, 237, 237)
     static let vividOnSurface = srgb(237, 237, 237)
     static let vividSecondaryText = srgb(237, 237, 237, opacity: 153 / 255)
+
+    // Text scale: one level per role, the same on every platform. All five
+    // levels are `vividOnSurface` at an opacity, so they sit in one family.
+    /// Titles, logo fallback titles, the "Movie" or "Series" type label, and
+    /// focused or current names.
+    static let vividTextPrimary = srgb(237, 237, 237)
+    /// Names at rest (episode names, cast names, trailer titles), scores and
+    /// values.
+    static let vividTextStrong = srgb(237, 237, 237, opacity: 0.92)
+    /// Every synopsis or overview: the hero's, a season's and an episode
+    /// card's. Always a clear step below names and above facts.
+    static let vividTextBody = srgb(237, 237, 237, opacity: 0.72)
+    // `vividSecondaryText` above is the fourth level, at 0.60: credit lines,
+    // cast roles, a Home card's second line, counts and small uppercase
+    // labels.
+    /// The quietest level, for facts: genres, year and runtime on a heading
+    /// line, a season's episode count and year, air and release dates,
+    /// dividers or dots, and idle arrows.
+    static let vividTextTertiary = srgb(237, 237, 237, opacity: 0.50)
     static let vividAccent = srgb(120, 174, 252)
     static let vividBrandOrange = srgb(253, 116, 3)
 

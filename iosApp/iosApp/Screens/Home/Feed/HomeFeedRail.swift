@@ -167,19 +167,14 @@ struct HomeStillCard: View {
     }
 
     private var secondLine: String? {
-        guard isResumeCard || showsEpisodeDetails, EpisodeCardCaption.isEpisode(item) else {
-            return HomeFeedMeta.secondLine(for: item)
+        // Every episode still has the status row, so its line reads
+        // "S3 E7 · Episode title". An episode with neither a number nor a
+        // title of its own falls back with the movies, which keep the year.
+        if showsRuntimeStatus, EpisodeCardCaption.isEpisode(item),
+           let line = EpisodeCardCaption.statusCardLine(for: item) {
+            return line
         }
-        var code: [String] = []
-        if let season = item.seasonNumber {
-            code.append(String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1"))
-        }
-        if let episode = item.episodeNumber {
-            code.append(String(localized: "E\(String(episode))", comment: "Episode number in an episode code, e.g. E2"))
-        }
-        let codeText = code.joined(separator: " ")
-        let parts = [codeText.isEmpty ? nil : codeText, EpisodeCardCaption.episodeTitle(for: item)].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " \u{2013} ")
+        return HomeFeedMeta.secondLine(for: item)
     }
 
     private var artwork: (url: String, thumbhash: String?) {
@@ -199,15 +194,23 @@ struct HomeStillCard: View {
         } else if let year = item.year {
             parts.append(String(year))
         }
-        if let resumeCaption {
+        if !showsRuntimeStatus, let resumeCaption {
             parts.append(resumeCaption)
         }
         if isPlayed {
             parts.append(String(localized: "Watched"))
         }
-        if showsRuntimeStatus,
-           let minutes = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
-            parts.append(String(localized: "\(minutes) minutes", comment: "Spoken runtime"))
+        if showsRuntimeStatus {
+            if let fraction = playedOverride == nil ? progress : nil,
+               let resume = ResumePresentation(fraction: fraction, duration: item.durationSeconds) {
+                // What the pill shows while the title is part watched,
+                // a rewatch included.
+                parts.append(String(localized: "Resume, \(resume.minutesRemaining) minutes remaining"))
+            } else if let minutes = MediaRuntimeStatusOverlay.displayedRuntime(
+                minutes: item.runtime, duration: item.durationSeconds
+            ) {
+                parts.append(String(localized: "\(minutes) minutes", comment: "Spoken runtime"))
+            }
         }
         return parts.joined(separator: ", ")
     }
@@ -269,7 +272,9 @@ struct HomeStillCard: View {
                 MediaRuntimeStatusOverlay(
                     isPlayed: isPlayed,
                     duration: item.durationSeconds,
-                    progress: progress,
+                    // Marking it watched or unwatched here hides the bar
+                    // until the row refreshes.
+                    progress: playedOverride == nil ? progress : nil,
                     runtimeMinutes: item.runtime
                 )
             } else if let progress {
@@ -291,8 +296,14 @@ struct HomeStillCard: View {
             }
         }
         .overlay {
-            DownloadedBadgeOverlay(contentId: item.contentId, padding: 6)
-                .padding(.bottom, 10)
+            // The status row's pill has the bottom-right corner, so the
+            // download mark takes the left one on those cards.
+            DownloadedBadgeOverlay(
+                contentId: item.contentId,
+                padding: 6,
+                alignment: showsRuntimeStatus ? .bottomLeading : .bottomTrailing
+            )
+            .padding(.bottom, 10)
         }
     }
 
@@ -318,26 +329,28 @@ struct HomeStillCard: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: HomeFeedMeta.title(for: item))
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.vividOnSurface)
+                .foregroundStyle(Color.vividTextStrong)
                 .lineLimit(1)
             if showsSecondLine || isResumeCard || showsEpisodeDetails {
                 Text(verbatim: secondLine ?? "")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.7))
+                    .foregroundStyle(Color.vividSecondaryText)
                     .monospacedDigit()
                     .lineLimit(1, reservesSpace: true)
                     .truncationMode(.tail)
             }
+            // A card with the status row shows its time left in the pill.
+            let timeLeft = showsRuntimeStatus ? nil : resumeCaption
             if showsMetadata, !isResumeCard,
-               (opensResumeContext && HorizontalMediaRailLayout.isPhone) || resumeCaption != nil {
+               (opensResumeContext && HorizontalMediaRailLayout.isPhone) || timeLeft != nil {
                 // Without a caption the line is kept, invisible, so the
                 // cards of a row line up.
-                Text(verbatim: resumeCaption ?? "0m left")
+                Text(verbatim: timeLeft ?? "0m left")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.55))
+                    .foregroundStyle(Color.vividTextTertiary)
                     .lineLimit(1)
-                    .opacity(resumeCaption == nil ? 0 : 1)
-                    .accessibilityHidden(resumeCaption == nil)
+                    .opacity(timeLeft == nil ? 0 : 1)
+                    .accessibilityHidden(timeLeft == nil)
             }
         }
         .frame(width: width, alignment: .leading)

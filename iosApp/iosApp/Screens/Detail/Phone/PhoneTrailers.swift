@@ -65,7 +65,7 @@ struct MobileTrailersSection: View {
             }
         } else {
             Text("No trailers available for this title.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.vividSecondaryText)
         }
     }
 
@@ -132,10 +132,10 @@ private struct MobileTrailersRail: View {
                     Text(verbatim: kind.uppercased())
                         .font(.system(size: 10, weight: .bold))
                         .tracking(1.0)
-                        .foregroundStyle(Color.vividOnSurface.opacity(0.55))
+                        .foregroundStyle(Color.vividSecondaryText)
                     Text(verbatim: entry.title)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.vividOnSurface.opacity(0.92))
+                        .foregroundStyle(Color.vividTextStrong)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }

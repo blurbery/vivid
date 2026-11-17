@@ -2000,7 +2000,7 @@ private struct TVSpotlightOverview: View {
     var body: some View {
         Text(Self.fitted(text))
             .font(.system(size: Self.fontSize, weight: .regular))
-            .foregroundStyle(.white.opacity(0.75))
+            .foregroundStyle(Color.vividTextBody)
             .lineLimit(Self.maxLines)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -2156,10 +2156,8 @@ private struct TVHomeSpotlightArtwork: View {
                     }
                     Group {
                         if isEpisode {
-                            Text(([typeLabel] + slide.content.metaParts
-                                  + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
+                            episodeHeadingText
                                 .font(.system(size: 29, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
                         } else {
@@ -2230,6 +2228,22 @@ private struct TVHomeSpotlightArtwork: View {
             return String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")
         }
         return type.capitalized
+    }
+
+    /// An episode slide's details line, split like `TVDetailCompactHeading`:
+    /// the type label semibold and primary, the rest at the line's medium
+    /// weight and tertiary (facts) level.
+    private var episodeHeadingText: Text {
+        var heading = AttributedString(typeLabel)
+        heading.swiftUI.font = .system(size: 29, weight: .semibold)
+        heading.swiftUI.foregroundColor = Color.vividTextPrimary
+        let rest = slide.content.metaParts + [slide.content.contentRatingBadge].compactMap { $0 }
+        if !rest.isEmpty {
+            var tail = AttributedString("  ·  " + rest.joined(separator: "  ·  "))
+            tail.swiftUI.foregroundColor = Color.vividTextTertiary
+            heading.append(tail)
+        }
+        return Text(heading)
     }
 
     private func reportReady() {

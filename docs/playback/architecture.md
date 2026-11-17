@@ -413,11 +413,12 @@ Other-season episode warming waits until the active selectors and adjacent playb
 Request identity and account/profile checks reject stale results; refreshes do not overwrite manual version or track choices.
 
 Episode resume buttons on both platforms identify the playback target above the bar as S1 E46, without leading zeros.
-Home Continue Watching uses the same unpadded season and episode numbers. iOS episode cards follow the tvOS metadata order: episode number, title, overview and air date, with the runtime and white watched check in a dark pill beside the shorter in-artwork progress bar.
-Movie and episode cards place minutes remaining beside a shorter bar inside the artwork.
+Home's episode cards with that status row use the same unpadded numbers in their caption, before the episode's title, as in `S1 E46 · Episode title`; the other episode cards keep the zero-padded `S01E46 · Episode title`.
+Episode cards and Continue Watching movies share one status row inside the artwork (`MediaRuntimeStatusOverlay`): a pill in the bottom-right corner with the minutes left, or the watched tick alone, and the resume bar along the artwork's bottom edge from one side to the other (see [App Design](../app-design.md)).
+iOS episode cards follow the tvOS caption order: episode number, title, overview and air date, with the number left out when the episode's title is already its number.
 Apple TV media cards and series episode cards use native `.card` focus; Spotlight retains its separate decorative outline.
 Resume progress stays inside the artwork button and moves with the native effect, as described in [focus ownership](../apple-tv-focus.md#current-tab-and-settings-ownership).
-On tvOS series shelves, the runtime/watched pill, shorter progress bar and remaining-time label share a row so they cannot overlap.
+The pill's inset from the bottom edge is at least 3 points more than the bar's height on every platform, so they cannot overlap, and each card clips the row with its artwork so the bar's ends follow the rounded corners.
 
 Long-pressing a detail page's Play button offers Start Over when there's something to resume, using the existing restart action, and Shuffle on a series (see [Shuffle](README.md#shuffle)).
 Version selection is under the detail options menu, retaining Auto and individual files; on tvOS series pages this menu uses the three-dot More trigger.

@@ -91,9 +91,9 @@ Optimised builds before iOS/iPadOS 0.14.3 (51) and tvOS 0.14.3 (49) filed every 
 Native library-ID mappings are reused for five minutes and the server version for ten, partitioned by server, Emby user and login epoch.
 The collection list timings in the Collections row are the only measurements recorded for these Emby changes, and they are single simulator runs.
 
-Continue Watching and Next Up identify the episode beneath the series title.
-Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`.
-Partly watched cards use the same inset white progress bar as episode cards on series details.
+Continue Watching and Next Up name the episode beneath the series title, after its unpadded season and episode number, as in `S1 E3 · Episode title`.
+An episode missing either number keeps whichever it has, as in `S1 · Episode title` or `E3 · Episode title`.
+Partly watched cards use the same white progress bar along the artwork's bottom edge as episode cards on series details.
 Removing items from Continue Watching is a Silo feature, so Emby cards don't offer it.
 On Home, episode cards in these two rows show the episode's backdrop, which Emby fills with the series background (`ParentBackdropItemId`) when the episode has no backdrop of its own, as is usual, so no extra request is made.
 The Home spotlight shows the same background.

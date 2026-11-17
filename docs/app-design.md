@@ -270,12 +270,21 @@ Its active indicator expands and fills over six seconds, matching TV timing.
 Reduce Motion disables automatic rotation and progress animation.
 Continue Watching has no play icon in its heading.
 Watched posters show a small translucent pill with a white circled tick in the top-right corner.
-Episode cards and Continue Watching movies show the same tick in the bottom-left runtime pill, beside the resume bar.
-Wide stills outside Continue Watching and the Apple TV episode rail keep green circles with white ticks.
+Episode cards and Continue Watching movies carry one status row along the bottom of the artwork, on iPhone, iPad and Apple TV, on Home and on the detail pages' episode cards.
+One pill in the artwork's bottom-right corner shows the minutes left, which is the full runtime before the title is started.
+Once the title is watched, the pill shows the same white circled tick on its own, with no minutes; a rewatch in progress shows its minutes left instead.
+The pill's text is 18 points on Apple TV, 12 on iPhone and iPad and 10 on the small thumbnails of episode list rows, and the pill sits 12 points in from the artwork's right and bottom edges (7 on those thumbnails), in the same place whether or not there is a resume bar, so the cards of a row line up.
+The resume bar runs along the artwork's bottom edge from one side to the other, the same length on an episode as on a movie: a square-ended white fill on a 30% white track with no label, clipped by the card's own rounded corners.
+It is 6 points tall on Apple TV, 4 on iPhone and iPad and 3 on the list-row thumbnails, so the pill always stands clear of it, and a watched title shows its tick without a bar.
+On iPhone and iPad Home, a downloaded title's mark moves to the bottom-left corner of a card with the status row, leaving the right corner to the pill.
+Wide stills on Home that aren't episodes or Continue Watching movies keep green circles with white ticks.
 The Movie and Series pills on Favourites and Watchlist use the same borderless translucent capsule, tinted blue or purple.
-Continue Watching and Emby/Jellyfin Next Up identify the episode beneath the series title.
-Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`.
-Partly watched Home thumbnails and series-detail episode cards share an inset white resume bar on a grey track.
+Home's episode cards name the episode beneath the series title.
+On a card with the status row that line is the unpadded season and episode number, a middle dot and the episode's title, as in `S3 E7 · Episode title`; an episode with no title of its own shows `S3 E7`.
+An episode missing its season or episode number keeps whichever it has, as in `S3 · Episode title` or `E7 · Episode title`.
+On the detail pages the number is in the caption too: `3 · Episode title` on the Apple TV series shelf, and a small `EPISODE 3` line above the title on iPhone and iPad.
+An episode with no title of its own takes the number as its title, so that `EPISODE 3` line is left out rather than repeating it.
+Partly watched Home artwork without the status row keeps an inset white resume bar on a grey track, with the minutes left beside it.
 
 ### Studios & Networks
 
@@ -391,6 +400,13 @@ Apple TV adds a QR code for the approval link beside the code.
 Home posters are always Large, so Poster Configuration in Settings > General only chooses captions, which apply across the shared browsing cards.
 These preferences remain scoped per server/profile.
 Native switches use green; section labels and secondary actions use neutral grey while titles stay white.
+Text on the Home spotlight, the detail pages and their cards uses one five-level scale from [`VividColours.swift`](../iosApp/iosApp/DesignSystem/Tokens/VividColours.swift), the same on iPhone, iPad and Apple TV, so a role looks the same wherever it appears.
+Primary is for titles, the Movie or Series type label (set semibold) and focused or current names.
+Strong, at 92%, is for names at rest, scores and values.
+Body, at 72%, is for every synopsis: the hero's, a season's and an episode card's.
+Secondary, at 60%, is for credit lines, cast roles, a Home card's second line and small uppercase labels.
+Tertiary, at 50%, is for facts: the genres, year and runtime on a heading line, a season's episode count and year, air dates, dividers and idle arrows.
+A synopsis is therefore always a clear step apart from the name above it and the facts beside it: an episode card's name, summary and air date are Strong, Body and Tertiary, and a season's synopsis and facts line are Body and Tertiary under its name, which is Primary as the current season.
 Intro & Credit Skipper remains a native toggle, and Episodes ends with the Hide Episode Spoilers toggle described in [Playback](playback/README.md).
 An Audio section between Streaming and Episodes holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
 On iPhone and iPad, Audio Language, Boost Level and Show Next Up open their own pages in the Settings theme, like Quality, rather than a plain pushed list, and choosing an option returns to Playback as before; Apple TV keeps its native menus.

@@ -43,7 +43,7 @@ func episodeRailAccessibilityLabel(
     isPlayed: Bool
 ) -> String {
     var parts = [EpisodeCardCaption.spokenPosition(season: seasonNumber, episode: episodeNumber)]
-    if let title, !title.isEmpty { parts.append(title) }
+    if let title = EpisodeCardCaption.ownTitle(title) { parts.append(title) }
     if let metadata, !metadata.isEmpty { parts.append(metadata) }
     if isCurrent {
         parts.append(String(localized: "Now viewing", comment: "Spoken status of the episode whose page is open"))
@@ -54,6 +54,17 @@ func episodeRailAccessibilityLabel(
 
 /// The episode code and title cards show under episode artwork.
 enum EpisodeCardCaption {
+    /// An episode's own title, counting a blank or whitespace-only one as
+    /// none. The detail pages' episode cards fall back to the episode
+    /// number without one, on iPhone, iPad and the Apple TV rail and shelf,
+    /// and VoiceOver reads them the same way. Home's cards leave a blank
+    /// title out of their caption and show the code on its own instead.
+    static func ownTitle(_ title: String?) -> String? {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return nil }
+        return title
+    }
+
     private static func code(season: Int, episode: Int) -> String {
         let seasonText = String(format: "%02ld", season)
         let episodeText = String(format: "%02ld", episode)
@@ -82,6 +93,25 @@ enum EpisodeCardCaption {
             return nil
         }
         return title
+    }
+
+    /// The line under the series name on a Home card with the status row:
+    /// "S3 E7 · These Fragile Lives", the numbers unpadded. An episode with
+    /// no title of its own shows "S3 E7", and one missing a number keeps
+    /// the other. Nil for anything but an episode, and for an episode with
+    /// neither a number nor a title.
+    static func statusCardLine(for item: SectionItem) -> String? {
+        guard isEpisode(item) else { return nil }
+        var code: [String] = []
+        if let season = item.seasonNumber {
+            code.append(String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1"))
+        }
+        if let episode = item.episodeNumber {
+            code.append(String(localized: "E\(String(episode))", comment: "Episode number in an episode code, e.g. E2"))
+        }
+        let codeText = code.joined(separator: " ")
+        let parts = [codeText.isEmpty ? nil : codeText, episodeTitle(for: item)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
     }
 
     static func line(for item: SectionItem) -> String? {

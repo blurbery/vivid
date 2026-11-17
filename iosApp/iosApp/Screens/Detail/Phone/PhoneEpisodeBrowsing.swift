@@ -221,7 +221,7 @@ private struct MobileEpisodePage: View {
         } else if episodes.isEmpty {
             Text("No episodes available")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.vividSecondaryText)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
         } else if isExpanded {

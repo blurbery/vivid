@@ -167,7 +167,7 @@ struct MobilePosterRail: View {
             if caption.showsTitle {
                 Text(verbatim: item.title)
                     .font(.vividSubheadline)
-                    .foregroundStyle(Color.vividOnSurface)
+                    .foregroundStyle(Color.vividTextStrong)
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)

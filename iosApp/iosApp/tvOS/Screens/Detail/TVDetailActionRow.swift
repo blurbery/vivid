@@ -266,7 +266,7 @@ private struct TVDetailPlayButton: View {
                 if let subtitle = action.subtitle, !subtitle.isEmpty {
                     Text(verbatim: subtitle)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.vividSecondaryText)
                 }
             }
         }

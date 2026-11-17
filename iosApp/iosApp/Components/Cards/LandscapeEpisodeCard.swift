@@ -72,6 +72,8 @@ struct EpisodeThumbCard: View {
     private var title: String { item.seriesTitle ?? item.title }
 
     private var secondLine: String? {
+        // An episode card with the status row reads "S3 E7 · Episode title".
+        if usesRuntimeStatus, let line = EpisodeCardCaption.statusCardLine(for: item) { return line }
         let isResumeCard = onRemoveFromContinueWatching != nil
         if (isResumeCard || showsEpisodeDetails) && EpisodeCardCaption.isEpisode(item) {
             var codeParts: [String] = []
@@ -109,9 +111,18 @@ struct EpisodeThumbCard: View {
             parts.append(secondLine)
         }
         if isWatched { parts.append(String(localized: "Watched", comment: "Spoken status of a watched title")) }
-        if usesRuntimeStatus,
-           let runtime = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
-            parts.append(String(localized: "\(runtime) minutes", comment: "Spoken runtime"))
+        if usesRuntimeStatus {
+            let shownProgress = showProgress ? progressFraction : nil
+            if let fraction = shownProgress,
+               let resume = ResumePresentation(fraction: fraction, duration: item.durationSeconds) {
+                // What the pill shows while the title is part watched,
+                // a rewatch included.
+                parts.append(String(localized: "Resume, \(resume.minutesRemaining) minutes remaining"))
+            } else if let runtime = MediaRuntimeStatusOverlay.displayedRuntime(
+                minutes: item.runtime, duration: item.durationSeconds
+            ) {
+                parts.append(String(localized: "\(runtime) minutes", comment: "Spoken runtime"))
+            }
         }
         return parts.joined(separator: ", ")
     }
@@ -185,7 +196,6 @@ struct EpisodeThumbCard: View {
             AsyncImageView(url: source.url, thumbhash: source.thumbhash, targetSize: size, contentMode: .fill)
                 .frame(width: size.width, height: size.height)
                 .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 12))
             if usesRuntimeStatus {
                 MediaRuntimeStatusOverlay(
                     isPlayed: isWatched,
@@ -204,6 +214,9 @@ struct EpisodeThumbCard: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        // Clips the status row with the artwork, so the resume bar's ends
+        // follow the card's corners.
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder
@@ -244,7 +257,7 @@ struct EpisodeThumbCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: title)
                 .font(.vividLandscapeCardTitle)
-                .foregroundStyle(isCardFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.85))
+                .foregroundStyle(isCardFocused ? Color.vividTextPrimary : Color.vividTextStrong)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: width, alignment: .leading)

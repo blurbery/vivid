@@ -3,9 +3,23 @@ import SwiftUI
 #if !os(tvOS)
 /// How an episode reads on cards, rows and to VoiceOver.
 enum MobileEpisodeText {
-    /// The episode's own title, even an empty one, or "Episode 4".
+    /// The episode's own title, or "Episode 4" when it has none.
     static func title(_ episode: EpisodeListItem) -> String {
-        episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
+        ownTitle(episode) ?? String(localized: "Episode \(String(episode.episodeNumber))")
+    }
+
+    /// The episode's own title, counting a blank one as none, so that an
+    /// empty title from the server reads as "Episode 4" rather than as a
+    /// blank line.
+    static func ownTitle(_ episode: EpisodeListItem) -> String? {
+        EpisodeCardCaption.ownTitle(episode.title)
+    }
+
+    /// Whether the episode has a title of its own. Without one the title
+    /// line falls back to the number, so the number label above it is left
+    /// out rather than repeating it.
+    static func hasOwnTitle(_ episode: EpisodeListItem) -> Bool {
+        ownTitle(episode) != nil
     }
 
     /// The air date and running time, for VoiceOver.
@@ -65,35 +79,22 @@ struct MobileEpisodeStill: View {
     }
 }
 
-/// The watched mark and running time in a dark capsule, then the resume
-/// bar when the episode is part watched.
+/// The status row over an episode's still: the resume bar on its bottom
+/// edge when it's part watched, and a pill with the time left or the watched
+/// tick. It brings its own padding, and spans the still so the bar reaches
+/// both sides.
 struct MobileEpisodeStatus: View {
     let episode: EpisodeListItem
     var isCompact = false
 
     var body: some View {
-        HStack(spacing: isCompact ? 6 : 10) {
-            HStack(spacing: 4) {
-                if episode.userData?.played == true {
-                    Image(systemName: "checkmark.circle.fill")
-                }
-                if let runtime = episode.runtime, runtime > 0 {
-                    Text("\(runtime)m")
-                }
-            }
-            .font(.system(size: isCompact ? 10 : 12))
-            .foregroundStyle(.white)
-            .fixedSize()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(Color.black.opacity(0.45)))
-            if let progress = MobileEpisodeText.progress(episode) {
-                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds, height: 5, inset: 0)
-            } else {
-                Spacer(minLength: 0)
-            }
-        }
-        .allowsHitTesting(false)
+        MediaRuntimeStatusOverlay(
+            isPlayed: episode.userData?.played == true,
+            duration: episode.userData?.durationSeconds,
+            progress: MobileEpisodeText.progress(episode),
+            runtimeMinutes: episode.runtime,
+            metrics: isCompact ? .compact : .standard
+        )
     }
 }
 
@@ -189,25 +190,27 @@ struct MobileEpisodeCarousel: View {
                     still(episode, size: stillSize, isCurrent: isCurrent)
                     if caption.showsTitle {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("EPISODE \(String(episode.episodeNumber))")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(.secondary)
+                            if MobileEpisodeText.hasOwnTitle(episode) {
+                                Text("EPISODE \(String(episode.episodeNumber))")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundStyle(Color.vividSecondaryText)
+                            }
                             Text(verbatim: MobileEpisodeText.title(episode))
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(isCurrent ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
+                                .foregroundStyle(isCurrent ? Color.vividTextPrimary : Color.vividTextStrong)
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if caption.showsMetadata {
                                 Text(verbatim: episode.overview ?? "")
                                     .font(.system(size: 12, weight: .regular))
-                                    .foregroundStyle(Color.vividSecondaryText)
+                                    .foregroundStyle(Color.vividTextBody)
                                     .lineLimit(2, reservesSpace: true)
                                     .lineSpacing(2)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
                                     .font(.system(size: 12, weight: .regular))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color.vividTextTertiary)
                             }
                         }
                     }
@@ -242,7 +245,6 @@ struct MobileEpisodeCarousel: View {
         return ZStack(alignment: .bottom) {
             MobileEpisodeStill(episode: episode, size: size)
             MobileEpisodeStatus(episode: episode)
-                .padding(12)
         }
         .frame(width: size.width, height: size.height)
         .clipShape(shape)
