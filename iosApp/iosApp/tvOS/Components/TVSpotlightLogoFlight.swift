@@ -59,6 +59,11 @@ final class TVSpotlightLogoFlight {
 
     /// The Spotlight card whose own logo is hidden.
     private(set) var hiddenSourceID: String?
+    /// Hides Home's blurred backdrop around the card: from the press that
+    /// opens a title until Back starts. It returns as the flight back
+    /// begins, not when it lands, so the space around the card is already
+    /// the backdrop while the picture shrinks into it.
+    private(set) var hidesHomeBackdrop = false
     /// Hides the detail page's logo while the copy is in the air.
     private(set) var hidesDetailLogo = false
 
@@ -105,6 +110,7 @@ final class TVSpotlightLogoFlight {
     func prepare(sourceID: String, slideID: String) {
         guard !UIAccessibility.isReduceMotionEnabled, logos[sourceID]?.slideID == slideID else { return }
         hiddenSourceID = sourceID
+        hidesHomeBackdrop = true
     }
 
     /// Starts the flight to the detail page for the card being opened.
@@ -141,6 +147,7 @@ final class TVSpotlightLogoFlight {
         // the two logos never show together.
         hiddenSourceID = sourceID
         hidesDetailLogo = true
+        hidesHomeBackdrop = false
         generation += 1
         let flight = generation
         DispatchQueue.main.async { [weak self] in
@@ -178,7 +185,7 @@ final class TVSpotlightLogoFlight {
             container.addSubview(image)
             let shade = TVSpotlightFlightShade(frame: container.bounds)
             shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            shade.alpha = toDetail ? 1 : 0
+            shade.alpha = 0
             container.addSubview(shade)
             window.addSubview(container)
             flyingViews.append(container)
@@ -190,9 +197,9 @@ final class TVSpotlightLogoFlight {
         logoView.isUserInteractionEnabled = false
         logoView.frame = toDetail ? logo.frame : detailLogo
         logoView.layer.shadowColor = UIColor.black.cgColor
-        logoView.layer.shadowRadius = 22
-        logoView.layer.shadowOffset = CGSize(width: 0, height: 6)
-        let shadow: (Float, Float) = toDetail ? (0.5, 0) : (0, 0.5)
+        logoView.layer.shadowRadius = 16
+        logoView.layer.shadowOffset = CGSize(width: 14, height: 22)
+        let shadow: (Float, Float) = toDetail ? (0.7, 0) : (0, 0.7)
         logoView.layer.shadowOpacity = shadow.1
         let fade = CABasicAnimation(keyPath: "shadowOpacity")
         fade.fromValue = shadow.0
@@ -215,7 +222,7 @@ final class TVSpotlightLogoFlight {
                 views.container.frame = toDetail ? screen : backdrop.card
                 views.container.layer.cornerRadius = toDetail ? 0 : 22
                 views.image.frame = toDetail ? backdrop.screenCrop : backdrop.cardCrop
-                views.shade.alpha = toDetail ? 0 : 1
+                views.shade.alpha = 0
             }
         } completion: { [weak self] _ in
             guard let self, self.generation == flight else { return }
@@ -253,6 +260,7 @@ final class TVSpotlightLogoFlight {
         openedSlideID = nil
         land()
         hiddenSourceID = nil
+        hidesHomeBackdrop = false
     }
 
     // MARK: Geometry
