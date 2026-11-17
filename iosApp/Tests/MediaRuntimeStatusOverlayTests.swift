@@ -54,11 +54,11 @@ final class MediaRuntimeStatusOverlayTests: XCTestCase {
         XCTAssertEqual(timePill(progress: 0.5, runtimeMinutes: 40), TimePill(showsTick: false, minutes: 20))
     }
 
-    func testAWatchedTitleShowsTheTickWithItsFullRuntime() {
-        XCTAssertEqual(timePill(isPlayed: true, runtimeMinutes: 47), TimePill(showsTick: true, minutes: 47))
+    func testAWatchedTitleShowsTheTickAlone() {
+        XCTAssertEqual(timePill(isPlayed: true, runtimeMinutes: 47), TimePill(showsTick: true, minutes: nil))
         XCTAssertEqual(
             timePill(isPlayed: true, progress: 1, duration: 2820, runtimeMinutes: 47),
-            TimePill(showsTick: true, minutes: 47)
+            TimePill(showsTick: true, minutes: nil)
         )
         XCTAssertEqual(timePill(isPlayed: true), TimePill(showsTick: true, minutes: nil))
     }

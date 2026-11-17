@@ -273,7 +273,7 @@ Watched posters show a small translucent pill with a white circled tick in the t
 Episode cards and Continue Watching movies carry one status row along the bottom of the artwork, on iPhone, iPad and Apple TV, on Home and on the detail pages' episode cards.
 An episode's season and episode number sits in a pill on the left, as in `S1E7`, unpadded; a movie has no left pill.
 A pill of the same size on the right shows the minutes left, which is the full runtime before the title is started.
-Once the title is watched, the right pill shows the same white circled tick with the full runtime; a rewatch in progress shows its minutes left instead.
+Once the title is watched, the right pill shows the same white circled tick on its own, with no minutes; a rewatch in progress shows its minutes left instead.
 The resume bar fills the space between the two pills, so a movie's bar starts at the artwork's left edge.
 Wide stills on Home that aren't episodes or Continue Watching movies keep green circles with white ticks.
 The Movie and Series pills on Favourites and Watchlist use the same borderless translucent capsule, tinted blue or purple.

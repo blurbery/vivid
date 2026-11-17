@@ -585,7 +585,7 @@ Native `.card` buttons provide episode artwork focus; cards include the episode'
 Under each 400 by 225 still, the caption is set like Home's Continue Watching captions.
 The first line is the episode's name in the 24-point card title style on one line, brightening with focus.
 The summary, on up to three lines, uses the 22-point grey second-line style, and the air date under it is the same size in a quieter grey, so name, summary and date are three distinct levels.
-The still carries Home's status row: the season and episode number in an 18-point pill on the left, as in `S1E7`, the resume bar, and a matching pill on the right, the same size as on Home's cards with the minutes left, or the watched tick and the runtime.
+The still carries Home's status row: the season and episode number in an 18-point pill on the left, as in `S1E7`, the resume bar, and a matching pill on the right, the same size as on Home's cards with the minutes left, or the watched tick alone.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
 Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.
 Their episode rail's titles are larger too, at 28 points, and its stills carry the same status row in place of a caption runtime and a green watched badge.

@@ -158,8 +158,8 @@ struct MediaRuntimeStatusOverlay: View {
 
     /// In progress: the minutes left, rounded as the Resume button rounds
     /// them. That wins over watched, so a rewatch shows its time left.
-    /// Watched: the tick and the full runtime. Not started: the full
-    /// runtime. Nil when none of that is known.
+    /// Watched: the tick alone, with nothing left to watch. Not started:
+    /// the full runtime. Nil when none of that is known.
     static func timePill(isPlayed: Bool, progress: Double?, duration: Double?, runtimeMinutes: Int?) -> TimePill? {
         let runtime = displayedRuntime(minutes: runtimeMinutes, duration: duration)
         if let progress, progress > 0 {
@@ -167,7 +167,7 @@ struct MediaRuntimeStatusOverlay: View {
                 ?? runtime.flatMap { ResumePresentation(fraction: progress, duration: Double($0) * 60) }
             if let resume { return TimePill(showsTick: false, minutes: resume.minutesRemaining) }
         }
-        if isPlayed { return TimePill(showsTick: true, minutes: runtime) }
+        if isPlayed { return TimePill(showsTick: true, minutes: nil) }
         return runtime.map { TimePill(showsTick: false, minutes: $0) }
     }
 
