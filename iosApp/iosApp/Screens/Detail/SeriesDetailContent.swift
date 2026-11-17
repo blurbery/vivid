@@ -448,7 +448,7 @@ struct MobileSeriesPage: View {
             if let episode = nextUpEpisode {
                 Text(verbatim: Self.episodeCaption(episode))
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color.vividSecondaryText)
+                    .foregroundStyle(.secondary)
             }
             if session.isLoadingNextUp {
                 ProgressView()

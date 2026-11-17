@@ -48,16 +48,12 @@ struct TVDetailCompactHeading: View {
     }
 
     private var headingText: Text {
-        // The kind of title is the line's anchor: semibold and primary. The
-        // facts and genres after it keep the line's medium weight, at body
-        // level.
         var heading = AttributedString(tokens.first ?? "")
-        heading.swiftUI.font = .system(size: 29, weight: .semibold)
-        heading.swiftUI.foregroundColor = Color.vividTextPrimary
+        heading.swiftUI.foregroundColor = Color.white.opacity(0.92)
         let rest = Array(tokens.dropFirst()) + genres
         if !rest.isEmpty {
             var tail = AttributedString(" \u{00B7} " + rest.joined(separator: " \u{00B7} "))
-            tail.swiftUI.foregroundColor = Color.vividTextBody
+            tail.swiftUI.foregroundColor = Color.white.opacity(0.70)
             heading.append(tail)
         }
         return Text(heading)
@@ -75,7 +71,7 @@ struct TVDetailTechnicalRow: View {
             if !releaseFacts.isEmpty {
                 Text(verbatim: releaseFacts.joined(separator: " \u{00B7} "))
                     .font(.system(size: 29, weight: .medium))
-                    .foregroundStyle(Color.vividTextBody)
+                    .foregroundStyle(Color.white.opacity(0.84))
             }
             ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
                 TVDetailTextBadge(text: badge, isFilled: TVHeroMetadata.isResolutionBadge(badge))
@@ -85,7 +81,7 @@ struct TVDetailTechnicalRow: View {
                     rating: tmdbScore,
                     logoHeight: 29,
                     font: .system(size: 29, weight: .semibold),
-                    color: Color.vividTextStrong
+                    color: Color.white.opacity(0.92)
                 )
                 .padding(.leading, 4)
             }
@@ -133,11 +129,11 @@ struct TVDetailMetadataSlots: View {
                 if index > 0 {
                     Text("·")
                         .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(Color.vividTextTertiary)
+                        .foregroundStyle(Color.white.opacity(0.5))
                 }
                 Text(verbatim: token)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Color.vividTextStrong)
+                    .foregroundStyle(Color.white.opacity(0.78))
             }
         }
     }
@@ -150,21 +146,21 @@ struct TVDetailMetadataSlots: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.78), lineWidth: 1.5))
                     .fixedSize(horizontal: true, vertical: false)
             }
             ForEach(Array(facts.enumerated()), id: \.offset) { index, fact in
                 if index > 0 { divider }
                 Text(verbatim: fact)
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(Color.vividTextBody)
+                    .foregroundStyle(Color.white.opacity(0.88))
             }
             if includingSource {
                 ForEach(Array(sourceTokens.enumerated()), id: \.offset) { index, token in
                     if !facts.isEmpty || index > 0 { divider }
                     Text(verbatim: token)
                         .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(Color.vividTextBody)
+                        .foregroundStyle(Color.white.opacity(0.90))
                 }
             }
         }
@@ -173,7 +169,7 @@ struct TVDetailMetadataSlots: View {
     private var divider: some View {
         Text("·")
             .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(Color.vividTextTertiary)
+            .foregroundStyle(Color.white.opacity(0.45))
     }
 }
 
@@ -240,7 +236,7 @@ struct TVDetailPlaybackSummary: View {
                 if let value {
                     Text(verbatim: value)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.vividTextStrong)
+                        .foregroundStyle(Color.white.opacity(0.82))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                         .allowsTightening(true)

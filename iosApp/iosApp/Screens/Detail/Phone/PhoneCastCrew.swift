@@ -69,7 +69,7 @@ struct MobileCastCrewSection: View {
                 VStack(alignment: .center, spacing: 2) {
                     Text(verbatim: person.name)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.vividTextStrong)
+                        .foregroundStyle(Color.vividOnSurface)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                     if let role = person.role, !role.isEmpty {

@@ -84,7 +84,7 @@ struct TVDetailHierarchyTitle: View {
             }
             Text(verbatim: episodeTitle)
                 .font(.system(size: 46, weight: .bold))
-                .foregroundStyle(Color.vividTextStrong)
+                .foregroundStyle(Color.white.opacity(0.94))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -109,7 +109,7 @@ struct TVDetailDisplayTitle: View {
             if let subtitle = parts.subtitle {
                 Text(verbatim: subtitle.uppercased())
                     .font(.system(size: 40, weight: .heavy).width(.compressed))
-                    .foregroundStyle(Color.vividTextStrong)
+                    .foregroundStyle(Color.white.opacity(0.95))
                     .tracking(1.5)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)

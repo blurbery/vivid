@@ -23,7 +23,7 @@ struct TVDetailSectionHeader: View {
                 label
                     .font(.system(size: 17, weight: .bold))
                     .tracking(3.0)
-                    .foregroundStyle(Color.vividTextTertiary)
+                    .foregroundStyle(Color.vividOnSurface.opacity(0.55))
                     .textCase(.uppercase)
             }
             title
@@ -135,7 +135,7 @@ private struct TVCastPersonCard: View {
             VStack(spacing: 4) {
                 Text(verbatim: person.name)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isFocused ? Color.vividTextPrimary : Color.vividTextStrong)
+                    .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.88))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                 if let role {
@@ -225,7 +225,7 @@ private struct TVTrailerCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: entry.title)
                     .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(isFocused ? Color.vividTextPrimary : Color.vividTextStrong)
+                    .foregroundStyle(isFocused ? Color.vividOnSurface : Color.vividOnSurface.opacity(0.92))
                     .lineLimit(1)
                 if let secondary {
                     Text(verbatim: secondary)

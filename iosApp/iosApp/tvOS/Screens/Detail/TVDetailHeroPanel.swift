@@ -332,7 +332,7 @@ struct TVDetailHeroPanel<Primary: View, Summary: View, Actions: View>: View {
                     if let creditLine, !creditLine.isEmpty {
                         Text(verbatim: creditLine)
                             .font(.system(size: 27))
-                            .foregroundStyle(Color.vividSecondaryText)
+                            .foregroundStyle(Color.white.opacity(0.70))
                             .lineLimit(1)
                     }
                 }

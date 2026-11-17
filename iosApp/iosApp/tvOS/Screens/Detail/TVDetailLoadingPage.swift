@@ -264,7 +264,7 @@ struct TVDetailLoadingPage: View {
         } else {
             Text(verbatim: parts.joined(separator: "  \u{00B7}  "))
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Color.vividTextBody)
+                .foregroundStyle(Color.white.opacity(0.76))
                 .lineLimit(1)
         }
     }
@@ -303,7 +303,7 @@ struct TVDetailLoadingPage: View {
         if !overview.isEmpty {
             Text(verbatim: overview)
                 .font(.system(size: 28))
-                .foregroundStyle(Color.vividTextBody)
+                .foregroundStyle(Color.white.opacity(0.72))
                 .lineLimit(lines)
                 .frame(maxWidth: width, alignment: .topLeading)
         } else {
