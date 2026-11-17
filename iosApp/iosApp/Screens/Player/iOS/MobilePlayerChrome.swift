@@ -21,8 +21,13 @@ extension EnvironmentValues {
 /// Matches the detail page's chrome without the extra padding of the system
 /// glass button styles. A 44-point square label is a circle; a longer label
 /// makes a 44-point pill.
+///
+/// `hitSize` gives the button a larger square tap target around the same
+/// glass, for the centre transport buttons: a finger that lands just off
+/// the circle still presses it instead of hiding the controls.
 struct MobilePlayerGlassButtonStyle: ButtonStyle {
     var tint: Color? = nil
+    var hitSize: CGFloat? = nil
     @Environment(\.mobilePlayerControlPressChanged) private var controlPressChanged
 
     func makeBody(configuration: Configuration) -> some View {
@@ -32,8 +37,26 @@ struct MobilePlayerGlassButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.75 : 1)
             .contentShape(Capsule())
             .vividPlayerGlass(in: Capsule(), tint: tint, interactive: true)
+            .modifier(MobilePlayerHitTarget(size: hitSize))
             .onChange(of: configuration.isPressed) { _, pressed in controlPressChanged(pressed) }
             .onDisappear { if configuration.isPressed { controlPressChanged(false) } }
+    }
+}
+
+/// Grows a button's tap target to a square around its glass. It has to sit
+/// inside the button style: a frame or content shape added outside a
+/// `Button` doesn't widen what it responds to.
+private struct MobilePlayerHitTarget: ViewModifier {
+    let size: CGFloat?
+
+    func body(content: Content) -> some View {
+        if let size {
+            content
+                .frame(width: size, height: size)
+                .contentShape(Rectangle())
+        } else {
+            content
+        }
     }
 }
 
