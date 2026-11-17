@@ -18,30 +18,35 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   New selections start with the first three populated rows.
   Configure these separately from row visibility in Settings → General → Spotlight.
 - The spotlight uses separate rounded cards and shows one at a time: the cards either side rest just off screen and only come into view while the carousel slides.
-  Each slide is a native focus target in a horizontal scroll view, with a fixed decorative gradient outline and no focus enlargement, parallax or colour glow.
+  Each slide is a native focus target in a horizontal scroll view, with a fixed decorative gradient outline around its picture and no focus enlargement or colour glow.
   The system owns directional focus and scrolling.
   Automatic rotation remains on a six-second timer; each automatic advance uses a 0.45-second transition, disabled by Reduce Motion.
   Rotation stops the moment a slide is pressed, and an advance already under way snaps back to the pressed card without animation, so the zoom leaves from and returns to the card that was chosen.
   It resumes once Back has landed on Home, or after two seconds if no page opened, and the card then gets its full six seconds.
   Each card's saved logo and backdrop record the slide they were drawn for, so a card whose slide has changed since never flies an older slide's artwork, and the flight back is dropped if Search or another page replaces the one that opened, or Vivid resets to Home, the profile picker or sign-in.
-  Its layout height is 960 points, so the card sits 60 points in from every edge of the screen, with no page dots under the cards.
-  Behind the card, the current slide's artwork fills the whole first screen, blurred and darkened.
-  The card draws the same artwork at the same full-screen size and position and shows the part behind it, so it reads as a sharp section of one picture lifted off the screen.
+  Its layout height is 960 points, 60 points in from every edge of the screen, with no page dots under the cards.
+  The picture is a wide band at the top of that space, 1,800 by 720 points (2.5:1), and the logo, details line and overview sit under it on the blurred artwork.
+  Behind the card, the current slide's artwork fills the whole first screen, blurred and darkened by 28%.
+  The picture draws the same artwork at the same full-screen size and position and shows the part behind it, so the two are one picture.
+  The picture's edges fall into a soft shadow, the same on all four sides, and the space around it darkens from nothing at the picture to half black at the screen's edges in one smooth falloff, so the picture reads as the far wall of a recess rather than a card lifted off the screen.
+  That shading is drawn once, steps aside while the carousel slides (it is fitted to a picture at rest) and returns over half a second once the slide has landed.
   The blurred copy's resting blur is worked out once per slide, at a quarter of the screen size, and the copy is then stretched, so at rest nothing is blurred live; only the focus pull described below adds a live blur, on that quarter-size image.
   It cross-fades over 0.8 seconds when the slide changes (at once with Reduce Motion).
-  It hides while the zoom flight into a title opened from the spotlight is under way and until the flight back has landed; with Reduce Motion, or for a slide with no logo to fly, there is no flight and it stays put.
+  It hides when a slide is pressed and returns as Back starts, fading in over 0.3 seconds while the picture shrinks back into the card; with Reduce Motion, or for a slide with no logo to fly, there is no flight and it stays put.
+  Nothing of the spotlight shows until the current card's picture and logo are ready: the card, its text, the blurred artwork and the shading then fade in together over 0.4 seconds, and the countdown pill waits for them, so Home never opens on a block of the slide's colour.
   Home's rows start below the first screen, and Home rests on either the spotlight or the rows, never in between: Down from the spotlight is one focus-driven scroll that carries the spotlight off and puts the first row under the tab bar, and Up from the first row returns to the top.
   Leaving the spotlight is a focus pull, as with a film camera: the picture is held still while the rows rise over it, goes out of focus, and only then fades into the page.
   It follows the scroll's position, so it lasts exactly as long as the scroll, and Up plays it back, the picture arriving blurred and then sharpening.
   A copy of the card's picture comes in over the card during the first 5% of the scroll, while it is still sharp, and the card is then hidden, so the card is never seen half faded; the copy blurs and darkens until it matches the blurred artwork around it, which then blurs on to 96 points and fades out.
   The picture's changes of opacity after that happen under a blur that hides them, so it reads as focus and not as a fade.
-  The one exception is the card's logo, details and outline: the copy is the artwork alone, so they fade out as it comes in over that first 5%, and return the same way at the end of the way up.
+  The outline and the countdown pill go with the card.
+  The logo, details and overview do not: the pull is drawn inside the card, over its picture and under its text, so they stay sharp while the picture goes out of focus behind them, ride up with the page growing by up to 10%, and fade out between 30% and 55% of the scroll, before they reach the tab bar.
   Home's scroll starts fast and slows to a stop both ways, so the pull is spread differently by direction: going down the blur builds across 5% to 90% of the scroll and slows to its far end, fading out from 66%, and going up the picture sharpens between 50% and 5%, over the slow end of the scroll.
   The direction is kept per Home feed and set each time Home comes to rest, when the pull is either not showing or fully sharp, so a new feed starts on the way down and reversing in the middle of a scroll plays the same spread back.
   The blur is live but only ever applied to quarter-size images (480 by 270 points), with the card's shape drawn into the copy once, and the radius is zero while the spotlight is at rest.
   With Theme Mode on Off or Adaptive the rows then sit on the theme or the Adaptive backdrop; with Spotlight Only, the slide-colour backdrop described below scrolls with Home, so at the rows' resting place it is still solid behind the first 110 points of the screen and fades out over the next 520, with the theme below that.
   Once Home's scroll has come to rest on the rows, rotation waits and the pill hides, and the slide gets its full six seconds when focus returns.
-  Each card instead carries a small pill in its bottom-right corner, 80 by 6 points and 48 points in from both edges, that fills over the card's six seconds, so it's clear the spotlight moves on by itself.
+  Each card instead carries a small pill tucked under its picture's bottom-right corner, 80 by 6 points, 20 points below the picture and 26 points in from its right edge, that fills over the card's six seconds, so it's clear the spotlight moves on by itself.
   It stops while rotation is paused and carries on from where it was, starts again from empty when the slide changes, and travels with its card.
   Cards before the current one show a full pill and cards after it an empty one, so moving forward the card leaving goes out full and the one arriving comes in empty; moving back, the card leaving empties as it goes.
   Each wait is one linear animation rather than a per-frame update.
@@ -61,10 +66,12 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   It replaced an On and Off Spotlight Gradient row, and anyone who had that off starts on Off.
   Off shows the base theme and looks up no backdrop colour, though the focus outline's tint is still prepared for each slide; Adaptive is described below.
   A Home without a spotlight has no backdrop.
-  The logo, the metadata line and the overview sit on the left of the card, all starting 100 points from the screen's left edge, the same as the detail pages' logo (their heading sits beside the poster), so the logo flies straight up when a title opens.
-  They sit over a dark glow from the card's bottom-left corner that keeps them clear of bright artwork.
-  The logo fits within 600 by 200 points with a soft shadow, and its transparent margins are trimmed when it loads, so logos with empty space in their image still sit right on the metadata line.
-  The logo's box has no fixed place on the card: the text is stacked up from 48 points above the card's bottom edge, so the logo sits higher the more lines the overview has.
+  The logo, the metadata line and the overview sit on the left under the picture, all starting 100 points from the screen's left edge, the same as the detail pages' logo (their heading sits beside the poster), so the logo flies straight up when a title opens.
+  The picture carries no darkening for them.
+  The logo hangs over the picture's bottom edge and casts a soft shadow on the picture only, down and to the right by up to 38 points and never more than about a third of the logo's height, which puts it in front of the picture.
+  The focus outline has a soft gap where the logo or title crosses that edge, taking in the bottom-left corner, so no line shows through the letters.
+  The logo fits within 680 by 225 points, and its transparent margins are trimmed when it loads, so logos with empty space in their image still sit right on the metadata line.
+  The logo's box ends 60 points below the picture's bottom edge on every slide, and the details line and overview are stacked down from it.
   A movie's or series' metadata line is the detail pages' heading: its type, up to two genres and the content rating in an outlined badge, with no year, runtime or score (a series doesn't show its season count, which the spotlight doesn't have).
   The type is semibold in the brightest text level and the genres after it are medium in the quiet facts level; an episode's line is split the same way after the word Episode.
   The overview under it is in the Body level, a step brighter than those facts, as every synopsis on the detail pages is.
@@ -77,11 +84,15 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   Only a first sentence too long for three lines on its own still ends in an ellipsis.
   An item without an overview shows none.
   Selecting a slide zooms its detail page out of that card, and Back zooms it back in; each carousel position is its own zoom source, so loop copies of a slide stay distinct.
-  Over the zoom, the card's backdrop opens out to the full screen as its corners square off and its shading clears, the logo flies from the card to the page's logo corner, and the page's text, poster and buttons fade in once the backdrop is in place; Back runs the same in reverse.
+  Over the zoom, the picture opens out to the full screen as its corners square off and its edge shadow clears, the logo flies from the card to the page's logo corner, and the page's text, poster and buttons fade in once the backdrop is in place; Back runs the same in reverse.
   These are copies drawn above the app (`TVSpotlightLogoFlight`): the move takes about half a second and the backdrop copy then fades out over a quarter of a second, so they're on screen for about 0.8 seconds.
+  The logo's copy is put on screen, still, in the same update that hides the real logo, at both ends, so the logo never blinks.
+  It has no shadow of its own: the card's shadow of the logo stays on the picture under the picture's copy, so it fades out as that copy covers the card and back in as it uncovers it.
   They're moved by Core Animation so they keep pace with the system zoom while the page is being built, with the real card and page logos hidden while they're in the air.
   The tab bar fades out and back in with the transition.
   Other ways into a detail page, and Reduce Motion, keep the standard push.
+  While the carousel slides, the logo travels 30% further than its picture, the details line 23% and the overview 17%, the logo's shadow 10%, and a picture that is off-centre is drawn up to 8% smaller, so the text reads as nearer than the pictures.
+  Nothing is moved at rest, and Reduce Motion turns this off.
   On Apple TV the spotlight artwork keeps to the image's middle band, moved only as far as keeping the subject's top in view needs, so the zoom into the full-screen detail backdrop barely moves the image.
 - With Theme Mode set to Adaptive (Apple TV only), one full-screen backdrop sits behind every root page (Home, Library and Calendar) in the colour of whatever last had focus, with the same shading and grain as Spotlight Only, whose Home backdrop is then off.
   While the Spotlight has focus it takes the slide's saved tint and follows the slides as they turn; a poster, a Continue Watching or Next Up card (also when they're combined into one row) or a collection takes the main colour of the artwork the card shows, a landscape card's series backdrop or thumbnail included.
@@ -94,12 +105,13 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   A new colour fades in over the one on screen across 0.9 seconds (at once with Reduce Motion), and one that arrives mid-fade starts from the blend that's showing, so quick moves never snap.
   Only opacity animates.
   The colour is kept while the player is open and starts again from the theme for a new profile or sign-in.
-- Each card is 960 points tall and 120 points narrower than the available viewport, with 60-point gaps that match the side margins, so no neighbouring card shows at rest.
+- Each card's space is 960 points tall (its picture is the top 720) and 120 points narrower than the available viewport, with 60-point gaps that match the side margins, so no neighbouring card shows at rest.
   Server backdrops fill the card without stretching (for an episode, its series background when one is known, the same as Home's Continue Watching and Next Up cards; a card keeps the artwork it was built with), using the existing face/head, person and saliency detection to guide cropping.
   Wide framing can still trim the image, especially with multiple subjects; detection cannot guarantee perfect composition.
   There is no spotlight TMDB lookup or blurred neighbouring-image overlay.
   Configured TMDb access supports trailers and Emby IMDb-to-TMDb identity resolution; the spotlight makes no TMDb requests.
   The owner approved the sliding card design on Apple TV, and later the one-card-at-a-time layout, the countdown pill, Spotlight Only (first called Spotlight Gradient) and Adaptive in this form.
+  The owner later approved the wide picture with the text under it, the recess shading and the depth effects, after trying them on an Apple TV.
   The owner accepted the native focus conversion on Apple TV at `00177cf`.
 - Selecting a slide opens its page.
   An episode with a known series and season opens its series directly on that episode, the same as its Continue Watching card, so the page doesn't open the episode first and then swap to the series.

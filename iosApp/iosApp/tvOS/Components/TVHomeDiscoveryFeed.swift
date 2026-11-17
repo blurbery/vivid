@@ -1001,6 +1001,11 @@ private final class TVHomeSpotlightAmbience {
     /// picture reads it: that shading is fitted to a picture at rest, so it
     /// steps aside while the pictures move.
     var sliding = false
+    /// The card on show has its picture and logo. Until then the card, the
+    /// blurred backdrop and the shading stay out, and they come in
+    /// together, so Home never opens on a block of colour and plain text
+    /// that the artwork then snaps over.
+    var ready = false
 
     /// Home's scroll came to rest. `recessed` redraws the carousel, so it
     /// follows the scroll actually stopping on the rows: never the middle of
@@ -1224,7 +1229,6 @@ private struct TVHomeSpotlightBlurBackdrop: View {
                 let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
                 return content
                     .blur(radius: TVHomeSpotlightCarousel.backdropExtraRadius(travelled: travelled, down: down) / shrink)
-                    .scaleEffect(TVHomeSpotlightCarousel.recede(travelled: travelled))
                     .offset(y: travelled / shrink)
                     .opacity(TVHomeSpotlightCarousel.leavingOpacity(travelled: travelled, down: down))
             }
@@ -1247,33 +1251,69 @@ private struct TVHomeSpotlightBlurBackdrop: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: artworkURL)
         // Out of the way while a title is open. The card zooms into its
         // page, and this second copy of the same picture, left around it,
-        // read as the picture splitting in two. It returns once the flight
-        // back has landed.
+        // read as the picture splitting in two. It returns as Back starts,
+        // so it is already there around the card while the picture shrinks.
         .opacity(TVSpotlightLogoFlight.shared.hidesHomeBackdrop ? 0 : 1)
         .animation(.easeOut(duration: TVSpotlightLogoFlight.shared.hidesHomeBackdrop ? 0.12 : 0.3),
                    value: TVSpotlightLogoFlight.shared.hidesHomeBackdrop)
+        .opacity(ambience.ready ? 1 : 0)
+        .animation(.easeOut(duration: TVHomeSpotlightCarousel.arrival), value: ambience.ready)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }
 
-/// Turns the space around the Spotlight's picture into the inside of a box
-/// seen end on, with the picture as its far wall: each side darkens from
-/// the picture out to the screen's edge, by a different amount per side,
-/// and the picture throws a little light on the floor. No lines are drawn.
-/// The text then stands on the floor in front of the picture. Drawn once; it is held and faded with the picture when Home
-/// scrolls, and hidden while a title's zoom is in the air.
+/// Shades the space around the Spotlight's picture so it reads as the
+/// inside of a recess with the picture as its far wall: clear at the
+/// picture's edge and darker towards the screen's, the same on every side
+/// and blurred into one smooth falloff. No lines or light are drawn. Held
+/// and faded with the picture when Home scrolls, hidden while a title's
+/// zoom is in the air, and out of the way while the carousel slides, as it
+/// is fitted to a picture at rest.
 private struct TVHomeSpotlightTunnel: View {
-    /// How dark each side gets at the screen's edge: top, right, floor,
-    /// left. All the same, so the sides meet without a visible join and
-    /// the shading reads as one smooth falloff around the picture.
-    private static let depths: [Double] = [0.4, 0.4, 0.4, 0.4]
     let ambience: TVHomeSpotlightAmbience
 
     var body: some View {
         let screen = TVHomeSpotlightCarousel.screen
+        // In a view of its own with nothing passed in, so it is drawn once
+        // and not again each time the fades below change.
+        TVHomeSpotlightTunnelShading()
+        .frame(width: screen.width, height: screen.height)
+        // Held in place and gone early in the scroll to the rows, read from
+        // this view's own layout as the backdrop does.
+        .visualEffect { content, proxy in
+            let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
+            return content
+                .offset(y: travelled)
+                .opacity(Double(1 - min(1, travelled / (TVHomeSpotlightCarousel.pullTravel * 0.3))))
+        }
+        .opacity(TVSpotlightLogoFlight.shared.hidesHomeBackdrop ? 0 : 1)
+        .animation(.easeOut(duration: TVSpotlightLogoFlight.shared.hidesHomeBackdrop ? 0.12 : 0.3),
+                   value: TVSpotlightLogoFlight.shared.hidesHomeBackdrop)
+        .opacity(ambience.ready ? 1 : 0)
+        .animation(.easeOut(duration: TVHomeSpotlightCarousel.arrival), value: ambience.ready)
+        // Out quickly as a slide starts to move, back gently once the new
+        // picture has landed.
+        .opacity(ambience.sliding ? 0 : 1)
+        .animation(.easeInOut(duration: ambience.sliding ? 0.12 : 0.5), value: ambience.sliding)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The shading itself: see `TVHomeSpotlightTunnel`.
+private struct TVHomeSpotlightTunnelShading: View {
+    /// How dark each side gets at the screen's edge: top, right, floor,
+    /// left. All the same, so the sides meet without a visible join.
+    private static let depths: [Double] = [0.5, 0.5, 0.5, 0.5]
+
+    var body: some View {
         Canvas(rendersAsynchronously: false) { context, size in
-            let outer = CGRect(origin: .zero, size: size)
+            // Blurred as it is drawn, so the four sides run into each other
+            // with no crease at the corners; and drawn past the screen's
+            // edges, so the blur doesn't lighten them.
+            context.addFilter(.blur(radius: 30))
+            let outer = CGRect(origin: .zero, size: size).insetBy(dx: -90, dy: -90)
             let inset = TVHomeSpotlightCarousel.artworkInset
             let inner = CGRect(x: inset.x, y: inset.y, width: size.width - inset.x * 2,
                                height: TVHomeSpotlightCarousel.pictureHeight)
@@ -1303,24 +1343,6 @@ private struct TVHomeSpotlightTunnel: View {
                 context.fill(wall, with: .linearGradient(shade, startPoint: mids[side].0, endPoint: mids[side].1))
             }
         }
-        .frame(width: screen.width, height: screen.height)
-        // Held in place and gone early in the scroll to the rows, read from
-        // this view's own layout as the backdrop does.
-        .visualEffect { content, proxy in
-            let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
-            return content
-                .offset(y: travelled)
-                .opacity(Double(1 - min(1, travelled / (TVHomeSpotlightCarousel.pullTravel * 0.3))))
-        }
-        .opacity(TVSpotlightLogoFlight.shared.hidesHomeBackdrop ? 0 : 1)
-        .animation(.easeOut(duration: TVSpotlightLogoFlight.shared.hidesHomeBackdrop ? 0.12 : 0.3),
-                   value: TVSpotlightLogoFlight.shared.hidesHomeBackdrop)
-        // Out quickly as a slide starts to move, back gently once the new
-        // picture has landed.
-        .opacity(ambience.sliding ? 0 : 1)
-        .animation(.easeInOut(duration: ambience.sliding ? 0.12 : 0.5), value: ambience.sliding)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
@@ -1364,7 +1386,6 @@ private struct TVHomeSpotlightFocusPull: View {
                 let travelled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
                 return content
                     .blur(radius: TVHomeSpotlightCarousel.pullRadius(travelled: travelled, down: down) / shrink)
-                    .scaleEffect(TVHomeSpotlightCarousel.recede(travelled: travelled))
                     .offset(y: travelled / shrink)
                     .opacity(opacity(travelled))
             }
@@ -1456,13 +1477,16 @@ private struct TVHomeSpotlightCarousel: View {
     // blurred and then sharpens. The blur is real and continuous, but only
     // ever worked on quarter-size images, and never at rest.
 
+    /// How long the Spotlight takes to fade in once its picture and logo
+    /// are ready.
+    static let arrival: TimeInterval = 0.4
     /// How far Home scrolls from the Spotlight to the rows.
     static let pullTravel: CGFloat = 990
     /// The pictures the pull blurs are drawn at one over this.
     static let pullShrink: CGFloat = 4
     /// The backdrop's blur and shade at rest.
     static let restRadius: CGFloat = 18
-    static let restShade: Double = 0.36
+    static let restShade: Double = 0.28
     private static let farRadius: CGFloat = 96
     /// The copy over the card is fully in by this share of the scroll.
     private static let coverShare: CGFloat = 0.05
@@ -1519,21 +1543,9 @@ private struct TVHomeSpotlightCarousel: View {
         let u = Double(min(1, max(0, (travelled - start) / (pullTravel * 0.55 - start))))
         return 1 - u * u * (3 - 2 * u)
     }
-    /// The picture and the backdrop draw back from the screen as they go
-    /// out of focus, both by the same amount about the screen's centre, so
-    /// they stay one picture. It starts once the copy has covered the card.
-    static func recede(travelled: CGFloat) -> CGFloat {
-        let start = pullTravel * coverShare
-        let u = min(1, max(0, (travelled - start) / (pullTravel * 0.6 - start)))
-        return 1 - 0.07 * u * u * (3 - 2 * u)
-    }
-    /// The text comes towards the screen as it goes up, the other way.
+    /// The text comes towards the screen as it goes up.
     static func advance(travelled: CGFloat) -> CGFloat {
         1 + 0.1 * min(1, travelled / (pullTravel * 0.55))
-    }
-    /// The logo's shadow on the picture, gone as the copy covers the card.
-    static func shadowOpacity(travelled: CGFloat) -> Double {
-        Double(1 - min(1, travelled / (pullTravel * coverShare)))
     }
     /// The backdrop fading into the page, once it is well out of focus.
     static func leavingOpacity(travelled: CGFloat, down: Bool) -> Double {
@@ -1680,6 +1692,7 @@ private struct TVHomeSpotlightCarousel: View {
                                                                    : nil,
                                                                onReady: {
                                             readyPositions[position] = slide.id
+                                            if position == visualPosition, !ambience.ready { ambience.ready = true }
                                             revealPendingSlide()
                                         })
                                         .id(slide.id)
@@ -1701,13 +1714,13 @@ private struct TVHomeSpotlightCarousel: View {
                                     // belongs to the picture.
                                     ZStack(alignment: .topTrailing) {
                                         Color.clear
-                                        if slides.count > 1, !voiceOverEnabled, !ambience.recessed, abs(position - visualPosition) <= 1 {
+                                        if slides.count > 1, !voiceOverEnabled, !ambience.recessed, ambience.ready, abs(position - visualPosition) <= 1 {
                                             cycleProgressPill(at: position)
                                                 .padding(.top, Self.pictureHeight + 20)
                                                 .padding(.trailing, 26)
+                                                .modifier(TVSpotlightHeldPicture())
                                         }
                                     }
-                                    .modifier(TVSpotlightHeldPicture())
                                 }
                             }
                             .buttonStyle(TVSpotlightButtonStyle())
@@ -1801,6 +1814,7 @@ private struct TVHomeSpotlightCarousel: View {
             if visible { completeInitialPresentationIfReady() }
         }
         .onDisappear {
+            if ambience.sliding { ambience.sliding = false }
             isOnScreen = false
             pauseCycle()
             onFocusChange(false)
@@ -1875,7 +1889,7 @@ private struct TVHomeSpotlightCarousel: View {
         }
     }
 
-    /// A small pill in each card's bottom-right corner that fills over the
+    /// A small pill under each card's picture, at its bottom-right corner, that fills over the
     /// slide's six seconds, so it's clear the Spotlight moves on by itself.
     /// Cards before the current one show it full and cards after it show
     /// it empty, so moving forward the old card leaves full and the new one
@@ -2044,6 +2058,12 @@ private struct TVSpotlightZoomSource: ViewModifier {
 private struct TVSpotlightFocusRing: View {
     let artworkURL: String?
     let isFocused: Bool
+    /// How much of the bottom edge, from the left, has no outline: the
+    /// logo or title crosses it there, and no line should show through its
+    /// letters. The gap takes in the bottom-left corner: the left edge
+    /// fades out on its way down to it, and the bottom edge fades back in
+    /// over the gap's last 110 points, so the outline never just stops.
+    var gapWidth: CGFloat = 0
 
     var body: some View {
         // Read only prepared colour; a missing tint keeps the white outline.
@@ -2060,6 +2080,29 @@ private struct TVSpotlightFocusRing: View {
                 ], startPoint: .topLeading, endPoint: .bottomTrailing),
                 lineWidth: 1.5
             )
+            .mask {
+                ZStack(alignment: .bottomLeading) {
+                    Color.black
+                    if gapWidth > 0 {
+                        LinearGradient(stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 1 - 110 / gapWidth),
+                            .init(color: .clear, location: 1)
+                        ], startPoint: .leading, endPoint: .trailing)
+                            .mask {
+                                LinearGradient(stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .black, location: 0.7),
+                                    .init(color: .black, location: 1)
+                                ], startPoint: .top, endPoint: .bottom)
+                            }
+                            .frame(width: gapWidth, height: 220)
+                            .blendMode(.destinationOut)
+                    }
+                }
+                .compositingGroup()
+            }
+            // The gap is cut before this, so outline and gap are one image.
             // Drawn once into a flat image, so fading it only changes that
             // image's opacity. Without this the gradient outline was redrawn
             // on the main thread for every frame of the fade, which halved
@@ -2201,42 +2244,15 @@ private struct TVHomeSpotlightArtwork: View {
     @State private var model = TVSpotlightArtworkModel()
     @State private var logo: UIImage?
 
-    private static let fadeStops: [Gradient.Stop] = {
-        let anchors: [(Double, Double)] = [(0, 0), (0.28, 0.02), (0.45, 0.08), (0.72, 0.4), (1, 0.82)]
-        return (0...128).map { step in
-            let x = Double(step) / 128
-            let segment = (0..<anchors.count - 1).first { x <= anchors[$0 + 1].0 } ?? anchors.count - 2
-            let (start, from) = anchors[segment]
-            let (end, to) = anchors[segment + 1]
-            let t = (x - start) / (end - start)
-            let eased = t * t * (3 - 2 * t)
-            return .init(color: .black.opacity(from + (to - from) * eased), location: x)
-        }
-    }()
-
-    private static let fadeDither: UIImage = {
-        let size = 128
-        var seed: UInt32 = 0x56495649
-        var pixels = [UInt8](repeating: 0, count: size * size)
-        for index in pixels.indices {
-            seed = seed &* 1664525 &+ 1013904223
-            pixels[index] = UInt8(truncatingIfNeeded: seed >> 24)
-        }
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
-              let image = CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 8,
-                                  bytesPerRow: size, space: CGColorSpaceCreateDeviceGray(),
-                                  bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
-                                  decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return UIImage() }
-        return UIImage(cgImage: image)
-    }()
-
     /// The centred card starts 60 points in from the screen edge (the
     /// carousel's margin), so this puts the logo and details on the detail
     /// pages' logo edge and the logo flies straight up when a title opens.
     private static let contentLeadingInset = TVDetailHeroLayout.horizontalInset - 60
-    /// The top of the logo's 200-point box, which ends 40 points under the
-    /// picture.
-    private static let textTop = TVHomeSpotlightCarousel.pictureHeight + 40 - 200
+    /// The box the logo is fitted into, from its bottom-left corner.
+    private static let logoBox = CGSize(width: 680, height: 225)
+    /// The top of the logo's box, which ends 60 points under the picture,
+    /// so a good part of the logo hangs over the picture's bottom edge.
+    private static let textTop = TVHomeSpotlightCarousel.pictureHeight + 60 - logoBox.height
     /// How much further than the picture the text, and the logo's shadow,
     /// travel while the carousel slides. The shadow moves less than the
     /// logo, as it lies on the picture behind it.
@@ -2245,9 +2261,20 @@ private struct TVHomeSpotlightArtwork: View {
 
     /// How wide the logo, or the title standing in for it, is where it
     /// crosses the picture's bottom edge.
+    private func logoScale(_ logo: UIImage) -> CGFloat {
+        min(Self.logoBox.width / logo.size.width, Self.logoBox.height / logo.size.height)
+    }
+
+    /// How far the logo's shadow falls from it: further for a taller logo,
+    /// and never more than about a third of its height, past which it
+    /// reads as a second logo.
+    private func shadowOffset(_ logo: UIImage) -> CGSize {
+        TVSpotlightLogoFlight.shadowOffset(logoHeight: logo.size.height * logoScale(logo))
+    }
+
     private var edgeCrossingWidth: CGFloat {
         if let logo, logo.size.width > 0, logo.size.height > 0 {
-            return logo.size.width * min(600 / logo.size.width, 200 / logo.size.height)
+            return logo.size.width * logoScale(logo)
         }
         let font = UIFont.systemFont(ofSize: 62, weight: .bold)
         let width = (slide.content.title as NSString).size(withAttributes: [.font: font]).width
@@ -2256,8 +2283,8 @@ private struct TVHomeSpotlightArtwork: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // The whole screen's picture, centred on the card, so the card
-            // shows the part of it that sits behind it.
+            // The whole screen's picture, placed where the screen has it, so
+            // the card's picture shows the part of it that sits behind it.
             let artworkSize = TVHomeSpotlightCarousel.screen
             // From the card's fixed size, not this view's measured one. The
             // image loader keeps the first `onLayout` it was given, and on a
@@ -2281,6 +2308,15 @@ private struct TVHomeSpotlightArtwork: View {
                                                  })
                             .offset(x: -inset.x, y: -inset.y)
                     }
+                    // The picture's edges fall into shadow, as the far wall
+                    // of a recess does where the sides meet it. This is
+                    // what sets the picture back instead of lifting it.
+                    Image(uiImage: TVSpotlightLogoFlight.recessShade)
+                        .resizable(capInsets: EdgeInsets(top: TVSpotlightLogoFlight.recessCap, leading: TVSpotlightLogoFlight.recessCap,
+                                                         bottom: TVSpotlightLogoFlight.recessCap, trailing: TVSpotlightLogoFlight.recessCap),
+                                   resizingMode: .stretch)
+                        .opacity(TVSpotlightLogoFlight.recessOpacity)
+                        .frame(width: geometry.size.width, height: pictureHeight)
                     // The logo's shadow, cast on the picture only: it stops
                     // at the picture's edge, as a shadow would for something
                     // held in front of it, which is what lifts the logo off.
@@ -2289,19 +2325,24 @@ private struct TVHomeSpotlightArtwork: View {
                             .renderingMode(.template)
                             .resizable().scaledToFit()
                             .foregroundStyle(.black)
-                            .frame(width: 600, height: 200, alignment: .bottomLeading)
-                            .blur(radius: 16)
-                            .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == zoomSourceID ? 0 : 0.7)
-                            .offset(x: Self.contentLeadingInset + 14, y: Self.textTop + 22)
+                            .frame(width: Self.logoBox.width, height: Self.logoBox.height, alignment: .bottomLeading)
+                            .blur(radius: TVSpotlightLogoFlight.shadowRadius)
+                            // Blurred once into a flat image, with room
+                            // around it so the blur isn't cut off.
+                            .padding(72).drawingGroup().padding(-72)
+                            // Always there: the flying copy of the logo
+                            // takes off from over it and lands back on it,
+                            // and the picture's copy covers and uncovers it
+                            // in between, so it is the only shadow the logo
+                            // ever has and nothing swaps.
+                            .opacity(Double(TVSpotlightLogoFlight.shadowOpacity))
+                            .offset(x: Self.contentLeadingInset + shadowOffset(logo).width,
+                                    y: Self.textTop + shadowOffset(logo).height)
                             // As wide as the card: the depth effect measures
                             // from its view's centre.
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .modifier(TVSpotlightForeground(depth: Self.shadowDepth))
-                            .visualEffect { content, proxy in
-                                let travelled = max(0, TVHomeSpotlightCarousel.topInset
-                                                    - proxy.frame(in: .scrollView(axis: .vertical)).minY)
-                                return content.opacity(TVHomeSpotlightCarousel.shadowOpacity(travelled: travelled))
-                            }
+
                     }
                 }
                 .frame(width: geometry.size.width, height: pictureHeight, alignment: .topLeading)
@@ -2313,38 +2354,17 @@ private struct TVHomeSpotlightArtwork: View {
                 if let focusRing {
                     TVSpotlightFocusRing(
                         artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl,
-                        isFocused: focusRing
+                        isFocused: focusRing,
+                        gapWidth: Self.contentLeadingInset + edgeCrossingWidth + 110
                     )
                     .frame(width: geometry.size.width, height: pictureHeight)
-                    // No outline where the logo or title crosses the bottom
-                    // edge, so no line shows through its letters. The gap
-                    // takes in the bottom-left corner: the left edge fades
-                    // out on its way down to it, and the bottom edge fades
-                    // back in past the logo, so the outline never just stops.
-                    .mask {
-                        let gapWidth = Self.contentLeadingInset + edgeCrossingWidth + 110
-                        ZStack(alignment: .bottomLeading) {
-                            Color.black
-                            LinearGradient(stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black, location: 1 - 110 / gapWidth),
-                                .init(color: .clear, location: 1)
-                            ], startPoint: .leading, endPoint: .trailing)
-                                .mask {
-                                    LinearGradient(stops: [
-                                        .init(color: .clear, location: 0),
-                                        .init(color: .black, location: 0.7),
-                                        .init(color: .black, location: 1)
-                                    ], startPoint: .top, endPoint: .bottom)
-                                }
-                                .frame(width: gapWidth, height: 220)
-                                .blendMode(.destinationOut)
-                        }
-                        .compositingGroup()
-                    }
                 }
                 }
                 .modifier(TVSpotlightSlideRecede())
+                // Nothing until the picture and logo are in, then all of it
+                // together, in place of a block of the slide's colour.
+                .opacity(artworkReady && logoReady ? 1 : 0)
+                .animation(.easeOut(duration: TVHomeSpotlightCarousel.arrival), value: artworkReady && logoReady)
                 .modifier(TVSpotlightHeldPicture())
                 if let focusPull {
                     // No size of its own, so the screen-sized pull doesn't
@@ -2364,14 +2384,20 @@ private struct TVHomeSpotlightArtwork: View {
                                                                       image: logo, frame: frame)
                             }
                             .opacity(TVSpotlightLogoFlight.shared.hiddenSourceID == zoomSourceID ? 0 : 1)
-                            .frame(width: 600, height: 200, alignment: .bottomLeading)
-                            .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 2)
+                            .frame(width: Self.logoBox.width, height: Self.logoBox.height, alignment: .bottomLeading)
+                            // A light one close in for definition; the long
+                            // one on the picture does the lifting.
+                            .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 2)
+                    } else if !logoReady {
+                        // Still loading: hold the logo's place, and show no
+                        // title that the logo would then replace.
+                        Color.clear.frame(width: Self.logoBox.width, height: Self.logoBox.height)
                     } else {
                         Text(slide.content.title)
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                            .frame(width: TVSpotlightOverview.width, height: 200, alignment: .bottomLeading)
+                            .frame(width: TVSpotlightOverview.width, height: Self.logoBox.height, alignment: .bottomLeading)
                             .shadow(color: .black.opacity(0.5), radius: 22, x: 0, y: 6)
                     }
                     Group {
@@ -2412,9 +2438,13 @@ private struct TVHomeSpotlightArtwork: View {
                 // logo straddles its bottom edge.
                 .padding(.top, Self.textTop)
                 .padding(.leading, Self.contentLeadingInset)
-                .padding(.trailing, 48)
+                // The same both sides, so the lines inside measure their
+                // depth from the card's centre and rest exactly in place.
+                .padding(.trailing, Self.contentLeadingInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(TVSpotlightForeground(depth: Self.textDepth))
+                .opacity(artworkReady && logoReady ? 1 : 0)
+                .animation(.easeOut(duration: TVHomeSpotlightCarousel.arrival), value: artworkReady && logoReady)
                 .visualEffect { content, proxy in
                     let travelled = max(0, TVHomeSpotlightCarousel.topInset
                                         - proxy.frame(in: .scrollView(axis: .vertical)).minY)
