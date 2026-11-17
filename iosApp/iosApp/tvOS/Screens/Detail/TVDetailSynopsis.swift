@@ -49,13 +49,13 @@ struct TVDetailSynopsisButton: View {
                 // lines hold about what they did at 22 points.
                 Text(verbatim: overview)
                     .font(.system(size: 28))
-                    .foregroundStyle(Color.white.opacity(0.92))
+                    .foregroundStyle(Color.vividTextBody)
                     .lineLimit(isCompact ? 4 : 3)
                     .fixedSize(horizontal: false, vertical: true)
                 if !isCompact {
                     Text("Read more")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.65))
+                        .foregroundStyle(Color.vividSecondaryText)
                 }
             }
             .frame(maxWidth: maxWidth, alignment: .leading)

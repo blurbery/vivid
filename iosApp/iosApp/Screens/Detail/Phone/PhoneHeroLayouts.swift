@@ -192,7 +192,7 @@ private struct MobileRatingRowItems: View {
                 rating: score,
                 logoHeight: 14,
                 font: .system(size: 14, weight: .semibold),
-                color: Color.vividOnSurface.opacity(0.92)
+                color: Color.vividTextStrong
             )
         }
     }
@@ -208,7 +208,7 @@ private struct MobileHeroOverview: View {
     var body: some View {
         Text(verbatim: text)
             .font(.system(size: 15, weight: .regular))
-            .foregroundStyle(Color.vividOnSurface.opacity(0.80))
+            .foregroundStyle(Color.vividTextBody)
             .lineSpacing(3)
             .lineLimit(3)
             .multilineTextAlignment(isCentred ? .center : .leading)
@@ -238,7 +238,7 @@ private struct MobileHeroCredit: View {
     var body: some View {
         Text(verbatim: text)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(Color.vividOnSurface.opacity(0.58))
+            .foregroundStyle(Color.vividSecondaryText)
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: alignment)
             .onDuoDetail { credit in
@@ -289,7 +289,7 @@ private struct MobileTitleBlock: View {
                 }
                 Text(verbatim: content.title)
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.90))
+                    .foregroundStyle(Color.vividTextStrong)
                     .lineLimit(2)
                     .multilineTextAlignment(alignment.textAlignment)
             }
@@ -317,7 +317,7 @@ private struct MobileTitleBlock: View {
                     Text(verbatim: subtitle.uppercased())
                         .font(.system(size: 13, weight: .heavy))
                         .tracking(1.2)
-                        .foregroundStyle(Color.vividOnSurface.opacity(0.80))
+                        .foregroundStyle(Color.vividTextStrong)
                         .lineLimit(2)
                         .multilineTextAlignment(alignment.textAlignment)
                 }
@@ -396,13 +396,15 @@ private struct MobileTabletHeading: View {
         }
     }
 
-    /// The first part bright, the rest dimmer after a middle dot.
+    /// The first part semibold and primary, the rest at the line's medium
+    /// weight and body level after a middle dot, as on Apple TV.
     private static func heading(first: String, rest: [String]) -> AttributedString {
         var text = AttributedString(first)
-        text.foregroundColor = Color.white.opacity(0.92)
+        text.swiftUI.font = .system(size: 15, weight: .semibold)
+        text.foregroundColor = Color.vividTextPrimary
         if !rest.isEmpty {
             var tail = AttributedString(" · " + rest.joined(separator: " · "))
-            tail.foregroundColor = Color.white.opacity(0.70)
+            tail.foregroundColor = Color.vividTextBody
             text += tail
         }
         return text
@@ -418,7 +420,7 @@ private struct MobileTabletTechnicalRow: View {
                 if !content.releaseFacts.isEmpty {
                     Text(verbatim: content.releaseFacts.joined(separator: " · "))
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.84))
+                        .foregroundStyle(Color.vividTextBody)
                 }
                 ForEach(Array(content.qualityBadges.enumerated()), id: \.offset) { _, badge in
                     MobileTextBadge(text: badge, isFilled: MobileHeroRules.isResolutionBadge(badge))
@@ -428,7 +430,7 @@ private struct MobileTabletTechnicalRow: View {
                         rating: score,
                         logoHeight: 15,
                         font: .system(size: 15, weight: .semibold),
-                        color: Color.white.opacity(0.92)
+                        color: Color.vividTextStrong
                     )
                     .padding(.leading, 2)
                 }
@@ -672,7 +674,7 @@ private struct MobileExpandedHero<Actions: View, UnderOverview: View>: View {
                 Text(verbatim: eyebrow.uppercased())
                     .font(.system(size: 11, weight: .bold))
                     .tracking(1.2)
-                    .foregroundStyle(Color.vividOnSurface.opacity(0.70))
+                    .foregroundStyle(Color.vividSecondaryText)
             }
             MobileTitleBlock(content: content, alignment: .leading, logoHeight: 122)
                 .frame(maxWidth: 430, alignment: .leading)

@@ -295,7 +295,8 @@ The server's markers then fill only the kinds neither service supplied.
 While the toggle is off, no public lookup is made and only the server's markers are used.
 Errors leave the markers already published intact, and cancellation, settings and session/content/file guards apply after each request.
 Neither lookup blocks playback.
-A skipped lookup (an episode with no series, season or episode number, or a series with no TMDB or IMDb ID), a failed series lookup, and a TheIntroDB or IntroDB request that fails in transport or decoding each write a `[CMP-MARKERS]` log line with the error's type, never its text.
+A skipped lookup (an episode with no series, season or episode number, or a series with no TMDB or IMDb ID) writes a `[CMP-MARKERS]` log line with the reason.
+A failed series lookup, and a TheIntroDB or IntroDB request that fails in transport or decoding, each write a `[CMP-MARKERS]` log line with the error's type, never its text.
 A service that answers with anything other than 200 (a 404, a rate limit or a server error) counts as having no markers and writes no log line.
 Each provider has a bounded one-hour in-memory cache and uses an ephemeral session without media-server credentials or API keys.
 

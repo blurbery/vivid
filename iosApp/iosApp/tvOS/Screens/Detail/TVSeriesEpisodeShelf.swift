@@ -553,13 +553,13 @@ private struct TVSeasonSummary: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: facts)
                 .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.vividSecondaryText)
                 .lineLimit(1)
-            // The same size and brightness as the series synopsis in the
-            // hero, so the two read as one voice.
+            // The same size and text level (`vividTextBody`) as the series
+            // synopsis in the hero, so the two read as one voice.
             Text(verbatim: synopsis)
                 .font(.system(size: 28))
-                .foregroundStyle(Color.white.opacity(0.92))
+                .foregroundStyle(Color.vividTextBody)
                 .lineLimit(4)
                 .frame(maxWidth: maxWidth, alignment: .leading)
         }
@@ -706,7 +706,7 @@ private struct TVSeasonSelectorLabel: View {
                         .opacity(hasNext ? 1 : 0.3)
                 }
                 .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(Color.white.opacity(isFocused ? 1 : 0.45))
+                .foregroundStyle(isFocused ? Color.white : Color.vividTextTertiary)
                 // Level with the name, not with the room under it for
                 // the focus bar.
                 .padding(.bottom, 8)

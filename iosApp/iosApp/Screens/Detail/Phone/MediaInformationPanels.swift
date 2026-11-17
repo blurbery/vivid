@@ -18,7 +18,7 @@ struct DetailMediaSection: View {
                         DetailMediaDivider()
                         Text(verbatim: name)
                             .font(.system(size: DetailMediaPanelSizes.fileName))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.vividSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .mediaValueSelection()
                     }
@@ -47,7 +47,7 @@ struct DetailMediaSection: View {
         } else {
             Text("Media information is unavailable for this file.")
                 .font(.system(size: DetailMediaPanelSizes.unavailable))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.vividSecondaryText)
         }
     }
 }
@@ -124,7 +124,7 @@ private struct DetailMediaFieldGrid: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(verbatim: field.label.uppercased())
                         .font(.system(size: DetailMediaPanelSizes.label, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.vividSecondaryText)
                         .lineLimit(2, reservesSpace: true)
                     Text(verbatim: field.value)
                         .font(.system(size: DetailMediaPanelSizes.value))

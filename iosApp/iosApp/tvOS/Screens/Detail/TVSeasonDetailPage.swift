@@ -240,7 +240,7 @@ struct TVDetailFactsBlock: View {
                         .textCase(.uppercase)
                         .font(.system(size: 16, weight: .semibold))
                         .tracking(1)
-                        .foregroundStyle(Color.white.opacity(0.55))
+                        .foregroundStyle(Color.vividTextTertiary)
                     Text(verbatim: fact.value)
                         .font(.system(size: 20))
                         .foregroundStyle(.white)
