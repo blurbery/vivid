@@ -147,7 +147,7 @@ AC-3 and E-AC-3 use compressed output at normal speed; other formats use decoded
 Receiver output requires device verification.
 Settings > Playback > Audio holds Audio Language, Volume Boost (125%, 150%, 175% or 200% of the standard level) and Enhanced Dialogue, which lowers music and effects so voices stand out.
 While either enhancement is on, AC-3 and E-AC-3 are decoded at every speed, so Dolby Atmos plays as surround sound; see [Volume Boost and Enhanced Dialogue](../cores/player-engine.md#volume-boost-and-enhanced-dialogue).
-The Intro & Credit Skipper toggle controls marker loading, with separate automatic intro/credit skip switches.
+The Intro & Credit Skipper toggle controls the public TheIntroDB and IntroDB lookups, with separate automatic intro/credit skip switches that stay available while it is off.
 Hide Episode Spoilers, off by default, blurs the preview and scrambles the description of episodes after the viewer’s current position, keeping the episode title readable, in the series, season and episode page lists on iPhone, iPad and Apple TV, for Silo, Emby and Jellyfin alike.
 The position is the episode in progress, otherwise the first unwatched episode of the season the viewer is up to; watched, in-progress and current episodes stay readable, Specials are never covered, and opening a covered episode shows its page as normal.
 The softened preview is the still decoded at 64 by 36 points (multiplied by the screen scale) and blurred once in the image pipeline, then cached like any other decoded image, so no blur filter runs per frame and the full-size decode is skipped; if the blur cannot be produced the card shows its placeholder rather than the sharp still.
@@ -249,9 +249,11 @@ The first start keeps a small decoded buffer ready; it does not wait for the ful
 ### Vivid-owned intro, recap and credits markers
 
 Playback > Intro & Credit Skipper is enabled by default and preserves an explicitly saved Off choice.
-Valid selected-file intro/credits markers appear first.
-TheIntroDB fills missing ranges; IntroDB fills remaining intro, credits or recap ranges.
-Separate automatic-skip settings control automatic skipping, and valid ranges supply manual prompts, except for credits that open Next Up (see above), which get neither an automatic skip nor, on Apple TV, a Skip Credits prompt.
+The server's valid markers for the selected file appear first, so prompts are there while a lookup runs.
+While the toggle is on, every episode is looked up on TheIntroDB, whose markers take priority; IntroDB fills any intro, credits or recap TheIntroDB lacks, and the server's markers fill only what neither service has.
+While it is off, no public lookup is made and only the server's markers are used.
+Silo supplies the selected file's intro and credits, Jellyfin its media segments (intro, credits and recap) and Emby its chapter markers (intro and credits).
+Separate automatic-skip settings control automatic skipping whichever source supplied the markers, and valid ranges supply manual prompts, except for credits that open Next Up (see above), which get neither an automatic skip nor, on Apple TV, a Skip Credits prompt.
 On iOS, prompts stay hidden while playback is loading or buffering.
 
 TheIntroDB requests prefer the series TMDb ID and fall back to IMDb; IntroDB requests use the series IMDb ID and episode numbering.
@@ -265,6 +267,7 @@ See [marker timing](architecture.md#introdb-marker-timing) for duration handling
 Run `bash scripts/ci/check-introdb-client.sh` for the focused request and range checks.
 Earlier IntroDB playback was verified on Silo-backed Apple TV.
 TheIntroDB-first lookups through its v4 API, recaps and wider provider/device coverage still need verification on device.
+Jellyfin media-segment and Emby chapter markers haven't been checked against a live server.
 
 Both subtitle menus use the same embedded-track inventory and ordering.
 In the player and the detail menus, Silo, Emby and Jellyfin sessions also list the server's text subtitle files beside the embedded tracks, and an OpenSubtitles file chosen for a title comes back when that title plays again.

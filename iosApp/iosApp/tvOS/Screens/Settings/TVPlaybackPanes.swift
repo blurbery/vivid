@@ -104,7 +104,7 @@ extension TVSettingsView {
                 }
                 .focused(focus, equals: .showNextUp)
                 TVSettingsToggleRow(title: "Intro & Credit Skipper", isOn: player.introDBEnabled,
-                                    detail: "Show intro and credit skip prompts when timestamps are available.") {
+                                    detail: "Look up skip timestamps on TheIntroDB and IntroDB. When it’s off, your server’s own markers are used.") {
                     player.introDBEnabled.toggle()
                 }
                 TVSettingsToggleRow(title: "Auto-Skip Intros & Recaps", isOn: model.autoSkipIntro) {
@@ -112,13 +112,11 @@ extension TVSettingsView {
                     model.autoSkipIntro = enabled
                     Task { model.setAutoSkipIntro(enabled) }
                 }
-                .disabled(!player.introDBEnabled)
                 TVSettingsToggleRow(title: "Auto-Skip Credits", isOn: model.autoSkipCredits) {
                     let enabled = !model.autoSkipCredits
                     model.autoSkipCredits = enabled
                     Task { model.setAutoSkipCredits(enabled) }
                 }
-                .disabled(!player.introDBEnabled)
                 TVSettingsToggleRow(title: "Hide Episode Spoilers", isOn: player.hideFutureEpisodeSpoilers,
                                     detail: "Blur the preview and scramble the description of episodes you haven’t reached yet.") {
                     player.hideFutureEpisodeSpoilers.toggle()

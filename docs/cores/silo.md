@@ -37,7 +37,9 @@ The Silo core provides the source, metadata and server operations those features
 Player fixes belong to Vivid unless the defect is in Silo’s data or protocol translation.
 
 Skip-marker selection belongs to Vivid.
-Selected-file intro/credits markers take priority; TheIntroDB fills missing ranges, preferring TMDb identity and falling back to IMDb; IntroDB fills any left using series IMDb identity and episode numbering.
+Silo supplies the selected file's intro/credits markers; it has no recap marker.
+While the Intro & Credit Skipper is on, an episode's TheIntroDB markers take priority, preferring TMDb identity and falling back to IMDb; IntroDB fills any kind TheIntroDB lacks using series IMDb identity and episode numbering, and the selected-file markers fill only what neither has.
+While it is off, only the selected-file markers are used.
 The connection supplies those identifiers.
 Item-level markers from other editions and realtime marker updates do not override the selected file.
 See [marker timing](../playback/architecture.md#introdb-marker-timing).

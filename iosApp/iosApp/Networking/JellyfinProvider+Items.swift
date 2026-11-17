@@ -161,8 +161,12 @@ struct JellyfinAdapter {
         value["progressUpdatedAt"] = user["LastPlayedDate"]
         value["studios"] = (raw["Studios"] as? [[String: Any]])?.compactMap { $0["Name"] as? String }
 
+        // Per ID, so one null or non-text value (which Jellyfin can send)
+        // doesn't drop the IMDb and TMDB IDs the skip lookups need.
         let providers = Dictionary(
-            (raw["ProviderIds"] as? [String: String] ?? [:]).map { ($0.key.lowercased(), $0.value) }
+            (raw["ProviderIds"] as? [String: Any] ?? [:]).compactMap { key, value in
+                (value as? String).map { (key.lowercased(), $0) }
+            }
         ) { _, last in last }
         value["imdbId"] = providers["imdb"]
         value["tmdbId"] = providers["tmdb"]
@@ -265,7 +269,80 @@ struct JellyfinAdapter {
         if let defaultIndex = raw["DefaultAudioStreamIndex"] as? Int {
             value["effectiveAudioTrackIndex"] = audios.firstIndex { $0["Index"] as? Int == defaultIndex }
         }
+        for (key, range) in Self.markers(segments: raw[Self.mediaSegmentsKey]) { value[key] = range }
         return value
+    }
+
+    // MARK: - Skip markers
+
+    /// Where playback keeps a media source's segments (see
+    /// `addingMediaSegments(to:)`) until the source becomes a file version.
+    static let mediaSegmentsKey = "VividMediaSegments"
+
+    /// A media source's intro, credits and recap from Jellyfin's media
+    /// segments (10.10 and later), as `{start, end}` ranges in seconds. The
+    /// earliest valid segment of each kind wins, as with TheIntroDB.
+    static func markers(segments: Any?) -> [String: Any] {
+        let items = (segments as? [String: Any])?["Items"] as? [[String: Any]] ?? []
+        var value: [String: Any] = [:]
+        for (type, key) in [("intro", "intro"), ("outro", "credits"), ("recap", "recap")] {
+            let ranges = items.filter { ($0["Type"] as? String)?.lowercased() == type }.compactMap { segment -> (Double, Double)? in
+                guard segment["StartTicks"] is NSNumber, segment["EndTicks"] is NSNumber else { return nil }
+                let start = seconds(segment["StartTicks"]), end = seconds(segment["EndTicks"])
+                return end > start ? (start, end) : nil
+            }
+            if let first = ranges.min(by: { $0.0 < $1.0 }) {
+                value[key] = ["start": first.0, "end": first.1]
+            }
+        }
+        return value
+    }
+
+    /// The item with each media source's segments attached, for playback.
+    /// Segments are optional: an older server, a failed request or one that
+    /// takes longer than two seconds leaves a source without them, so this
+    /// never fails or holds up playback for long.
+    func addingMediaSegments(to raw: [String: Any]) async -> [String: Any] {
+        guard var sources = raw["MediaSources"] as? [[String: Any]] else { return raw }
+        let ids = Set(sources.compactMap { $0["Id"] as? String }.filter { (try? JellyfinConnection.id($0)) != nil })
+        guard !ids.isEmpty else { return raw }
+        enum Outcome: Sendable { case found(String, Data), missing, deadline }
+        let connection = connection
+        let found = await withTaskGroup(of: Outcome.self) { group -> [String: Data] in
+            for id in ids {
+                group.addTask {
+                    guard let data = try? await connection.data("GET", "/MediaSegments/\(JellyfinConnection.id(id))") else {
+                        return .missing
+                    }
+                    return .found(id, data)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                return .deadline
+            }
+            var found: [String: Data] = [:]
+            var remaining = ids.count
+            for await outcome in group {
+                switch outcome {
+                case .found(let id, let data): found[id] = data; remaining -= 1
+                case .missing: remaining -= 1
+                case .deadline: remaining = 0
+                }
+                if remaining == 0 { break }
+            }
+            group.cancelAll()
+            return found
+        }
+        guard !found.isEmpty else { return raw }
+        for index in sources.indices {
+            guard let id = sources[index]["Id"] as? String, let data = found[id],
+                  let reply = try? JSONSerialization.jsonObject(with: data) else { continue }
+            sources[index][Self.mediaSegmentsKey] = reply
+        }
+        var result = raw
+        result["MediaSources"] = sources
+        return result
     }
 
     /// The usual name for a frame size, allowing for cropped widths and

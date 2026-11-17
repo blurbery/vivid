@@ -708,6 +708,8 @@ struct FileVersion: Codable, Identifiable, Hashable {
     let chapters: [VersionChapter]?
     let intro: TimeRange?
     let credits: TimeRange?
+    /// Only Jellyfin's media segments supply a recap.
+    let recap: TimeRange?
     /// Server-current edition fields. `editionRaw` is the display label,
     /// while `editionKey` is the stable grouping key.
     let editionRaw: String?
@@ -739,6 +741,7 @@ struct FileVersion: Codable, Identifiable, Hashable {
         chapters: [VersionChapter]?,
         intro: TimeRange? = nil,
         credits: TimeRange? = nil,
+        recap: TimeRange? = nil,
         editionRaw: String? = nil,
         editionKey: String? = nil,
         edition: String? = nil,
@@ -761,6 +764,7 @@ struct FileVersion: Codable, Identifiable, Hashable {
         self.chapters = chapters
         self.intro = intro
         self.credits = credits
+        self.recap = recap
         self.editionRaw = editionRaw
         self.editionKey = editionKey
         self.edition = edition
@@ -786,6 +790,7 @@ struct FileVersion: Codable, Identifiable, Hashable {
         chapters = try c.decodeIfPresent([VersionChapter].self, forKey: .chapters)
         intro = try c.decodeIfPresent(TimeRange.self, forKey: .intro)
         credits = try c.decodeIfPresent(TimeRange.self, forKey: .credits)
+        recap = try c.decodeIfPresent(TimeRange.self, forKey: .recap)
         editionRaw = try c.decodeIfPresent(String.self, forKey: .editionRaw)
         editionKey = try c.decodeIfPresent(String.self, forKey: .editionKey)
         edition = try c.decodeIfPresent(String.self, forKey: .edition)

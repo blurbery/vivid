@@ -1174,6 +1174,32 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(EmbyAdapter.legacyHomeSectionTypes(settings:settings),["collections","nextup","resume"])
     }
 
+    func testChapterMarkersBecomeTheVersionsSkipMarkers() throws {
+        let chapters: [[String: Any]] = [
+            ["Name": "Chapter 1", "StartPositionTicks": 0, "MarkerType": "Chapter"],
+            ["Name": "Intro", "StartPositionTicks": 300_000_000, "MarkerType": "IntroStart"],
+            ["Name": "Intro End", "StartPositionTicks": 1_200_000_000, "MarkerType": "IntroEnd"],
+            ["Name": "Credits", "StartPositionTicks": 24_000_000_000, "MarkerType": "CreditsStart"],
+        ]
+        let raw: [String: Any] = ["Id": "source", "RunTimeTicks": 25_000_000_000]
+        let version: FileVersion = try EmbyAdapter.decode(adapter.version(raw, chapters: chapters))
+        XCTAssertEqual(version.intro, TimeRange(start: 30, end: 120))
+        XCTAssertEqual(version.credits, TimeRange(start: 2400, end: 2500), "Credits run to the end of the file")
+        XCTAssertNil(version.recap)
+        let plain: FileVersion = try EmbyAdapter.decode(adapter.version(raw, chapters: [chapters[0], chapters[1]]))
+        XCTAssertNil(plain.intro, "An intro start without an end is no marker")
+        XCTAssertNil(plain.credits)
+    }
+
+    func testOneNullProviderIDKeepsTheOthers() throws {
+        let value = try adapter.item([
+            "Id": "series", "Name": "Show", "Type": "Series",
+            "ProviderIds": ["Tmdb": "1396", "Imdb": "tt0903747", "TvRage": NSNull()],
+        ])
+        XCTAssertEqual(value["tmdbId"] as? String, "1396")
+        XCTAssertEqual(value["imdbId"] as? String, "tt0903747")
+    }
+
 }
 
 private final class LoadedRows: @unchecked Sendable {

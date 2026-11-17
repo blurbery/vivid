@@ -275,8 +275,7 @@ extension PlayerViewModel {
     /// episode with another one after it, running to the end of the file.
     /// Nil without a marker, where the prompt before the end still applies.
     var creditsNextUpRange: TimeRange? {
-        guard settings.introDBEnabled else { return nil }
-        return CreditsNextUpPolicy.range(
+        CreditsNextUpPolicy.range(
             credits: creditsRange,
             duration: duration,
             hasNextEpisode: nextUpEpisode != nil

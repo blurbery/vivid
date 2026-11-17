@@ -1186,6 +1186,48 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(prepared.transcodeSubtitles, ServerTranscodeSubtitles(burnedIndex: 3, failedIndex: nil, copiesVideo: false))
         XCTAssertEqual(prepared.session.subtitleUrls?.map(\.index), [2], "Only text travels beside the transcode")
     }
+
+    // MARK: - Skip markers
+
+    func testMediaSegmentsBecomeTheVersionsSkipMarkers() async throws {
+        var paths: [String] = []
+        let adapter = adapter { request in
+            paths.append(request.url!.path)
+            return (200, ["Items": [
+                ["Type": "Outro", "StartTicks": 25_000_000_000, "EndTicks": 26_000_000_000],
+                ["Type": "Intro", "StartTicks": 900_000_000, "EndTicks": 1_800_000_000],
+                ["Type": "Intro", "StartTicks": 100_000_000, "EndTicks": 600_000_000],
+                ["Type": "Recap", "StartTicks": 0, "EndTicks": 0],
+                ["Type": "Commercial", "StartTicks": 0, "EndTicks": 50_000_000],
+            ]])
+        }
+        let raw = await adapter.addingMediaSegments(to: ["MediaSources": [["Id": source]]])
+        XCTAssertEqual(paths, ["/jellyfin/MediaSegments/\(source)"])
+        let sources = try XCTUnwrap(raw["MediaSources"] as? [[String: Any]])
+        let version: FileVersion = try JSONDecoder().decode(
+            FileVersion.self, from: JSONSerialization.data(withJSONObject: adapter.version(sources[0])))
+        XCTAssertEqual(version.intro, TimeRange(start: 10, end: 60), "The earliest intro wins")
+        XCTAssertEqual(version.credits, TimeRange(start: 2500, end: 2600))
+        XCTAssertNil(version.recap, "An empty segment is ignored")
+    }
+
+    func testMissingMediaSegmentsNeverFailPlayback() async {
+        let adapter = adapter { _ in (404, [:]) }
+        let raw: [String: Any] = ["Id": item, "MediaSources": [["Id": source]]]
+        let result = await adapter.addingMediaSegments(to: raw)
+        let sources = result["MediaSources"] as? [[String: Any]]
+        XCTAssertNil(sources?.first?[JellyfinAdapter.mediaSegmentsKey])
+    }
+
+    func testOneNullProviderIDKeepsTheOthers() throws {
+        let adapter = adapter { _ in (200, [:]) }
+        let value = try adapter.item([
+            "Id": item, "Name": "Show", "Type": "Series",
+            "ProviderIds": ["Tmdb": "1396", "Imdb": "tt0903747", "TvRage": NSNull()],
+        ])
+        XCTAssertEqual(value["tmdbId"] as? String, "1396")
+        XCTAssertEqual(value["imdbId"] as? String, "tt0903747")
+    }
 }
 
 private final class JellyfinRequestStub: URLProtocol {

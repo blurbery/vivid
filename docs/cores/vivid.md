@@ -34,14 +34,17 @@ Equivalent behaviour still needs testing with each server; shared UI alone does 
 
 ## Intro and credits skipping belongs to Vivid
 
-The **Intro & Credit Skipper** toggle in Playback settings controls selected-file markers and public IntroDB/TheIntroDB lookups on iOS and tvOS.
+The **Intro & Credit Skipper** toggle in Playback settings controls the public TheIntroDB and IntroDB lookups on iOS and tvOS.
+The server's own markers for the selected file are used whether it is on or off.
 It defaults on and preserves an explicitly saved Off choice.
-Separate automatic-skip preferences control automatic skipping; valid markers also supply manual Skip Intro, Skip Recap and Skip Credits prompts.
+Separate automatic-skip preferences control automatic skipping; valid markers from any source also supply manual Skip Intro, Skip Recap and Skip Credits prompts.
 Credits that open Next Up are the exception; see [Playback](../playback/README.md).
 On iOS, prompts stay hidden during loading and buffering.
 
-Valid markers for the selected file take priority.
-TheIntroDB fills missing ranges, then IntroDB can fill missing intro, credits or recap ranges.
+The server's valid markers for the selected file are shown straight away while a lookup runs.
+While the toggle is on, every episode is looked up: TheIntroDB's markers take priority, IntroDB can fill any intro, credits or recap TheIntroDB lacks, and the server's markers fill only what neither has.
+While it is off, no public lookup is made and only the server's markers are used.
+Silo supplies the selected file's intro and credits, Jellyfin its media segments and Emby its chapter markers.
 Item-level markers from another edition and realtime server marker updates do not override this selection.
 IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb.
 Both use the season and episode number.
@@ -51,6 +54,7 @@ Offline playback does not load these skip markers.
 
 See [marker timing](../playback/architecture.md#introdb-marker-timing) for ordering, caching, duration validation and cancellation.
 Earlier IntroDB playback was verified on Silo-backed Apple TV; that does not establish device coverage of the TheIntroDB-first v4 lookups, recaps or every Emby route.
+Jellyfin media-segment and Emby chapter markers haven't been checked against a live server.
 Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
 
 ## Implementation references

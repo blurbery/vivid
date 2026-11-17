@@ -154,8 +154,14 @@ This does not establish live throttled-playback coverage.
 
 TMDb works through Vivid's [TMDb relay](../tmdb-relay.md), with no personal key.
 Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby path can resolve an IMDb ID through TMDb.
+`ProviderIds` are read one ID at a time, so a null or non-text value for one provider doesn't drop the series' IMDb and TMDb IDs.
 IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb.
 Both use season/episode numbers through the shared Intro & Credit Skipper toggle and separate automatic-skip switches.
+Emby's own skip markers come from the item's chapter markers: `MarkerType` `IntroStart` to the next `IntroEnd` is the intro, and `CreditsStart` to the end of the file is the credits.
+Emby has no recap marker.
+While the Intro & Credit Skipper is on, these fill only the kinds TheIntroDB and IntroDB lack; while it is off, they are used alone.
+See [marker timing](../playback/architecture.md#introdb-marker-timing).
+The chapter-marker path hasn't been checked against a live Emby server.
 Live Emby playback with these integrations still needs verification.
 
 Original-file downloads use the existing download manager with native Emby authentication and the server's download policy.
@@ -283,7 +289,7 @@ Sampled source image files remained readable.
 The internal server cause is unconfirmed; the tvOS request coalescing and bounded retry changes do not establish that this server issue is fixed.
 No server configuration was changed.
 
-Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding.
+Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB, chapter skip marker and trailer coverage remain outstanding.
 Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks.
 Use these limits when planning further TestFlight checks.
 

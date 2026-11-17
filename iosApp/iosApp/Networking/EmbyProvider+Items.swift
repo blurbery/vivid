@@ -144,8 +144,12 @@ struct EmbyAdapter {
         value["progressUpdatedAt"] = user["LastPlayedDate"]
         value["studios"] = (raw["Studios"] as? [[String: Any]])?.compactMap { $0["Name"] as? String }
 
+        // Per ID, so one null or non-text value (which Emby can send)
+        // doesn't drop the IMDb and TMDB IDs the skip lookups need.
         let providers = Dictionary(
-            (raw["ProviderIds"] as? [String: String] ?? [:]).map { ($0.key.lowercased(), $0.value) }
+            (raw["ProviderIds"] as? [String: Any] ?? [:]).compactMap { key, value in
+                (value as? String).map { (key.lowercased(), $0) }
+            }
         ) { _, last in last }
         value["imdbId"] = providers["imdb"]
         value["tmdbId"] = providers["tmdb"]
@@ -230,6 +234,31 @@ struct EmbyAdapter {
         value["hdr"] = (video["VideoRange"] as? String ?? "SDR") != "SDR"
         if let defaultIndex = raw["DefaultAudioStreamIndex"] as? Int {
             value["effectiveAudioTrackIndex"] = audios.firstIndex { $0["Index"] as? Int == defaultIndex }
+        }
+        for (key, range) in Self.markers(chapters: chapters, duration: Self.seconds(raw["RunTimeTicks"])) {
+            value[key] = range
+        }
+        return value
+    }
+
+    // MARK: - Skip markers
+
+    /// The intro and credits from Emby's chapter markers, as `{start, end}`
+    /// ranges in seconds: `IntroStart` to the next `IntroEnd`, and
+    /// `CreditsStart` to the end of the file. Emby has no recap marker.
+    static func markers(chapters: [[String: Any]], duration: Double) -> [String: Any] {
+        func starts(_ type: String) -> [Double] {
+            chapters.filter { ($0["MarkerType"] as? String)?.lowercased() == type.lowercased() }
+                .compactMap { $0["StartPositionTicks"] is NSNumber ? seconds($0["StartPositionTicks"]) : nil }
+                .sorted()
+        }
+        var value: [String: Any] = [:]
+        if let start = starts("IntroStart").first,
+           let end = starts("IntroEnd").first(where: { $0 > start }) {
+            value["intro"] = ["start": start, "end": end]
+        }
+        if let start = starts("CreditsStart").first, duration > start {
+            value["credits"] = ["start": start, "end": duration]
         }
         return value
     }

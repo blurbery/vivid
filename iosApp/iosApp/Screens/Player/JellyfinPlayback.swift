@@ -142,7 +142,8 @@ final class JellyfinPlayback {
     static func loadMetadata(contentID: String) async throws -> Metadata {
         let connection = try await JellyfinConnection.current()
         let adapter = JellyfinAdapter(connection: connection)
-        let raw = try await adapter.rawItem(contentID)
+        // The server's own skip markers ride along on each media source.
+        let raw = await adapter.addingMediaSegments(to: try await adapter.rawItem(contentID))
         let payload = try await adapter.watchWithPreferences(raw)
         let detail = try JSONDecoder().decode(WatchDetail.self, from: JSONSerialization.data(withJSONObject: payload))
         try await connection.validate()

@@ -69,6 +69,7 @@ The core follows the [official Jellyfin API specification](https://api.jellyfin.
 | Filters / similar titles | `GET /Items/Filters`, `/Items/{id}/Similar` |
 | Artwork | `GET /Items/{id}/Images/{type}` |
 | Playback negotiation | `POST /Items/{id}/PlaybackInfo` |
+| Skip markers | `GET /MediaSegments/{mediaSourceId}` |
 | Original stream and original-file downloads | `GET /Videos/{id}/stream` |
 | Smaller downloads | `GET /Videos/{id}/stream.mp4` |
 | Subtitle files beside the media | `GET /Videos/{id}/{sourceId}/Subtitles/{index}/Stream.{format}` |
@@ -125,6 +126,15 @@ Audio starts with Settings > Playback > Audio Language (or a language picked ear
 `/Sessions/Playing` and `/Sessions/Playing/Progress` send the stream indexes of the audio and subtitles playing: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file.
 On a transcode, the audio (its single track can't be matched to the file's) and an embedded subtitle keep the indexes the session started with; a server subtitle file, Off and an OpenSubtitles file are still reported as they are.
 Jellyfin can remember these selections for the user's other clients, depending on its playback settings; that hasn't been checked against a live server.
+
+When playback loads, Vivid requests `GET /MediaSegments/{mediaSourceId}` (Jellyfin 10.10 and later) for each media source, in parallel and capped at two seconds.
+An older server, an error or a slow reply leaves that source without server markers and never fails playback.
+`Intro`, `Outro` (credits) and `Recap` segments become the file's skip markers: the earliest valid segment of each kind is used, converted from ticks to seconds.
+Plugins that write media segments, such as Intro Skipper, are picked up this way.
+While the Intro & Credit Skipper is on, these fill only the kinds TheIntroDB and IntroDB lack; while it is off, they are used alone.
+See [marker timing](../playback/architecture.md#introdb-marker-timing).
+`ProviderIds` are read one ID at a time, so a null or non-text value for one provider doesn't drop the series' IMDb and TMDb IDs the lookups use.
+The media-segment path hasn't been checked against a live Jellyfin server.
 
 Library browsing requests card metadata without cast, media sources, streams or chapters; detail and playback requests retain the full fields.
 Seasons, episodes and collections keep the full fields.
@@ -243,7 +253,7 @@ These checks did not submit watched-progress changes.
   Before the `ChildCount` check was added, the fixed seasons route and a season detail returned the episode-list counts for every season with versions, and a series without versions kept matching counts.
   The check itself is covered by focused provider tests and a simulator build, not a further live run.
   Watched counts for seasons with versions are covered by provider tests only, as no watched state was changed on the server.
-- Full on-device settings coverage, saved-account switching, native Apple TV user switching, live tvOS playback and older Jellyfin server versions still need verification.
+- Full on-device settings coverage, saved-account switching, native Apple TV user switching, live tvOS playback, media-segment skip markers and older Jellyfin server versions still need verification.
 
 
 For an iOS Debug test launch, `VIVID_SHOW_SERVER_SETUP=1` opens the provider chooser before account restoration.
