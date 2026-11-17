@@ -184,7 +184,7 @@ struct MobileEpisodeCarousel: View {
                             if caption.showsMetadata {
                                 Text(verbatim: episode.overview ?? "")
                                     .font(.system(size: 12, weight: .regular))
-                                    .foregroundStyle(Color.vividSecondaryText)
+                                    .foregroundStyle(Color.vividTextBody)
                                     .lineLimit(2, reservesSpace: true)
                                     .lineSpacing(2)
                                     .multilineTextAlignment(.leading)

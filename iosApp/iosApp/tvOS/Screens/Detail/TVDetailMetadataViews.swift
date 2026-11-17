@@ -57,7 +57,7 @@ struct TVDetailCompactHeading: View {
         let rest = Array(tokens.dropFirst()) + genres
         if !rest.isEmpty {
             var tail = AttributedString(" \u{00B7} " + rest.joined(separator: " \u{00B7} "))
-            tail.swiftUI.foregroundColor = Color.vividTextBody
+            tail.swiftUI.foregroundColor = Color.vividTextTertiary
             heading.append(tail)
         }
         return Text(heading)
@@ -75,7 +75,7 @@ struct TVDetailTechnicalRow: View {
             if !releaseFacts.isEmpty {
                 Text(verbatim: releaseFacts.joined(separator: " \u{00B7} "))
                     .font(.system(size: 29, weight: .medium))
-                    .foregroundStyle(Color.vividTextBody)
+                    .foregroundStyle(Color.vividTextTertiary)
             }
             ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
                 TVDetailTextBadge(text: badge, isFilled: TVHeroMetadata.isResolutionBadge(badge))
@@ -157,14 +157,14 @@ struct TVDetailMetadataSlots: View {
                 if index > 0 { divider }
                 Text(verbatim: fact)
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(Color.vividTextBody)
+                    .foregroundStyle(Color.vividTextTertiary)
             }
             if includingSource {
                 ForEach(Array(sourceTokens.enumerated()), id: \.offset) { index, token in
                     if !facts.isEmpty || index > 0 { divider }
                     Text(verbatim: token)
                         .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(Color.vividTextBody)
+                        .foregroundStyle(Color.vividTextTertiary)
                 }
             }
         }

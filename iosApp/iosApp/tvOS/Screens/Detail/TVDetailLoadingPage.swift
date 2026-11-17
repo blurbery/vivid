@@ -264,7 +264,7 @@ struct TVDetailLoadingPage: View {
         } else {
             Text(verbatim: parts.joined(separator: "  \u{00B7}  "))
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Color.vividTextBody)
+                .foregroundStyle(Color.vividTextTertiary)
                 .lineLimit(1)
         }
     }

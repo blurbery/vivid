@@ -80,7 +80,7 @@ struct MobileEpisodeList: View {
                     if let overview = episode.overview, !overview.isEmpty {
                         Text(verbatim: overview)
                             .font(.subheadline)
-                            .foregroundStyle(Color.vividSecondaryText)
+                            .foregroundStyle(Color.vividTextBody)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }

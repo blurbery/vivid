@@ -2240,7 +2240,7 @@ private struct TVHomeSpotlightArtwork: View {
         let rest = slide.content.metaParts + [slide.content.contentRatingBadge].compactMap { $0 }
         if !rest.isEmpty {
             var tail = AttributedString("  ·  " + rest.joined(separator: "  ·  "))
-            tail.swiftUI.foregroundColor = Color.vividTextBody
+            tail.swiftUI.foregroundColor = Color.vividTextTertiary
             heading.append(tail)
         }
         return Text(heading)

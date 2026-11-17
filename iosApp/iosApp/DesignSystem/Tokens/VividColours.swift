@@ -26,14 +26,15 @@ extension Color {
     /// Names at rest (episode names, cast names, trailer titles), scores and
     /// values.
     static let vividTextStrong = srgb(237, 237, 237, opacity: 0.92)
-    /// Every synopsis or overview, and the supporting metadata on a heading
-    /// line (genres, year, runtime).
+    /// Every synopsis or overview: the hero's, a season's and an episode
+    /// card's. Always a clear step below names and above facts.
     static let vividTextBody = srgb(237, 237, 237, opacity: 0.72)
     // `vividSecondaryText` above is the fourth level, at 0.60: credit lines,
-    // episode synopses on cards, cast roles, season facts, counts and small
-    // uppercase labels.
-    /// The quietest level: air and release dates, dividers or dots, and idle
-    /// arrows.
+    // cast roles, a Home card's second line, counts and small uppercase
+    // labels.
+    /// The quietest level, for facts: genres, year and runtime on a heading
+    /// line, a season's episode count and year, air and release dates,
+    /// dividers or dots, and idle arrows.
     static let vividTextTertiary = srgb(237, 237, 237, opacity: 0.50)
     static let vividAccent = srgb(120, 174, 252)
     static let vividBrandOrange = srgb(253, 116, 3)

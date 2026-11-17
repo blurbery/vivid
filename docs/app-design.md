@@ -399,10 +399,10 @@ Native switches use green; section labels and secondary actions use neutral grey
 Text on the Home spotlight, the detail pages and their cards uses one five-level scale from [`VividColours.swift`](../iosApp/iosApp/DesignSystem/Tokens/VividColours.swift), the same on iPhone, iPad and Apple TV, so a role looks the same wherever it appears.
 Primary is for titles, the Movie or Series type label (set semibold) and focused or current names.
 Strong, at 92%, is for names at rest, scores and values.
-Body, at 72%, is for every synopsis and for the genres, year and runtime on a heading line.
-Secondary, at 60%, is for credit lines, episode summaries on cards, cast roles, season facts and small uppercase labels.
-Tertiary, at 50%, is for air dates, dividers and idle arrows.
-An episode card's name, summary and air date are therefore three distinct levels: Strong, Secondary and Tertiary.
+Body, at 72%, is for every synopsis: the hero's, a season's and an episode card's.
+Secondary, at 60%, is for credit lines, cast roles, a Home card's second line and small uppercase labels.
+Tertiary, at 50%, is for facts: the genres, year and runtime on a heading line, a season's episode count and year, air dates, dividers and idle arrows.
+A synopsis is therefore always a clear step apart from the name above it and the facts beside it: an episode card's name, summary and air date are Strong, Body and Tertiary, and so are a season's name, synopsis and facts line.
 Intro & Credit Skipper remains a native toggle, and Episodes ends with the Hide Episode Spoilers toggle described in [Playback](playback/README.md).
 An Audio section between Streaming and Episodes holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
 On iPhone and iPad, Audio Language, Boost Level and Show Next Up open their own pages in the Settings theme, like Quality, rather than a plain pushed list, and choosing an option returns to Playback as before; Apple TV keeps its native menus.

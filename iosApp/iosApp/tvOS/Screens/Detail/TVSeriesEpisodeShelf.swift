@@ -553,7 +553,7 @@ private struct TVSeasonSummary: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: facts)
                 .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(Color.vividSecondaryText)
+                .foregroundStyle(Color.vividTextTertiary)
                 .lineLimit(1)
             // The same size and text level (`vividTextBody`) as the series
             // synopsis in the hero, so the two read as one voice.
@@ -830,7 +830,7 @@ private struct TVSeriesShelfCard: View {
                 .lineLimit(1)
             Text(verbatim: episode.overview ?? "")
                 .font(.vividLandscapeCardMetadata)
-                .foregroundStyle(Color.vividSecondaryText)
+                .foregroundStyle(Color.vividTextBody)
                 .lineLimit(3)
                 .frame(height: Self.overviewHeight, alignment: .top)
             Text(verbatim: DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")

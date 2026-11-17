@@ -66,8 +66,8 @@ The Library tab holds every library with Watchlist, Favourites and Collections, 
   The logo fits within 600 by 200 points with a soft shadow, and its transparent margins are trimmed when it loads, so logos with empty space in their image still sit right on the metadata line.
   The logo's box has no fixed place on the card: the text is stacked up from 48 points above the card's bottom edge, so the logo sits higher the more lines the overview has.
   A movie's or series' metadata line is the detail pages' heading: its type, up to two genres and the content rating in an outlined badge, with no year, runtime or score (a series doesn't show its season count, which the spotlight doesn't have).
-  The type is semibold in the brightest text level and the genres after it are medium in the softer Body level; an episode's line is split the same way after the word Episode.
-  The overview under it is in that same Body level, as every synopsis on the detail pages is.
+  The type is semibold in the brightest text level and the genres after it are medium in the quiet facts level; an episode's line is split the same way after the word Episode.
+  The overview under it is in the Body level, a step brighter than those facts, as every synopsis on the detail pages is.
   It is set at the heading's own size, 29 points with a 22-point badge, so it reads from across a room.
   An episode's line keeps its own format: Episode, its episode code, title and runtime, then its content rating, also at 29 points.
   Either line sits in a slot 44 points tall and 900 points wide, the same for every slide, so two genres and a badge fit without shrinking.
@@ -584,7 +584,7 @@ While that button has focus the header shows the season it would load, without s
 Native `.card` buttons provide episode artwork focus; cards include the episode's number, title, summary and date, with watched/resume and context actions retained.
 Under each 400 by 225 still, the caption is set like Home's Continue Watching captions.
 The first line is the episode's name in the 24-point card title style on one line, brightening with focus.
-The summary, on up to three lines, uses the 22-point grey second-line style, and the air date under it is the same size in a quieter grey, so name, summary and date are three distinct levels.
+The summary, on up to three lines, is 22 points in the synopsis' Body level, and the air date under it is the same size in the quiet facts level, so name, summary and date are three distinct levels.
 The still carries Home's status row: the season and episode number in an 18-point pill on the left, as in `S1E7`, the resume bar, and a matching pill on the right, the same size as on Home's cards with the minutes left, or the watched tick alone.
 The old series page-scroll coordinator, viewport lock, season pager, transition timers and handoff helpers have been removed.
 Separate episode and season detail pages retain their existing layouts, with the same larger synopsis and credit line; their hero is taller to hold them (739 points, or 789 for an episode with a source row and a facts row), and the season page's series capsule stands above the title block in the hero's top margin.

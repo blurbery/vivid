@@ -404,7 +404,7 @@ private struct MobileTabletHeading: View {
         text.foregroundColor = Color.vividTextPrimary
         if !rest.isEmpty {
             var tail = AttributedString(" · " + rest.joined(separator: " · "))
-            tail.foregroundColor = Color.vividTextBody
+            tail.foregroundColor = Color.vividTextTertiary
             text += tail
         }
         return text
@@ -420,7 +420,7 @@ private struct MobileTabletTechnicalRow: View {
                 if !content.releaseFacts.isEmpty {
                     Text(verbatim: content.releaseFacts.joined(separator: " · "))
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.vividTextBody)
+                        .foregroundStyle(Color.vividTextTertiary)
                 }
                 ForEach(Array(content.qualityBadges.enumerated()), id: \.offset) { _, badge in
                     MobileTextBadge(text: badge, isFilled: MobileHeroRules.isResolutionBadge(badge))
