@@ -8,6 +8,13 @@ enum MobileEpisodeText {
         episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
     }
 
+    /// Whether the episode has a title of its own. Without one the title
+    /// line falls back to the number, so the number label above it is left
+    /// out rather than repeating it.
+    static func hasOwnTitle(_ episode: EpisodeListItem) -> Bool {
+        !(episode.title ?? "").isEmpty
+    }
+
     /// The air date and running time, for VoiceOver.
     static func metadata(_ episode: EpisodeListItem) -> String? {
         var parts: [String] = []
@@ -176,9 +183,11 @@ struct MobileEpisodeCarousel: View {
                     still(episode, size: stillSize, isCurrent: isCurrent)
                     if caption.showsTitle {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("EPISODE \(String(episode.episodeNumber))")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(Color.vividSecondaryText)
+                            if MobileEpisodeText.hasOwnTitle(episode) {
+                                Text("EPISODE \(String(episode.episodeNumber))")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundStyle(Color.vividSecondaryText)
+                            }
                             Text(verbatim: MobileEpisodeText.title(episode))
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(isCurrent ? Color.vividTextPrimary : Color.vividTextStrong)
