@@ -243,10 +243,15 @@ struct EmbyAdapter {
 
     // MARK: - Skip markers
 
+    /// The longest intro taken from an `IntroStart` with no `IntroEnd`.
+    static let maximumUnendedIntroSeconds: Double = 180
+
     /// The intro and credits from Emby's chapter markers, as `{start, end}`
-    /// ranges in seconds: `IntroStart` to the next `IntroEnd` (or, as Emby's
-    /// own player does, to the next chapter when there's no end marker), and
-    /// `CreditsStart` to the end of the file. Emby has no recap marker.
+    /// ranges in seconds: `IntroStart` to the next `IntroEnd`, and
+    /// `CreditsStart` to the end of the file. Without a later `IntroEnd`, the
+    /// intro ends at the next chapter, but only when that's within
+    /// ``maximumUnendedIntroSeconds``, so a skip never jumps over real
+    /// content. Emby has no recap marker.
     static func markers(chapters: [[String: Any]], duration: Double) -> [String: Any] {
         func starts(_ type: String?) -> [Double] {
             chapters.filter { chapter in
@@ -257,8 +262,11 @@ struct EmbyAdapter {
             .sorted()
         }
         var value: [String: Any] = [:]
+        let nextChapter = { (start: Double) in
+            starts(nil).first { $0 > start }.flatMap { $0 - start <= maximumUnendedIntroSeconds ? $0 : nil }
+        }
         if let start = starts("IntroStart").first,
-           let end = starts("IntroEnd").first(where: { $0 > start }) ?? starts(nil).first(where: { $0 > start }) {
+           let end = starts("IntroEnd").first(where: { $0 > start }) ?? nextChapter(start) {
             value["intro"] = ["start": start, "end": end]
         }
         if let start = starts("CreditsStart").first, duration > start {

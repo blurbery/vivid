@@ -250,7 +250,7 @@ The first start keeps a small decoded buffer ready; it does not wait for the ful
 
 Playback > Intro & Credit Skipper is enabled by default and preserves an explicitly saved Off choice.
 The server's valid markers for the selected file appear first, so prompts are there while a lookup runs.
-While the toggle is on, every episode is looked up on TheIntroDB, whose markers take priority; IntroDB fills any intro, credits or recap TheIntroDB lacks, and the server's markers fill only what neither service has.
+While the toggle is on, every streamed episode with season and episode numbers and a series TMDb or IMDb ID is looked up on TheIntroDB, whose markers take priority; IntroDB fills any intro, credits or recap TheIntroDB lacks, and the server's markers fill only what neither service has.
 While it is off, no public lookup is made and only the server's markers are used.
 Silo supplies the selected file's intro and credits, Jellyfin its media segments (intro, credits and recap) and Emby its chapter markers (intro and credits).
 Separate automatic-skip settings control automatic skipping whichever source supplied the markers, and valid ranges supply manual prompts, except for credits that open Next Up (see above), which get neither an automatic skip nor, on Apple TV, a Skip Credits prompt.

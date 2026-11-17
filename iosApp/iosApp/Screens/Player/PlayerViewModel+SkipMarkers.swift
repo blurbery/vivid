@@ -68,7 +68,9 @@ extension PlayerViewModel {
                 }
                 // TheIntroDB first; its result is published straight away,
                 // over the server's markers.
-                let theIntroDB = try? await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
+                let theIntroDB = await Self.publicMarkers("TheIntroDB") {
+                    try await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
+                }
                 let fetched = VividIntroDBClient.Segments(
                     imdb_id: imdb, season: season, episode: episode,
                     intro: nil, outro: nil, tmdb_id: identity.tmdbID
@@ -78,18 +80,40 @@ extension PlayerViewModel {
                 // IntroDB only fills what TheIntroDB lacks, so a slow or
                 // failed lookup never delays a prompt that's already there.
                 guard fetched.intro == nil || fetched.outro == nil || fetched.recap == nil else { return }
-                let gaps = try? await VividIntroDBClient.shared.introDBSegments(for: identity)
+                let gaps = await Self.publicMarkers("IntroDB") {
+                    try await VividIntroDBClient.shared.introDBSegments(for: identity)
+                }
                 guard isCurrent(self),
                       let gaps, gaps.intro != nil || gaps.outro != nil || gaps.recap != nil else { return }
                 self.updateIntroDBSegments(Self.preferring(fetched.fillingMissing(from: gaps), over: serverMarkers))
             } catch is CancellationError {
                 // A newer item or setting change took over.
             } catch {
-                // Missing markers or a service outage never block playback.
-                // Only the error's type is logged, never its text, which can
-                // name the server.
-                Self.logger.info("[CMP-MARKERS] public lookup failed: \(String(describing: type(of: error)), privacy: .public)")
+                // The series lookup failed. Missing markers never block
+                // playback. Only the error's type is logged, never its text,
+                // which can name the server.
+                Self.logger.info("[CMP-MARKERS] series lookup failed: \(String(describing: type(of: error)), privacy: .public)")
             }
+        }
+    }
+
+    /// One public service's markers, or nil when it has none or fails. A
+    /// failure (other than cancellation) logs the service and the error's
+    /// type, never its text; a service with no markers answers nil itself.
+    static func publicMarkers(
+        _ service: String,
+        _ lookup: () async throws -> VividIntroDBClient.Segments?
+    ) async -> VividIntroDBClient.Segments? {
+        do {
+            return try await lookup()
+        } catch is CancellationError {
+            return nil
+        } catch {
+            // A cancelled task's request fails with URLError, not a
+            // CancellationError, and isn't a service failure.
+            guard !Task.isCancelled else { return nil }
+            logger.info("[CMP-MARKERS] \(service, privacy: .public) lookup failed: \(String(describing: type(of: error)), privacy: .public)")
+            return nil
         }
     }
 

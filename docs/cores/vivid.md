@@ -42,7 +42,7 @@ Credits that open Next Up are the exception; see [Playback](../playback/README.m
 On iOS, prompts stay hidden during loading and buffering.
 
 The server's valid markers for the selected file are shown straight away while a lookup runs.
-While the toggle is on, every episode is looked up: TheIntroDB's markers take priority, IntroDB can fill any intro, credits or recap TheIntroDB lacks, and the server's markers fill only what neither has.
+While the toggle is on, every streamed episode with season and episode numbers and a series TMDb or IMDb ID is looked up: TheIntroDB's markers take priority, IntroDB can fill any intro, credits or recap TheIntroDB lacks, and the server's markers fill only what neither has.
 While it is off, no public lookup is made and only the server's markers are used.
 Silo supplies the selected file's intro and credits, Jellyfin its media segments and Emby its chapter markers.
 Item-level markers from another edition and realtime server marker updates do not override this selection.

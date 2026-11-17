@@ -1192,6 +1192,10 @@ final class EmbyAdapterTests: XCTestCase {
         let unended: FileVersion = try EmbyAdapter.decode(
             adapter.version(raw, chapters: [chapters[0], chapters[1], nextChapter]))
         XCTAssertEqual(unended.intro, TimeRange(start: 30, end: 90), "Without an IntroEnd the intro runs to the next chapter")
+        let distantChapter: [String: Any] = ["Name": "Chapter 2", "StartPositionTicks": 6_000_000_000, "MarkerType": "Chapter"]
+        let distant: FileVersion = try EmbyAdapter.decode(
+            adapter.version(raw, chapters: [chapters[0], chapters[1], distantChapter]))
+        XCTAssertNil(distant.intro, "A next chapter minutes away never becomes the intro's end")
         XCTAssertNil(plain.credits)
     }
 
