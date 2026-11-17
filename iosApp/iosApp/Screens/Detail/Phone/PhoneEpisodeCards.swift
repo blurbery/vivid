@@ -3,16 +3,25 @@ import SwiftUI
 #if !os(tvOS)
 /// How an episode reads on cards, rows and to VoiceOver.
 enum MobileEpisodeText {
-    /// The episode's own title, even an empty one, or "Episode 4".
+    /// The episode's own title, or "Episode 4" when it has none.
     static func title(_ episode: EpisodeListItem) -> String {
-        episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
+        ownTitle(episode) ?? String(localized: "Episode \(String(episode.episodeNumber))")
+    }
+
+    /// The episode's own title, counting a blank one as none, so that an
+    /// empty title from the server reads as "Episode 4" rather than as a
+    /// blank line.
+    static func ownTitle(_ episode: EpisodeListItem) -> String? {
+        guard let title = episode.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return nil }
+        return title
     }
 
     /// Whether the episode has a title of its own. Without one the title
     /// line falls back to the number, so the number label above it is left
     /// out rather than repeating it.
     static func hasOwnTitle(_ episode: EpisodeListItem) -> Bool {
-        !(episode.title ?? "").isEmpty
+        ownTitle(episode) != nil
     }
 
     /// The air date and running time, for VoiceOver.

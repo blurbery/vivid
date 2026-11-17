@@ -283,6 +283,7 @@ Home's episode cards name the episode beneath the series title.
 On a card with the status row that line is the unpadded season and episode number, a middle dot and the episode's title, as in `S3 E7 · Episode title`; an episode with no title of its own shows `S3 E7`.
 An episode missing its season or episode number keeps whichever it has, as in `S3 · Episode title` or `E7 · Episode title`.
 On the detail pages the number is in the caption too: `3 · Episode title` on the Apple TV series shelf, and a small `EPISODE 3` line above the title on iPhone and iPad.
+An episode with no title of its own takes the number as its title, so that `EPISODE 3` line is left out rather than repeating it.
 Partly watched Home artwork without the status row keeps an inset white resume bar on a grey track, with the minutes left beside it.
 
 ### Studios & Networks
