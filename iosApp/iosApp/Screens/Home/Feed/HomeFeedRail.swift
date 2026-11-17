@@ -207,15 +207,23 @@ struct HomeStillCard: View {
         } else if let year = item.year {
             parts.append(String(year))
         }
-        if let resumeCaption {
+        if !showsRuntimeStatus, let resumeCaption {
             parts.append(resumeCaption)
         }
         if isPlayed {
             parts.append(String(localized: "Watched"))
         }
-        if showsRuntimeStatus,
-           let minutes = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
-            parts.append(String(localized: "\(minutes) minutes", comment: "Spoken runtime"))
+        if showsRuntimeStatus {
+            if let fraction = playedOverride == nil ? progress : nil,
+               let resume = ResumePresentation(fraction: fraction, duration: item.durationSeconds) {
+                // What the right pill shows while the title is part watched,
+                // a rewatch included.
+                parts.append(String(localized: "Resume, \(resume.minutesRemaining) minutes remaining"))
+            } else if let minutes = MediaRuntimeStatusOverlay.displayedRuntime(
+                minutes: item.runtime, duration: item.durationSeconds
+            ) {
+                parts.append(String(localized: "\(minutes) minutes", comment: "Spoken runtime"))
+            }
         }
         return parts.joined(separator: ", ")
     }
