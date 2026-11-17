@@ -1,5 +1,9 @@
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 /// Plain HTTP servers work anywhere, but a request that started on HTTPS is
 /// never redirected down to plain HTTP.
@@ -9,6 +13,8 @@ final class PlainHTTPRedirectGuardTests: XCTestCase {
     func testRefusesHTTPSToPlainHTTP() {
         XCTAssertFalse(PlainHTTPRedirectGuard.allows(from: url("https://media.example.test/api"), to: url("http://media.example.test/api")))
         XCTAssertFalse(PlainHTTPRedirectGuard.allows(from: url("HTTPS://media.example.test/api"), to: url("HTTP://other.example.test/api")))
+        XCTAssertFalse(PlainHTTPRedirectGuard.allows(from: url("wss://media.example.test/ws"), to: url("ws://media.example.test/ws")))
+        XCTAssertTrue(PlainHTTPRedirectGuard.allows(from: url("wss://nas/ws"), to: url("ws://nas/ws")))
     }
 
     func testAllowsEverythingElse() {

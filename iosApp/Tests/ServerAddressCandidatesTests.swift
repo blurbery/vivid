@@ -1,5 +1,9 @@
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 /// The addresses the server form tries: plain HTTP works for any host when
 /// it's asked for, but Auto only falls back to it on its own for a local

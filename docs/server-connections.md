@@ -66,9 +66,10 @@ Vivid connects to a server at an HTTPS or a plain HTTP address, whether it's a l
 App Transport Security allows plain HTTP to any host (`NSAllowsArbitraryLoads` in the app's and the Top Shelf extension's Info.plists), so a plain-HTTP public server is treated the same way as a plain-HTTP local one once it's added.
 To add one, choose HTTP or type the address with `http://`.
 HTTPS is still the better choice for a server reached over the internet, because plain HTTP sends the password, the login token and everything else unencrypted.
-Silo's API requests, artwork and Silo's signed storage artwork stop at a redirect from HTTPS down to plain HTTP on a public hostname instead of following it, as App Transport Security did before, and Emby's, Jellyfin's and Seerr's API requests don't follow redirects at all.
+Silo's API requests (including requests made through Silo's own request API), Silo's playback WebSocket, artwork and Silo's signed storage artwork stop at a redirect from HTTPS down to plain HTTP on a public hostname instead of following it, as App Transport Security did before.
+Emby's and Jellyfin's API requests don't follow redirects at all, and nor does a Seerr connection set up in Vivid's settings, on iPhone, iPad or Apple TV.
 A download from a plain-HTTP Silo server also saves artwork that Silo signed onto plain-HTTP storage; with an HTTPS server, those storage links still have to be HTTPS.
-Downloads run in a background session, which follows redirects without asking Vivid (see [Playback architecture](playback/architecture.md)), so they have no such check.
+A download's media file transfers run in a background session, which follows redirects without asking Vivid (see [Playback architecture](playback/architecture.md)), so they have no such check; its artwork and subtitle files are fetched separately and do.
 
 The address form tries up to three addresses in turn.
 In Auto with no scheme or port typed, that's HTTPS, plain HTTP, then plain HTTP on the provider's usual port (8090 for Silo, 8096 for Emby and Jellyfin), but the two plain HTTP addresses are only tried for a local address.
@@ -81,7 +82,7 @@ In first-run setup, Connect saves the server that answers and makes it the one V
 A server that had already answered when Cancel was pressed may still be saved, and sign-in or Silo's setup page then follows as Connect would have.
 When no address answers, the error shows the general "Could not reach" message.
 When Auto only tried HTTPS because a public hostname was typed without a scheme, the message also says to choose HTTP or type the address with `http://` if the server uses plain HTTP.
-In Auto, a local address that doesn't answer over HTTPS, for any reason including a certificate Vivid doesn't trust, goes on to its plain HTTP addresses.
+In Auto, a local address typed without a scheme that doesn't answer over HTTPS, for any reason including a certificate Vivid doesn't trust, goes on to the plain HTTP addresses above (only plain HTTP on the typed port when a port was typed, and only plain HTTP on port 8090 for a Silo address typed with `https://` and no port).
 A public hostname never falls back to plain HTTP on its own, so a failed HTTPS connection doesn't quietly send the password unencrypted over the internet.
 A denied Local Network permission also gets the general message: Vivid only uses documented APIs here, and none of them reports that refusal for a particular server.
 

@@ -21,19 +21,22 @@ enum LocalNetworkHost {
 /// `NSAllowsArbitraryLoads`). Before that, ATS refused a redirect from HTTPS
 /// down to plain HTTP on a public host, so an HTTPS server couldn't send a
 /// request, and the credentials it carries, back out over the internet in
-/// the clear. This keeps exactly that refusal on the sessions that use it
-/// (`HTTPClient`'s); everything ATS allowed before still follows. Background
-/// download sessions never ask their delegate about redirects, so it can't
-/// cover them.
+/// the clear. This keeps exactly that refusal where it's used: `HTTPClient`'s
+/// sessions (Silo's API), the image pipeline, signed storage artwork and
+/// Silo's playback WebSocket. Everything ATS allowed before still follows.
+/// Background download sessions never ask their delegate about redirects, so
+/// it can't cover media file transfers.
 enum PlainHTTPRedirectGuard {
-    /// False when a redirect would move from HTTPS to plain HTTP on a host
-    /// that isn't local.
+    /// False when a redirect would move from HTTPS (or `wss`) to plain HTTP
+    /// (or `ws`) on a host that isn't local.
     static func allows(from previous: URL?, to next: URL?) -> Bool {
-        guard previous?.scheme?.lowercased() == "https", next?.scheme?.lowercased() == "http" else { return true }
+        guard ["https", "wss"].contains(previous?.scheme?.lowercased() ?? ""),
+              ["http", "ws"].contains(next?.scheme?.lowercased() ?? "") else { return true }
         return LocalNetworkHost.contains(next?.host(percentEncoded: true) ?? "")
     }
 
-    /// Session delegate for sessions that otherwise follow every redirect.
+    /// Session or task delegate for requests that otherwise follow every
+    /// redirect.
     /// A refused redirect ends the task with the redirect response itself.
     final class SessionDelegate: NSObject, URLSessionTaskDelegate, Sendable {
         static let shared = SessionDelegate()
