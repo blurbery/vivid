@@ -554,7 +554,7 @@ Subtitle inventory still follows the [detail reader’s media-based rules](playb
 Theme music plays on movie, series, season and episode pages on iPhone, iPad and Apple TV when Settings > Playback > Play Theme Music is on, which it is by default.
 When the page opens, Vivid asks the connected server (Silo, Emby or Jellyfin) for the title's theme song, fades it in at the Theme Music volume (30% unless changed) and plays it once, without looping.
 A season or episode with no theme of its own uses its series' theme, and moving between a show, its seasons and its episodes keeps the same song playing instead of starting it again.
-On Apple TV an episode opens on its series page, so it plays the series' theme.
+On Apple TV an episode with a series and season number opens on its series page, so it plays the series' theme; any other episode stays on its own page and plays its own theme.
 Leaving the page fades the song out.
 Starting a video stops it, and it doesn't resume when the video ends.
 It pauses while Vivid is in the background.
@@ -562,7 +562,7 @@ It mixes with other audio rather than interrupting it, and it is skipped when ot
 It also doesn't start while Picture in Picture is up, and it is tried again if the server was unreachable and comes back while the page is open.
 On iPhone it stays quiet while the silent switch is on.
 A title without a theme song or a server that doesn't offer one leaves the page silent, with no error.
-A lookup that fails, for example on a slow connection, never shows an error either, and leaves a song that is already playing alone until the next page decides.
+A lookup that fails, for example on a slow connection, never shows an error either, and doesn't cut a song that is already playing straight away; that song still fades out after a four second hold unless a page that finds a song takes over.
 On Silo it needs a server with the V2 API, and the theme has to be a regular `theme.mp3` file (or a file in a `theme-music` folder) in the title's folder; symlinked theme files are ignored.
 
 The September 2026 iPhone detail update passed the [iOS test suite and tvOS build](https://github.com/blurbery/vivid/actions/runs/35821654660).

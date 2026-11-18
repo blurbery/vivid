@@ -1979,7 +1979,8 @@ extension HTTPClient {
     /// otherwise comes back as `HTTPError.http`. So an optional route that a
     /// proxy or an older server refuses can't rotate the tokens or expire the
     /// session. Nil, with nothing sent, when the active account isn't Silo,
-    /// has no access token, or its server doesn't speak v2. `quietStatuses`
+    /// has no access token, or its server answered that it doesn't speak
+    /// v2; a discovery probe that gets no answer throws instead. `quietStatuses`
     /// are logged as expected rather than as errors.
     func optionalSiloV2Request(
         method: String,
@@ -1994,10 +1995,17 @@ extension HTTPClient {
         else { return nil }
         let serverURL = auth.account.serverURL
         // The same probe URL ordinary requests derive, so the cached answer
-        // is shared.
-        guard let probe = try buildRequest(serverUrl: serverURL, method: "GET", path: "/api/v1/", query: [:], body: nil).url,
-              (try? await apiDiscovery.usesV2(for: probe, session: session)) == true
+        // is shared. A probe that fails throws, so the caller can tell "no
+        // answer" from a server that really is v1.
+        guard let probe = try buildRequest(serverUrl: serverURL, method: "GET", path: "/api/v1/", query: [:], body: nil).url
         else { return nil }
+        let usesV2: Bool
+        do {
+            usesV2 = try await apiDiscovery.usesV2(for: probe, session: session)
+        } catch let error as URLError {
+            throw HTTPError.network(underlying: error)
+        }
+        guard usesV2 else { return nil }
 
         func signed(_ auth: CapturedOrdinaryRequestAuth) throws -> URLRequest {
             var request = try buildRequest(serverUrl: serverURL, method: method, path: path, query: [:], body: nil)
