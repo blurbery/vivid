@@ -125,8 +125,6 @@ reviews:
     - "!**/*.xcstrings"
     - "!**/package-lock.json"
     - "!engine/config/expected-libs/**"
-    # Licence texts only; licences.json (the in-app licence list) is reviewed.
-    - "!iosApp/Resources/OpenSourceLicenses/*.txt"
     - "!iosApp/Tests/Fixtures/**"
     - "!diagnostics-relay/fixtures/**"
     - "!website/public/fonts/**"
