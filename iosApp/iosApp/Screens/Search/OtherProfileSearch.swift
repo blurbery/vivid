@@ -20,7 +20,9 @@ enum OtherProfileSearch {
     /// How many titles each other profile's row shows.
     static let rowLimit = 20
     /// How long one profile's search may take before its row is left out.
-    static let timeout: Duration = .seconds(10)
+    /// Each row shows as soon as its profile answers, so a slow server only
+    /// delays its own row.
+    static let timeout: Duration = .seconds(20)
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
@@ -75,40 +77,42 @@ enum OtherProfileSearch {
         return try await search(target, query: query, type: type, limit: limit)
     }
 
-    /// Searches every searchable profile at once, each bounded by `timeout`.
-    /// Profiles that fail, time out or find nothing are left out; the rest
-    /// come back in saved-profile order.
+    /// Searches every searchable profile at once, each bounded by `timeout`,
+    /// and hands each profile's row to `onRow` as soon as that profile
+    /// answers, so a slow server never holds back the others. Profiles that
+    /// fail, time out or find nothing never reach `onRow`. Returns when every
+    /// profile has answered or timed out, or at once when cancelled.
     @MainActor
-    static func searchAll(query: String, type: String) async -> [OtherProfileResults] {
+    static func searchAll(
+        query: String,
+        type: String,
+        onRow: @escaping @MainActor (OtherProfileResults) -> Void
+    ) async {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !Task.isCancelled else { return [] }
+        guard !text.isEmpty, !Task.isCancelled else { return }
         let store = TVSavedAccountStore.shared
         // Everything the requests need is read here, on the main actor, so
         // the network work never touches the store or the registry.
         let targets = searchableAccounts(in: store).compactMap { account in
             Target(account, store: store).map { (account, $0) }
         }
-        guard !targets.isEmpty else { return [] }
+        guard !targets.isEmpty else { return }
 
-        let found = await withTaskGroup(of: (Int, [BrowseItem]?).self, returning: [Int: [BrowseItem]].self) { group in
+        await withTaskGroup(of: (Int, [BrowseItem]?).self) { group in
             for (index, entry) in targets.enumerated() {
                 let target = entry.1
                 group.addTask {
-                    let items = await Self.firstResult(within: Self.timeout) {
+                    let items = await Self.firstResult(within: Self.timeout, provider: target.provider) {
                         try await Self.search(target, query: text, type: type, limit: Self.rowLimit)
                     }
                     return (index, items)
                 }
             }
-            var found = [Int: [BrowseItem]]()
             for await (index, items) in group {
-                if let items, !items.isEmpty { found[index] = items }
+                guard !Task.isCancelled else { return }
+                guard let items, !items.isEmpty else { continue }
+                onRow(OtherProfileResults(account: targets[index].0, items: items))
             }
-            return found
-        }
-        guard !Task.isCancelled else { return [] }
-        return targets.enumerated().compactMap { index, entry in
-            found[index].map { OtherProfileResults(account: entry.0, items: $0) }
         }
     }
 
@@ -268,8 +272,16 @@ enum OtherProfileSearch {
     /// operation to wind down (a server probe can outlast cancellation), so a
     /// cancelled search returns at once. Every failure is quiet, including a
     /// profile switch cancelling the request mid-flight.
+    /// A failure's kind and code, with no address, token or title.
+    private static func failureSummary(_ error: Error) -> String {
+        if let urlError = error as? URLError { return "url=\(urlError.code.rawValue)" }
+        if case HTTPError.http(let status, _) = error { return "http=\(status)" }
+        return "type=\(String(describing: type(of: error)))"
+    }
+
     private static func firstResult<Value: Sendable>(
         within timeout: Duration,
+        provider: MediaServerProvider,
         _ operation: @escaping @Sendable () async throws -> Value
     ) async -> Value? {
         let outcome = Outcome<Value?>()
@@ -277,12 +289,19 @@ enum OtherProfileSearch {
             do {
                 outcome.finish(try await operation())
             } catch {
-                Self.logger.debug("search failed type=\(String(describing: type(of: error)), privacy: .public)")
+                // A cancellation after a timeout or a newer search is expected,
+                // so only other failures say what went wrong.
+                if !Task.isCancelled {
+                    Self.logger.debug("\(provider.rawValue, privacy: .public) search failed \(Self.failureSummary(error), privacy: .public)")
+                }
                 outcome.finish(nil)
             }
         }
         let timer = Task {
             try? await Task.sleep(for: timeout)
+            if !Task.isCancelled {
+                Self.logger.debug("\(provider.rawValue, privacy: .public) search timed out")
+            }
             outcome.finish(nil)
         }
         let value = await withTaskCancellationHandler {

@@ -377,8 +377,9 @@ Apple TV and physical devices haven't been tried yet.
 ### Other saved profiles
 
 Below the current profile's results, Search shows a row for each other saved profile on the device that has matches, headed by its picture, name and server nickname (the label Who's watching shows under it), on iPhone, iPad and Apple TV with Silo, Emby and Jellyfin alike.
-Each row holds up to 20 titles from that profile's own server, follows the All, Movies and Series choice, and is left out when that profile finds nothing, fails or takes longer than 10 seconds.
-The rows come in together once every profile has answered, and nothing changes for someone with one saved profile.
+Each row holds up to 20 titles from that profile's own server, follows the All, Movies and Series choice, and is left out when that profile finds nothing, fails or takes longer than 20 seconds.
+Each row shows as soon as its profile answers, after the rows already shown, so a slow server only holds back its own row and a shown row never moves.
+Nothing changes for someone with one saved profile.
 A profile with a Vivid PIN or a Silo profile PIN, or one that needs signing in again, is never searched.
 A Silo kids profile only sees its own results, with no other profiles' rows.
 

@@ -244,32 +244,32 @@ final class SearchViewModel {
     }
 
     /// Searches the other saved profiles for a new query or type. The rows
-    /// from the last search go when the new search starts, and the new rows
-    /// come in all at once when every profile has answered or timed out.
+    /// from the last search go when the new search starts, and each new row
+    /// is added at the end as soon as its profile answers, so a slow server
+    /// only holds back its own row and a shown row never moves.
     /// While a new query waits out the debounce the old rows stay, so their
     /// headers search with `otherProfilesQuery`, the query that found them.
     private func searchOtherProfiles(_ text: String, type: String, token: Int) {
         otherProfileSearch?.cancel()
         otherProfileSearch = nil
         otherProfiles = []
+        otherProfilesQuery = text
         guard OtherProfileSearchSettings.shared.isEnabled else { return }
         otherProfileSearch = Task { [weak self] in
-            let found = await OtherProfileSearch.searchAll(query: text, type: type)
-            guard let self, self.isCurrent(token) else { return }
-            self.otherProfilesQuery = text
-            self.otherProfiles = Self.withoutRepeats(found)
+            await OtherProfileSearch.searchAll(query: text, type: type) { row in
+                guard let self, self.isCurrent(token), let row = Self.withoutRepeats(row) else { return }
+                self.otherProfiles.append(row)
+            }
         }
     }
 
-    /// Each row with a title only once, since a row's cards are told apart
-    /// by content ID.
-    private static func withoutRepeats(_ rows: [OtherProfileResults]) -> [OtherProfileResults] {
-        rows.compactMap { row in
-            var seen = Set<String>()
-            var row = row
-            row.items = row.items.filter { seen.insert($0.contentId).inserted }
-            return row.items.isEmpty ? nil : row
-        }
+    /// The row with each title only once, since a row's cards are told apart
+    /// by content ID, or nil when nothing is left.
+    private static func withoutRepeats(_ row: OtherProfileResults) -> OtherProfileResults? {
+        var seen = Set<String>()
+        var row = row
+        row.items = row.items.filter { seen.insert($0.contentId).inserted }
+        return row.items.isEmpty ? nil : row
     }
 
     private func show() {
