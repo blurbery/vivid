@@ -385,7 +385,8 @@ A Silo kids profile only sees its own results, with no other profiles' rows.
 
 Each profile is searched with its own saved session, straight to its own server, without switching to it.
 These searches never touch the current session: they don't go through its sign-in retry, a refreshed access token stays in memory only, and a refused one leaves the profile's row out rather than signing anything out.
-They send the same catalogue query as the current profile's search, without the image-size keys, which follow the current server.
+They send only the query as typed, as one catalogue request for up to 20 titles, without the image-size keys, which follow the current server.
+The on-device library index, the query's pieces and the hyphen step only run for the current profile, so a row only finds what that server matches itself: a typo such as `interstelar`, or `spiderman` on Emby, can find nothing there.
 Artwork comes from that profile's server.
 
 Choosing a title in another profile's row switches to that profile, then opens the title there, so playback, progress and watched state go to the server it's on.

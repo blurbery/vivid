@@ -418,6 +418,7 @@ Its posters are 240 by 360 points in the rails and six across in a day's release
 The Calendar pill opens a month view of the page's window: on Upcoming, choosing a day with a dot scrolls to it; on Trending, it shows that day's releases with Show all to go back.
 
 Search uses six posters across the available safe-area width, without the previous extra horizontal insets or width cap.
+Below the grid, other saved profiles with matches each get a row headed by their picture, name and server nickname (see [Other saved profiles](server-connections.md#other-saved-profiles)).
 Seerr's Available to request results use the same six columns.
 The results sit closer to the Top Results, Movies and Series tabs.
 

@@ -1,5 +1,9 @@
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 /// Search looks in the other saved profiles' libraries without switching to
 /// them. These cover which profiles it may look in, and that a search signs

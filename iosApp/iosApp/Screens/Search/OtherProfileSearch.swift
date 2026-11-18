@@ -53,8 +53,11 @@ enum OtherProfileSearch {
     @MainActor
     static func searchableAccounts(in store: TVSavedAccountStore) -> [TVSavedAccount] {
         // A Silo kids profile only sees its own library, so it never shows
-        // titles and artwork from the other profiles.
-        guard CurrentProfileStore.shared.profile?.isChild != true else { return [] }
+        // titles and artwork from the other profiles. The live profile is
+        // nil until the profile list loads, so the saved card's copy stands
+        // in, and with neither known nothing else is searched.
+        let current = CurrentProfileStore.shared.profile ?? store.activeAccount?.profile
+        guard let current, !current.isChild, store.activeAccount?.profile?.isChild != true else { return [] }
         return store.accounts.filter { account in
             let session = store.savedSession(for: account)
             // The card's copy of the profile can be older than the session's.
@@ -62,19 +65,6 @@ enum OtherProfileSearch {
             return isSearchable(account, activeID: store.activeID, hasLocalPIN: store.hasPIN(account.id),
                                 hasSession: session != nil)
         }
-    }
-
-    /// Searches one saved profile's library for `query`, limited to the
-    /// catalogue `type` (`video`, `movie` or `series`).
-    static func search(
-        _ account: TVSavedAccount,
-        query: String,
-        type: String,
-        limit: Int = rowLimit
-    ) async throws -> [BrowseItem] {
-        let target = await MainActor.run { Target(account, store: .shared) }
-        guard let target else { throw Failure.unavailable }
-        return try await search(target, query: query, type: type, limit: limit)
     }
 
     /// Searches every searchable profile at once, each bounded by `timeout`,
@@ -117,11 +107,6 @@ enum OtherProfileSearch {
     }
 
     // MARK: - One profile
-
-    enum Failure: Error {
-        /// The saved profile has no session, server address or user to search with.
-        case unavailable
-    }
 
     /// What one saved profile's search needs, read on the main actor.
     struct Target: Sendable, Equatable {
@@ -267,11 +252,6 @@ enum OtherProfileSearch {
 
     // MARK: - Bounding
 
-    /// `operation`'s result, or nil when it fails, takes longer than
-    /// `timeout`, or the caller is cancelled. It doesn't wait for the
-    /// operation to wind down (a server probe can outlast cancellation), so a
-    /// cancelled search returns at once. Every failure is quiet, including a
-    /// profile switch cancelling the request mid-flight.
     /// A failure's kind and code, with no address, token or title.
     private static func failureSummary(_ error: Error) -> String {
         if let urlError = error as? URLError { return "url=\(urlError.code.rawValue)" }
@@ -279,6 +259,11 @@ enum OtherProfileSearch {
         return "type=\(String(describing: type(of: error)))"
     }
 
+    /// `operation`'s result, or nil when it fails, takes longer than
+    /// `timeout`, or the caller is cancelled. It doesn't wait for the
+    /// operation to wind down (a server probe can outlast cancellation), so a
+    /// cancelled search returns at once. Every failure is quiet, including a
+    /// profile switch cancelling the request mid-flight.
     private static func firstResult<Value: Sendable>(
         within timeout: Duration,
         provider: MediaServerProvider,

@@ -355,6 +355,7 @@ Next, Profiles shows the other saved profiles' pictures overlapping, up to three
 Add Profile comes last, with a plus in the same icon tile as the categories, and is hidden at the limit.
 The three rows' pictures sit in one column as wide as the signed-in profile's, so their text starts on one line.
 Settings > Profiles lists every saved profile as a row with its role and server (or Signed out), a tick on the signed-in one, and Add Profile at the end.
+With more than one saved profile, a Search section follows with the Search All Profiles switch and a footer explaining it, on iPhone, iPad and Apple TV (see [Other saved profiles](server-connections.md#other-saved-profiles)).
 On Apple TV both panels use continuous rounded corners matching the iOS treatment; secondary controls use the same panel colour and rounding.
 A server name given to a profile from the Server row in Settings > Servers replaces either label for that profile only (see [Rename Server](server-connections.md#saved-accounts-on-apple-tv-iphone-and-ipad)).
 The main page shares the secondary pages' header, grouped surface and content width.

@@ -107,8 +107,10 @@ actor HTTPClient {
     private let requestCaptureBarrier: (@Sendable () async -> Void)?
     private let responseReceivedBarrier: (@Sendable () async -> Void)?
 
-    /// Refresh tokens rotate per server account, so ordinary and
-    /// captured-identity requests share one flight per account.
+    /// Each refresh returns a new token pair for the server account, which
+    /// the active session saves, so ordinary and captured-identity requests
+    /// share one flight per account. Silo doesn't revoke the refresh token it
+    /// was given (see `refreshedAccessForSavedProfile`).
     private var inFlightRefreshes: [RefreshAccountIdentity: RefreshFlight] = [:]
     /// Cancellation passes run one after another, so a new identity can wait
     /// for its own pass without an older one cancelling its requests later.
@@ -307,8 +309,9 @@ actor HTTPClient {
     }
 
     /// A new access token for a saved profile other than the active one,
-    /// returned to the caller and never saved. Silo refresh tokens stay valid
-    /// after use, so the saved pair keeps working. Unlike `refreshTokens`, a
+    /// returned to the caller and never saved. Silo's refresh checks the
+    /// session and issues a new pair without revoking the refresh token it
+    /// was given, so the saved pair keeps working until it expires as before. Unlike `refreshTokens`, a
     /// refusal here never clears a session or posts its expiry.
     func refreshedAccessForSavedProfile(serverURL: String, refreshToken: String) async throws -> String {
         let revision = try captureRequestDispatchRevision()
