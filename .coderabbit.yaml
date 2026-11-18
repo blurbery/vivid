@@ -5,8 +5,8 @@
 # PR review limit depends on the repository's star count, and Vivid gets one
 # review an hour. Every review, including one asked for in a comment, uses it,
 # and a PR that is rate limited is not reviewed later on its own. So CodeRabbit
-# reviews each ready PR once, automatically, and skips docs PRs, drafts, bot PRs
-# and large generated or vendored files. Batch fixes into one push and comment
+# reviews each ready PR once, automatically, including docs PRs, and skips
+# drafts, bot PRs and large generated or vendored files. Batch fixes into one push and comment
 # `@coderabbitai review` when you want it to look again, and comment
 # `@coderabbitai rate limit` to see when the next review is free.
 #
@@ -59,14 +59,13 @@ reviews:
     # someone comments `@coderabbitai review`, so fix-up pushes don't use the
     # hour's review or crowd out a newly opened PR.
     auto_incremental_review: false
-    # Docs PRs (titles with `docs:` or `docs(`) are checked by the Docs job.
-    # Keywords match anywhere in the title, ignoring case, so they are kept
-    # specific: a bare "wip" would also skip "fix: wipe downloads". Add
-    # "[skip review]" to any other title to skip it, then comment
-    # `@coderabbitai review` if you change your mind.
+    # Docs PRs are reviewed too: the Docs job checks links, paths, em dashes
+    # and that mapped docs change with their code, not whether the text is
+    # right. Keywords match anywhere in the title, ignoring case, so they are
+    # kept specific: a bare "wip" would also skip "fix: wipe downloads". Add
+    # "[skip review]" to a title to skip it, then comment `@coderabbitai review`
+    # if you change your mind.
     ignore_title_keywords:
-      - "docs:"
-      - "docs("
       - "[skip review]"
       - "[WIP]"
       - "WIP:"
@@ -117,6 +116,22 @@ reviews:
           names, media server usernames, library or account IDs, API keys,
           tokens or passwords. Placeholders such as example.com,
           user@example.com and <account-id> are fine. Pass otherwise.
+      - name: "Docs up to date"
+        mode: warning
+        instructions: >-
+          Every PR must keep Vivid's docs up to date. For each behaviour,
+          setting, default, limit, file path, workflow or process the diff
+          changes, search README.md, CONTRIBUTING.md, AGENTS.md, everything
+          under docs/, website/public/privacy.html and the in-app privacy
+          text for statements about it, including files the PR does not
+          touch. Fail when any of them still describes the old behaviour or
+          now contradicts the code or another doc, naming each file and line
+          and what it should say. Also fail when the PR changes dependencies
+          without updating THIRD_PARTY_NOTICES.md and the in-app licences, or
+          changes what the app sends or stores without updating the privacy
+          policy. Pass otherwise, including when the PR's "Documentation
+          impact" section explains why no doc needed changing and that
+          reason holds.
   path_filters:
     # Large generated or vendored files that would use up review capacity.
     # The String Catalogs hold real translations, but at over 2 MB they are
@@ -128,6 +143,24 @@ reviews:
     - "!diagnostics-relay/fixtures/**"
     - "!website/public/fonts/**"
   path_instructions:
+    - path: "**"
+      instructions: >-
+        Review like a careful senior engineer hunting for bugs, not style.
+        Trace each change through its callers and callees, including files
+        this PR does not touch, and report concrete failures: wrong results,
+        crashes, state that gets stuck or lost, races, missing cancellation or
+        cleanup, unhandled errors and edge cases (empty, nil, zero, very large,
+        offline, slow or refused responses), and security or privacy leaks.
+        For each finding, describe the inputs or sequence that trigger it and
+        what the user sees, and how confident you are. Check that a fix
+        actually covers every path to the bug, and that tests added for it
+        would fail without the fix. Treat the docs as part of the code. When
+        this file changes how
+        something behaves, search README.md, CONTRIBUTING.md, AGENTS.md and
+        docs/ for descriptions of it, even in files this PR does not touch,
+        and flag any that are now wrong or incomplete, quoting the stale
+        line and what it should say. Numbers matter: check defaults, limits,
+        step sizes, timeouts and counts in the docs against the code.
     - path: "iosApp/**/*.swift"
       instructions: >-
         Vivid's design (layout, navigation, focus behaviour, colours,
@@ -163,7 +196,24 @@ reviews:
         (VividTVTests in iosApp/project.yml) lists its files one by one.
         Flag a new test file for shared code that is missing from that list.
         Check that each test really exercises the behaviour it names rather
-        than passing trivially.
+        than passing trivially, that its assertions would fail if the code
+        regressed, and that test doubles behave like the real server or
+        component. Flag behaviour changes in shared logic that have no test
+        when the risk is high (sign-in, playback, sync, data loss).
+    - path: "{diagnostics-relay,tmdb-relay,website}/**/*.{mjs,js,jsonc}"
+      instructions: >-
+        These are Cloudflare Workers. Check them against
+        docs/diagnostics-relay.md and docs/tmdb-relay.md.
+        Watch for unvalidated input, missing size or rate limits, secrets or
+        personal data in logs or responses, CORS and caching mistakes, and
+        error responses that leak internals. Check the worker tests cover
+        the changed paths.
+    - path: "scripts/**"
+      instructions: >-
+        CI, release and tooling scripts. Check that they fail loudly rather
+        than passing on bad input, quote shell variables, handle missing
+        files and network errors, and still match how
+        docs/release/versioning.md and CONTRIBUTING.md describe them.
     - path: "iosApp/project*.yml"
       instructions: >-
         These XcodeGen specs generate the Xcode project. Bundle IDs, keychain
@@ -183,9 +233,11 @@ reviews:
     - path: "**/*.md"
       instructions: >-
         Docs use Australian English, no em dashes, and one sentence per line.
-        Check that the text matches the code in this PR and does not
-        contradict other docs. Do not suggest reflowing sentences onto one
-        line.
+        Check every factual claim (behaviour, defaults, limits, numbers, file
+        paths, commands, workflow and job names) against the code in the
+        repository, not only the files in this PR, and flag anything that is
+        wrong, out of date or contradicts another doc, quoting both sides.
+        Do not suggest reflowing sentences onto one line.
   tools:
     # No SwiftLint config in the repository, so its default rules would only
     # add noise. markdownlint and LanguageTool would flag the README's HTML
