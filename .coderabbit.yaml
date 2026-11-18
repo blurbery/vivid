@@ -144,7 +144,17 @@ reviews:
   path_instructions:
     - path: "**"
       instructions: >-
-        Treat the docs as part of the code. When this file changes how
+        Review like a careful senior engineer hunting for bugs, not style.
+        Trace each change through its callers and callees, including files
+        this PR does not touch, and report concrete failures: wrong results,
+        crashes, state that gets stuck or lost, races, missing cancellation or
+        cleanup, unhandled errors and edge cases (empty, nil, zero, very large,
+        offline, slow or refused responses), and security or privacy leaks.
+        For each finding, describe the inputs or sequence that trigger it and
+        what the user sees, and how confident you are. Check that a fix
+        actually covers every path to the bug, and that tests added for it
+        would fail without the fix. Treat the docs as part of the code. When
+        this file changes how
         something behaves, search README.md, CONTRIBUTING.md, AGENTS.md and
         docs/ for descriptions of it, even in files this PR does not touch,
         and flag any that are now wrong or incomplete, quoting the stale
@@ -185,7 +195,24 @@ reviews:
         (VividTVTests in iosApp/project.yml) lists its files one by one.
         Flag a new test file for shared code that is missing from that list.
         Check that each test really exercises the behaviour it names rather
-        than passing trivially.
+        than passing trivially, that its assertions would fail if the code
+        regressed, and that test doubles behave like the real server or
+        component. Flag behaviour changes in shared logic that have no test
+        when the risk is high (sign-in, playback, sync, data loss).
+    - path: "{diagnostics-relay,tmdb-relay,website}/**/*.{mjs,js,jsonc}"
+      instructions: >-
+        These are Cloudflare Workers. Check them against
+        docs/diagnostics-relay.md and docs/tmdb-relay.md.
+        Watch for unvalidated input, missing size or rate limits, secrets or
+        personal data in logs or responses, CORS and caching mistakes, and
+        error responses that leak internals. Check the worker tests cover
+        the changed paths.
+    - path: "scripts/**"
+      instructions: >-
+        CI, release and tooling scripts. Check that they fail loudly rather
+        than passing on bad input, quote shell variables, handle missing
+        files and network errors, and still match how
+        docs/release/versioning.md and CONTRIBUTING.md describe them.
     - path: "iosApp/project*.yml"
       instructions: >-
         These XcodeGen specs generate the Xcode project. Bundle IDs, keychain
