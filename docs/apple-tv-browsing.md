@@ -305,7 +305,8 @@ Completed bytes use the existing HTTP cache, and retry budgets, download limits 
 
 Home uses a vertical `VStack` of reserved-height `VividCollectionMediaRow` rails backed by CollectionHStack, with the full metadata cache, expanded artwork cache and nearby-row warming.
 Row dimensions follow Home Sections visibility and the caption setting; Home posters are always Large.
-A Home poster is 240 by 360 points, and a landscape card (Continue Watching, Next Up and episode rows) is 432 by 240 points.
+A Home poster is 220 by 330 points, and a landscape card (Continue Watching, Next Up, episode rows and library cards) is 400 by 222 points.
+The episode rail on season pages and the older movie layout uses 400 by 225 point stills, the size of the series page's episode shelf.
 The six-enabled-rail limit excludes Spotlight; empty enabled rows reserve a slot.
 Row focus updates are isolated from the feed.
 The owner accepted the cleanup and native card effects on Apple TV.
@@ -358,7 +359,7 @@ The four are a random pick from the library's 40 most recently added titles, mad
 A request that fails is made again the next time the card appears; one that succeeds is not repeated, even when it found no posters.
 Until the posters arrive, and when none of those 40 titles has one, the card shows the library's symbol on a plain tile.
 Below the row are the Watchlist, Favourites and Collections sub-tabs the For You tab used to hold.
-Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the poster grid the Movies and Series pages had, now six columns across, without the old category dropdowns or mixed Recommended/Browse landing page.
+Selecting a library pushes a page with the library's name, the same native Sort, Filter and A–Z menus and the poster grid the Movies and Series pages had, now seven columns across, without the old category dropdowns or mixed Recommended/Browse landing page.
 A mixed library such as Sports is one card, and its page shows movies and series together; it used to appear under both Movies and Series, filtered by type.
 Movie and series libraries still ask the server for their own type; classification depends on the server's metadata.
 A mixed library asks for every type, and its Filter menu adds a Type choice to narrow it to movies or series.
@@ -409,17 +410,17 @@ The library list is the account's, so it can include libraries the profile hides
 A library that fails to load leaves the others on screen, and the page only shows an error when nothing loads.
 Posters load for the rows around the cards on screen; a card the lazy grid drops counts as off screen, so the window follows the scroll instead of staying on rows already passed.
 When no card counts as on screen, as after returning from a collection, the window follows the remembered focus.
-Catalogue grids use six posters across, each 260 by 390 points, with deliberate space above the first row for focus enlargement.
+Catalogue grids use seven posters across, each about 217 by 326 points, with deliberate space above the first row for focus enlargement.
 
 Calendar is laid out like Library's lists, with Upcoming and Trending sub-tabs and a Calendar pill on the right where Library keeps Filter and A–Z.
 Upcoming shows the same episodes as on iPhone and iPad (see [App Design](app-design.md)), as cards grouped by day, three across; choosing one opens the series.
 Trending shows rails of series and movies coming soon with local date badges, and choosing a poster shows its date and overview.
-Its posters are 240 by 360 points in the rails and six across in a day's releases, with the same 24-point titles and 22-point second lines as other posters.
+Its posters are 220 by 330 points in the rails and seven across in a day's releases, with the same 24-point titles and 22-point second lines as other posters.
 The Calendar pill opens a month view of the page's window: on Upcoming, choosing a day with a dot scrolls to it; on Trending, it shows that day's releases with Show all to go back.
 
-Search uses six posters across the available safe-area width, without the previous extra horizontal insets or width cap.
+Search uses seven posters across the available safe-area width, without the previous extra horizontal insets or width cap.
 Below the grid, other saved profiles with matches each get a row headed by their picture, name and server nickname (see [Other saved profiles](server-connections.md#other-saved-profiles)).
-Seerr's Available to request results use the same six columns.
+Seerr's Available to request results use the same seven columns.
 The results sit closer to the Top Results, Movies and Series tabs.
 
 ### Siri search
@@ -769,7 +770,7 @@ Read [focus ownership rules](apple-tv-focus.md) before changing navigation.
 Preserve series season/episode focus, context-menu restoration, and cancellation of obsolete artwork work.
 
 Cast and crew filmography uses Home’s dense poster width and shared title/year captions.
-The portrait at the top of a person's page uses the same dense width, 200 by 300 points.
+The portrait at the top of a person's page is 200 by 300 points.
 Watchlist and Favourites no longer show Movie or Series pills on iOS or tvOS; the Filter menu's Show choice separates them instead.
 Library’s secondary tabs scroll with Watchlist, Favourites and Collections.
 Person details reuse the active profile’s response cache while refreshing in the background; filmography and filter availability load alongside the person request.

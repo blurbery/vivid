@@ -63,8 +63,10 @@ struct EpisodeThumbCard: View {
 
     private var cardSize: CGSize {
         let presentation = homeCardPresentation ?? UICustomizationPreferences.shared.cardPresentation
-        let width = VividTheme.thumbnailCardWidth * presentation.posterSize.scale
-        return CGSize(width: width, height: width * VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth)
+        // Rounded so the 400 by 222 point card doesn't pick up a stray
+        // fraction from the token's division by the Large scale.
+        let width = (VividTheme.thumbnailCardWidth * presentation.posterSize.scale).rounded()
+        return CGSize(width: width, height: (width * VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth).rounded())
     }
 
     private var caption: CardCaptionStyle { TVHomeCardPreferences.shared.presentation.caption }

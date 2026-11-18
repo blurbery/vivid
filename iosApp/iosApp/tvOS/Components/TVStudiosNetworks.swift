@@ -274,8 +274,8 @@ private struct TVStudioNetworkPageContent: View, Equatable {
         }
     }
 
-    /// Laid out like a TVCatalogGrid row: six equal columns across the
-    /// inset width, cards sized to fill them.
+    /// Laid out like a TVCatalogGrid row: `posterGridColumns` equal columns
+    /// across the inset width, cards sized to fill them.
     private func firstGridRow(_ items: [BrowseItem]) -> some View {
         let width = (1920 - Self.inset * 2 - Self.columnSpacing * CGFloat(Self.columns - 1)) / CGFloat(Self.columns)
             / gridPosterSize.scale

@@ -41,12 +41,11 @@ struct TVCastAndCrewRail: View {
     let crew: [CrewMember]
     let onSelectPerson: (String) -> Void
 
-    @State private var homeCards = TVHomeCardPreferences.shared
     @FocusState private var focusedKey: String?
 
     var body: some View {
         let groups = CastCrewGrouping.groups(cast: cast, crew: crew, maxCast: 24, maxCrewPerGroup: 6)
-        let photoWidth = VividTheme.Skyline.densePosterCardWidth * homeCards.presentation.posterSize.scale
+        let photoWidth = VividTheme.Skyline.castPhotoWidth
         let photoSize = CGSize(width: photoWidth, height: photoWidth * 1.5)
         let firstKey = groups.first.flatMap { group in group.people.first.map { Self.key(group, $0) } }
         ScrollView(.horizontal) {
@@ -124,7 +123,9 @@ private struct TVCastPersonCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        // The same gap as Home's posters, so the focus lift doesn't cover
+        // the name.
+        VStack(spacing: VividTheme.Skyline.posterCaptionGap) {
             Button(action: action) {
                 photo
             }

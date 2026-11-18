@@ -62,10 +62,10 @@ enum TVHomeRowGeometry {
         let captionGap: CGFloat
         switch layout {
         case .poster:
-            artworkHeight = posterWidth * scale * VividTheme.posterCardHeight / VividTheme.posterCardWidth
+            artworkHeight = (posterWidth * scale * VividTheme.posterCardHeight / VividTheme.posterCardWidth).rounded()
             captionGap = posterCaptionGap
         case .thumbnail:
-            artworkHeight = VividTheme.thumbnailCardHeight * scale
+            artworkHeight = (VividTheme.thumbnailCardHeight * scale).rounded()
             captionGap = thumbnailCaptionGap
         }
         var height = artworkHeight

@@ -115,10 +115,8 @@ struct TVDetailStandardSurface<Content: View>: View {
 /// Darkens the older layout below its first shelf, so the rails sit on
 /// black while the hero keeps its tint.
 struct TVDetailLowerBackground: View {
-    @State private var preferences = UICustomizationPreferences.shared
-
     var body: some View {
-        let cardHeight = VividTheme.thumbnailCardHeight * preferences.cardPresentation.posterSize.scale
+        let cardHeight = TVEpisodeRail.defaultCardHeight
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: 52 + 8 + 14 + 12 + cardHeight / 2)

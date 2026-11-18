@@ -10,12 +10,16 @@ struct RequestStatusRibbon: View {
     private let fontSize: CGFloat = 20
     private let horizontalPadding: CGFloat = 16
     private let verticalPadding: CGFloat = 8
+    /// Longer labels shrink a little to fit a seven-across poster instead
+    /// of cutting off.
+    private let minimumScale: CGFloat = 0.8
     #else
     private let spacing: CGFloat = 5
     private let dotSize: CGFloat = 6
     private let fontSize: CGFloat = 10
     private let horizontalPadding: CGFloat = 8
     private let verticalPadding: CGFloat = 4
+    private let minimumScale: CGFloat = 1
     #endif
 
     var body: some View {
@@ -27,6 +31,7 @@ struct RequestStatusRibbon: View {
                 .font(.system(size: fontSize, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .minimumScaleFactor(minimumScale)
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)

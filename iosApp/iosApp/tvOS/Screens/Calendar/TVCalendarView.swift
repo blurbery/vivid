@@ -237,7 +237,7 @@ struct TVCalendarView: View {
                     LazyHStack(alignment: .top, spacing: 40) {
                         ForEach(titles) { title in
                             TVTrendingPoster(title: title) { selectedTitle = title }
-                                .frame(width: 240)
+                                .frame(width: VividTheme.Skyline.railPosterWidth)
                         }
                     }
                     .padding(.vertical, 24)
@@ -370,7 +370,7 @@ private struct TVTrendingPoster: View {
             ZStack(alignment: .topLeading) {
                 Color.vividSurfaceVariant
                 if let url = title.posterURL {
-                    AsyncImageView(url: url.absoluteString, targetSize: CGSize(width: 260, height: 390), contentMode: .fill)
+                    AsyncImageView(url: url.absoluteString, targetSize: CGSize(width: VividTheme.Skyline.railPosterWidth, height: VividTheme.Skyline.railPosterWidth * 1.5), contentMode: .fill)
                 }
                 Text(title.day.formatted(.dateTime.day().month(.abbreviated)).uppercased())
                     .font(.system(size: 18, weight: .bold))

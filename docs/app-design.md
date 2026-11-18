@@ -99,9 +99,10 @@ Under posters, titles use 24-point medium text and secondary captions use 22-poi
 Continue Watching, Next Up, the other landscape episode rows on Home and the Library tab's library cards use the same 24-point titles and 22-point secondary captions, on cards that keep their size.
 Episodes substitute episode details for the year and keep them with Title Only, because their title is the series name.
 Only Artwork Only hides an episode's season and episode line, and rows holding an episode keep room for that line.
-Search keeps six columns across the safe-area width with reduced spacing below its result tabs.
-Every Apple TV poster grid (Search and its Seerr results, the Library tab, library pages, collection and Studios & Networks pages, the Collections tab and Calendar's day view) shows six posters across, each 260 by 390 points.
-Home's poster rows and the rails that match them (the Collections row, More Like This, collection rails, Studios & Networks rails and Cast & Crew) show posters 240 by 360 points, and a person's filmography shows seven posters across at the Standard poster size, or six at Compact or Large.
+Search keeps seven columns across the safe-area width with reduced spacing below its result tabs.
+Every Apple TV poster grid (Search and its Seerr results, the Library tab, library pages, collection and Studios & Networks pages, the Collections tab and Calendar's day view) shows seven posters across, each about 217 by 326 points.
+Home's poster rows and the rails that match them (the Collections row, More Like This, collection rails, Studios & Networks rails and Calendar's Trending rails) show posters 220 by 330 points, and a person's filmography shows seven posters across like the other grids.
+Cast & Crew photos are 180 by 270 points.
 
 Detail pages keep their credit, playback-readout and action rows at fixed baselines through loading and episode changes.
 Long-pressing Play or Resume opens a native context menu: Start Over when there's something to resume, and Shuffle on a series page.
@@ -524,7 +525,7 @@ Movie and series pages also show the TMDb user score after the quality badges on
 It needs a signed-in account and profile, lists only titles in the library in release order, includes the current movie, and is hidden when the movie has no collection or is the only one from it in the library.
 Titles are matched against the library list Studios & Networks saves each day, so the row never searches the server, stays hidden until that list exists and picks up newly added films after the next daily refresh.
 Selecting the current movie's card keeps the page in place.
-Cast & Crew uses portrait posters at the same size as More Like This: the shared card size on iPhone and iPad, and Home's Large poster size on Apple TV.
+Cast & Crew uses portrait posters at the same size as More Like This on iPhone and iPad, and 180 by 270 point photos on Apple TV.
 Directors come first, then writers and creators (anyone already shown as director is left out), then the cast in the server's billing order, each later group after a thin divider with a rotated WRITERS or CAST label.
 Emby connections do not read crew, so Emby titles show only the cast.
 Tapping an actor’s biography on iOS opens the full text in a scrollable sheet with a Done button.
@@ -611,7 +612,7 @@ The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDeta
   With just the time and connectivity icons it ends 170 points down on the cover, 120 in the inner screen's landscape strip and 82 in its portrait corner, and the layouts above are placed for that.
   When widgets make it longer, the X and back buttons and the Settings avatar bar move down by the same amount, and so does the top of the tab bar, which gets shorter so its bottom stays put.
   Builds without the iOS 27.1 SDK keep the usual positions.
-- **Grids:** Library-page, Search, Watchlist, Favourites and collection grids fit posters to the inner screen like Apple TV: six across in landscape and four in portrait.
+- **Grids:** Library-page, Search, Watchlist, Favourites and collection grids fit posters to the inner screen: six across in landscape and four in portrait.
   The cover keeps three.
 - **Detail pages:** the inner screen keeps the iPhone portrait design in both orientations, with its parallax and artwork glass, and no glass bar or title fading in while scrolling.
   Play shares a row with Favourite, Watchlist, Watched, Shuffle and Download (Shuffle on series only), whose circles match Play's height with even gaps; the row, synopsis, credits and playback selectors sit in one 560-point column centred under the logo, and the season chips are centred.
