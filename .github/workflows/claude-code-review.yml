@@ -9,8 +9,9 @@ name: Claude Code Review
 # place. Each run stops at a cost limit and keeps what it found so far; a run
 # that stops early doesn't record its commit, so the next one covers what it
 # missed. Skips
-# drafts, bots, fork PRs (GitHub withholds secrets from them) and
-# Markdown-only changes. Needs the ANTHROPIC_API_KEY secret (reviews come out
+# drafts, bots and fork PRs (GitHub withholds secrets from them). Docs-only
+# PRs are reviewed too, with the whole run spent checking their claims
+# against the code. Needs the ANTHROPIC_API_KEY secret (reviews come out
 # of API credits), plus ANTHROPIC_WORKSPACE_ID for a key that covers several
 # workspaces. Without a key, the job does nothing. Comments are posted by the
 # review GitHub App when the REVIEW_APP_CLIENT_ID variable and
@@ -30,8 +31,6 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    paths-ignore:
-      - "**/*.md"
   workflow_dispatch:
     inputs:
       pr:

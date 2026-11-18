@@ -204,7 +204,11 @@ It starts on every pull request: a `changes` job on a standard Ubuntu runner ski
 It publishes nothing.
 A Lucid Engine package release (`blurbery/lucid-engine`) is a separate, explicitly authorised step: `engine/publish_package.py` prepares it from one green run, and the app's pin in both project specs and `Package.resolved` then moves in its own change ([Publishing the package](../cores/lucid-engine-build.md#publishing-the-package)).
 Engine releases have their own version numbers and do not follow the app's semantic-release versions or TestFlight build numbers.
-Claude Code Review (`claude-code-review.yml`) comments on pull requests from branches in this repository, skipping drafts, bot pull requests and Markdown-only changes, and does nothing without its API key.
+Claude Code Review (`claude-code-review.yml`) comments on pull requests from branches in this repository, skipping drafts and bot pull requests, and does nothing without its API key.
+A full review runs two passes, one for bugs in the code and one checking what the description, docs and comments claim against the code.
+A review of new commits runs the claims pass only when they touch Markdown or code comments.
+When the changes being reviewed touch only Markdown files (the whole pull request, or a push of new commits), the bug pass is skipped and the claims pass gets the whole cost limit; other documentation, such as `website/public/privacy.html`, still gets both passes.
+The bug pass can read each changed file as it was before the pull request, to catch behaviour a change drops, and also checks shared code changed for one caller, new code nothing calls, test files missing from the tvOS test target and changed translations.
 Of a pull request's review comments, it passes Claude only those from the repository's owner, members and collaborators and from bots, because anyone can comment on a pull request in a public repository.
 A review that stops early (at its cost or turn limit, after a refusal or after a Claude API error) doesn't record the commit as reviewed, so the next push covers what it missed.
 A manual run is a dry-run benchmark that posts nothing, unless its `post` input is ticked: then it reviews the PR's head in full with the chosen model, effort and cost limit (0 for no limit, with each pass stopping at 300 turns) and posts the result like an automatic review.
