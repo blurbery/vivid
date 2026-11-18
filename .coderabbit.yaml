@@ -4,8 +4,8 @@
 # Vivid is public, so it uses CodeRabbit's free open-source plan. That plan
 # allows only a few PR reviews per hour, and every push that triggers a review
 # uses one. These settings spend that allowance on the reviews that matter:
-# the first review of each ready PR and one follow-up push, while docs PRs,
-# drafts, bot PRs and generated or vendored files are skipped. Comment
+# the first review of each ready PR and a short run of follow-ups, while docs
+# PRs, drafts, bot PRs and large generated or vendored files are skipped. Comment
 # `@coderabbitai review` on a PR to ask for another look after that, and
 # `@coderabbitai rate limit` to see what's left.
 #
@@ -54,19 +54,23 @@ reviews:
     drafts: false
     base_branches:
       - main
-    # Review follow-up pushes automatically, but pause after two reviewed
-    # pushes so a long fix-up cycle doesn't use the hourly allowance. Comment
-    # `@coderabbitai review` (or `resume`) to carry on.
+    # Review follow-up pushes automatically, but pause once three commits have
+    # been reviewed (CodeRabbit counts commits, so a push of several commits
+    # counts each one) so a long fix-up cycle doesn't use the hourly
+    # allowance. Comment `@coderabbitai review` (or `resume`) to carry on.
     auto_incremental_review: true
-    auto_pause_after_reviewed_commits: 2
+    auto_pause_after_reviewed_commits: 3
     # Docs PRs (titles with `docs:` or `docs(`) are checked by the Docs job.
-    # Add "[skip review]" to any other title to skip it, then comment
+    # Keywords match anywhere in the title, ignoring case, so they are kept
+    # specific: a bare "wip" would also skip "fix: wipe downloads". Add
+    # "[skip review]" to any other title to skip it, then comment
     # `@coderabbitai review` if you change your mind.
     ignore_title_keywords:
       - "docs:"
       - "docs("
       - "[skip review]"
-      - "WIP"
+      - "[WIP]"
+      - "WIP:"
     ignore_usernames:
       - "dependabot[bot]"
   # Every commit on main must be attributed to blurbery, so CodeRabbit must not
@@ -115,12 +119,14 @@ reviews:
           tokens or passwords. Placeholders such as example.com,
           user@example.com and <account-id> are fine. Pass otherwise.
   path_filters:
-    # Generated, vendored or binary-like files that use up review capacity
-    # without anything to review.
+    # Large generated or vendored files that would use up review capacity.
+    # The String Catalogs hold real translations, but at over 2 MB they are
+    # too big to review usefully, so CodeRabbit doesn't check translations.
     - "!**/*.xcstrings"
     - "!**/package-lock.json"
     - "!engine/config/expected-libs/**"
-    - "!iosApp/Resources/OpenSourceLicenses/**"
+    # Licence texts only; licences.json (the in-app licence list) is reviewed.
+    - "!iosApp/Resources/OpenSourceLicenses/*.txt"
     - "!iosApp/Tests/Fixtures/**"
     - "!diagnostics-relay/fixtures/**"
     - "!website/public/fonts/**"

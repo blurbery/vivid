@@ -117,8 +117,8 @@ Pull requests from forks do not, because GitHub withholds the review key from th
 Check its comments against the source like any other review; they are not an approval.
 
 CodeRabbit also reviews non-draft pull requests into `main`, including pull requests from forks, with the settings in `.coderabbit.yaml`.
-It skips titles containing `docs:`, `docs(`, `WIP` or `[skip review]`, and Dependabot's pull requests, so add `[skip review]` to any other title you want it to skip.
-It reviews the first two pushes on its own and then pauses, because its free open-source plan allows only a few reviews an hour; comment `@coderabbitai review` to ask for another.
+It skips titles containing `docs:`, `docs(`, `[WIP]`, `WIP:` or `[skip review]`, and Dependabot's pull requests, so add `[skip review]` to any other title you want it to skip.
+It reviews new pushes on its own until it has reviewed three commits, then pauses, because its free open-source plan allows only a few reviews an hour; comment `@coderabbitai review` to ask for another.
 It only comments: it does not edit the description, push commits or approve.
 Treat its findings the same way, and reply to `@coderabbitai` in a comment if you want it to explain a finding.
 
