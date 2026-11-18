@@ -114,7 +114,68 @@ extension PlayerViewModel {
         case .receiverStarted:
             guard !isDisposed else { return }
             Task { [sessionBridge] in await sessionBridge.reportAirPlayReceiverStarted() }
+        case .retryRouteCheck:
+            evaluateAirPlayRoute()
+        case .restartFailed(let id):
+            undoAirPlayReceiverChange(request: id)
         }
+    }
+
+    /// A change made while handed off didn't reach the receiver, which plays
+    /// on with what it had: the menus go back to that, with the notice the
+    /// same failure shows on the phone. A newer change still waiting has
+    /// already been sent instead of this.
+    private func undoAirPlayReceiverChange(request: Int) {
+        let change = airPlayRequestSelections.removeValue(forKey: request)?.change ?? airPlayChangeKind
+        guard !isDisposed else { return }
+        airPlayReceiverSelection?.restore(on: self)
+        switch change {
+        case .audio:
+            showNotice(
+                title: String(localized: "Couldn't change audio"),
+                message: String(localized: "The audio track couldn't be switched. The previous track was kept."),
+                tone: .warning,
+                duration: 5
+            )
+        case .subtitle:
+            showNotice(
+                title: String(localized: "Couldn't show subtitles"),
+                message: String(localized: "Couldn't load the selected subtitles. Try again, or go back and choose other subtitles or turn them off."),
+                tone: .warning,
+                duration: 6
+            )
+        case .quality:
+            qualitySwitchError = String(localized: "Couldn't change quality right now. Try again.")
+        case .seek:
+            showNotice(
+                title: String(localized: "Couldn't seek"),
+                message: String(localized: "Playback couldn't move to that position. Try again."),
+                tone: .warning,
+                duration: 5
+            )
+        }
+    }
+
+    /// Whether a receiver session that couldn't be had is worth trying again
+    /// shortly: no network, a timeout, a busy or failing server, or a moment
+    /// with no live session. A refusal or an unsupported plan, format or
+    /// server isn't.
+    nonisolated static func isTemporaryAirPlayFailure(_ error: Error) -> Bool {
+        if error is CancellationError || error is URLError { return true }
+        if let failure = error as? PlaybackV3TerminalFailure { return failure.retryable }
+        let status: Int
+        if let http = error as? HTTPError {
+            switch http {
+            case .network: return true
+            case .http(let code, _): status = code
+            default: return false
+            }
+        } else if let api = error as? APIError, case .httpError(let code) = api {
+            status = code
+        } else {
+            return false
+        }
+        return status == 408 || status == 429 || (500...599).contains(status)
     }
 
     /// Prepares a receiver session for the load on screen, which keeps
@@ -134,10 +195,12 @@ extension PlayerViewModel {
             return
         }
         let epoch = activeVividLoadEpoch
+        airPlayRequestSelections[request] = (AirPlayReceiverSelection(of: self), restarting ? airPlayChangeKind : .seek)
         Task { @MainActor [weak self] in
             await self?.freshLoadTask?.value
             guard let self else { return }
             guard self.isAirPlayRequestStillWanted(epoch: epoch, restarting: restarting) else {
+                if !restarting { self.airPlayRequestSelections[request] = nil }
                 if restarting || self.isDisposed {
                     self.vividPlaybackController.airPlayStreamFailed(request: request)
                 } else {
@@ -153,6 +216,7 @@ extension PlayerViewModel {
                 if !restarting, !self.isDisposed,
                    !self.isAirPlayRequestStillWanted(epoch: epoch, restarting: false) {
                     await source.releaseAirPlayReceiverSession(stream)
+                    self.airPlayRequestSelections[request] = nil
                     self.vividPlaybackController.airPlayHandOffBlocked(request: request)
                     return
                 }
@@ -167,7 +231,12 @@ extension PlayerViewModel {
                 Self.logger.error(
                     "AirPlay receiver stream unavailable: \(AirPlayVideoHandOff.describe(error), privacy: .public)"
                 )
-                self.vividPlaybackController.airPlayStreamFailed(request: request)
+                if !restarting { self.airPlayRequestSelections[request] = nil }
+                if !restarting, Self.isTemporaryAirPlayFailure(error) {
+                    self.vividPlaybackController.airPlayStreamUnavailable(request: request)
+                } else {
+                    self.vividPlaybackController.airPlayStreamFailed(request: request)
+                }
             }
         }
     }
@@ -185,10 +254,14 @@ extension PlayerViewModel {
         Task { @MainActor [weak self, sessionBridge] in
             let result = await sessionBridge.commitAirPlayReceiverSession(stream, position: position)
             guard let self else { return }
-            if result == .committed, isSilo, !self.isDisposed, self.vividPlaybackController.isAirPlayHandOffEngaged,
-               let sessionId = stream.serverSessionId {
-                self.airPlayReceiverSessionId = sessionId
-                await self.realtimeClient.bind(sessionId: sessionId)
+            let prepared = self.airPlayRequestSelections.removeValue(forKey: request)
+            if result == .committed, self.vividPlaybackController.isAirPlayHandOffEngaged {
+                // The receiver now plays what this request was prepared with.
+                if let prepared { self.airPlayReceiverSelection = prepared.selection }
+                if isSilo, !self.isDisposed, let sessionId = stream.serverSessionId {
+                    self.airPlayReceiverSessionId = sessionId
+                    await self.realtimeClient.bind(sessionId: sessionId)
+                }
             }
             self.vividPlaybackController.airPlayCommitFinished(request: request, result: result)
         }
@@ -248,16 +321,58 @@ extension PlayerViewModel: AirPlayReceiverStreamSource {
         )
     }
 
-    func commitAirPlayReceiverSession(_ stream: AirPlayReceiverStream, position: Double) async -> AirPlayReceiverCommit {
-        await sessionBridge.commitAirPlayReceiverSession(stream, position: position)
-    }
-
     func releaseAirPlayReceiverSession(_ stream: AirPlayReceiverStream) async {
         await sessionBridge.abandonAirPlayReceiverSession(stream)
     }
+}
 
-    func airPlayReceiverDidStart() async {
-        await sessionBridge.reportAirPlayReceiverStarted()
+/// The kind of change a receiver restart was for, which picks the notice if
+/// it fails.
+enum AirPlayReceiverChange {
+    case audio, subtitle, quality, seek
+}
+
+/// The track and quality choices a receiver stream was prepared with.
+struct AirPlayReceiverSelection {
+    let selectedAudioId: Int64?
+    let audioPickedForCurrentItem: Bool
+    let selectedSubtitleId: Int64?
+    let pendingSubtitleFfIndex: Int?
+    let pendingSidecarSubtitleTrackId: Int64?
+    let hasExplicitSubtitleChoice: Bool
+    let activeQualityId: String
+    let playbackFallbackMode: PlaybackFallbackMode?
+    let preferredQualityOverride: String?
+    let carriedBandwidthCap: CarriedBandwidthCap?
+
+    @MainActor
+    init(of player: PlayerViewModel) {
+        selectedAudioId = player.selectedAudioId
+        audioPickedForCurrentItem = player.audioPickedForCurrentItem
+        selectedSubtitleId = player.selectedSubtitleId
+        pendingSubtitleFfIndex = player.pendingSubtitleFfIndex
+        pendingSidecarSubtitleTrackId = player.pendingSidecarSubtitleTrackId
+        hasExplicitSubtitleChoice = player.hasExplicitSubtitleChoice
+        activeQualityId = player.activeQualityId
+        playbackFallbackMode = player.playbackFallbackMode
+        preferredQualityOverride = player.lastLoadRequest?.preferredQualityOverride
+        carriedBandwidthCap = player.lastLoadRequest?.carriedBandwidthCap
+    }
+
+    /// Puts these choices back in the menus, and in the request Lucid
+    /// reloads with when it takes the title back.
+    @MainActor
+    func restore(on player: PlayerViewModel) {
+        player.selectedAudioId = selectedAudioId
+        player.audioPickedForCurrentItem = audioPickedForCurrentItem
+        player.selectedSubtitleId = selectedSubtitleId
+        player.pendingSubtitleFfIndex = pendingSubtitleFfIndex
+        player.pendingSidecarSubtitleTrackId = pendingSidecarSubtitleTrackId
+        player.hasExplicitSubtitleChoice = hasExplicitSubtitleChoice
+        player.activeQualityId = activeQualityId
+        player.playbackFallbackMode = playbackFallbackMode
+        player.lastLoadRequest?.preferredQualityOverride = preferredQualityOverride
+        player.lastLoadRequest?.carriedBandwidthCap = carriedBandwidthCap
     }
 }
 #endif

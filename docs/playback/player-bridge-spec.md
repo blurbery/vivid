@@ -1344,7 +1344,7 @@ If it never does, external screens simply mirror the device and the only live pa
 
 ### 9.3 Placement refresh
 
-Runs on main from `externalDisplayDidChange()`, `setVisible(true)`, the coordinator and iOS scene activation.
+Runs on main from `externalDisplayDidChange()`, `setVisible(_:)`, the coordinator and iOS scene activation.
 It does nothing if there is no container (never initialised, or disposed).
 Otherwise, the external target is the coordinator's external root view, but only on iOS, only while the core is visible and only while `isPipActive` is false; in every other case there is no target.
 

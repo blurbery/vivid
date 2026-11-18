@@ -17,6 +17,7 @@ extension PlayerViewModel {
         if vividPlaybackController.isAirPlayHandOffEngaged {
             // An AirPlay receiver has the title: it gets a new stream with
             // this track, and Lucid picks it up when it takes the title back.
+            airPlayChangeKind = .audio
             viewingAudioLanguage = viewingAudioLanguage(for: track)
             pendingAudioFfIndex = nil
             selectedAudioId = track.trackId
@@ -182,6 +183,9 @@ extension PlayerViewModel {
         // An AirPlay receiver only shows the server's subtitles, so a pick
         // gets it a new stream; Lucid picks it up when it takes the title
         // back.
+        if vividPlaybackController.isAirPlayHandOffEngaged {
+            airPlayChangeKind = .subtitle
+        }
         if restartAirPlayReceiverIfHandedOff() {
             scheduleHideControls()
             return

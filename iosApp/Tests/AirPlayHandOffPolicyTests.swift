@@ -132,6 +132,67 @@ final class AirPlayHandOffPolicyTests: XCTestCase {
         XCTAssertEqual(policy.handle(.handOffBlocked(request: 1)), [])
     }
 
+    func testTemporaryFailureRetriesTwiceThenGivesUp() {
+        var policy = AirPlayHandOffPolicy()
+        _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+        _ = policy.handle(.probeExternalActive)
+        XCTAssertEqual(
+            policy.handle(.streamUnavailable(request: 1)),
+            [.stopProbe, .recheckOutputRoute, .retryRouteCheck(afterSeconds: 3)]
+        )
+        XCTAssertEqual(policy.state, .idle)
+        XCTAssertEqual(policy.handle(.airPlayRouteAppeared(route: appleTV)), [.startProbe])
+        _ = policy.handle(.probeExternalActive)
+        XCTAssertEqual(
+            policy.handle(.streamUnavailable(request: 2)),
+            [.stopProbe, .recheckOutputRoute, .retryRouteCheck(afterSeconds: 8)]
+        )
+        _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+        _ = policy.handle(.probeExternalActive)
+        XCTAssertEqual(policy.handle(.streamUnavailable(request: 3)), [.stopProbe, .recheckOutputRoute])
+        XCTAssertEqual(policy.state, .ending(route: appleTV))
+    }
+
+    func testRetriesStartAgainForANewRouteOrAPickerChoice() {
+        var policy = AirPlayHandOffPolicy()
+        for request in 1...2 {
+            _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+            _ = policy.handle(.probeExternalActive)
+            _ = policy.handle(.streamUnavailable(request: request))
+        }
+        _ = policy.handle(.routePickerClosed)
+        _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+        _ = policy.handle(.probeExternalActive)
+        XCTAssertEqual(
+            policy.handle(.streamUnavailable(request: 3)),
+            [.stopProbe, .recheckOutputRoute, .retryRouteCheck(afterSeconds: 3)]
+        )
+        _ = policy.handle(.airPlayRouteAppeared(route: homePod))
+        _ = policy.handle(.probeExternalActive)
+        XCTAssertEqual(
+            policy.handle(.streamUnavailable(request: 4)),
+            [.stopProbe, .recheckOutputRoute, .retryRouteCheck(afterSeconds: 3)]
+        )
+    }
+
+    func testCommittedHandOffClearsTheRetries() {
+        var policy = AirPlayHandOffPolicy()
+        _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+        _ = policy.handle(.probeExternalActive)
+        _ = policy.handle(.streamUnavailable(request: 1))
+        _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+        _ = policy.handle(.probeExternalActive)
+        _ = policy.handle(.streamReady(request: 2, position: 5))
+        _ = policy.handle(.commitFinished(request: 2, result: .committed))
+        _ = policy.handle(.loadReplaced)
+        _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
+        _ = policy.handle(.probeExternalActive)
+        XCTAssertEqual(
+            policy.handle(.streamUnavailable(request: 3)),
+            [.stopProbe, .recheckOutputRoute, .retryRouteCheck(afterSeconds: 3)]
+        )
+    }
+
     func testPrepareTimeoutFallsBackWithoutTouchingLucid() {
         var policy = AirPlayHandOffPolicy()
         _ = policy.handle(.airPlayRouteAppeared(route: appleTV))
@@ -284,7 +345,10 @@ final class AirPlayHandOffPolicyTests: XCTestCase {
 
     func testTrackChangeSwapsTheStreamBeforeCommitting() {
         var policy = playing(at: 100)
-        XCTAssertEqual(policy.handle(.restartRequested(position: nil)), [.requestStream(request: 2)])
+        XCTAssertEqual(
+            policy.handle(.restartRequested(position: nil)),
+            [.requestStream(request: 2), .armRestartDeadline(request: 2)]
+        )
         XCTAssertEqual(
             policy.handle(.streamReady(request: 2, position: 130)),
             [.startStream(request: 2, at: 130), .commitStream(request: 2, at: 130)]
@@ -304,11 +368,54 @@ final class AirPlayHandOffPolicyTests: XCTestCase {
     }
 
     func testFailedRestartKeepsTheCurrentStream() {
+        for event in [AirPlayHandOffPolicy.Event.streamFailed(request: 2), .streamUnavailable(request: 2),
+                      .restartTimedOut(request: 2)] {
+            var policy = playing()
+            _ = policy.handle(.restartRequested(position: nil))
+            XCTAssertEqual(policy.handle(event), [.restartFailed(request: 2)])
+            XCTAssertTrue(policy.isActive)
+            XCTAssertEqual(policy.handle(.startTimedOut), [])
+            // Its stream turning up afterwards is let go.
+            XCTAssertEqual(policy.handle(.streamReady(request: 2, position: 5)), [.releaseStream(request: 2)])
+            // Later changes aren't held back.
+            XCTAssertEqual(
+                policy.handle(.restartRequested(position: nil)),
+                [.requestStream(request: 3), .armRestartDeadline(request: 3)]
+            )
+        }
+    }
+
+    func testHungRestartCommitStopsHoldingChangesBack() {
         var policy = playing()
         _ = policy.handle(.restartRequested(position: nil))
-        XCTAssertEqual(policy.handle(.streamFailed(request: 2)), [])
+        _ = policy.handle(.streamReady(request: 2, position: 60))
+        XCTAssertEqual(policy.handle(.restartRequested(position: nil)), [])
+        XCTAssertEqual(
+            policy.handle(.restartTimedOut(request: 2)),
+            [.requestStream(request: 3), .armRestartDeadline(request: 3)]
+        )
+        // The hung commit answering late changes nothing.
+        XCTAssertEqual(policy.handle(.commitFinished(request: 2, result: .committed)), [])
         XCTAssertTrue(policy.isActive)
-        XCTAssertEqual(policy.handle(.startTimedOut), [])
+    }
+
+    func testHungRestartCommitWithNothingWaitingJustLetsGo() {
+        var policy = playing()
+        _ = policy.handle(.restartRequested(position: nil))
+        _ = policy.handle(.streamReady(request: 2, position: 60))
+        XCTAssertEqual(policy.handle(.restartTimedOut(request: 2)), [])
+        XCTAssertEqual(
+            policy.handle(.restartRequested(position: nil)),
+            [.requestStream(request: 3), .armRestartDeadline(request: 3)]
+        )
+    }
+
+    func testStaleRestartDeadlineIsIgnored() {
+        var policy = playing()
+        _ = policy.handle(.restartRequested(position: nil))
+        _ = policy.handle(.streamReady(request: 2, position: 60))
+        _ = policy.handle(.commitFinished(request: 2, result: .committed))
+        XCTAssertEqual(policy.handle(.restartTimedOut(request: 2)), [])
     }
 
     func testRefusedOrFailedRestartCommitReloadsLucid() {
@@ -326,7 +433,10 @@ final class AirPlayHandOffPolicyTests: XCTestCase {
     func testNewerRestartReleasesTheOlderStream() {
         var policy = playing()
         _ = policy.handle(.restartRequested(position: nil))
-        XCTAssertEqual(policy.handle(.restartRequested(position: nil)), [.requestStream(request: 3)])
+        XCTAssertEqual(
+            policy.handle(.restartRequested(position: nil)),
+            [.requestStream(request: 3), .armRestartDeadline(request: 3)]
+        )
         XCTAssertEqual(policy.handle(.streamReady(request: 2, position: 5)), [.releaseStream(request: 2)])
         XCTAssertEqual(
             policy.handle(.streamReady(request: 3, position: 6)),
@@ -350,8 +460,19 @@ final class AirPlayHandOffPolicyTests: XCTestCase {
         XCTAssertTrue(policy.isActive)
         XCTAssertEqual(
             policy.handle(.commitFinished(request: 1, result: .committed)),
-            [.startStream(request: 1, at: 10), .requestStream(request: 2)]
+            [.startStream(request: 1, at: 10), .requestStream(request: 2), .armRestartDeadline(request: 2)]
         )
+    }
+
+    func testFailedRestartTakesTheNewerWaitingChangeInstead() {
+        var policy = playing()
+        _ = policy.handle(.restartRequested(position: nil))
+        _ = policy.handle(.streamReady(request: 2, position: 60))
+        // While request 2 commits, another change waits; then a newer restart
+        // for it fails, but nothing is waiting behind that one.
+        _ = policy.handle(.restartRequested(position: nil))
+        _ = policy.handle(.commitFinished(request: 2, result: .committed))
+        XCTAssertEqual(policy.handle(.streamFailed(request: 3)), [.restartFailed(request: 3)])
     }
 
     func testRestartDuringARestartCommitWaitsForIt() {
@@ -359,7 +480,10 @@ final class AirPlayHandOffPolicyTests: XCTestCase {
         _ = policy.handle(.restartRequested(position: nil))
         _ = policy.handle(.streamReady(request: 2, position: 60))
         XCTAssertEqual(policy.handle(.restartRequested(position: 15)), [])
-        XCTAssertEqual(policy.handle(.commitFinished(request: 2, result: .committed)), [.requestStream(request: 3)])
+        XCTAssertEqual(
+            policy.handle(.commitFinished(request: 2, result: .committed)),
+            [.requestStream(request: 3), .armRestartDeadline(request: 3)]
+        )
         XCTAssertEqual(
             policy.handle(.streamReady(request: 3, position: 70)),
             [.startStream(request: 3, at: 15), .commitStream(request: 3, at: 15)]

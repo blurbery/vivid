@@ -126,6 +126,7 @@ extension PlayerViewModel {
         if vividPlaybackController.isAirPlayHandOffEngaged {
             // An AirPlay receiver has the title: it gets a new stream at this
             // quality, which Lucid also uses when it takes the title back.
+            airPlayChangeKind = .quality
             lastLoadRequest?.preferredQualityOverride = resolvedQualityId
             lastLoadRequest?.carriedBandwidthCap = nil
             activeQualityId = resolvedQualityId

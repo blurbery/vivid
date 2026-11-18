@@ -498,6 +498,16 @@ class PlayerViewModel {
     /// off; the player's own session id still names the retired one.
     @ObservationIgnored var airPlayReceiverSessionId: String?
     #if os(iOS)
+    /// The tracks and quality each receiver request was prepared with, by
+    /// request, and the kind of change that asked for it.
+    @ObservationIgnored var airPlayRequestSelections: [Int: (selection: AirPlayReceiverSelection, change: AirPlayReceiverChange)] = [:]
+    /// What the receiver is actually playing, for undoing a change whose
+    /// new stream couldn't be had.
+    @ObservationIgnored var airPlayReceiverSelection: AirPlayReceiverSelection?
+    /// The kind of the latest change made while handed off.
+    @ObservationIgnored var airPlayChangeKind = AirPlayReceiverChange.seek
+    #endif
+    #if os(iOS)
     var isPlayerPresentationVisible = false
     /// AVKit's restore completion handler, held while the re-presented cover
     /// is still on its way to `PlayerView.onAppear`. See

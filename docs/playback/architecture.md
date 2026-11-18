@@ -459,12 +459,15 @@ A parked car with CarPlay video should be handled the same way, but that hasn't 
 Apple's `AVPlayer` gives the receiver the stream address, and the receiver fetches and plays the stream itself.
 Preparing and switching sessions has a 30 second limit, and the receiver then has 20 seconds to start the stream; a failure falls back to the phone.
 Switching to the phone or losing the receiver before the stream starts ends the hand-off straight away.
+If the receiver's session can't be prepared because of a temporary problem, such as the network or a busy server, Vivid tries the same receiver again about 3 seconds and then 8 seconds later, with Lucid playing meanwhile; after that, or after a lasting failure, it waits until the route changes or the receiver is picked again.
 The hand-off lives in the player controller, outside the [Lucid Engine bridge](player-bridge-spec.md#97-airplay-and-screen-mirroring), and doesn't use the engine's own `AVPlayer`.
 
 During a hand-off the device shows the black video area with the normal controls and no subtitles.
 The controls, volume and mute drive the receiver, and an audio, subtitle or quality change restarts the receiver's stream at the current position.
 A change made while the receiver's session is still being switched waits for the switch and then applies, and a seek before the receiver starts sets where it starts.
-On a restart the receiver moves to the new stream first, and only then is the old receiver session retired; if the restart can't be completed, playback returns to Lucid through a fresh load.
+On a restart the receiver moves to the new stream first, and only then is the old receiver session retired.
+A restart that fails or isn't ready within 30 seconds leaves the receiver on what it was playing, puts the menu back to match and shows the usual notice that the change couldn't be made.
+If a restart's session switch is refused or fails, playback returns to Lucid through a fresh load.
 Picture in Picture is unavailable and Silo replans aren't used, while Silo's realtime events keep arriving for the receiver's session.
 Vivid's subtitle overlay is hidden only during a hand-off, not whenever the output is external.
 A Jellyfin hand-off made before the phone's first progress report saves no resume position for the phone's session.
@@ -477,7 +480,8 @@ The iOS audio session uses Apple's long-form video route sharing policy for all 
 Apple TV keeps the long-form audio policy and has no hand-off.
 
 The receiver's session asks for formats it can play: HLS with H.264 (up to 1080p) or HEVC (up to 2160p) video and AAC, AC-3 or E-AC-3 audio, or a direct MP4 or MOV file with those codecs.
-The server will often transcode or remux: Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p, while HDR10 and HLG HEVC can be copied.
+The server will often transcode or remux: Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p, while HDR10 and HLG HEVC can be copied on Jellyfin and Silo.
+Emby's receiver profile uses MPEG-TS HLS with H.264 only, so HEVC reaches an Emby receiver only as a direct MP4, M4V or MOV file.
 Jellyfin and Emby text subtitles become WebVTT renditions in the HLS stream, selected on the receiver, and bitmap subtitles are burned in; Silo's receiver subtitles are burned in only.
 Sidecar files, OpenSubtitles downloads and other subtitles only the phone has don't reach the receiver.
 Progress and stop reports continue against the receiver's session, and returning to Lucid starts a normal session through the existing reload path.

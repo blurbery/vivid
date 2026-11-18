@@ -24,15 +24,8 @@ protocol AirPlayReceiverStreamSource: AnyObject {
     /// it is. Throws if the provider can't produce one.
     func prepareAirPlayReceiverSession(position: Double) async throws -> AirPlayReceiverStream
 
-    /// Makes a prepared receiver session the live one, retiring the session
-    /// that was live at `position`.
-    func commitAirPlayReceiverSession(_ stream: AirPlayReceiverStream, position: Double) async -> AirPlayReceiverCommit
-
     /// Ends a prepared receiver session that won't be committed.
     func releaseAirPlayReceiverSession(_ stream: AirPlayReceiverStream) async
-
-    /// The receiver's clock has started moving.
-    func airPlayReceiverDidStart() async
 }
 
 /// Decides when the player hands a title to an AirPlay video receiver and
@@ -120,7 +113,14 @@ struct AirPlayHandOffPolicy: Equatable {
         case prepareTimedOut
         /// `position` is where playback is when the stream arrives.
         case streamReady(request: Int, position: Double)
+        /// The receiver session can't be had (an unsupported plan, format
+        /// or server, a refusal): this route gives up until it changes.
         case streamFailed(request: Int)
+        /// The receiver session couldn't be had this time (no network, a
+        /// timeout, a busy server): retried a couple of times, a little later.
+        case streamUnavailable(request: Int)
+        /// A restart's stream wasn't prepared and committed in time.
+        case restartTimedOut(request: Int)
         /// The player can't hand off right now after all (Picture in
         /// Picture, Next Up, an error): back to idle, so the route is tried
         /// again once that clears.
@@ -177,10 +177,26 @@ struct AirPlayHandOffPolicy: Equatable {
         /// The route is Lucid's again without a reload, so a route-dependent
         /// plan held back during the probe gets its check now.
         case recheckOutputRoute
+        /// Check the route again after this long, to retry a receiver
+        /// session that couldn't be had this time.
+        case retryRouteCheck(afterSeconds: Double)
+        /// Send `restartTimedOut` for this restart if it's still out after
+        /// the restart deadline.
+        case armRestartDeadline(request: Int)
+        /// A restart's stream couldn't be had: the receiver plays on with
+        /// the stream it has, and the choice that asked for it is undone.
+        case restartFailed(request: Int)
     }
 
     private(set) var state: State = .idle
     private var nextRequest = 0
+    /// Automatic retries after a temporary failure, counted for one route
+    /// at a time and cleared when the route changes, the viewer picks a
+    /// receiver again, or a hand-off commits.
+    private var retryRoute: String?
+    private var retryCount = 0
+    /// The waits before each automatic retry.
+    static let retryDelays: [Double] = [3, 8]
 
     /// True while the probe or hand-off owns the output route, so a route
     /// change mustn't replan Lucid's stream.
@@ -198,10 +214,22 @@ struct AirPlayHandOffPolicy: Equatable {
 
     mutating func handle(_ event: Event) -> [Effect] {
         switch event {
+        case .airPlayRouteAppeared(let route) where route != retryRoute:
+            resetRetries()
+        case .routeBecameLocal, .routePickerClosed:
+            resetRetries()
+        default:
+            break
+        }
+        switch event {
         case .streamReady(let request, let position):
             return streamArrived(request: request, position: position)
         case .streamFailed(let request):
-            return streamFailed(request: request)
+            return streamFailed(request: request, temporary: false)
+        case .streamUnavailable(let request):
+            return streamFailed(request: request, temporary: true)
+        case .restartTimedOut(let request):
+            return restartTimedOut(request: request)
         case .handOffBlocked(let request):
             guard case .preparing(_, let current) = state, current == request else { return [] }
             state = .idle
@@ -361,7 +389,7 @@ struct AirPlayHandOffPolicy: Equatable {
             state = .idle
             return [.endHandOff(.loadReplaced)]
         case .airPlayRouteAppeared, .routePickerClosed, .probeExternalActive, .probeTimedOut, .probeFailed,
-             .streamReady, .streamFailed, .handOffBlocked, .commitFinished:
+             .streamReady, .streamFailed, .streamUnavailable, .restartTimedOut, .handOffBlocked, .commitFinished:
             return []
         }
     }
@@ -375,7 +403,12 @@ struct AirPlayHandOffPolicy: Equatable {
         active.deferredRestart = false
         active.deferredRestartPosition = nil
         state = .active(active)
-        return [.requestStream(request: request)]
+        return [.requestStream(request: request), .armRestartDeadline(request: request)]
+    }
+
+    private mutating func resetRetries() {
+        retryRoute = nil
+        retryCount = 0
     }
 
     /// Makes a restart that waited for a commit.
@@ -440,20 +473,59 @@ struct AirPlayHandOffPolicy: Equatable {
         }
     }
 
-    private mutating func streamFailed(request: Int) -> [Effect] {
+    /// Lucid plays on throughout. A temporary failure goes back to idle and
+    /// checks the route again a little later, at most twice per route; a
+    /// lasting one (or a third temporary one) leaves the route alone until
+    /// it changes. A restart that fails keeps the stream the receiver has.
+    private mutating func streamFailed(request: Int, temporary: Bool) -> [Effect] {
         switch state {
         case .preparing(let route, let current) where current == request:
+            if temporary {
+                if retryRoute != route {
+                    retryRoute = route
+                    retryCount = 0
+                }
+                if retryCount < Self.retryDelays.count {
+                    let delay = Self.retryDelays[retryCount]
+                    retryCount += 1
+                    state = .idle
+                    return [.stopProbe, .recheckOutputRoute, .retryRouteCheck(afterSeconds: delay)]
+                }
+            }
             state = .ending(route: route)
             return [.stopProbe, .recheckOutputRoute]
         case .active(var active) where active.pendingRestart == request:
-            // The current stream plays on.
             active.pendingRestart = nil
             active.restartPosition = nil
-            state = .active(active)
-            return []
+            return restartLost(&active, request: request)
         default:
             return []
         }
+    }
+
+    /// A restart still being prepared runs out of time like a failed one. A
+    /// restart whose commit hangs already has its stream on the player, so
+    /// it only stops holding later changes back.
+    private mutating func restartTimedOut(request: Int) -> [Effect] {
+        guard case .active(var active) = state else { return [] }
+        if active.pendingRestart == request {
+            active.pendingRestart = nil
+            active.restartPosition = nil
+            return restartLost(&active, request: request)
+        }
+        if active.committed, active.pendingCommit == request {
+            active.pendingCommit = nil
+            return takeDeferredRestart(&active)
+        }
+        return []
+    }
+
+    /// A newer change waiting behind the restart goes ahead instead of the
+    /// failed one being undone.
+    private mutating func restartLost(_ active: inout Active, request: Int) -> [Effect] {
+        if active.deferredRestart { return takeDeferredRestart(&active) }
+        state = .active(active)
+        return [.restartFailed(request: request)]
     }
 
     private mutating func commitFinished(request: Int, result: AirPlayReceiverCommit) -> [Effect] {
@@ -463,6 +535,7 @@ struct AirPlayHandOffPolicy: Equatable {
         switch result {
         case .committed:
             active.committed = true
+            resetRetries()
             guard !isRestart else {
                 // The restart's stream is already on the player.
                 return takeDeferredRestart(&active)

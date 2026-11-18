@@ -83,6 +83,12 @@ final class VividPlaybackController {
         case recheckOutputRoute
         /// The receiver's clock is moving.
         case receiverStarted
+        /// Check the output route again, retrying a receiver session that
+        /// couldn't be had last time.
+        case retryRouteCheck
+        /// A restart's stream couldn't be had; the receiver plays on with the
+        /// stream it has, so the choice behind the restart is undone.
+        case restartFailed(request: Int)
     }
 
     enum SeekResult: Equatable {
@@ -171,6 +177,8 @@ final class VividPlaybackController {
     private var receiverStreams: [Int: AirPlayReceiverStream] = [:]
     /// Set by the player: the current load could be handed off at all.
     private var airPlayHandOffAvailable = false
+    /// A route check waiting to retry a receiver session.
+    private var airPlayRetryTask: Task<Void, Never>?
     #endif
     private var engineObservers: Set<AnyCancellable> = []
     /// External subtitles (Silo sidecars, for example) by app id, with the
@@ -509,6 +517,8 @@ final class VividPlaybackController {
         #if os(iOS)
         handleHandOff(.userStopped)
         airPlayHandOffAvailable = false
+        airPlayRetryTask?.cancel()
+        airPlayRetryTask = nil
         #endif
         invalidateActiveLoad()
         shouldPlayWhenReady = false
@@ -972,8 +982,15 @@ final class VividPlaybackController {
         handleHandOff(.streamReady(request: request, position: lucidPosition))
     }
 
+    /// The receiver session can't be had for this load and route.
     func airPlayStreamFailed(request: Int) {
         handleHandOff(.streamFailed(request: request))
+    }
+
+    /// The receiver session couldn't be had this time (network, timeout, a
+    /// busy server); it's tried again shortly, a couple of times.
+    func airPlayStreamUnavailable(request: Int) {
+        handleHandOff(.streamUnavailable(request: request))
     }
 
     /// The player can't hand off right now after all; the route gets tried
@@ -1057,6 +1074,22 @@ final class VividPlaybackController {
             onControllerEvent?(.airPlayHandOff(.releaseStream(stream)))
         case .recheckOutputRoute:
             onControllerEvent?(.airPlayHandOff(.recheckOutputRoute))
+        case .retryRouteCheck(let seconds):
+            airPlayRetryTask?.cancel()
+            airPlayRetryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled, let self else { return }
+                self.airPlayRetryTask = nil
+                self.onControllerEvent?(.airPlayHandOff(.retryRouteCheck))
+            }
+        case .armRestartDeadline(let request):
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: AirPlayVideoHandOff.prepareTimeout)
+                self?.handleHandOff(.restartTimedOut(request: request))
+            }
+        case .restartFailed(let request):
+            recordHandOff("restart_failed")
+            onControllerEvent?(.airPlayHandOff(.restartFailed(request: request)))
         }
     }
 

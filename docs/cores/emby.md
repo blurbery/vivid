@@ -132,8 +132,9 @@ The player's Stream badge on Apple TV reads each video stream's `ExtendedVideoTy
 Detail pages, version pickers and Continue Watching in the Apple TV Home focus info show the same label.
 
 On iPhone and iPad, AirPlay to a video receiver starts a separate PlaybackInfo negotiation for the receiver (see [AirPlay video](../playback/architecture.md#airplay-video)).
-Its profile offers only what the receiver plays: HLS with H.264 (up to 1080p) or HEVC (up to 2160p) video and AAC, AC-3 or E-AC-3 audio, or a direct MP4 or MOV file with those codecs, so Emby will often transcode or remux.
-Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p, while HDR10 and HLG HEVC can be copied.
+Its profile offers only what the receiver plays: MPEG-TS HLS with H.264 video (up to 1080p) and AAC, AC-3 or E-AC-3 audio, or a direct MP4, M4V or MOV file with H.264 or HEVC video, so Emby will often transcode.
+HEVC only reaches the receiver as a direct MP4, M4V or MOV file, so HEVC in another container, Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p.
+Fragmented MP4 HLS isn't used for Emby because it hasn't been verified there.
 Text subtitles are requested as WebVTT renditions in the HLS stream, selected on the receiver, and bitmap subtitles are burned in; sidecar files, OpenSubtitles downloads and Vivid's subtitle styling don't reach the receiver.
 The receiver can't send request headers, so its URL carries the account's access token as `api_key`.
 The receiver, and Emby's access logs, can see that URL; Vivid never logs or stores it.

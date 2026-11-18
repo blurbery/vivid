@@ -208,6 +208,9 @@ extension PlayerViewModel {
     @discardableResult
     func commitSeek(to target: Double, source: String = "unspecified") -> Bool {
         pendingUnexpectedEndEpoch = nil
+        #if os(iOS)
+        if vividPlaybackController.isAirPlayHandOffEngaged { airPlayChangeKind = .seek }
+        #endif
         let clampedTarget = duration > 0 ? min(max(0, target), duration) : max(0, target)
         let requiresReplan: Bool
         if vividPlaybackController.isAirPlayHandOffEngaged {

@@ -154,7 +154,12 @@ extension PlayerViewModel {
             supportsExternalPlayback = supported
             isExternalPlaybackActive = active
             isAirPlayVideoHandedOff = vividPlaybackController.isAirPlayHandOffEngaged
-            if !isAirPlayVideoHandedOff { airPlayReceiverSessionId = nil }
+            if !isAirPlayVideoHandedOff {
+                airPlayReceiverSessionId = nil
+                #if os(iOS)
+                airPlayReceiverSelection = nil
+                #endif
+            }
             refreshPlaybackStats(force: true)
         case .airPlayHandOff:
             break
