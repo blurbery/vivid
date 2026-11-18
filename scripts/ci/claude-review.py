@@ -433,12 +433,15 @@ def main():
     # checks what the PR says against the code with whatever the code pass
     # left. New commits that touch no docs or comments add no claims to check.
     passes = []
-    if markdown_only(diff):
+    docs_only = markdown_only(diff)
+    if docs_only:
         code = {"findings": [], "summary": None, "stopped": None, "turns": 0, "tool_calls": 0, "cost": 0.0, "files_read": set()}
     else:
         code = run_pass(client, settings, SYSTEM, first_message(args, review_dir), to_read, max_cost * CODE_SHARE)
         passes.append(("code", code))
-    if code["stopped"] != "refusal" and (args.mode == "full" or docs or COMMENT_LINE.search(diff)):
+    # A Markdown-only change always gets the claims pass, even one that only
+    # deletes or renames docs, so a run never ends with no pass at all.
+    if code["stopped"] != "refusal" and (docs_only or args.mode == "full" or docs or COMMENT_LINE.search(diff)):
         earlier = "\n".join(f"- Code review finding on {f['path']}:{f['line']}: {f['title']}" for f in code["findings"])
         opening = first_message(args, review_dir, earlier)
         passes.append(("claims", run_pass(client, settings, CLAIMS_SYSTEM, opening, docs, max_cost - code["cost"])))
