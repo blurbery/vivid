@@ -333,7 +333,7 @@ When the catalogue lists no background or can't be reached, Next Up uses the nex
 A listed background that then fails to download stays black rather than trying the others.
 The preview has a bright edge and a deep shadow so it stands off the artwork.
 The updated menus were device-tested on iPhone 16 Pro Max. iPad layout and route-specific PiP/AirPlay operation have not been separately verified for this change.
-The AirPlay video hand-off, including a parked car with CarPlay video, hasn't been verified on a device yet.
+The AirPlay video hand-off was checked on an iPhone with an Apple TV 4K and in Xcode's CarPlay Simulator; a real car hasn't been tried.
 
 Emby and Jellyfin have separate Combine Continue Watching and Next Up preferences.
 When enabled, Home retains resume metadata and removes duplicate items from Next Up.

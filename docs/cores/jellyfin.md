@@ -130,13 +130,13 @@ On a transcode, the audio (its single track can't be matched to the file's) and 
 Jellyfin can remember these selections for the user's other clients, depending on its playback settings; that hasn't been checked against a live server.
 
 On iPhone and iPad, AirPlay to a video receiver starts a separate PlaybackInfo negotiation for the receiver (see [AirPlay video](../playback/architecture.md#airplay-video)).
-Its profile offers only what the receiver plays: HLS with H.264 (up to 1080p) or HEVC (up to 2160p) video and AAC, AC-3 or E-AC-3 audio, or a direct MP4 or MOV file with those codecs, so Jellyfin will often transcode or remux.
+Its profile offers only what the receiver plays: HLS with H.264 (up to 1080p) or HEVC (up to 2160p) video and AAC, AC-3 or E-AC-3 audio, or a direct MP4, M4V or MOV file with those codecs, so Jellyfin will often transcode or remux.
 Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p, while HDR10 and HLG HEVC can be copied.
 Text subtitles are requested as WebVTT renditions in the HLS stream (`Hls`), selected on the receiver, and bitmap subtitles are burned in (`Encode`); sidecar files, OpenSubtitles downloads and Vivid's subtitle styling don't reach the receiver.
 The receiver can't send request headers, so its URL carries the account's access token as `ApiKey`.
 Vivid uses `ApiKey` rather than `api_key`, which newer Jellyfin servers may accept only with legacy authorisation turned on; which server versions accept each hasn't been checked against a live server.
 The receiver, and Jellyfin's access logs, can see that URL; Vivid never logs or stores it.
-The receiver session hasn't been checked against a live Jellyfin server or on a device.
+blurbery checked the receiver session against a Jellyfin server with an Apple TV 4K; other Jellyfin versions haven't been tried.
 
 When playback loads, Vivid requests `GET /MediaSegments/{mediaSourceId}` (Jellyfin 10.10 and later) for each media source, in parallel and capped at two seconds.
 An older server, an error or a slow reply leaves that source without server markers and never fails playback.

@@ -1602,6 +1602,17 @@ actor PlaybackSessionBridge {
     // MARK: - AirPlay receiver sessions (iPhone and iPad)
 
     #if os(iOS)
+    /// Lasting reasons a receiver session can't be prepared. Unlike a
+    /// cancellation or a network failure, retrying won't help.
+    enum AirPlayReceiverUnavailable: Error {
+        /// The load on screen has no Jellyfin, Emby or Silo session to hand off.
+        case noLiveProvider
+        /// The server answered without a session id for the receiver.
+        case noReceiverSession
+        /// The Silo plan came back without a stream a receiver can fetch.
+        case noReceiverStream
+    }
+
     /// A receiver session started and checked on the server but not yet
     /// live: nothing it would replace has been touched. Each remembers the
     /// live playback it was prepared to replace, and is only committed while
@@ -1638,7 +1649,7 @@ actor PlaybackSessionBridge {
                 metadata: metadata, detail: metadata.detail, version: version, audioOrdinal: audioOrdinal,
                 subtitleIndex: subtitle, bitrateKbps: bitrateKbps, position: position
             )
-            guard let key = stream.serverSessionId else { throw CancellationError() }
+            guard let key = stream.serverSessionId else { throw AirPlayReceiverUnavailable.noReceiverSession }
             preparedAirPlayReceivers[key] = .jellyfin(playback, prepared, metadata, replacing: live)
             return stream
         }
@@ -1650,7 +1661,7 @@ actor PlaybackSessionBridge {
             )
             guard let key = stream.serverSessionId else {
                 try? await playback.stopWithoutProgress()
-                throw CancellationError()
+                throw AirPlayReceiverUnavailable.noReceiverSession
             }
             preparedAirPlayReceivers[key] = .emby(playback, prepared, replacing: live)
             return stream
@@ -1661,7 +1672,7 @@ actor PlaybackSessionBridge {
                 subtitleStreamIndex: subtitle, qualityId: qualityId, bitrateKbps: bitrateKbps, position: position
             )
         }
-        throw CancellationError()
+        throw AirPlayReceiverUnavailable.noLiveProvider
     }
 
     /// Makes a prepared receiver session the live one: the live session is
@@ -1851,7 +1862,7 @@ actor PlaybackSessionBridge {
         }
         guard let stream = accepted.receiverStream, stream.serverSessionId == accepted.sessionId else {
             await retireAbandonedSession(accepted.sessionId, reason: "airplay_receiver_without_stream")
-            throw CancellationError()
+            throw AirPlayReceiverUnavailable.noReceiverStream
         }
         // The stored copy keeps no URL with a stream reference in it.
         var stored = accepted

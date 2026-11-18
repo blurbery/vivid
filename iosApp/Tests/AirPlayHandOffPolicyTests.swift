@@ -588,5 +588,14 @@ final class AirPlayReceiverPlanStorageTests: XCTestCase {
         XCTAssertEqual(stored.nativeApiMajor, plan.nativeApiMajor)
         XCTAssertEqual(stored.availableQualities, plan.availableQualities)
     }
+
+    @MainActor
+    func testLastingReceiverFailuresAreNotRetried() {
+        XCTAssertTrue(PlayerViewModel.isTemporaryAirPlayFailure(CancellationError()))
+        XCTAssertTrue(PlayerViewModel.isTemporaryAirPlayFailure(URLError(.timedOut)))
+        for lasting: PlaybackSessionBridge.AirPlayReceiverUnavailable in [.noLiveProvider, .noReceiverSession, .noReceiverStream] {
+            XCTAssertFalse(PlayerViewModel.isTemporaryAirPlayFailure(lasting))
+        }
+    }
 }
 #endif

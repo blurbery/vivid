@@ -68,7 +68,7 @@ The reference isn't the account token: it only works for that playback session w
 Vivid never logs or stores these URLs, and keeps the receiver's plan with `st` removed.
 Receiver subtitles are burned in only; external and stored subtitle files and OpenSubtitles downloads don't reach the receiver.
 Silo replans aren't used during a hand-off, and a replan after an AirPlay route change waits until Vivid knows whether the receiver takes video.
-The receiver attempt hasn't been checked against a live Silo server or on a device.
+blurbery checked the receiver attempt against a native v2 Silo server with an Apple TV 4K.
 
 ## Current implementation
 

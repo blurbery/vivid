@@ -138,7 +138,7 @@ Fragmented MP4 HLS isn't used for Emby because it hasn't been verified there.
 Text subtitles are requested as WebVTT renditions in the HLS stream, selected on the receiver, and bitmap subtitles are burned in; sidecar files, OpenSubtitles downloads and Vivid's subtitle styling don't reach the receiver.
 The receiver can't send request headers, so its URL carries the account's access token as `api_key`.
 The receiver, and Emby's access logs, can see that URL; Vivid never logs or stores it.
-The receiver session hasn't been checked against a live Emby server or on a device.
+blurbery checked the receiver session against an Emby server with an Apple TV 4K; other Emby versions haven't been tried.
 
 Vivid’s Emby preferences are scoped per server and native user.
 Eligible shared preferences can sync through the private iCloud vault; playback and subtitle settings stay device-local.
