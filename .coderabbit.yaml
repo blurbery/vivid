@@ -59,11 +59,12 @@ reviews:
     # someone comments `@coderabbitai review`, so fix-up pushes don't use the
     # hour's review or crowd out a newly opened PR.
     auto_incremental_review: false
-    # Docs PRs are reviewed too: the Docs job only checks links, paths and
-    # em dashes, not whether the text is right. Keywords match anywhere in the
-    # title, ignoring case, so they are kept specific: a bare "wip" would also
-    # skip "fix: wipe downloads". Add "[skip review]" to a title to skip it,
-    # then comment `@coderabbitai review` if you change your mind.
+    # Docs PRs are reviewed too: the Docs job checks links, paths, em dashes
+    # and that mapped docs change with their code, not whether the text is
+    # right. Keywords match anywhere in the title, ignoring case, so they are
+    # kept specific: a bare "wip" would also skip "fix: wipe downloads". Add
+    # "[skip review]" to a title to skip it, then comment `@coderabbitai review`
+    # if you change your mind.
     ignore_title_keywords:
       - "[skip review]"
       - "[WIP]"

@@ -212,8 +212,8 @@ With `since` set as well, it reviews only the commits after that one, like a pus
 CodeRabbit is a GitHub App rather than a workflow: it reviews non-draft pull requests into `main` with the settings in `.coderabbit.yaml`, and posts a `CodeRabbit` commit status that branch protection does not require.
 To make its free open-source allowance last, it skips pull requests whose titles contain `[WIP]`, `WIP:` or `[skip review]` (it matches the title, not the changed files) and Dependabot's, large generated and vendored files (`package-lock.json`, the engine's expected library lists, test fixtures and web fonts), and reviews each pull request only once on its own, when it is opened or marked ready; later pushes are reviewed only when someone comments `@coderabbitai review`.
 The plan gives Vivid one review an hour, and a pull request that hits that limit isn't reviewed until someone asks again.
-It reviews documentation pull requests, and its `Docs up to date` pre-merge check (a warning, not a required check) looks for docs anywhere in the repository that a pull request has left describing the old behaviour.
 It also skips the String Catalogs, which hold real translations but are too large to review, so it doesn't check translations or their format specifiers.
+It reviews documentation pull requests, and its `Docs up to date` pre-merge check (a warning, not a required check) looks through the README, `CONTRIBUTING.md`, `AGENTS.md`, `docs/` and the privacy texts for anything a pull request has left describing the old behaviour.
 It never edits pull request descriptions or pushes commits, so the `PR title, branch and description` check and commit attribution are unaffected.
 Do not enable paid capacity or change distribution settings as part of an ordinary source release.
 See [App Distribution](distribution.md).
