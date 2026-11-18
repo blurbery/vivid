@@ -61,6 +61,8 @@ actor PlaybackSessionBridge {
         let sessionId: String
         let version: FileVersion
         let session: PlaybackSessionResponse
+        /// The receiver's stream, for an AirPlay receiver attempt.
+        var receiverStream: AirPlayReceiverStream?
     }
 
     /// A server decision the player hasn't proved it can open yet, with the
@@ -135,6 +137,13 @@ actor PlaybackSessionBridge {
     // MARK: - Emby and Jellyfin sessions
 
     private var embyPlayback: EmbyPlayback?
+    /// The plan of the Silo AirPlay receiver attempt, while one is live.
+    private var airPlayReceiverPlanId: String?
+    #if os(iOS)
+    /// AirPlay receiver sessions prepared but not yet committed, by server
+    /// session id.
+    private var preparedAirPlayReceivers: [String: PreparedAirPlayReceiver] = [:]
+    #endif
     private var jellyfinPlayback: JellyfinPlayback?
     private var playingTracksGeneration: UInt64 = 0
     /// Every start and stop replaces this. A Jellyfin start that finds a
@@ -148,6 +157,10 @@ actor PlaybackSessionBridge {
     /// that waited for the transition still reaches the item it was for.
     private var jellyfinTransitionPlayback: JellyfinPlayback?
     private var jellyfinTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+    /// The Jellyfin playback a progress report has gone out for, which is
+    /// the one with a play session to stop at a position. One that never
+    /// reported is stopped without saving a position.
+    private weak var reportedJellyfinPlayback: JellyfinPlayback?
 
     /// Returns once no Jellyfin start or stop is under way.
     private func waitForJellyfinTransition() async {
@@ -434,11 +447,17 @@ actor PlaybackSessionBridge {
     /// (AutoOpenLiveStream is false), so a candidate that loses is simply
     /// dropped: a Jellyfin Stopped report would end this client's current
     /// playback, not just the candidate.
+    ///
+    /// `retiringAt` stops the outgoing playback at that position rather than
+    /// its last report, for an AirPlay hand-off that moves on from where
+    /// Lucid is right now. A playback that never reported still stops
+    /// without a position, so it saves no resume point.
     private func adoptJellyfinPlayback(
         _ playback: JellyfinPlayback,
         prepared: PreparedPlayback,
         metadata: JellyfinPlayback.Metadata,
-        attempt: UUID
+        attempt: UUID,
+        retiringAt position: Double? = nil
     ) async throws {
         try validateJellyfinStart(attempt)
         await waitForJellyfinTransition()
@@ -469,7 +488,14 @@ actor PlaybackSessionBridge {
         if let outgoing {
             // A separate task, so cancelling this start can't cut the stop
             // short.
-            let stop = Task { try await outgoing.retireForReplacement() }
+            let stopsAtPosition = position != nil && outgoing === reportedJellyfinPlayback
+            let stop = Task {
+                if stopsAtPosition, let position {
+                    try await outgoing.report(position: position, isPaused: true, stopping: true)
+                } else {
+                    try await outgoing.retireForReplacement()
+                }
+            }
             if case .failure(let error) = await stop.result {
                 logger.warning("Jellyfin replacement stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
             }
@@ -576,6 +602,12 @@ actor PlaybackSessionBridge {
     /// Asks Silo for a starting plan and checks Vivid can play it. Every
     /// path out that doesn't hand the plan back retires the session the
     /// server allocated.
+    ///
+    /// With `airPlayReceiverServerURL` (iPhone and iPad) the attempt is for
+    /// an AirPlay receiver instead: it declares the receiver's capabilities
+    /// and no header-authenticated media, so Silo signs the plan's URLs with
+    /// a session-scoped stream reference, and the plan is checked as one the
+    /// receiver can fetch by itself.
     private func requestStartPlan(
         detail: WatchDetail,
         version: FileVersion,
@@ -584,21 +616,38 @@ actor PlaybackSessionBridge {
         bandwidthCapKbps: Int?,
         startPosition: Double?,
         audioIndex: Int?,
-        subtitleCombinedIndex: Int?
+        subtitleCombinedIndex: Int?,
+        airPlayReceiverServerURL: String? = nil
     ) async throws -> AcceptedStart {
         let capability = try await PlaybackV3CapabilityGate.shared.requireNeutralProtocolV3()
+        #if os(iOS)
+        let receiverServerURL = airPlayReceiverServerURL
+        #else
+        let receiverServerURL: String? = nil
+        #endif
         // Optional. A server that never advertises authorised media origins
-        // isn't sent the token, and the attempt stays on the API origin.
-        let asksForMediaOrigins = capability.authorizedMediaOrigins
+        // isn't sent the token, and the attempt stays on the API origin. A
+        // receiver attempt never asks: it only applies to header-authenticated
+        // media.
+        let asksForMediaOrigins = receiverServerURL == nil && capability.authorizedMediaOrigins
 
+        #if os(iOS)
+        let snapshot = receiverServerURL == nil
+            ? ApplePlaybackV3Capabilities.snapshot() : SiloAirPlayReceiver.snapshot()
+        let clientFeatures = receiverServerURL == nil
+            ? ApplePlaybackV3Capabilities.startFeatures(authorizedMediaOrigins: asksForMediaOrigins)
+            : SiloAirPlayReceiver.startFeatures
+        #else
         let snapshot = ApplePlaybackV3Capabilities.snapshot()
+        let clientFeatures = ApplePlaybackV3Capabilities.startFeatures(authorizedMediaOrigins: asksForMediaOrigins)
+        #endif
         cmpLog("[CMP-OUTPUT] phase=start \(snapshot.outputDiagnosticsLogFields)")
         let playbackAttemptId = "apple:\(UUID().uuidString.lowercased())"
         let fileId = version.fileId
         let audio = audioIndex.flatMap { $0 < 0 ? nil : $0 }
         let request = PlaybackV3StartRequest(
             protocolVersion: PlaybackProtocolV3.version,
-            clientFeatures: ApplePlaybackV3Capabilities.startFeatures(authorizedMediaOrigins: asksForMediaOrigins),
+            clientFeatures: clientFeatures,
             fileId: fileId,
             profileId: profileId,
             playbackAttemptId: playbackAttemptId,
@@ -666,10 +715,36 @@ actor PlaybackSessionBridge {
                 "This server did not honor authenticated media transport for the playback plan."
             )
         }
+        let receiverStream: AirPlayReceiverStream?
+        /// The plan as the bridge keeps it. A receiver plan's signed stream
+        /// references stay only in `receiverStream`.
+        let storedPlan: PlaybackV3Plan
         do {
+            #if os(iOS)
+            if let receiverServerURL {
+                // Only the v2 delivery routes take the stream reference
+                // without headers.
+                guard let apiBase = SiloAirPlayReceiver.apiBase(
+                    serverURL: receiverServerURL,
+                    nativeApiMajor: plan.nativeApiMajor
+                ) else { throw SiloAirPlayReceiverError.unsupportedAPIBase }
+                receiverStream = try SiloAirPlayReceiver.receiverStream(plan: plan, sessionId: allocated, apiBase: apiBase)
+                storedPlan = try Self.planWithoutStreamReferences(plan)
+            } else {
+                try ApplePlaybackV3PlanAdapter.validate(plan)
+                receiverStream = nil
+                storedPlan = plan
+            }
+            #else
             try ApplePlaybackV3PlanAdapter.validate(plan)
+            receiverStream = nil
+            storedPlan = plan
+            #endif
         } catch {
-            await retireAbandonedSession(allocated, reason: "unexecutable_start_plan")
+            await retireAbandonedSession(
+                allocated,
+                reason: receiverServerURL == nil ? "unexecutable_start_plan" : "unexecutable_airplay_receiver_plan"
+            )
             throw error
         }
         guard let effective = detail.versions.first(where: { $0.fileId == plan.effectiveMediaFileId }) else {
@@ -698,15 +773,21 @@ actor PlaybackSessionBridge {
             // API, and are checked that way.
             negotiatedAuthorizedMediaOrigins: asksForMediaOrigins
                 && response.serverFeatures.contains(PlaybackProtocolV3.authorizedMediaOriginsFeature),
-            plan: plan
+            plan: storedPlan
         )
         let session = ApplePlaybackV3PlanAdapter.playbackSession(
-            plan: plan,
+            plan: storedPlan,
             sessionId: allocated,
             selectedVersion: effective,
             serverFeatures: response.serverFeatures
         )
-        return AcceptedStart(attempt: attempt, sessionId: allocated, version: effective, session: session)
+        return AcceptedStart(
+            attempt: attempt,
+            sessionId: allocated,
+            version: effective,
+            session: session,
+            receiverStream: receiverStream
+        )
     }
 
     // MARK: - Protocol V3 replan
@@ -1366,6 +1447,7 @@ actor PlaybackSessionBridge {
                 }
                 do {
                     try await playback.report(position: position, isPaused: isPaused)
+                    self.reportedJellyfinPlayback = playback
                     return await writeJellyfinCompletion(after: .success, contentId: completedContentId, playback: playback)
                 } catch {
                     return .transientFailure
@@ -1517,6 +1599,350 @@ actor PlaybackSessionBridge {
         return true
     }
 
+    // MARK: - AirPlay receiver sessions (iPhone and iPad)
+
+    #if os(iOS)
+    /// Lasting reasons a receiver session can't be prepared. Unlike a
+    /// cancellation or a network failure, retrying won't help.
+    enum AirPlayReceiverUnavailable: Error {
+        /// The load on screen has no Jellyfin, Emby or Silo session to hand off.
+        case noLiveProvider
+        /// The server answered without a session id for the receiver.
+        case noReceiverSession
+        /// The Silo plan came back without a stream a receiver can fetch.
+        case noReceiverStream
+    }
+
+    /// A receiver session started and checked on the server but not yet
+    /// live: nothing it would replace has been touched. Each remembers the
+    /// live playback it was prepared to replace, and is only committed while
+    /// that's still the live one.
+    private enum PreparedAirPlayReceiver {
+        case jellyfin(JellyfinPlayback, PreparedPlayback, JellyfinPlayback.Metadata, replacing: JellyfinPlayback)
+        case emby(EmbyPlayback, PreparedPlayback, replacing: EmbyPlayback)
+        case silo(AcceptedStart, replacing: AttemptStamp)
+    }
+
+    /// Prepares a session for an AirPlay receiver: the same title, version
+    /// and tracks (and `qualityId`, or the live session's quality), whose
+    /// stream the receiver fetches by itself. The live session (the phone's,
+    /// or an earlier receiver session) is left as it is until
+    /// `commitAirPlayReceiverSession`.
+    ///
+    /// The returned stream's URL carries its own credential and isn't kept
+    /// anywhere in the bridge; prepared sessions are found again by
+    /// `serverSessionId`.
+    func prepareAirPlayReceiverSession(
+        detail: WatchDetail,
+        version: FileVersion,
+        audioOrdinal: Int?,
+        subtitleStreamIndex: Int?,
+        qualityId: String?,
+        bitrateKbps: Int?,
+        position: Double
+    ) async throws -> AirPlayReceiverStream {
+        let position = position.isFinite ? max(0, position) : 0
+        let subtitle = subtitleStreamIndex.flatMap { $0 < 0 ? nil : $0 }
+        if let live = jellyfinPlayback {
+            let metadata = try await JellyfinPlayback.loadMetadata(contentID: detail.contentId)
+            let (stream, prepared, playback) = try await JellyfinPlayback.prepareAirPlayReceiver(
+                metadata: metadata, detail: metadata.detail, version: version, audioOrdinal: audioOrdinal,
+                subtitleIndex: subtitle, bitrateKbps: bitrateKbps, position: position
+            )
+            guard let key = stream.serverSessionId else { throw AirPlayReceiverUnavailable.noReceiverSession }
+            preparedAirPlayReceivers[key] = .jellyfin(playback, prepared, metadata, replacing: live)
+            return stream
+        }
+        if let live = embyPlayback {
+            let metadata = try await EmbyPlayback.loadMetadata(contentID: detail.contentId)
+            let (stream, prepared, playback) = try await EmbyPlayback.prepareAirPlayReceiver(
+                metadata: metadata, detail: metadata.detail, version: version, audioOrdinal: audioOrdinal,
+                subtitleIndex: subtitle, bitrateKbps: bitrateKbps, position: position
+            )
+            guard let key = stream.serverSessionId else {
+                try? await playback.stopWithoutProgress()
+                throw AirPlayReceiverUnavailable.noReceiverSession
+            }
+            preparedAirPlayReceivers[key] = .emby(playback, prepared, replacing: live)
+            return stream
+        }
+        if let live = activeProtocolV3 {
+            return try await prepareSiloAirPlayReceiver(
+                live: live, detail: detail, version: version, audioOrdinal: audioOrdinal,
+                subtitleStreamIndex: subtitle, qualityId: qualityId, bitrateKbps: bitrateKbps, position: position
+            )
+        }
+        throw AirPlayReceiverUnavailable.noLiveProvider
+    }
+
+    /// Makes a prepared receiver session the live one: the live session is
+    /// retired at `position` and the receiver session takes progress and the
+    /// final stop from here on. Anything that isn't `.committed` has also
+    /// abandoned the prepared session.
+    func commitAirPlayReceiverSession(_ stream: AirPlayReceiverStream, position: Double) async -> AirPlayReceiverCommit {
+        let position = position.isFinite ? max(0, position) : 0
+        guard let key = stream.serverSessionId,
+              let prepared = preparedAirPlayReceivers.removeValue(forKey: key) else { return .refused }
+        switch prepared {
+        case .jellyfin(let playback, let preparedPlayback, let metadata, let replacing):
+            return await commitJellyfinAirPlayReceiver(
+                playback, prepared: preparedPlayback, metadata: metadata, replacing: replacing, position: position
+            )
+        case .emby(let playback, let preparedPlayback, let replacing):
+            return await commitEmbyAirPlayReceiver(playback, prepared: preparedPlayback, replacing: replacing, position: position)
+        case .silo(let accepted, let replacing):
+            return await commitSiloAirPlayReceiver(accepted, replacing: replacing, position: position)
+        }
+    }
+
+    /// Ends a prepared receiver session that won't be committed. A Jellyfin
+    /// one needs nothing: PlaybackInfo opened no stream, and a Stopped report
+    /// would end this device's live playback instead.
+    func abandonAirPlayReceiverSession(_ stream: AirPlayReceiverStream) async {
+        guard let key = stream.serverSessionId,
+              let prepared = preparedAirPlayReceivers.removeValue(forKey: key) else { return }
+        await abandon(prepared, sessionId: key, reason: "airplay_receiver_released")
+    }
+
+    private func abandon(_ prepared: PreparedAirPlayReceiver, sessionId: String, reason: String) async {
+        switch prepared {
+        case .jellyfin:
+            break
+        case .emby(let playback, _, _):
+            try? await playback.stopWithoutProgress()
+        case .silo:
+            await retireAbandonedSession(sessionId, reason: reason)
+        }
+    }
+
+    /// Abandons every prepared receiver session, for a stop: nothing
+    /// prepared may become live after it.
+    private func abandonPreparedAirPlayReceivers() {
+        let prepared = preparedAirPlayReceivers
+        preparedAirPlayReceivers.removeAll()
+        guard !prepared.isEmpty else { return }
+        Task {
+            for (sessionId, receiver) in prepared {
+                await self.abandon(receiver, sessionId: sessionId, reason: "airplay_receiver_stopped")
+            }
+        }
+    }
+
+    /// The receiver has started playing: a Silo receiver attempt reports its
+    /// first frame against its own plan.
+    func reportAirPlayReceiverStarted() async {
+        guard let planId = airPlayReceiverPlanId, let attempt = activeProtocolV3,
+              attempt.plan.planId == planId, let liveSessionId = sessionId else { return }
+        await reportProtocolV3FirstFrame(planId: planId, sessionId: liveSessionId, milliseconds: nil)
+    }
+
+    /// Jellyfin keeps one play session per device, so the live one stops
+    /// before the receiver's first report.
+    private func commitJellyfinAirPlayReceiver(
+        _ playback: JellyfinPlayback, prepared: PreparedPlayback, metadata: JellyfinPlayback.Metadata,
+        replacing: JellyfinPlayback, position: Double
+    ) async -> AirPlayReceiverCommit {
+        guard jellyfinPlayback === replacing else { return .refused }
+        // The current token, not a new one: a commit mustn't cancel a start
+        // in progress, and any start or stop that begins meanwhile replaces
+        // it and so overtakes the commit.
+        let attempt = jellyfinStartAttempt
+        do {
+            try await adoptJellyfinPlayback(playback, prepared: prepared, metadata: metadata, attempt: attempt,
+                                            retiringAt: position)
+        } catch {
+            // Overtaken by a stop or another start, which own what happens
+            // next. Otherwise the sign-in failed, after the live playback was
+            // retired if nothing is live now.
+            if jellyfinStartAttempt != attempt { return .refused }
+            return jellyfinPlayback == nil && sessionId == nil ? .failed : .refused
+        }
+        airPlayReceiverPlanId = nil
+        // Chained like any progress write, so a tick can't send a second
+        // start report alongside this one.
+        let earlierWrite = progressWriteTail
+        let log = self.logger
+        let firstReport = Task { () -> PlaybackProgressReportResult in
+            _ = await earlierWrite?.value
+            do {
+                try await playback.report(position: position, isPaused: false)
+                self.reportedJellyfinPlayback = playback
+            } catch {
+                log.warning("Jellyfin AirPlay receiver start report failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+            }
+            return .success
+        }
+        progressWriteTail = firstReport
+        _ = await firstReport.value
+        logger.info("AirPlay receiver session committed (Jellyfin)")
+        return .committed
+    }
+
+    /// The receiver becomes live before the outgoing playback is retired, so
+    /// a stop at any point after this reaches it. The retirement and the
+    /// receiver's first report run as one progress write, so no report can
+    /// land between them.
+    private func commitEmbyAirPlayReceiver(
+        _ playback: EmbyPlayback, prepared: PreparedPlayback, replacing: EmbyPlayback, position: Double
+    ) async -> AirPlayReceiverCommit {
+        // The current token: a commit mustn't cancel a start in progress, and
+        // a start or stop that begins meanwhile overtakes it.
+        let attempt = jellyfinStartAttempt
+        guard let outgoing = embyPlayback, outgoing === replacing else {
+            try? await playback.stopWithoutProgress()
+            return .refused
+        }
+        let earlierWrite = progressWriteTail
+        _ = await earlierWrite?.value
+        // A stop or another start took over while the last write finished.
+        guard jellyfinStartAttempt == attempt, embyPlayback === outgoing else {
+            try? await playback.stopWithoutProgress()
+            return .refused
+        }
+        embyPlayback = playback
+        airPlayReceiverPlanId = nil
+        adoptSession(prepared.session)
+        let log = self.logger
+        let handover = Task { () -> PlaybackProgressReportResult in
+            do {
+                // Its stop also ends its encoding.
+                try await outgoing.report(position: position, isPaused: true, stopping: true)
+            } catch {
+                log.warning("Emby AirPlay hand-off stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+            }
+            do {
+                try await playback.report(position: position, isPaused: false)
+            } catch {
+                log.warning("Emby AirPlay receiver start report failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+            }
+            return .success
+        }
+        progressWriteTail = handover
+        _ = await handover.value
+        logger.info("AirPlay receiver session committed (Emby)")
+        return .committed
+    }
+
+    /// Starts and checks the receiver attempt, which a refusal (a stream
+    /// limit, a plan the receiver can't fetch) leaves the live attempt
+    /// untouched by. The receiver attempt is never replanned.
+    private func prepareSiloAirPlayReceiver(
+        live: SiloAttempt, detail: WatchDetail, version: FileVersion, audioOrdinal: Int?, subtitleStreamIndex: Int?,
+        qualityId: String?, bitrateKbps: Int?, position: Double
+    ) async throws -> AirPlayReceiverStream {
+        let serverURL = await VividAPI.shared.currentServerUrl()
+        guard SiloAirPlayReceiver.apiBase(serverURL: serverURL, nativeApiMajor: live.plan.nativeApiMajor) != nil else {
+            throw SiloAirPlayReceiverError.unsupportedAPIBase
+        }
+        let profileId = await TokenStore.shared.getProfileId() ?? ""
+        let combinedSubtitle = subtitleStreamIndex.flatMap {
+            ApplePlaybackV3PlanAdapter.serverCombinedSubtitleIndex(ffmpegStreamIndex: $0, in: version)
+        }
+        func requestReceiverPlan(subtitle: Int?) async throws -> AcceptedStart {
+            try await requestStartPlan(
+                detail: detail,
+                version: version,
+                profileId: profileId,
+                quality: qualityId ?? live.clientQualityId,
+                bandwidthCapKbps: qualityId == nil ? live.bandwidthCapKbps : bitrateKbps,
+                startPosition: position,
+                audioIndex: audioOrdinal,
+                subtitleCombinedIndex: subtitle,
+                airPlayReceiverServerURL: serverURL
+            )
+        }
+        let accepted: AcceptedStart
+        do {
+            accepted = try await requestReceiverPlan(subtitle: combinedSubtitle)
+        } catch let failure as PlaybackV3TerminalFailure
+            where failure.reason == "subtitle_burn_in_source_unsupported" && combinedSubtitle != nil {
+            // A subtitle the server can't burn in (a downloaded or external
+            // file) is left off rather than refusing the hand-off.
+            accepted = try await requestReceiverPlan(subtitle: nil)
+        }
+        guard let stream = accepted.receiverStream, stream.serverSessionId == accepted.sessionId else {
+            await retireAbandonedSession(accepted.sessionId, reason: "airplay_receiver_without_stream")
+            throw AirPlayReceiverUnavailable.noReceiverStream
+        }
+        // The stored copy keeps no URL with a stream reference in it.
+        var stored = accepted
+        stored.receiverStream = nil
+        preparedAirPlayReceivers[accepted.sessionId] = .silo(stored, replacing: live.stamp)
+        return stream
+    }
+
+    /// The receiver attempt becomes live, then the attempt it replaces is
+    /// retired through its stop path.
+    private func commitSiloAirPlayReceiver(
+        _ accepted: AcceptedStart, replacing: AttemptStamp, position: Double
+    ) async -> AirPlayReceiverCommit {
+        guard let replaced = activeProtocolV3, replaced.stamp == replacing, let replacedSessionId = sessionId,
+              pendingProtocolV3Transition == nil else {
+            await retireAbandonedSession(accepted.sessionId, reason: "airplay_receiver_overtaken")
+            return .refused
+        }
+        activeProtocolV3 = accepted.attempt
+        protocolV3FirstFramePlanIds.removeAll()
+        airPlayReceiverPlanId = accepted.attempt.plan.planId
+        let replacedWrite = progressWriteTail
+        adoptSession(accepted.session)
+        logger.info("AirPlay receiver session committed (Silo) plan=\(accepted.attempt.plan.planId, privacy: .public)")
+        await retireProtocolV3Session(replaced, sessionId: replacedSessionId, position: position, after: replacedWrite)
+        return .committed
+    }
+
+    /// The Silo stop path for an attempt that's no longer the live one: its
+    /// `stopped` event, a final position and the DELETE.
+    private func retireProtocolV3Session(
+        _ attempt: SiloAttempt,
+        sessionId retiredSessionId: String,
+        position: Double,
+        after earlierWrite: Task<PlaybackProgressReportResult, Never>?
+    ) async {
+        _ = await earlierWrite?.value
+        await emitProtocolV3Event(
+            active: attempt,
+            sessionId: retiredSessionId,
+            event: "stopped",
+            classification: nil,
+            fallbackReason: nil,
+            diagnostics: ["target_source_position_seconds": String(position)]
+        )
+        do {
+            try await VividAPI.shared.reportPlaybackProgress(
+                sessionId: retiredSessionId,
+                report: ProgressReport(position: position, isPaused: true)
+            )
+        } catch {
+            logger.warning(
+                "AirPlay hand-off final progress failed for \(retiredSessionId, privacy: .public): \(MediaLogRedactor.sanitize(error), privacy: .public)"
+            )
+        }
+        await retireAbandonedSession(retiredSessionId, reason: "airplay_handoff")
+    }
+
+    /// A receiver plan as the bridge keeps it, with every signed stream
+    /// reference (`st`) taken out of its URLs: only the receiver needs them,
+    /// and session state reaches logs and errors. Internal for its test.
+    static func planWithoutStreamReferences(_ plan: PlaybackV3Plan) throws -> PlaybackV3Plan {
+        func strip(_ value: Any) -> Any {
+            switch value {
+            case let text as String:
+                return text.contains("st=") ? SiloAirPlayReceiver.strippingStreamReference(text) : text
+            case let list as [Any]:
+                return list.map(strip)
+            case let object as [String: Any]:
+                return object.mapValues(strip)
+            default:
+                return value
+            }
+        }
+        let encoded = try JSONEncoder().encode(plan)
+        let stripped = strip(try JSONSerialization.jsonObject(with: encoded))
+        return try JSONDecoder().decode(PlaybackV3Plan.self, from: JSONSerialization.data(withJSONObject: stripped))
+    }
+    #endif
+
     // MARK: - Stopping
 
     /// Retires the current session, exactly once.
@@ -1539,6 +1965,9 @@ actor PlaybackSessionBridge {
         // that it has been overtaken.
         let stopToken = UUID()
         jellyfinStartAttempt = stopToken
+        #if os(iOS)
+        abandonPreparedAirPlayReceivers()
+        #endif
         if jellyfinTransitionInProgress {
             await waitForJellyfinTransition()
             if jellyfinStartAttempt != stopToken { return .deferred }
@@ -1596,6 +2025,7 @@ actor PlaybackSessionBridge {
         sessionId = nil
         currentSession = nil
         activeProtocolV3 = nil
+        airPlayReceiverPlanId = nil
         pendingProtocolV3Transition = nil
         protocolV3FirstFramePlanIds.removeAll()
         consecutiveProgressFailures = 0

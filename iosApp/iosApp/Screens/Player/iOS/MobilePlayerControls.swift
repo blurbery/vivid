@@ -233,10 +233,16 @@ struct MobilePlayerControls: View {
         }
     }
 
-    /// The AirPlay route sheet holds the controls up while it's open.
+    /// The AirPlay route sheet holds the controls up while it's open. Once
+    /// it closes the route is checked again, since picking the receiver
+    /// that was already chosen sends no route change.
     func pinWhilePresentingRoutes(_ isPresentingRoutes: Bool) {
-        if isPresentingRoutes { viewModel.pinControlsVisible() }
-        else { viewModel.resumeAutoHide() }
+        if isPresentingRoutes {
+            viewModel.pinControlsVisible()
+        } else {
+            viewModel.resumeAutoHide()
+            viewModel.airPlayRoutePickerClosed()
+        }
     }
 
     private var titleBlock: some View {

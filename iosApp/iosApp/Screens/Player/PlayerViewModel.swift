@@ -249,7 +249,15 @@ class PlayerViewModel {
 
     // MARK: Next Up
 
-    var showNextUpScreen = false
+    var showNextUpScreen = false {
+        didSet {
+            #if os(iOS)
+            // An AirPlay receiver picked while Next Up covered the player
+            // gets its check once Next Up goes.
+            if oldValue, !showNextUpScreen { evaluateAirPlayRoute() }
+            #endif
+        }
+    }
     /// A Next Up load keeps its preview until the next item's own startup
     /// milestone. Repeated actions can't reload it or expand a frame that
     /// isn't ready.
@@ -483,6 +491,22 @@ class PlayerViewModel {
     /// Follows the active AVPlayer route, with the AirPlay or HDMI audio
     /// route used only to bridge the engine's brief native item replacement.
     var isExternalPlaybackActive = false
+    /// True while an AirPlay receiver plays the title and Lucid waits
+    /// (iPhone and iPad). The phone then shows only its black video area.
+    var isAirPlayVideoHandedOff = false
+    /// The Silo receiver session realtime events arrive for while handed
+    /// off; the player's own session id still names the retired one.
+    @ObservationIgnored var airPlayReceiverSessionId: String?
+    #if os(iOS)
+    /// The tracks and quality each receiver request was prepared with, by
+    /// request, and the kind of change that asked for it.
+    @ObservationIgnored var airPlayRequestSelections: [Int: (selection: AirPlayReceiverSelection, change: AirPlayReceiverChange)] = [:]
+    /// What the receiver is actually playing, for undoing a change whose
+    /// new stream couldn't be had.
+    @ObservationIgnored var airPlayReceiverSelection: AirPlayReceiverSelection?
+    /// The kind of the latest change made while handed off.
+    @ObservationIgnored var airPlayChangeKind = AirPlayReceiverChange.seek
+    #endif
     #if os(iOS)
     var isPlayerPresentationVisible = false
     /// AVKit's restore completion handler, held while the re-presented cover
@@ -744,6 +768,9 @@ class PlayerViewModel {
     /// It doesn't stop the session: Picture in Picture and background audio
     /// carry on.
     private var foregroundExitObserverToken: NSObjectProtocol?
+    /// Re-checks the AirPlay button and route when Picture in Picture
+    /// starts or stops (iPhone and iPad).
+    private var pictureInPictureObserverToken: NSObjectProtocol?
 
     // MARK: Subtitle files
 
@@ -861,11 +888,32 @@ class PlayerViewModel {
             }
         }
         #endif
+        #if os(iOS)
+        pictureInPictureObserverToken = center.addObserver(
+            forName: PictureInPictureCoordinator.engagementDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.pictureInPictureEngagementChanged() }
+        }
+        #endif
+    }
+
+    /// On iPhone and iPad an AirPlay output may be a video receiver, which the
+    /// AirPlay hand-off probes for first. While the probe or a hand-off owns
+    /// the route Lucid's plan is left alone; a speaker gets the usual check
+    /// once the probe has its answer.
+    private func audioOutputRouteDidChange() {
+        #if os(iOS)
+        evaluateAirPlayRoute()
+        if vividPlaybackController.airPlayHandOffOwnsOutputRoute { return }
+        #endif
+        replanForOutputRouteIfNeeded()
     }
 
     /// Asks Silo for a new plan when the audio output the session was planned
     /// for has really changed (not just a notification for the same output).
-    private func audioOutputRouteDidChange() {
+    func replanForOutputRouteIfNeeded() {
         guard let activeProtocolV3 = activePreparedProtocolV3, !isDisposed, !isLoading else { return }
         let observedSnapshot = ApplePlaybackV3Capabilities.snapshot()
         guard PlaybackSessionBridge.isMaterialOutputRouteChange(
@@ -890,6 +938,7 @@ class PlayerViewModel {
             systemCaptionObserverToken,
             systemCaptionForegroundObserverToken,
             foregroundExitObserverToken,
+            pictureInPictureObserverToken,
         ] {
             if let token { center.removeObserver(token) }
         }
@@ -897,6 +946,7 @@ class PlayerViewModel {
         systemCaptionObserverToken = nil
         systemCaptionForegroundObserverToken = nil
         foregroundExitObserverToken = nil
+        pictureInPictureObserverToken = nil
     }
 
     /// Final teardown, from `PlayerView.onDisappear` (deferred while Picture

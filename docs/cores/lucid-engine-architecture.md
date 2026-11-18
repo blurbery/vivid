@@ -112,7 +112,7 @@ All of them run on the main actor.
   Its options hook, `configurePlatformMpvOptions(mpv:)`, runs inside `initialize`, after the bridge's own options and before `mpv_initialize`: `ao=avfoundation`, `audio-spdif`, `ao-avfoundation-manage-audio-session=no`, `volume-gain` and `af` while Volume Boost or Enhanced Dialogue is on, the packet cache limits, `cache-secs` on tvOS, the six `ao-avfoundation-*` AirPlay options on tvOS, `http-header-fields` as a typed string list, `tls-verify` through `LucidTLS`, and the `vividstream` protocol when Vivid's managed reader is used (bridge 6.3, 6.19).
 - **Audio session.**
   Vivid owns `AVAudioSession`, not the engine.
-  The adapter sets category playback, mode moviePlayback and long-form route sharing and activates the session before each load, retrying briefly while a new route settles.
+  The adapter sets category playback, mode moviePlayback and long-form route sharing (long-form video on iOS, so video can follow an AirPlay video route, and long-form audio on tvOS) and activates the session before each load, retrying briefly while a new route settles.
   It deactivates it only after every retired core's `dispose` completion has left a shared `DispatchGroup`, and only while its own ownership token is still current.
 - **Events into state.**
   `file-loaded` marks the session ready and `playback-restart` the first picture.

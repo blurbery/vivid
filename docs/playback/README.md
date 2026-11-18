@@ -78,6 +78,7 @@ Audio and Subtitles select available tracks directly, including Off and supporte
 With OpenSubtitles connected in Plugins, the subtitle picker also offers manual title/language search and temporary subtitle downloads.
 Translation is not offered.
 Rotate, Lock, PiP and AirPlay remain separate round buttons.
+AirPlay to an Apple TV or a TV with AirPlay hands the title to the receiver, and the controls then drive it; see [AirPlay video](architecture.md#airplay-video).
 PiP stays in place but disabled while preparing.
 Loading uses four staggered white dots.
 There is no mobile Info pill.

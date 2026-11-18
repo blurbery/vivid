@@ -6,6 +6,8 @@
 	<array>
 		<string>com.blurbery.vivid.downloads-refresh</string>
 	</array>
+	<key>AVInitialRouteSharingPolicy</key>
+	<string>LongFormVideo</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>

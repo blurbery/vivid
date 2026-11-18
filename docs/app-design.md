@@ -315,6 +315,8 @@ An open popover pins the controls, and the mobile presentation host stays mounte
 Quality changes use the existing position-preserving reload path.
 Chapters and subtitles come from the media; chapter ticks are absent from the timeline.
 Rotate, Lock, PiP and AirPlay remain separate round buttons.
+The AirPlay button shows for a server video playing on Lucid's own route; it's hidden for downloads, for Silo servers without the native v2 API and while Picture in Picture is active.
+AirPlay to a speaker such as HomePod plays the sound there while video stays on the device; AirPlay to an Apple TV or a TV with AirPlay hands the title to the receiver, and the device keeps the black video area with the normal controls and no subtitles, and those controls drive the receiver (see [AirPlay video](playback/architecture.md#airplay-video)).
 All control groups appear together on tap; PiP keeps its place while disabled during source preparation.
 The left brightness and right system-volume capsules appear with the controls; vertical drags adjust their levels and suspend auto-hide until release.
 Player unlock uses physical orientation when available.
@@ -331,6 +333,7 @@ When the catalogue lists no background or can't be reached, Next Up uses the nex
 A listed background that then fails to download stays black rather than trying the others.
 The preview has a bright edge and a deep shadow so it stands off the artwork.
 The updated menus were device-tested on iPhone 16 Pro Max. iPad layout and route-specific PiP/AirPlay operation have not been separately verified for this change.
+The AirPlay video hand-off was checked on an iPhone with an Apple TV 4K and in Xcode's CarPlay Simulator; a real car hasn't been tried.
 
 Emby and Jellyfin have separate Combine Continue Watching and Next Up preferences.
 When enabled, Home retains resume metadata and removes duplicate items from Next Up.
@@ -726,6 +729,7 @@ Startup is split into the time to the first frame and the time until the playhea
 Each audio route is recorded with its reported output latency, Apple's reported rendering mode and the channels the output port negotiated, as counts and tokens only, never port or device names.
 On iPhone and iPad it also notes whether video is on an external screen.
 
+The AirPlay readings below are for AirPlay audio, where Lucid keeps playing on the device; during an AirPlay video hand-off on iPhone or iPad, Lucid is paused and the receiver plays its own stream.
 On AirPlay, Lucid's audio clock comes from Apple's audio output: AVPlayer for compressed AC-3 and E-AC-3, the sample-buffer renderer's synchroniser for PCM.
 On HomePod with compressed audio, device traces show AVPlayer's clock stays parked until the speakers play, about the route's 2.0 s reported latency, and blurbery confirmed audio in sync on that route, so A/V sync there is measured against what is heard.
 Before the anchor-start fix that parked clock ran video 2.4 s ahead of the sound while A/V sync read near zero; the stall and startup counts now show that case.

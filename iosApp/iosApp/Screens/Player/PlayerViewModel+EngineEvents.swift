@@ -137,6 +137,14 @@ extension PlayerViewModel {
     }
 
     func handleVividControllerEvent(_ event: VividPlaybackController.ControllerEvent) {
+        #if os(iOS)
+        if case .airPlayHandOff(let request) = event {
+            // Answered even after disposal, so a receiver session that
+            // arrives late is still released.
+            handleAirPlayHandOffRequest(request)
+            return
+        }
+        #endif
         guard !isDisposed else { return }
         switch event {
         case .systemMediaChanged:
@@ -145,7 +153,16 @@ extension PlayerViewModel {
         case .externalPlaybackChanged(let supported, let active):
             supportsExternalPlayback = supported
             isExternalPlaybackActive = active
+            isAirPlayVideoHandedOff = vividPlaybackController.isAirPlayHandOffEngaged
+            if !isAirPlayVideoHandedOff {
+                airPlayReceiverSessionId = nil
+                #if os(iOS)
+                airPlayReceiverSelection = nil
+                #endif
+            }
             refreshPlaybackStats(force: true)
+        case .airPlayHandOff:
+            break
         }
     }
 
@@ -303,6 +320,11 @@ extension PlayerViewModel {
             completeProtocolV3FirstFrameIfCommitted(epoch)
         } else {
             startProgressReporting()
+            #if os(iOS)
+            // Opened, or moved to the next episode, while already on AirPlay.
+            // A Silo load waits for its plan to commit first.
+            evaluateAirPlayRoute()
+            #endif
         }
         refreshPlaybackStats(force: true)
     }
@@ -344,6 +366,10 @@ extension PlayerViewModel {
               let sessionId = activePlaybackSessionId else { return }
         pendingProtocolV3FirstFrameEpoch = nil
         startProgressReporting()
+        #if os(iOS)
+        // Opened, or moved to the next episode, while already on AirPlay.
+        evaluateAirPlayRoute()
+        #endif
         Task { [sessionBridge] in
             await sessionBridge.reportProtocolV3FirstFrame(planId: planId, sessionId: sessionId, milliseconds: nil)
         }

@@ -18,6 +18,7 @@ Its current feature and verification limits are listed below.
 
 Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting.
 Credential query parameters such as `ApiKey` and `api_key` are removed from server-provided transcode URLs, because Vivid sends credentials in request headers.
+AirPlay video receivers are the exception: a receiver can't send request headers, so the stream address Vivid gives one carries the account's access token as `api_key` (see [Playback and settings](#playback-and-settings)).
 Silo keeps its existing connection and Protocol V3 path.
 Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged.
 Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
@@ -130,6 +131,15 @@ Vivid's separate completion policy still marks a title played at 90%, at a credi
 Transcoded-session cleanup uses Emby's active-encoding endpoint.
 The player's Stream badge on Apple TV reads each video stream's `ExtendedVideoType` and `ExtendedVideoSubtype` (for example `DoviProfile81`) to show the Dolby Vision profile (DV P8.1), HDR10+, HDR10 or HLG, and falls back to `VideoRange` on servers that don't send them.
 Detail pages, version pickers and Continue Watching in the Apple TV Home focus info show the same label.
+
+On iPhone and iPad, AirPlay to a video receiver starts a separate PlaybackInfo negotiation for the receiver (see [AirPlay video](../playback/architecture.md#airplay-video)).
+Its profile offers only what the receiver plays: MPEG-TS HLS with H.264 video (up to 1080p) and AAC, AC-3 or E-AC-3 audio, or a direct MP4, M4V or MOV file with H.264 or HEVC video, so Emby will often transcode.
+HEVC only reaches the receiver as a direct MP4, M4V or MOV file, so HEVC in another container, Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p.
+Fragmented MP4 HLS isn't used for Emby because it hasn't been verified there.
+Text subtitles are requested as WebVTT renditions in the HLS stream, selected on the receiver, and bitmap subtitles are burned in; sidecar files, OpenSubtitles downloads and Vivid's subtitle styling don't reach the receiver.
+The receiver can't send request headers, so its URL carries the account's access token as `api_key`.
+The receiver, and Emby's access logs, can see that URL; Vivid never logs or stores it.
+blurbery checked the receiver session against an Emby server with an Apple TV 4K; other Emby versions haven't been tried.
 
 Vivid’s Emby preferences are scoped per server and native user.
 Eligible shared preferences can sync through the private iCloud vault; playback and subtitle settings stay device-local.

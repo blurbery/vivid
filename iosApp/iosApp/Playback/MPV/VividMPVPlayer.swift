@@ -436,14 +436,24 @@ extension VividMPVPlayer {
                                         message: "Lucid did not open the source within 60 seconds."))
     }
 
+    /// On iPhone and iPad video has to use the long-form video policy, or
+    /// the system keeps it on the device when the viewer picks an AirPlay
+    /// receiver and the AirPlay hand-off can't reach it. Apple TV keeps
+    /// long-form audio.
+    #if os(iOS)
+    private static let routeSharingPolicy = AVAudioSession.RouteSharingPolicy.longFormVideo
+    #else
+    private static let routeSharingPolicy = AVAudioSession.RouteSharingPolicy.longFormAudio
+    #endif
+
     private func activateAudioSession(_ session: AVAudioSession, token: UInt64) async throws {
         var delays = Self.audioSessionActivationRetryDelays[...]
         while true {
             do {
                 // The active route is kept across episode changes and audio-output reloads.
                 if session.category != .playback || session.mode != .moviePlayback
-                    || session.routeSharingPolicy != .longFormAudio {
-                    try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+                    || session.routeSharingPolicy != Self.routeSharingPolicy {
+                    try session.setCategory(.playback, mode: .moviePlayback, policy: Self.routeSharingPolicy)
                 }
                 try session.setActive(true)
                 return
@@ -877,6 +887,15 @@ extension VividMPVPlayer {
         pause()
         hasFirstFrameReadyForDisplay = false
     }
+
+    #if os(iOS)
+    /// Hides Lucid's picture (and the subtitles drawn into it) while an
+    /// AirPlay receiver plays the title, the way an external screen does, so
+    /// the phone shows only its black video area.
+    func setPictureHiddenForAirPlay(_ hidden: Bool) {
+        core?.setVisible(!hidden)
+    }
+    #endif
 
     private func updatePhase() {
         // The latest-playback session counts only time with video actually

@@ -609,6 +609,10 @@ extension PlayerViewModel {
         // turn a tap that can't be mapped into a replan for the track that's
         // already playing.
         if let trackTarget, trackTarget.selectionIndex == nil { return false }
+        // An AirPlay receiver's attempt is never replanned: its plan is the
+        // receiver's, and the phone's attempt has been retired. Track and
+        // quality changes restart the receiver's stream before reaching here.
+        if vividPlaybackController.isAirPlayHandOffEngaged { return false }
 
         if protocolV3ReplanTask != nil {
             if operation == PlaybackProtocolV3.ReplanOperation.seekReanchor {

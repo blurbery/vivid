@@ -8,7 +8,9 @@ extension PlayerViewModel {
 
     @MainActor
     func handleRealtimeEvent(_ event: PlaybackRealtimeEventEnvelope) async {
-        guard event.sessionId == activePlaybackSessionId else { return }
+        // While a Silo receiver plays, its session is the live one.
+        guard event.sessionId == activePlaybackSessionId
+            || (airPlayReceiverSessionId != nil && event.sessionId == airPlayReceiverSessionId) else { return }
         switch event.name {
         case .markersUpdated:
             // Server marker updates must not replace the selected file's markers.

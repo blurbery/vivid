@@ -60,6 +60,16 @@ Server appearance settings, live subtitle translation and skip markers do not su
 Phone-assisted Apple TV setup and its Bonjour discovery are removed, and so is the QR sign-in screen: every platform uses the username/password form.
 Manual account login and the TV remote-playback receiver remain distinct active paths.
 
+On iPhone and iPad, AirPlay to a video receiver is offered only on native v2 Silo servers, and starts a separate v2 playback attempt for the receiver (see [AirPlay video](../playback/architecture.md#airplay-video)).
+Its capabilities leave out `header_authenticated_media_v1` and `authorized_media_origins_v1` and offer only what the receiver plays: HLS with H.264 (up to 1080p) or HEVC (up to 2160p) video and AAC, AC-3 or E-AC-3 audio, or an original MP4, MOV or M4V file.
+Dolby Vision and HDR10+ are transcoded to H.264 at up to 1080p, while HDR10 and HLG HEVC can be copied.
+Silo then returns relative stream URLs carrying its signed stream reference (`st`), which Vivid resolves against the API base and hands to the receiver.
+The reference isn't the account token: it only works for that playback session while the sign-in is active, for at most 24 hours, and stops working when the session stops.
+Vivid never logs or stores these URLs, and keeps the receiver's plan with `st` removed.
+Receiver subtitles are burned in only; external and stored subtitle files and OpenSubtitles downloads don't reach the receiver.
+Silo replans aren't used during a hand-off, and a replan after an AirPlay route change waits until Vivid knows whether the receiver takes video.
+blurbery checked the receiver attempt against a native v2 Silo server with an Apple TV 4K.
+
 ## Current implementation
 
 Vivid's own sign-in, profile and error text follows Vivid's language; titles and other metadata come from Silo in the profile's metadata language (`catalog.metadata_language`).

@@ -61,6 +61,34 @@ final class VividPlaybackController {
         case systemMediaChanged
         /// Whether video can go to an external screen, and whether it is.
         case externalPlaybackChanged(supported: Bool, active: Bool)
+        /// Work the AirPlay video hand-off needs from the player (iPhone and
+        /// iPad only).
+        case airPlayHandOff(AirPlayHandOffRequest)
+    }
+
+    /// What the AirPlay hand-off asks of the player, which owns the server
+    /// session and the load requests.
+    enum AirPlayHandOffRequest {
+        /// Prepare a receiver session; answer with `airPlayStreamArrived` or
+        /// `airPlayStreamFailed` for the same request.
+        case requestStream(request: Int)
+        /// Commit a prepared receiver session, retiring the live session at
+        /// `position`; answer with `airPlayCommitFinished`.
+        case commitStream(request: Int, stream: AirPlayReceiverStream, position: Double)
+        /// Bring Lucid back at this source position with a fresh load.
+        case resumeLucid(at: Double)
+        /// End a prepared receiver session nothing will commit.
+        case releaseStream(AirPlayReceiverStream)
+        /// Run the output-route check the probe held back.
+        case recheckOutputRoute
+        /// The receiver's clock is moving.
+        case receiverStarted
+        /// Check the output route again, retrying a receiver session that
+        /// couldn't be had last time.
+        case retryRouteCheck
+        /// A restart's stream couldn't be had; the receiver plays on with the
+        /// stream it has, so the choice behind the restart is undone.
+        case restartFailed(request: Int)
     }
 
     enum SeekResult: Equatable {
@@ -129,11 +157,29 @@ final class VividPlaybackController {
         var carriedPolicy: Bool?
         var reportedSupport = false
         var reportedActive = false
+        /// The AirPlay hand-off state last reported with them, so the player
+        /// always hears when it changes.
+        var reportedHandOff = false
     }
 
     private var load = LoadProgress()
     private var transport = Transport()
     private var airPlay = AirPlayTracking()
+    #if os(iOS)
+    /// The AirPlay video hand-off. While `handOffEngaged`, Lucid is paused
+    /// and muted, the transport drives the receiver's player, and the
+    /// engine's playback signals are held back.
+    private let airPlayVideo = AirPlayVideoHandOff()
+    private var handOffPolicy = AirPlayHandOffPolicy()
+    private var handOffEngaged = false
+    /// Prepared receiver streams by request, until they're started or
+    /// released. Held in memory only: their URLs carry a credential.
+    private var receiverStreams: [Int: AirPlayReceiverStream] = [:]
+    /// Set by the player: the current load could be handed off at all.
+    private var airPlayHandOffAvailable = false
+    /// A route check waiting to retry a receiver session.
+    private var airPlayRetryTask: Task<Void, Never>?
+    #endif
     private var engineObservers: Set<AnyCancellable> = []
     /// External subtitles (Silo sidecars, for example) by app id, with the
     /// engine id each was registered under, in both directions.
@@ -150,6 +196,9 @@ final class VividPlaybackController {
         #endif
         syncBackgroundPlaybackSetting()
         watchEngine()
+        #if os(iOS)
+        airPlayVideo.onSignal = { [weak self] in self?.airPlayVideoSignal($0) }
+        #endif
     }
 
     /// Gives the engine the Settings choice for playing in the background.
@@ -169,6 +218,11 @@ final class VividPlaybackController {
         _ spec: VividLoadSpec,
         shouldPlayWhenReady: Bool = true
     ) -> LoadEpoch {
+        #if os(iOS)
+        handleHandOff(.loadReplaced)
+        // The player says again once this load has settled.
+        airPlayHandOffAvailable = false
+        #endif
         advanceLoadNumber()
         self.shouldPlayWhenReady = shouldPlayWhenReady
         let epoch = LoadEpoch(rawValue: load.number)
@@ -251,6 +305,13 @@ final class VividPlaybackController {
 
     func play() {
         shouldPlayWhenReady = true
+        #if os(iOS)
+        if handOffEngaged {
+            _ = startTransportIntent()
+            airPlayVideo.play()
+            return
+        }
+        #endif
         // Between `beginLoad` and the end of `engine.load` the controller
         // looks exactly like a load torn down in the background (no route,
         // no ready session). Restoring then would start a second
@@ -306,6 +367,12 @@ final class VividPlaybackController {
     func pause() {
         shouldPlayWhenReady = false
         _ = startTransportIntent()
+        #if os(iOS)
+        if handOffEngaged {
+            airPlayVideo.pause()
+            return
+        }
+        #endif
         engine.pause()
     }
 
@@ -324,6 +391,12 @@ final class VividPlaybackController {
             return
         }
         transport.rate = rate
+        #if os(iOS)
+        if handOffEngaged {
+            airPlayVideo.setRate(rate)
+            return
+        }
+        #endif
         // Any non-zero AVPlayer rate also means play, so a speed change made
         // while paused waits for the next Play.
         if shouldPlayWhenReady {
@@ -344,16 +417,57 @@ final class VividPlaybackController {
     }
 
     private func applyVolume() {
-        engine.volume = transport.muted ? 0 : transport.volume
+        // A hand-off keeps Lucid silent whatever the viewer's volume, gives
+        // the viewer's setting to the receiver meanwhile, and back to Lucid
+        // when it ends.
+        engine.volume = transport.muted || isAirPlayHandOffEngaged ? 0 : transport.volume
+        #if os(iOS)
+        airPlayVideo.setVolume(transport.volume, muted: transport.muted)
+        #endif
     }
 
     var volume: Float { transport.volume }
 
     var isMuted: Bool { transport.muted }
 
-    var isPaused: Bool { engine.state != .playing }
+    var isPaused: Bool {
+        #if os(iOS)
+        if handOffEngaged { return airPlayVideo.isPaused }
+        #endif
+        return engine.state != .playing
+    }
+
+    /// Whether a seek is still landing, on whichever player has the title.
+    var isSeeking: Bool {
+        #if os(iOS)
+        if handOffEngaged { return airPlayVideo.isSeeking }
+        #endif
+        return engine.isSeeking
+    }
 
     func seek(toSourceTime sourceSeconds: Double) async -> SeekResult {
+        #if os(iOS)
+        if handOffEngaged {
+            // The receiver stream covers the title, so a seek stays on it and
+            // never asks for a replan.
+            load.endSent = false
+            let target = max(0, sourceSeconds.isFinite ? sourceSeconds : 0)
+            // A stream not yet on the player (or a restart waiting) starts at
+            // the target instead.
+            handleHandOff(.seekRequested(position: target))
+            guard airPlayVideo.hasStream else { return .completed(sourceSeconds: target) }
+            if airPlayVideo.needsNewStream(forSourceTime: target) {
+                // Before the start of a stream that began mid-title (a Silo
+                // transcode): a new stream starts at the target, now or once
+                // a commit that's out lands.
+                handleHandOff(.restartRequested(position: target))
+                return .completed(sourceSeconds: target)
+            }
+            await airPlayVideo.seek(toSourceTime: target)
+            let landed = handOffEngaged ? airPlayVideo.sourcePosition : max(0, sourceSeconds)
+            return .completed(sourceSeconds: landed)
+        }
+        #endif
         guard let timeline = activeSpec?.timeline else {
             return .requiresReplan(sourceSeconds: max(0, sourceSeconds))
         }
@@ -381,6 +495,9 @@ final class VividPlaybackController {
     /// criteria, swapping the player layer or giving up the shared audio
     /// session between episodes.
     func prepareForReplacement() {
+        #if os(iOS)
+        handleHandOff(.loadReplaced)
+        #endif
         invalidateActiveLoad(keepingAirPlayPolicy: true)
         engine.deactivatesAudioSessionOnStop = false
         // Without this the engine unloads the outgoing AVPlayerItem as `load`
@@ -397,6 +514,12 @@ final class VividPlaybackController {
     func dispose() { stop() }
 
     func stop() {
+        #if os(iOS)
+        handleHandOff(.userStopped)
+        airPlayHandOffAvailable = false
+        airPlayRetryTask?.cancel()
+        airPlayRetryTask = nil
+        #endif
         invalidateActiveLoad()
         shouldPlayWhenReady = false
         // SwiftUI may build a model eagerly and throw it away unused. Its
@@ -537,25 +660,28 @@ final class VividPlaybackController {
         observeRouteChanges()
     }
 
+    /// While an AirPlay hand-off is engaged the paused, muted engine isn't
+    /// what the viewer is watching: its state, clock, buffering, first frame
+    /// and failures are held back, and the receiver's are sent instead.
     private func observePlaybackSignals() {
         engine.$state
-            .sink { [weak self] state in self?.engineStateChanged(state) }
+            .sink { [weak self] state in self?.engineSignal { $0.engineStateChanged(state) } }
             .store(in: &engineObservers)
         engine.$playbackPhase
-            .sink { [weak self] in self?.emit(.phase($0)) }
+            .sink { [weak self] phase in self?.engineSignal { $0.emit(.phase(phase)) } }
             .store(in: &engineObservers)
         engine.clock.$currentTime
-            .sink { [weak self] in self?.emit(.playerTime($0)) }
+            .sink { [weak self] time in self?.engineSignal { $0.emit(.playerTime(time)) } }
             .store(in: &engineObservers)
         engine.$duration
             .sink { [weak self] in self?.emit(.duration($0)) }
             .store(in: &engineObservers)
         engine.$isBuffering
-            .sink { [weak self] in self?.emit(.buffering($0)) }
+            .sink { [weak self] buffering in self?.engineSignal { $0.emit(.buffering(buffering)) } }
             .store(in: &engineObservers)
         engine.$isLoadingSubtitles
             .removeDuplicates()
-            .sink { [weak self] in self?.emit(.subtitleLoading($0)) }
+            .sink { [weak self] loading in self?.engineSignal { $0.emit(.subtitleLoading(loading)) } }
             .store(in: &engineObservers)
         #if DEBUG && (os(iOS) || os(tvOS))
         engine.$startupProgress
@@ -567,12 +693,18 @@ final class VividPlaybackController {
             .store(in: &engineObservers)
         #endif
         engine.$hasFirstFrameReadyForDisplay
-            .sink { [weak self] in self?.firstFrameReadinessChanged($0) }
+            .sink { [weak self] ready in self?.engineSignal { $0.firstFrameReadinessChanged(ready) } }
             .store(in: &engineObservers)
         engine.$errorInfo
             .compactMap { $0 }
-            .sink { [weak self] in self?.emit(.failure($0)) }
+            .sink { [weak self] failure in self?.engineSignal { $0.emit(.failure(failure)) } }
             .store(in: &engineObservers)
+    }
+
+    /// Runs an engine playback signal unless a hand-off holds them back.
+    private func engineSignal(_ forward: (VividPlaybackController) -> Void) {
+        guard !isAirPlayHandOffEngaged else { return }
+        forward(self)
     }
 
     private func observeInventoryAndTelemetry() {
@@ -756,15 +888,30 @@ final class VividPlaybackController {
         // overlay to the system only when AVPlayer itself sends video out.
         engine.setNativeSubtitleRendering(playerSendsVideo)
         #endif
-        let active = playerSendsVideo
+        var active = playerSendsVideo
             || (engine.videoRoute.usesNativeVideoSession && Self.outputIsExternal)
-        let supported = current != nil && (mayUseExternalPlayback || active)
+        var supported = current != nil && (mayUseExternalPlayback || active)
+        #if os(iOS)
+        // Lucid's own picture never goes to a receiver; a video title is
+        // handed to `AirPlayVideoHandOff` instead. The route button shows
+        // only where that could happen: a committed video load on Lucid's
+        // own route that the player says a receiver could take, outside
+        // Picture in Picture. This is only the status: the engine AVPlayer's
+        // AirPlay setting above stays as it was.
+        let handOffPossible = airPlayHandOffAvailable && load.committed
+            && activeSpec?.options.audioOnly == false && engine.videoRoute == .sampleBuffer
+            && !engine.pictureInPictureActive
+        supported = supported || handOffPossible || handOffEngaged
+        active = active || handOffEngaged
+        #endif
 
         supportsExternalPlayback = supported
         isExternalPlaybackActive = active
-        if supported == airPlay.reportedSupport, active == airPlay.reportedActive { return }
+        if supported == airPlay.reportedSupport, active == airPlay.reportedActive,
+           isAirPlayHandOffEngaged == airPlay.reportedHandOff { return }
         airPlay.reportedSupport = supported
         airPlay.reportedActive = active
+        airPlay.reportedHandOff = isAirPlayHandOffEngaged
         onControllerEvent?(.externalPlaybackChanged(supported: supported, active: active))
     }
 
@@ -772,6 +919,269 @@ final class VividPlaybackController {
         let externalPorts: Set<AVAudioSession.Port> = [.airPlay, .HDMI]
         return AVAudioSession.sharedInstance().currentRoute.outputs.contains { externalPorts.contains($0.portType) }
     }
+
+    // MARK: - AirPlay video hand-off
+
+    /// True while an AirPlay receiver plays the title and Lucid waits paused
+    /// and muted. Always false on Apple TV.
+    var isAirPlayHandOffEngaged: Bool {
+        #if os(iOS)
+        return handOffEngaged
+        #else
+        return false
+        #endif
+    }
+
+    /// True while the probe or the hand-off owns the output route, so a
+    /// route change mustn't replan Lucid's stream.
+    var airPlayHandOffOwnsOutputRoute: Bool {
+        #if os(iOS)
+        return handOffPolicy.ownsOutputRoute
+        #else
+        return false
+        #endif
+    }
+
+    #if os(iOS)
+    /// The player says whether the current load could be handed to a
+    /// receiver at all (a server stream with a receiver route), which is
+    /// when the AirPlay button shows.
+    func setAirPlayHandOffAvailable(_ available: Bool) {
+        guard airPlayHandOffAvailable != available else { return }
+        airPlayHandOffAvailable = available
+        updateExternalPlaybackStatus()
+    }
+
+    /// Reads Picture in Picture and the load again for the AirPlay button.
+    func refreshExternalPlaybackStatus() {
+        updateExternalPlaybackStatus()
+    }
+
+    /// The player reports the output route: `routeID` names the AirPlay
+    /// outputs, or is nil for a local route. `canHandOff` says whether the
+    /// current load could be handed to a receiver right now.
+    func airPlayRouteChanged(routeID: String?, canHandOff: Bool) {
+        guard let routeID else {
+            handleHandOff(.routeBecameLocal)
+            return
+        }
+        guard canHandOff else { return }
+        handleHandOff(.airPlayRouteAppeared(route: routeID))
+    }
+
+    /// The AirPlay route picker closed, which may have been to pick the same
+    /// receiver again; the player checks the route right after.
+    func airPlayRoutePickerClosed() {
+        handleHandOff(.routePickerClosed)
+    }
+
+    /// Answers `requestStream` with a prepared receiver session.
+    /// `lucidPosition` is where playback is now, on the source axis.
+    func airPlayStreamArrived(_ stream: AirPlayReceiverStream, request: Int, lucidPosition: Double) {
+        receiverStreams[request] = stream
+        handleHandOff(.streamReady(request: request, position: lucidPosition))
+    }
+
+    /// The receiver session can't be had for this load and route.
+    func airPlayStreamFailed(request: Int) {
+        handleHandOff(.streamFailed(request: request))
+    }
+
+    /// The receiver session couldn't be had this time (network, timeout, a
+    /// busy server); it's tried again shortly, a couple of times.
+    func airPlayStreamUnavailable(request: Int) {
+        handleHandOff(.streamUnavailable(request: request))
+    }
+
+    /// The player can't hand off right now after all; the route gets tried
+    /// again once that clears.
+    func airPlayHandOffBlocked(request: Int) {
+        handleHandOff(.handOffBlocked(request: request))
+    }
+
+    /// Answers `commitStream`. The stream is let go afterwards: a first
+    /// stream starts as its commit lands, a restart's was already started.
+    func airPlayCommitFinished(request: Int, result: AirPlayReceiverCommit) {
+        defer { receiverStreams[request] = nil }
+        handleHandOff(.commitFinished(request: request, result: result))
+    }
+
+    /// Replaces the receiver stream with one for the current tracks and
+    /// quality, at the current position, now or once a commit that's out
+    /// lands. False when no hand-off is running, so the change is Lucid's.
+    @discardableResult
+    func restartAirPlayReceiverStream() -> Bool {
+        handleHandOff(.restartRequested(position: nil))
+        return handOffPolicy.isActive
+    }
+
+    @discardableResult
+    private func handleHandOff(_ event: AirPlayHandOffPolicy.Event) -> [AirPlayHandOffPolicy.Effect] {
+        let effects = handOffPolicy.handle(event)
+        guard !effects.isEmpty else { return effects }
+        for effect in effects { applyHandOff(effect) }
+        updateExternalPlaybackStatus()
+        return effects
+    }
+
+    private func applyHandOff(_ effect: AirPlayHandOffPolicy.Effect) {
+        switch effect {
+        case .startProbe:
+            recordHandOff("probe")
+            airPlayVideo.startProbe()
+        case .stopProbe:
+            airPlayVideo.stop()
+        case .requestStream(let request):
+            recordHandOff("request_stream")
+            onControllerEvent?(.airPlayHandOff(.requestStream(request: request)))
+        case .pauseAndMuteLucid:
+            engageHandOff()
+        case .commitStream(let request, let position):
+            guard let stream = receiverStreams[request] else {
+                handleHandOff(.commitFinished(request: request, result: .refused))
+                return
+            }
+            onControllerEvent?(.airPlayHandOff(.commitStream(request: request, stream: stream, position: position)))
+        case .startStream(let request, let position):
+            guard let stream = receiverStreams[request] else { return }
+            recordHandOff("start transcode=\(stream.isTranscode)")
+            // The existing spinner covers the receiver's startup.
+            emit(.phase(.loading))
+            airPlayVideo.play(stream, atSourceTime: position, autoplay: shouldPlayWhenReady, rate: transport.rate)
+            if airPlayVideo.needsNewStream(forSourceTime: position) {
+                // A seek made during the commit went before this stream's
+                // start (a Silo transcode), so another stream starts there.
+                handleHandOff(.restartRequested(position: position))
+            }
+        case .resumeLucid(let position):
+            onControllerEvent?(.airPlayHandOff(.resumeLucid(at: position)))
+        case .resumeLucidInPlace:
+            // Lucid never lost its session: it plays on where it paused, as
+            // the viewer last asked. Paused, the engine's own state goes out
+            // again, since its pause was held back while engaged.
+            if shouldPlayWhenReady {
+                play()
+            } else {
+                emit(.state(engine.state))
+                emit(.phase(engine.playbackPhase))
+            }
+        case .endHandOff(let reason):
+            recordHandOff("end reason=\(reason.rawValue)")
+            airPlayVideo.stop()
+            disengageHandOff()
+        case .releaseStream(let request):
+            guard let stream = receiverStreams.removeValue(forKey: request) else { return }
+            onControllerEvent?(.airPlayHandOff(.releaseStream(stream)))
+        case .recheckOutputRoute:
+            onControllerEvent?(.airPlayHandOff(.recheckOutputRoute))
+        case .retryRouteCheck(let seconds):
+            airPlayRetryTask?.cancel()
+            airPlayRetryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled, let self else { return }
+                self.airPlayRetryTask = nil
+                self.onControllerEvent?(.airPlayHandOff(.retryRouteCheck))
+            }
+        case .armRestartDeadline(let request):
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: AirPlayVideoHandOff.prepareTimeout)
+                self?.handleHandOff(.restartTimedOut(request: request))
+            }
+        case .restartFailed(let request):
+            recordHandOff("restart_failed")
+            onControllerEvent?(.airPlayHandOff(.restartFailed(request: request)))
+        }
+    }
+
+    /// Lucid steps aside before the receiver session is committed: paused
+    /// with the engine directly, so `shouldPlayWhenReady` keeps following
+    /// the viewer for the receiver and for the reload that ends the
+    /// hand-off. Its picture is hidden (leaving the plain black video area),
+    /// Picture in Picture is held back, and background playback is kept on
+    /// so leaving the app can't tear down the audio session the receiver's
+    /// player shares.
+    private func engageHandOff() {
+        guard !handOffEngaged else { return }
+        _ = startTransportIntent()
+        handOffEngaged = true
+        engine.pause()
+        applyVolume()
+        engine.backgroundPlaybackEnabled = true
+        engine.setPictureHiddenForAirPlay(true)
+        PictureInPictureCoordinator.shared.setSuppressed(true, for: engine)
+    }
+
+    private func disengageHandOff() {
+        guard handOffEngaged else { return }
+        handOffEngaged = false
+        receiverStreams.removeAll()
+        applyVolume()
+        syncBackgroundPlaybackSetting()
+        engine.setPictureHiddenForAirPlay(false)
+        PictureInPictureCoordinator.shared.setSuppressed(false, for: engine)
+    }
+
+    private func airPlayVideoSignal(_ signal: AirPlayVideoHandOff.Signal) {
+        switch signal {
+        case .probeExternalActive:
+            handleHandOff(.probeExternalActive)
+        case .probeTimedOut:
+            handleHandOff(.probeTimedOut)
+        case .probeFailed:
+            handleHandOff(.probeFailed)
+        case .prepareTimedOut:
+            handleHandOff(.prepareTimedOut)
+        case .playbackStarted:
+            handleHandOff(.playbackStarted)
+            if handOffEngaged {
+                onControllerEvent?(.airPlayHandOff(.receiverStarted))
+            }
+        case .startTimedOut:
+            handleHandOff(.startTimedOut)
+        case .externalLost:
+            handleHandOff(.externalLost)
+        case .externalRestored:
+            handleHandOff(.externalRestored)
+        case .externalLostDebounced:
+            handleHandOff(.externalLostDebounced(position: airPlayVideo.sourcePosition))
+        case .receiverFailed:
+            handleHandOff(.receiverFailed(position: airPlayVideo.sourcePosition))
+        case .ended:
+            guard handOffEngaged, let epoch = activeLoadEpoch else { return }
+            // The receiver keeps the title paused at its end, so the normal
+            // end of the item (Next Up, completion, Replay or a scrub back)
+            // runs against it rather than against Lucid's retired session.
+            handleHandOff(.playbackEnded)
+            emit(.state(.ended), for: epoch)
+            guard !load.endSent else { return }
+            load.endSent = true
+            emit(.ended, for: epoch)
+        case .playing(let playing):
+            guard handOffEngaged else { return }
+            // What the receiver does doesn't change what the viewer asked
+            // for: a receiver pausing as it disconnects mustn't leave Lucid
+            // paused on the way back.
+            emit(.state(playing ? .playing : .paused))
+            emit(.phase(playing ? .playing : .paused))
+        case .buffering(let buffering):
+            guard handOffEngaged else { return }
+            emit(.buffering(buffering))
+            emit(.phase(buffering ? .rebuffering : (airPlayVideo.isPaused ? .paused : .playing)))
+        case .time(let sourceSeconds):
+            guard handOffEngaged, let timeline = activeSpec?.timeline else { return }
+            // Unclamped, so the player's own source mapping gives exactly
+            // `sourceSeconds` back, even before a re-anchored Silo
+            // transport's offset.
+            emit(.playerTime(sourceSeconds - timeline.timelineOffsetSeconds))
+        }
+    }
+
+    /// A diagnostics breadcrumb without the stream URL or any server
+    /// identity.
+    private func recordHandOff(_ message: String) {
+        DiagTrace.breadcrumb(.essential, category: .playback, tag: "airplay_video_handoff", message: message)
+    }
+    #endif
 }
 
 /// Whether `play()` may rebuild a torn-down session, or must leave the load
