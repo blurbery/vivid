@@ -11,6 +11,24 @@ import XCTest
 final class OtherProfileSearchTests: XCTestCase {
     // MARK: Which profiles
 
+    func testOnlyASiloKidsOrUnknownSiloProfileHidesOtherProfiles() {
+        func profile(child: Bool) -> UserProfile {
+            UserProfile(id: "p", name: "Member", avatarEmoji: nil, hasPin: false, isChild: child)
+        }
+        // Emby and Jellyfin have no kids profiles, loaded or not.
+        XCTAssertTrue(OtherProfileSearch.allowsOtherProfiles(activeProvider: .emby, liveProfile: nil, savedProfile: nil))
+        XCTAssertTrue(OtherProfileSearch.allowsOtherProfiles(activeProvider: .jellyfin, liveProfile: nil, savedProfile: nil))
+        // Silo: the saved card stands in until the live profile loads.
+        XCTAssertTrue(OtherProfileSearch.allowsOtherProfiles(activeProvider: .silo, liveProfile: nil, savedProfile: profile(child: false)))
+        XCTAssertTrue(OtherProfileSearch.allowsOtherProfiles(activeProvider: .silo, liveProfile: profile(child: false), savedProfile: nil))
+        XCTAssertFalse(OtherProfileSearch.allowsOtherProfiles(activeProvider: .silo, liveProfile: nil, savedProfile: nil))
+        XCTAssertFalse(OtherProfileSearch.allowsOtherProfiles(activeProvider: .silo, liveProfile: profile(child: true), savedProfile: nil))
+        XCTAssertFalse(OtherProfileSearch.allowsOtherProfiles(activeProvider: .silo, liveProfile: nil, savedProfile: profile(child: true)))
+        XCTAssertFalse(OtherProfileSearch.allowsOtherProfiles(activeProvider: .silo, liveProfile: profile(child: false), savedProfile: profile(child: true)))
+        // No profile in use at all.
+        XCTAssertFalse(OtherProfileSearch.allowsOtherProfiles(activeProvider: nil, liveProfile: nil, savedProfile: nil))
+    }
+
     func testSearchableTruthTable() {
         let plainSilo = account("silo")
         let emby = account("emby", serverID: "emby:c2VydmVy")

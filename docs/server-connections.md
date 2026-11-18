@@ -381,7 +381,7 @@ Each row holds up to 20 titles from that profile's own server, follows the All, 
 Each row shows as soon as its profile answers, after the rows already shown, so a slow server only holds back its own row and a shown row never moves.
 Nothing changes for someone with one saved profile.
 A profile with a Vivid PIN or a Silo profile PIN, or one that needs signing in again, is never searched.
-A Silo kids profile only sees its own results, with no other profiles' rows.
+A Silo kids profile only sees its own results, with no other profiles' rows, and neither does a Silo profile whose details haven't loaded yet; Emby and Jellyfin have no kids profiles.
 
 Each profile is searched with its own saved session, straight to its own server, without switching to it.
 These searches never touch the current session: they don't go through its sign-in retry, a refreshed access token stays in memory only, and a refused one leaves the profile's row out rather than signing anything out.

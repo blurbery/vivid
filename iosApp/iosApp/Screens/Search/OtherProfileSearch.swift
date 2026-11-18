@@ -44,6 +44,22 @@ enum OtherProfileSearch {
         return account.pinEnabled != true && account.profile?.hasPin != true
     }
 
+    /// Whether the profile in use may see other profiles' rows. A Silo kids
+    /// profile only sees its own library. Its live profile is nil until the
+    /// profile list loads, so the saved card's copy stands in, and a Silo
+    /// profile known by neither shows no rows. Emby and Jellyfin have no kids
+    /// profiles, so they always may. Pure, for tests.
+    nonisolated static func allowsOtherProfiles(
+        activeProvider: MediaServerProvider?,
+        liveProfile: UserProfile?,
+        savedProfile: UserProfile?
+    ) -> Bool {
+        guard let activeProvider else { return false }
+        guard activeProvider == .silo else { return true }
+        guard let current = liveProfile ?? savedProfile else { return false }
+        return !current.isChild && savedProfile?.isChild != true
+    }
+
     /// The saved profiles Search looks in, in their saved order.
     @MainActor
     static func searchableAccounts() -> [TVSavedAccount] {
@@ -52,12 +68,11 @@ enum OtherProfileSearch {
 
     @MainActor
     static func searchableAccounts(in store: TVSavedAccountStore) -> [TVSavedAccount] {
-        // A Silo kids profile only sees its own library, so it never shows
-        // titles and artwork from the other profiles. The live profile is
-        // nil until the profile list loads, so the saved card's copy stands
-        // in, and with neither known nothing else is searched.
-        let current = CurrentProfileStore.shared.profile ?? store.activeAccount?.profile
-        guard let current, !current.isChild, store.activeAccount?.profile?.isChild != true else { return [] }
+        guard allowsOtherProfiles(
+            activeProvider: store.activeAccount.map { MediaServerProvider.forServerID($0.serverID) },
+            liveProfile: CurrentProfileStore.shared.profile,
+            savedProfile: store.activeAccount?.profile
+        ) else { return [] }
         return store.accounts.filter { account in
             let session = store.savedSession(for: account)
             // The card's copy of the profile can be older than the session's.

@@ -125,8 +125,9 @@ The rocking angle is read from the clock on every frame and the card's view stru
 A [Siri search](apple-tv-browsing.md#siri-search) opens Search with one navigation-path assignment that replaces every pushed screen, not a pop followed by a push, so the root's pop-to-root focus handling never runs for a screen that isn't shown.
 It marks the bar as the owner after Back, as the bar's Search button does.
 Focus inside Search stays with the native search field and grid, and the hand-off pins no focus target.
-Below the grid, each [other saved profile's row](server-connections.md#other-saved-profiles) has its header button in its own full-width focus section and its posters in another, so Down from any column of the grid reaches the first header and Down again enters its posters.
-The rows set no default focus, so one arriving after the grid never takes focus.
+Below the grid, each [other saved profile's row](server-connections.md#other-saved-profiles) has its header button in its own full-width focus section and its posters in another, meant so that Down from any column of the grid reaches the first header and Down again enters its posters.
+The rows set no default focus, so one arriving after the grid shouldn't take focus.
+The rows have been seen on the Apple TV simulator, but moving focus through them hasn't been checked on a device yet.
 The one exception is a cold launch: Search opens while the startup hand-off still disables the content, so when the content is enabled the shell asks the focus engine to re-resolve once (the same request the focus watchdog makes), which lands on the search field.
 
 Media cards across Home, Search, Library, library pages and detail pages use SwiftUI’s native `.card` button style, including collection posters, episodes, trailers and cast.
