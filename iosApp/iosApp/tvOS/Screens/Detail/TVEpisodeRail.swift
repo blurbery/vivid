@@ -15,9 +15,14 @@ struct TVEpisodeRail: View {
     private let currentContentIsFavorite: Bool
     private let favoriteStates: [String: Bool]
     private let prefersCurrentContentFocus: Bool
-    private let baseCardWidth: CGFloat
+    private let cardWidth: CGFloat
     private let cardSpacing: CGFloat
     private let anchorsFocusedCard: Bool
+
+    /// Episode stills are 400 by 225 points, the size of the series page's
+    /// episode shelf.
+    static let defaultCardWidth: CGFloat = 400
+    static let defaultCardHeight: CGFloat = defaultCardWidth * 9 / 16
 
     @State private var preferences = UICustomizationPreferences.shared
     @FocusState private var focusedId: String?
@@ -34,7 +39,7 @@ struct TVEpisodeRail: View {
         currentContentIsFavorite: Bool = false,
         favoriteStates: [String: Bool] = [:],
         prefersCurrentContentFocus: Bool = false,
-        baseCardWidth: CGFloat = 480,
+        cardWidth: CGFloat = TVEpisodeRail.defaultCardWidth,
         cardSpacing: CGFloat = 54,
         anchorsFocusedCard: Bool = false
     ) {
@@ -49,7 +54,7 @@ struct TVEpisodeRail: View {
         self.currentContentIsFavorite = currentContentIsFavorite
         self.favoriteStates = favoriteStates
         self.prefersCurrentContentFocus = prefersCurrentContentFocus
-        self.baseCardWidth = baseCardWidth
+        self.cardWidth = cardWidth
         self.cardSpacing = cardSpacing
         self.anchorsFocusedCard = anchorsFocusedCard
     }
@@ -66,7 +71,6 @@ struct TVEpisodeRail: View {
 
     var body: some View {
         let presentation = preferences.cardPresentation
-        let cardWidth = baseCardWidth * presentation.posterSize.scale
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: cardSpacing) {

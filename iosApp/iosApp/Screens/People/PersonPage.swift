@@ -208,9 +208,12 @@ struct PersonDetailView: View {
         }
     }
 
+    /// The header portrait keeps its own size; it isn't a card.
+    private static let tvPortraitWidth: CGFloat = 200
+
     private func header(_ person: Person) -> some View {
         HStack(alignment: .top, spacing: 48) {
-            PersonPortrait(person: person, width: VividTheme.Skyline.densePosterCardWidth)
+            PersonPortrait(person: person, width: Self.tvPortraitWidth)
             VStack(alignment: .leading, spacing: 22) {
                 Text(person.name)
                     .font(.system(size: 64, weight: .bold))
@@ -271,8 +274,7 @@ struct PersonDetailView: View {
                 hasMore: model.hasMore,
                 onItemTap: open,
                 onNearEnd: { index in Task { await model.nearEnd(at: index) } },
-                columnCount: 7,
-                cardWidth: VividTheme.Skyline.densePosterCardWidth
+                fixedColumnCount: VividTheme.Skyline.posterGridColumns
             )
         }
     }

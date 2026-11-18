@@ -27,8 +27,8 @@ extension TVMainTabView {
         @State private var homeCards = TVHomeCardPreferences.shared
 
         private var cardSize: CGSize {
-            let width = VividTheme.thumbnailCardWidth * homeCards.presentation.posterSize.scale
-            return CGSize(width: width, height: width * VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth)
+            let width = (VividTheme.thumbnailCardWidth * homeCards.presentation.posterSize.scale).rounded()
+            return CGSize(width: width, height: (width * VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth).rounded())
         }
 
         var body: some View {

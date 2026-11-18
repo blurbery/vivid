@@ -789,8 +789,8 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
             let ratio = wide ? VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth
                 : VividTheme.posterCardHeight / VividTheme.posterCardWidth
             // Use the same arithmetic as the card before rounding to pixel keys.
-            let width = baseWidth * presentation.posterSize.scale
-            let height = width * ratio
+            let width = (baseWidth * presentation.posterSize.scale).rounded()
+            let height = (width * ratio).rounded()
             let size = CGSize(width: width * PosterImageCache.displayScale,
                               height: height * PosterImageCache.displayScale)
             let visibleCount = max(1, Int(ceil((viewportWidth + 40) / (width + 40))))

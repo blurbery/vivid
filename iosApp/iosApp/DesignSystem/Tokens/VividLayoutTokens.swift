@@ -17,8 +17,11 @@ enum VividTheme {
 
     static let posterCardWidth: CGFloat = 260
     static let posterCardHeight: CGFloat = 390
-    static let thumbnailCardWidth: CGFloat = 360
-    static let thumbnailCardHeight: CGFloat = 200
+    /// A landscape card (Continue Watching, Next Up, episode rows and
+    /// library cards) before Home's Large scale, which Home always uses:
+    /// 400 by 222 points on screen.
+    static let thumbnailCardWidth: CGFloat = 400 / CardPosterSize.large.scale
+    static let thumbnailCardHeight: CGFloat = 222 / CardPosterSize.large.scale
     #else
     static let cornerRadius: CGFloat = 8
     static let smallCornerRadius: CGFloat = 6
@@ -55,17 +58,21 @@ extension VividTheme {
         static let barTopInset: CGFloat = 0
         static let barHeight: CGFloat = 64
         static let tabSpacing: CGFloat = 8
+        /// A poster in Home's rows and the rails that match them, on screen.
+        static let railPosterWidth: CGFloat = 220
         /// The poster width of Home rows and the rails that match them,
-        /// before Home's Large scale: 240 by 360 points on screen.
-        static let densePosterCardWidth: CGFloat = 200
+        /// before Home's Large scale: 220 by 330 points on screen.
+        static let densePosterCardWidth: CGFloat = railPosterWidth / CardPosterSize.large.scale
+        /// A Cast & Crew photo on detail pages: 180 by 270 points.
+        static let castPhotoWidth: CGFloat = 180
         /// Posters across a catalogue grid: Search, library pages, collection
-        /// and studio pages. Six across the 1,760-point safe width makes each
-        /// poster 260 by 390 points.
-        static let posterGridColumns = 6
+        /// and studio pages. Seven across the 1,760-point safe width makes
+        /// each poster about 217 by 326 points.
+        static let posterGridColumns = 7
         /// The rows of a catalogue grid kept decoded around the screen. Eight
-        /// rows of six-across posters hold no more decoded pixels than ten
-        /// rows of the earlier seven-across ones, so the band stays inside
-        /// the decoded budget on Apple TVs with less memory.
+        /// rows of seven-across posters hold fewer decoded pixels than the
+        /// earlier eight rows of six-across 260-point ones, so the band stays
+        /// inside the decoded budget on Apple TVs with less memory.
         static let posterGridArtworkRows = 8
         /// The gap between a poster and its caption on Home's rows, which
         /// leaves room for the focus lift of a poster this size.
