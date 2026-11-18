@@ -76,6 +76,7 @@ struct Logger { func error(_ message: String) {} }
     var defaults = Defaults()
     var entries: [Entry] = []
     var activeServerId: String?
+    var hasUndecodableRegistry = false
     var mirrors = 0, writes = 0
     let launchPreferences = LaunchPreferences()
     init(storage: Storage) { keychain = Keychain(storage: storage) }

@@ -278,7 +278,23 @@ final class TVSavedAccountStore {
     // MARK: Capturing the live session
 
     func captureCurrent(refreshMetadata: Bool = true) async {
+        restoreMissingServers()
         _ = await capture(refreshMetadata: refreshMetadata, committing: nil)
+    }
+
+    /// Puts back the server of any saved profile whose server has gone
+    /// missing from this Apple TV's list. Without it, the profile's sign-in
+    /// page showed the active server's address, a sign-in there went to the
+    /// wrong server and switching to the profile failed. It waits while a
+    /// sign-in or deletion is running, which can leave a profile without its
+    /// server for a moment on purpose.
+    func restoreMissingServers() {
+        #if os(tvOS)
+        guard !busy else { return }
+        for serverID in Set(accounts.map(\.serverID)) {
+            ServerRegistry.shared.restoreEntry(forServerID: serverID)
+        }
+        #endif
     }
 
     /// Saves the live session into the saved profile that owns it. Routine
@@ -493,6 +509,9 @@ final class TVSavedAccountStore {
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
         do {
+            #if os(tvOS)
+            ServerRegistry.shared.restoreEntry(forServerID: account.serverID)
+            #endif
             if activeID != account.id || ServerRegistry.shared.activeServerId != account.serverID
                 || !AuthService.shared.isLoggedIn {
                 try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
@@ -841,6 +860,8 @@ final class TVSavedAccountStore {
     /// Every saved profile whose server is still saved, keyed by identity.
     /// When two share an identity, the newer change wins.
     func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
+        // A profile whose server went missing would otherwise stop syncing.
+        restoreMissingServers()
         var snapshot: [String: VividCloudAccountEnvelope] = [:]
         for account in accounts {
             guard let server = ServerRegistry.shared.entry(with: account.serverID) else { continue }
@@ -871,6 +892,7 @@ final class TVSavedAccountStore {
             guard let envelope = vault.accounts[identity] else { continue }
             importEnvelope(envelope, identity: identity, previousActiveID: previousActiveID, result: &result)
         }
+        restoreMissingServers()
 
         if let activeID, !accounts.contains(where: { $0.id == activeID }) {
             self.activeID = nil

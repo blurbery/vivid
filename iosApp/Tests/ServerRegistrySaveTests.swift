@@ -25,6 +25,33 @@ final class ServerRegistrySaveTests: XCTestCase {
         XCTAssertEqual(registry.entry(with: "server-a"), added)
     }
 
+    func testServerIDsGiveBackTheAddressTheyWereMadeFrom() {
+        let address = "https://media.example.com:8920/emby"
+        let id = ServerRegistry.serverId(for: address)
+        XCTAssertEqual(ServerRegistry.address(forServerID: id), address)
+        XCTAssertEqual(ServerRegistry.address(forServerID: "emby:" + id), address)
+        XCTAssertEqual(ServerRegistry.address(forServerID: "jellyfin:" + id), address)
+        XCTAssertNil(ServerRegistry.address(forServerID: "server-a"))
+        XCTAssertNil(ServerRegistry.address(forServerID: "emby:"))
+        XCTAssertNil(ServerRegistry.address(forServerID: ""))
+        XCTAssertNil(ServerRegistry.address(forServerID: "emby:" + ServerRegistry.serverId(for: "not an address")))
+    }
+
+    func testMissingProfileServerIsPutBackFromItsIDOnly() throws {
+        let (registry, _) = makeRegistry()
+        let other = ServerEntry(id: "jellyfin:" + ServerRegistry.serverId(for: "https://other.example.com"),
+                                url: "https://other.example.com", fetchedName: "Other", lastUsedAt: Date())
+        XCTAssertNotNil(registry.addOrUpdate(other))
+        let embyID = "emby:" + ServerRegistry.serverId(for: "https://emby.example.com")
+
+        let restored = try XCTUnwrap(registry.restoreEntry(forServerID: embyID))
+        XCTAssertEqual(restored.url, "https://emby.example.com")
+        XCTAssertEqual(registry.entry(with: embyID), restored)
+        // An entry that's already there is left as it is.
+        XCTAssertEqual(registry.restoreEntry(forServerID: other.id), other)
+        XCTAssertNil(registry.restoreEntry(forServerID: "server-a"))
+    }
+
     func testNewSessionUpsertForgetsTheProfileAndTakesTheNewName() throws {
         let (registry, launchPreferences) = makeRegistry()
         let address = "https://media.example.com"
