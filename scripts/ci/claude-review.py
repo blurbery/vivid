@@ -264,6 +264,16 @@ def changed_files(diff):
     return sorted({path for path in map(diff_path, diff.splitlines()) if path})
 
 
+def markdown_only(diff):
+    """Whether every file the diff touches, deleted and binary ones included, is Markdown."""
+    paths = []
+    for row in diff.splitlines():
+        if row.startswith("diff --git "):
+            # Both sides, so a rename from or to a non-Markdown file counts.
+            paths += re.findall(r'(?:^| )"?[ab]/(.+?)"?(?= "?b/|$)', row[len("diff --git "):])
+    return bool(paths) and all(path.endswith(".md") for path in paths)
+
+
 def cost_of(usage, prices):
     def count(name):
         return getattr(usage, name, None) or 0
@@ -416,12 +426,14 @@ def main():
     diff = (review_dir / "diff.patch").read_text(errors="replace")
     to_read = changed_files(diff)
     docs = [path for path in to_read if path.endswith(".md")]
-    # A PR that only changes docs has no code to hunt bugs in, so the claims
-    # pass gets the whole limit. Otherwise the claims pass checks what the PR
-    # says against the code with whatever the code pass left. New commits that
-    # touch no docs or comments add no claims to check.
+    # A diff that only touches Markdown (in a full review, the whole PR; in a
+    # review of new commits, just those) has no code to hunt bugs in, so the
+    # claims pass gets the whole limit. Deleted and binary files count, so a PR
+    # that deletes code isn't treated as docs-only. Otherwise the claims pass
+    # checks what the PR says against the code with whatever the code pass
+    # left. New commits that touch no docs or comments add no claims to check.
     passes = []
-    if to_read and len(docs) == len(to_read):
+    if markdown_only(diff):
         code = {"findings": [], "summary": None, "stopped": None, "turns": 0, "tool_calls": 0, "cost": 0.0, "files_read": set()}
     else:
         code = run_pass(client, settings, SYSTEM, first_message(args, review_dir), to_read, max_cost * CODE_SHARE)
