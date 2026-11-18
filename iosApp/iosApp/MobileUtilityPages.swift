@@ -11,13 +11,17 @@ struct MobileSearchPage: View {
     @State private var isDismissing = false
 
     let safeAreaInsets: EdgeInsets
+    /// Words to search for as the page opens; cleared once applied.
+    @Binding var seededQuery: AppRouter.SearchRequest?
     let onDismiss: () -> Void
     @Environment(\.duoControlCorner) private var duoControlCorner
+    /// The app's router, from the shell this page opens over.
+    @Environment(AppRouter.self) private var appRouter
 
     var body: some View {
         MobileUtilityPage(safeAreaInsets: safeAreaInsets, onDismiss: dismissPage) {
             NavigationStack(path: $searchRouter.path) {
-                SearchView(blurRequest: blurRequest)
+                SearchView(blurRequest: blurRequest, seededQuery: $seededQuery)
                     .toolbar {
                         if duoControlCorner == nil {
                             MobileUtilityCloseToolbar(accessibilityLabel: "Close search", action: dismissPage)
@@ -43,6 +47,9 @@ struct MobileSearchPage: View {
             .modifier(PlayerPresentationModifier(router: searchRouter))
             .environment(searchRouter)
         }
+        // A result from another saved profile switches the whole app, so
+        // this page's own router needs a way back to the app's.
+        .onAppear { searchRouter.appRouter = appRouter }
     }
 
     private func dismissPage() {

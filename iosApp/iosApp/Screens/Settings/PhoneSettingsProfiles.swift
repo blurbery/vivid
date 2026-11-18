@@ -188,6 +188,7 @@ struct PhoneSettingsProfilesPage: View {
     @State private var pin = ""
     @State private var pinError: String?
     @State private var editMode: EditMode = .inactive
+    @State private var otherProfileSearch = OtherProfileSearchSettings.shared
     @Environment(AppRouter.self) private var router
 
     var body: some View {
@@ -205,6 +206,20 @@ struct PhoneSettingsProfilesPage: View {
                 if store.canAddAccount {
                     Button { editor = .init(accountID: nil) } label: { PhoneAddProfileRowLabel() }
                         .disabled(store.busy || editMode.isEditing)
+                }
+            }
+            // Only matters with another profile to search.
+            if store.accounts.count > 1 {
+                Section {
+                    Toggle(isOn: $otherProfileSearch.isEnabled) {
+                        Text("Search All Profiles",
+                             comment: "Settings switch: Search also shows matches from the other saved profiles")
+                    }
+                } header: {
+                    PhoneSettingsSectionHeader("Search")
+                } footer: {
+                    Text("Search also shows matches from the other profiles saved on this device. Opening one switches to that profile. Profiles with a PIN aren’t searched.",
+                         comment: "Settings footer under the Search All Profiles switch on iPhone and iPad")
                 }
             }
         }

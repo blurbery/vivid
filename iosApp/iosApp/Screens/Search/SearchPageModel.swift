@@ -41,6 +41,12 @@ final class SearchViewModel {
     private(set) var hasSearched = false
     private(set) var hasMore = false
     private(set) var displayedTotal = 0
+    /// The other saved profiles' titles for this search, in saved order,
+    /// each shown as a row under these results. Only profiles that found
+    /// something are here.
+    private(set) var otherProfiles: [OtherProfileResults] = []
+    /// The query that found `otherProfiles`.
+    private(set) var otherProfilesQuery = ""
 
     @ObservationIgnored private var debounce: Task<Void, Never>?
     @ObservationIgnored private var nextOffset = 0
@@ -49,6 +55,9 @@ final class SearchViewModel {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var serverTotal: Int?
     @ObservationIgnored private var list = SearchResultList()
+    /// The other saved profiles' search, run beside this profile's so it
+    /// never holds up the grid.
+    @ObservationIgnored private var otherProfileSearch: Task<Void, Never>?
 
     private static let pageSize = 60
     private nonisolated static let pieceLimit = 100
@@ -73,6 +82,7 @@ final class SearchViewModel {
 
     func queryDidChange() {
         debounce?.cancel()
+        otherProfileSearch?.cancel()
         generation += 1
         guard !isQueryBlank else {
             reset()
@@ -87,6 +97,7 @@ final class SearchViewModel {
 
     func mediaTypeDidChange() async {
         debounce?.cancel()
+        otherProfileSearch?.cancel()
         generation += 1
         guard !isQueryBlank else { return }
         await search(reset: true)
@@ -95,6 +106,17 @@ final class SearchViewModel {
     func loadMore() async {
         guard hasMore, !isSearching else { return }
         await search(reset: false)
+    }
+
+    /// Turning the setting off clears the other profiles' rows at once;
+    /// turning it on searches them for the query already shown.
+    func otherProfilesSettingDidChange() {
+        guard !isQueryBlank else {
+            otherProfileSearch?.cancel()
+            otherProfiles = []
+            return
+        }
+        searchOtherProfiles(trimmedQuery, type: mediaType.queryValue, token: generation)
     }
 
     /// Starts loading the library index so the first search can use it.
@@ -115,6 +137,9 @@ final class SearchViewModel {
         let token = generation
         let offset = isReset ? 0 : nextOffset
         let type = mediaType.queryValue
+        if isReset {
+            searchOtherProfiles(text, type: type, token: token)
+        }
         isSearching = true
         error = nil
 
@@ -218,6 +243,35 @@ final class SearchViewModel {
         !Task.isCancelled && token == generation
     }
 
+    /// Searches the other saved profiles for a new query or type. The rows
+    /// from the last search go when the new search starts, and the new rows
+    /// come in all at once when every profile has answered or timed out.
+    /// While a new query waits out the debounce the old rows stay, so their
+    /// headers search with `otherProfilesQuery`, the query that found them.
+    private func searchOtherProfiles(_ text: String, type: String, token: Int) {
+        otherProfileSearch?.cancel()
+        otherProfileSearch = nil
+        otherProfiles = []
+        guard OtherProfileSearchSettings.shared.isEnabled else { return }
+        otherProfileSearch = Task { [weak self] in
+            let found = await OtherProfileSearch.searchAll(query: text, type: type)
+            guard let self, self.isCurrent(token) else { return }
+            self.otherProfilesQuery = text
+            self.otherProfiles = Self.withoutRepeats(found)
+        }
+    }
+
+    /// Each row with a title only once, since a row's cards are told apart
+    /// by content ID.
+    private static func withoutRepeats(_ rows: [OtherProfileResults]) -> [OtherProfileResults] {
+        rows.compactMap { row in
+            var seen = Set<String>()
+            var row = row
+            row.items = row.items.filter { seen.insert($0.contentId).inserted }
+            return row.items.isEmpty ? nil : row
+        }
+    }
+
     private func show() {
         results = list.items
         displayedTotal = hasMore ? max(serverTotal ?? 0, results.count) : results.count
@@ -233,6 +287,9 @@ final class SearchViewModel {
         displayedTotal = 0
         serverTotal = nil
         nextOffset = 0
+        otherProfileSearch?.cancel()
+        otherProfileSearch = nil
+        otherProfiles = []
     }
 
     /// Titles found through the query's pieces: every piece is asked for at

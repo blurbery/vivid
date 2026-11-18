@@ -11,6 +11,9 @@ struct MainTabView: View {
     @AppStorage private var showsCalendarTab: Bool
     @State private var tabBarScroll = MobileTabBarScrollState()
     @State private var showsSearchPage = false
+    /// A search to run as the Search page opens, such as one asked for by a
+    /// switch to another saved profile.
+    @State private var seededSearch: AppRouter.SearchRequest?
     @State private var showsSettingsPage = false
     @State private var duoSideStrip: PhoneDuo.SideStrip?
     @State private var duoControlCorner: PhoneDuo.ControlCorner?
@@ -72,6 +75,9 @@ struct MainTabView: View {
             .onChange(of: router.requestedTab) {
                 applyRequestedTab()
             }
+            .onChange(of: router.requestedSearch, initial: true) {
+                applyRequestedSearch()
+            }
             .onChange(of: showsDownloadsTab) {
                 keepSelectionVisible(resettingTabBar: true)
             }
@@ -106,7 +112,7 @@ struct MainTabView: View {
                 }
 
                 if showsSearchPage {
-                    MobileSearchPage(safeAreaInsets: geometry.safeAreaInsets, onDismiss: dismissSearch)
+                    MobileSearchPage(safeAreaInsets: geometry.safeAreaInsets, seededQuery: $seededSearch, onDismiss: dismissSearch)
                         .transition(.move(edge: .bottom))
                         .zIndex(10)
                 }
@@ -365,6 +371,15 @@ struct MainTabView: View {
         if tab == .recommendations { tab = .libraries }
         selectedID = resolvedRequestedMainTabDestination(tab, visibleDestinations: visibleDestinations)
         router.requestedTab = nil
+    }
+
+    /// Opens Search with the requested words, or runs them on the Search
+    /// page already open.
+    private func applyRequestedSearch() {
+        guard let request = router.requestedSearch else { return }
+        router.requestedSearch = nil
+        seededSearch = request
+        if !showsSearchPage { presentSearch() }
     }
 
     private func keepSelectionVisible(resettingTabBar: Bool = false) {
