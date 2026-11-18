@@ -148,7 +148,7 @@ A container it can't open, such as Ogg or Opus, is asked for as an mp3 conversio
 When Jellyfin doesn't name the container, the file comes from `/Audio/{id}/stream?static=true` and its `Content-Type` or first bytes decide its format; one Apple's player doesn't open is asked for again as mp3.
 `/universal` isn't used because it answers with a redirect, which the connection refuses.
 The song is downloaded with the account's authorisation header, never a token in the URL, and played from a temporary file, of which the three newest are kept.
-The lookup gives up after four seconds and the download after 20, a song over 32 MB is refused, and any failure, even a 401, just means no music: it never signs anyone out.
+The lookup gives up after four seconds, and opening the song, including the mp3 fallback, has 20 seconds in all; a download stops as soon as it passes 32 MB, and any failure, even a 401, just means no music: it never signs anyone out.
 The theme music path hasn't been checked against a live Jellyfin server.
 
 Library browsing requests card metadata without cast, media sources, streams or chapters; detail and playback requests retain the full fields.

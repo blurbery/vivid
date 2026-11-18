@@ -1387,39 +1387,100 @@ final class EmbyAdapterTests: XCTestCase {
         for type in ["movie", "series", "season", "episode"] {
             let item = ThemeMusicItem(contentID: "100", type: type, seriesID: nil)
             let lookup = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
-            XCTAssertEqual(lookup, ThemeSongLookup(ownerID: "55", songID: "200", container: "mp3"), type)
+            XCTAssertEqual(lookup, .found(ThemeSongLookup(ownerID: "55", songID: "200", container: "mp3")), type)
         }
         XCTAssertEqual(queries.map { $0["InheritFromParent"] }, ["false", "false", "true", "true"],
                        "A movie or series without a theme must not walk up into its folders")
         XCTAssertEqual(Set(queries.compactMap { $0["UserId"] }), ["user-1"])
         XCTAssertEqual(Set(queries.compactMap { $0["Fields"] }), ["MediaSources"])
 
-        // No owner (or Emby's zero) means the title itself; no songs means no theme.
+        // No owner (or Emby's zero) means the title itself.
         EmbyReviewRequestStub.handler = { _ in (200, ["Items": [["Id": "200", "Container": "flac"]], "OwnerId": 0]) }
         let own = await EmbyThemeMusic.lookup(for: ThemeMusicItem(contentID: "100", type: "movie", seriesID: nil),
                                               connection: adapter.connection)
-        XCTAssertEqual(own, ThemeSongLookup(ownerID: "100", songID: "200", container: "flac"))
-        EmbyReviewRequestStub.handler = { _ in (200, ["Items": [], "TotalRecordCount": 0, "OwnerId": 100]) }
-        let none = await EmbyThemeMusic.lookup(for: ThemeMusicItem(contentID: "100", type: "movie", seriesID: nil),
-                                               connection: adapter.connection)
-        XCTAssertNil(none)
+        XCTAssertEqual(own, .found(ThemeSongLookup(ownerID: "100", songID: "200", container: "flac")))
     }
 
-    func testThemeSongLookupFailureIsQuietAndNeverTakesTheSignOutPath() async throws {
-        var requests = 0
-        let adapter = stubbedAdapter { _ in requests += 1; return (401, [:]) }
+    /// Only a 2xx reply with an empty list says the title has no theme. No
+    /// answer at all (a refusal, a server error, a network failure or an
+    /// unreadable reply) is a failure, which doesn't cut a song already
+    /// playing.
+    func testThemeSongLookupTellsNoThemeFromNoAnswer() async throws {
         let item = ThemeMusicItem(contentID: "100", type: "episode", seriesID: "90")
-        let refused = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
-        XCTAssertNil(refused)
-        XCTAssertEqual(requests, 1)
-        // The same refusal on an ordinary request is the one that signs out.
+        let adapter = stubbedAdapter { _ in (200, ["Items": [], "TotalRecordCount": 0, "OwnerId": 100]) }
+        let none = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
+        XCTAssertEqual(none, ThemeSongLookupResult.none)
+
+        let failures: [(String, (URLRequest) throws -> (Int, Any))] = [
+            ("401", { _ in (401, [:]) }),
+            ("500", { _ in (500, [:]) }),
+            ("timeout", { _ in throw URLError(.timedOut) }),
+            ("no Items list", { _ in (200, ["TotalRecordCount": 0]) }),
+            ("unusable song ID", { _ in (200, ["Items": [["Id": "../200"]]]) }),
+        ]
+        for (name, handler) in failures {
+            EmbyReviewRequestStub.handler = handler
+            let failed = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
+            XCTAssertEqual(failed, .failed, name)
+        }
+    }
+
+    /// The theme requests carry a real captured sign-in, installed in the
+    /// shared token store the connection checks before and after each
+    /// request, so a 401 there could retire it. It must not: the sign-in
+    /// and its token stay, and no session expiry is posted.
+    func testRefusedThemeRequestsKeepTheSignInAndPostNoSessionExpiry() async throws {
+        let identity = try await installThemeTestSession(serverID: "emby:theme-test-\(UUID().uuidString)", token: "secret-token")
+        var requests: [String] = []
+        let stub = stubbedAdapter { request in
+            requests.append(request.url!.path)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Emby-Token"), "secret-token")
+            return (401, [:])
+        }
+        let connection = EmbyConnection(serverURL: "https://media.example.test", token: identity.accessToken, userID: "user-1",
+                                        identity: identity, sessionOverride: stub.connection.sessionOverride)
+        let expired = expectation(forNotification: .vividSessionExpired, object: nil)
+        expired.isInverted = true
+
+        let lookup = await EmbyThemeMusic.lookup(
+            for: ThemeMusicItem(contentID: "100", type: "episode", seriesID: "90"), connection: connection)
+        XCTAssertEqual(lookup, .failed)
+        let stream = await EmbyThemeMusic.stream(
+            for: ThemeSongLookup(ownerID: "100", songID: "200", container: "mp3"), connection: connection)
+        XCTAssertNil(stream)
+        XCTAssertEqual(requests, ["/emby/Items/100/ThemeSongs", "/emby/Audio/200/stream.mp3"],
+                       "Both requests went out under the captured sign-in")
+
+        await fulfillment(of: [expired], timeout: 0.5)
+        let current = await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: identity)
+        XCTAssertEqual(current, identity, "The token, account and profile are unchanged")
+        let token = await TokenStore.shared.getAccessToken()
+        XCTAssertEqual(token, "secret-token")
+        try await connection.validate()
+
+        // The same refusal on an ordinary request is the one that signs out
+        // (shown without a captured sign-in, so no real expiry is posted).
+        EmbyReviewRequestStub.handler = { _ in (401, [:]) }
         do {
-            _ = try await adapter.connection.data("GET", "/Items/100/ThemeSongs")
+            _ = try await stub.connection.data("GET", "/Items/100/ThemeSongs")
             XCTFail("An ordinary request treats a 401 as an expired sign-in")
         } catch EmbyError.signInRequired { }
-        EmbyReviewRequestStub.handler = { _ in (500, [:]) }
-        let failed = await EmbyThemeMusic.lookup(for: item, connection: adapter.connection)
-        XCTAssertNil(failed)
+    }
+
+    func testThemeSongDownloadStopsAtTheSizeCap() async throws {
+        let body: [String: Any] = ["song": String(repeating: "a", count: 200)]
+        let adapter = stubbedAdapter { _ in (200, body) }
+        let session = try XCTUnwrap(adapter.connection.sessionOverride)
+        let request = URLRequest(url: try EmbyConnection.url(serverURL: "https://media.example.test", path: "/Audio/200/stream.mp3"))
+        // The stub sends no Content-Length, so only the running total can stop it.
+        let whole = await ThemeSongFiles.download(request, session: session, maximumBytes: 1_000)
+        XCTAssertEqual(whole?.data, try JSONSerialization.data(withJSONObject: body))
+        XCTAssertEqual(whole?.contentType, "application/json")
+        let capped = await ThemeSongFiles.download(request, session: session, maximumBytes: 100)
+        XCTAssertNil(capped)
+        EmbyReviewRequestStub.handler = { _ in (404, body) }
+        let refused = await ThemeSongFiles.download(request, session: session, maximumBytes: 1_000)
+        XCTAssertNil(refused)
     }
 
     func testThemeSongStreamDownloadsWithHeaderAuthToAPlayableFile() async throws {
@@ -1492,7 +1553,27 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(ThemeSongFiles.fileExtension(contentType: nil, data: Data([0xFF, 0xFB, 0x90, 0x00])), "mp3")
         XCTAssertNil(ThemeSongFiles.fileExtension(contentType: "audio/ogg", data: Data("OggS".utf8)))
     }
+}
 
+extension XCTestCase {
+    /// Installs a throwaway sign-in in `TokenStore.shared`, which every Emby
+    /// and Jellyfin request checks, and returns its captured identity. The
+    /// store's previous server and address come back when the test ends.
+    func installThemeTestSession(serverID: String, token: String) async throws -> CapturedOrdinaryRequestAuth {
+        let store = TokenStore.shared
+        let previousServer = await store.getActiveServerId()
+        let previousURL = await store.getServerUrl()
+        await store.switchActiveServer(serverId: serverID)
+        await store.setServerUrl("https://media.example.test")
+        await store.saveTokens(accessToken: token, refreshToken: "", nativeUserID: "user-1")
+        addTeardownBlock {
+            await store.deleteTokens(for: serverID)
+            await store.switchActiveServer(serverId: previousServer)
+            await store.setServerUrl(previousURL)
+        }
+        let identity = await store.captureOrdinaryRequestAuth()
+        return try XCTUnwrap(identity)
+    }
 }
 
 private final class LoadedRows: @unchecked Sendable {

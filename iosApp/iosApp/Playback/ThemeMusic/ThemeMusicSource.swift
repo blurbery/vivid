@@ -11,7 +11,24 @@ struct ThemeMusicItem: Sendable, Equatable {
     let seriesID: String?
 
     /// Seasons and episodes use their parent's theme when they have none.
-    var inheritsFromParent: Bool { type == "season" || type == "episode" }
+    /// The type is compared case-insensitively, so a server's "Season" or
+    /// "Episode" counts too.
+    var inheritsFromParent: Bool {
+        let kind = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return kind == "season" || kind == "episode"
+    }
+}
+
+/// What a lookup found. A failure (timeout, network error, refused request,
+/// unreadable reply) is kept apart from "this title has no theme", so a
+/// page whose lookup merely failed doesn't cut a song that is playing.
+enum ThemeSongLookupResult: Sendable, Equatable {
+    case found(ThemeSongLookup)
+    /// The server answered and the title has no theme song (or the server
+    /// doesn't offer theme music at all).
+    case none
+    /// The lookup couldn't get an answer.
+    case failed
 }
 
 /// The theme song a server says belongs to a title. Looked up when a page
@@ -37,11 +54,12 @@ struct ThemeSongStream: Sendable {
     let headers: [String: String]
 }
 
-/// Finds and opens theme songs on the active server. Every failure (no
-/// theme, unsupported server, network error, 401) is `nil`: theme music is
-/// optional and must never sign anyone out or show an error.
+/// Finds and opens theme songs on the active server. Nothing here throws,
+/// shows an error or signs anyone out: theme music is optional. A lookup
+/// reports ``ThemeSongLookupResult/failed`` when it couldn't get an answer,
+/// and a stream that can't be opened is `nil`.
 enum ThemeMusicSource {
-    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookup? {
+    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookupResult {
         switch MediaServerProvider.active {
         case .silo: await SiloThemeMusic.lookup(for: item)
         case .emby: await EmbyThemeMusic.lookup(for: item)

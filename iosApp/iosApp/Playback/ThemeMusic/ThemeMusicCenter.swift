@@ -42,6 +42,36 @@ enum ThemeMusicPolicy {
         return .play
     }
 
+    /// What a finished lookup means for the song that is playing.
+    enum LookupOutcome: Equatable {
+        /// The lookup couldn't get an answer. The current song is left alone
+        /// and the hold timeout ends it unless another claim takes over.
+        case leaveAlone
+        /// The title has no theme: fade out whatever is playing.
+        case stop
+        /// The title has a theme song: decide whether to keep, skip or play it.
+        case consider(ThemeSongLookup)
+    }
+
+    static func outcome(of result: ThemeSongLookupResult) -> LookupOutcome {
+        switch result {
+        case .found(let lookup): .consider(lookup)
+        case .none: .stop
+        case .failed: .leaveAlone
+        }
+    }
+
+    /// True when the unreachable server is the only thing stopping a start,
+    /// so the claim is worth trying again once the server is back. Another
+    /// app's audio, Picture in Picture or a video player never earn a retry.
+    static func shouldRetryWhenReachable(_ conditions: Conditions) -> Bool {
+        guard !conditions.isServerReachable else { return false }
+        var conditions = conditions
+        conditions.isServerReachable = true
+        conditions.isAppActive = true
+        return canStart(conditions)
+    }
+
     /// Everything that has to be true for theme music to start or resume.
     struct Conditions: Equatable {
         var isEnabled: Bool
@@ -93,6 +123,18 @@ extension ThemeMusicItem {
 ///   so it doesn't come back when the player closes. ``sessionDidChange(signedIn:)``
 ///   stops at once and forgets everything after a sign-out or a server,
 ///   provider or profile switch.
+/// - A lookup that fails (timeout, network error) is not "no theme": the
+///   current song carries on until the hold timeout ends it.
+///
+/// Some skips are deliberate and never retried, the way Silo's own app
+/// behaves: a page claimed while another app's audio is playing stays quiet,
+/// and after Picture in Picture or a video the theme doesn't come back. Only
+/// two blockers earn a retry of the current claim: the app being inactive
+/// (retried when it becomes active) and the server being unreachable
+/// (retried when ``ConnectionMonitor`` sees the server again). A failed
+/// lookup is retried the same way, so only when the server was marked
+/// unreachable in the meantime: theme requests don't report reachability
+/// themselves.
 ///
 /// It sets the shared audio session to `.ambient` only when it starts a song
 /// and no video is up, and never deactivates the session. The video engine
@@ -138,9 +180,15 @@ final class ThemeMusicCenter {
     private var isPausedForInactiveApp = false
     /// A start was refused only because the app wasn't active.
     private var retriesWhenActive = false
+    /// A start was refused because the server was unreachable, or the
+    /// lookup failed: the claim tries again when the server is back.
+    private var retriesWhenReachable = false
 
     /// The switch as last seen, so turning it back on can start a song.
     private var wasEnabled = true
+    /// Reachability as last seen. `ConnectionMonitor` reports a change on
+    /// every request, so only a real change from unreachable counts.
+    private var wasServerReachable = true
 
     /// Only one video player is ever on screen, so the latest appear or
     /// disappear wins. A plain flag can't get stuck the way a count could if
@@ -170,6 +218,8 @@ final class ThemeMusicCenter {
         }
         wasEnabled = PlayerSettings.shared.themeMusicEnabled
         observeSettings()
+        wasServerReachable = ConnectionMonitor.shared.isServerReachable
+        observeReachability()
         #if os(iOS)
         observePictureInPicture()
         #endif
@@ -198,6 +248,7 @@ final class ThemeMusicCenter {
         guard currentClaim == claim else { return }
         currentItem = item
         retriesWhenActive = false
+        retriesWhenReachable = false
         resolveTask?.cancel()
         resolveTask = nil
         // The previous song holds until this claim's lookup decides, but no
@@ -218,6 +269,7 @@ final class ThemeMusicCenter {
         currentClaim = nil
         currentItem = nil
         retriesWhenActive = false
+        retriesWhenReachable = false
         resolveTask?.cancel()
         resolveTask = nil
         scheduleFadeOut(after: Self.releaseGrace) { [weak self] in
@@ -267,6 +319,7 @@ final class ThemeMusicCenter {
         currentClaim = nil
         currentItem = nil
         retriesWhenActive = false
+        retriesWhenReachable = false
         resolveTask?.cancel()
         resolveTask = nil
         delayedStopTask?.cancel()
@@ -285,15 +338,28 @@ final class ThemeMusicCenter {
             return
         }
         let identity = SessionIdentity.current
-        let lookup = await ThemeMusicSource.lookup(for: item)
+        let result = await ThemeMusicSource.lookup(for: item)
         guard isCurrent(claim), SessionIdentity.current == identity else { return }
-        delayedStopTask?.cancel()
-        delayedStopTask = nil
+        // A different title on screen ends the suppression, whatever the
+        // lookup found.
         if suppressedItem != item { suppressedItem = nil }
-        guard let lookup else {
-            // This title has no theme.
+        let lookup: ThemeSongLookup
+        switch ThemeMusicPolicy.outcome(of: result) {
+        case .leaveAlone:
+            // No answer isn't "no theme". The hold timeout set by `update`
+            // stays in place and ends the current song, and the claim tries
+            // again once the server is reachable.
+            retriesWhenReachable = true
+            return
+        case .stop:
+            delayedStopTask?.cancel()
+            delayedStopTask = nil
             fadeOutAndStop()
             return
+        case .consider(let found):
+            delayedStopTask?.cancel()
+            delayedStopTask = nil
+            lookup = found
         }
         let key = identity.key(for: lookup)
         if suppressedItem == item {
@@ -329,12 +395,16 @@ final class ThemeMusicCenter {
     }
 
     /// Checks the start conditions. Refused only for an inactive app, the
-    /// claim tries again when the app becomes active.
+    /// claim tries again when the app becomes active; refused only for an
+    /// unreachable server (perhaps with the app inactive too), it tries again
+    /// when the server is back. Any other blocker is a deliberate skip.
     private func canStartOrDefer() -> Bool {
-        var conditions = self.conditions
+        let conditions = self.conditions
         guard !ThemeMusicPolicy.canStart(conditions) else { return true }
-        conditions.isAppActive = true
-        retriesWhenActive = ThemeMusicPolicy.canStart(conditions)
+        retriesWhenReachable = ThemeMusicPolicy.shouldRetryWhenReachable(conditions)
+        var whenActive = conditions
+        whenActive.isAppActive = true
+        retriesWhenActive = ThemeMusicPolicy.canStart(whenActive)
         return false
     }
 
@@ -563,6 +633,30 @@ final class ThemeMusicCenter {
         } else if retriesWhenActive, let currentClaim {
             update(currentClaim, item: currentItem)
         }
+    }
+
+    // MARK: Reachability
+
+    private func observeReachability() {
+        withObservationTracking {
+            _ = ConnectionMonitor.shared.isServerReachable
+        } onChange: { [weak self] in
+            // Called before the new value is stored, and only once.
+            Task { @MainActor [weak self] in
+                self?.reachabilityDidChange()
+                self?.observeReachability()
+            }
+        }
+    }
+
+    /// Retries the current claim when the server comes back, but only when
+    /// an unreachable server or a failed lookup was what stopped it.
+    private func reachabilityDidChange() {
+        let isReachable = ConnectionMonitor.shared.isServerReachable
+        defer { wasServerReachable = isReachable }
+        guard isReachable, !wasServerReachable, retriesWhenReachable,
+              playingKey == nil, let currentClaim, currentItem != nil else { return }
+        update(currentClaim, item: currentItem)
     }
 
     #if os(iOS)

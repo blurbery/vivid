@@ -113,6 +113,7 @@ Final deactivation uses one shared teardown group to wait for retired native pla
 This prevents an old player's asynchronous teardown, or a failed output probe, from deactivating a replacement player's session.
 The app also avoids reapplying an unchanged playback category, mode and route-sharing policy.
 Native channel negotiation remains enabled; standalone driver users retain session management by default.
+Theme music on detail pages also uses the shared session: it sets the `.ambient` category only when no video player or Picture in Picture is up, never deactivates the session, and the engine sets its playback category again when a video loads, so video always wins (see [Detail pages and validation](../app-design.md#detail-pages-and-validation)).
 
 The ownership race is confirmed in code and covered by a shared-session test double.
 HomePod startup timing and long episode sequences still require physical-device validation; this change does not remove AirPlay's own buffering or prove the cause of every silent-audio report.

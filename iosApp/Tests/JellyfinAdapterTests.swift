@@ -1399,7 +1399,7 @@ final class JellyfinAdapterTests: XCTestCase {
         for type in ["movie", "series", "season", "episode"] {
             let lookup = await JellyfinThemeMusic.lookup(
                 for: ThemeMusicItem(contentID: item, type: type, seriesID: nil), connection: adapter.connection)
-            XCTAssertEqual(lookup, ThemeSongLookup(ownerID: owner, songID: source, container: "mp3"), type)
+            XCTAssertEqual(lookup, .found(ThemeSongLookup(ownerID: owner, songID: source, container: "mp3")), type)
         }
         XCTAssertEqual(queries.map { $0["inheritFromParent"] }, ["false", "false", "true", "true"],
                        "A movie or series without a theme must not walk up into its folders")
@@ -1412,20 +1412,65 @@ final class JellyfinAdapterTests: XCTestCase {
         }
         let own = await JellyfinThemeMusic.lookup(
             for: ThemeMusicItem(contentID: item, type: "movie", seriesID: nil), connection: adapter.connection)
-        XCTAssertEqual(own, ThemeSongLookup(ownerID: item, songID: source, container: "flac"))
+        XCTAssertEqual(own, .found(ThemeSongLookup(ownerID: item, songID: source, container: "flac")))
     }
 
-    func testThemeSongLookupRefusalIsQuietAndTriesNoOtherRoute() async throws {
+    /// Only a 2xx reply with an empty list says the title has no theme; a
+    /// refusal tries no older route and, like any other missing answer, is
+    /// a failure that doesn't cut a song already playing.
+    func testThemeSongLookupTellsNoThemeFromNoAnswerAndTriesNoOtherRoute() async throws {
         var paths: [String] = []
         let adapter = adapter { request in paths.append(request.url!.path); return (401, [:]) }
         let lookup = await JellyfinThemeMusic.lookup(
             for: ThemeMusicItem(contentID: item, type: "season", seriesID: nil), connection: adapter.connection)
-        XCTAssertNil(lookup)
+        XCTAssertEqual(lookup, .failed)
         XCTAssertEqual(paths, ["/jellyfin/Items/\(item)/ThemeSongs"])
         JellyfinRequestStub.handler = { _ in (200, ["Items": [], "TotalRecordCount": 0]) }
         let none = await JellyfinThemeMusic.lookup(
             for: ThemeMusicItem(contentID: item, type: "movie", seriesID: nil), connection: adapter.connection)
-        XCTAssertNil(none)
+        XCTAssertEqual(none, ThemeSongLookupResult.none)
+
+        let failures: [(String, (URLRequest) throws -> (Int, Any))] = [
+            ("404", { _ in (404, [:]) }),
+            ("network", { _ in throw URLError(.notConnectedToInternet) }),
+            ("not an object", { _ in (200, []) }),
+        ]
+        for (name, handler) in failures {
+            JellyfinRequestStub.handler = handler
+            let failed = await JellyfinThemeMusic.lookup(
+                for: ThemeMusicItem(contentID: item, type: "movie", seriesID: nil), connection: adapter.connection)
+            XCTAssertEqual(failed, .failed, name)
+        }
+    }
+
+    /// The theme requests carry a real captured sign-in, installed in the
+    /// shared token store the connection checks before and after each
+    /// request, so a 401 there could retire it. It must not: the sign-in
+    /// and its token stay, and no session expiry is posted.
+    func testRefusedThemeRequestsKeepTheSignInAndPostNoSessionExpiry() async throws {
+        let identity = try await installThemeTestSession(serverID: "jellyfin:theme-test-\(UUID().uuidString)", token: "test-token")
+        var paths: [String] = []
+        let stub = adapter { request in paths.append(request.url!.path); return (401, [:]) }
+        let connection = JellyfinConnection(serverURL: stub.connection.serverURL, token: identity.accessToken, userID: user,
+                                            identity: identity, sessionOverride: stub.connection.sessionOverride)
+        let expired = expectation(forNotification: .vividSessionExpired, object: nil)
+        expired.isInverted = true
+
+        let lookup = await JellyfinThemeMusic.lookup(
+            for: ThemeMusicItem(contentID: item, type: "episode", seriesID: nil), connection: connection)
+        XCTAssertEqual(lookup, .failed)
+        let stream = await JellyfinThemeMusic.stream(
+            for: ThemeSongLookup(ownerID: item, songID: source, container: "mp3"), connection: connection)
+        XCTAssertNil(stream)
+        XCTAssertEqual(paths, ["/jellyfin/Items/\(item)/ThemeSongs", "/jellyfin/Audio/\(source)/stream.mp3"],
+                       "Both requests went out under the captured sign-in")
+
+        await fulfillment(of: [expired], timeout: 0.5)
+        let current = await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: identity)
+        XCTAssertEqual(current, identity, "The token, account and profile are unchanged")
+        let token = await TokenStore.shared.getAccessToken()
+        XCTAssertEqual(token, "test-token")
+        try await connection.validate()
     }
 
     func testThemeSongStreamDownloadsWithHeaderAuthToAPlayableFile() async throws {

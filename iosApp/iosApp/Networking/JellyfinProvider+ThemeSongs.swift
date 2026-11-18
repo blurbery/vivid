@@ -2,26 +2,24 @@ import Foundation
 
 // Theme songs on Jellyfin: `GET /Items/{id}/ThemeSongs` finds a title's song
 // and `/Audio/{id}/stream` downloads it to a temporary file that plays. Both
-// are optional, so any failure is nil and a refusal (even a 401) never signs
-// anyone out. The reply and
-// container rules are shared with Emby (`ServerThemeSongFormat` in
-// `EmbyProvider+ThemeSongs.swift`).
+// are optional: a lookup that gets no answer reports `.failed`, a song that
+// can't be opened is nil, and a refusal (even a 401) never signs anyone out.
+// The reply and container rules are shared with Emby
+// (`ServerThemeSongFormat` in `EmbyProvider+ThemeSongs.swift`).
 
 enum JellyfinThemeMusic {
-    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookup? {
-        guard let connection = try? await JellyfinConnection.current() else { return nil }
+    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookupResult {
+        guard let connection = try? await JellyfinConnection.current() else { return .failed }
         return await lookup(for: item, connection: connection)
     }
 
     /// The connection adds the account's own `UserId` to the query.
-    static func lookup(for item: ThemeMusicItem, connection: JellyfinConnection) async -> ThemeSongLookup? {
-        guard let itemID = try? JellyfinConnection.id(item.contentID) else { return nil }
+    static func lookup(for item: ThemeMusicItem, connection: JellyfinConnection) async -> ThemeSongLookupResult {
+        guard let itemID = try? JellyfinConnection.id(item.contentID) else { return .failed }
         let query = lookupQuery(for: item)
-        let data = await ServerThemeSongFormat.withDeadline {
+        return await ServerThemeSongFormat.lookup(item: item, validID: { try? JellyfinConnection.id($0) }) {
             await connection.optionalData("/Items/\(itemID)/ThemeSongs", query: query)
         }
-        guard let data, let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
-        return ServerThemeSongFormat.lookup(from: reply, item: item) { try? JellyfinConnection.id($0) }
     }
 
     /// Only seasons and episodes inherit: a movie or series without a theme
@@ -36,15 +34,18 @@ enum JellyfinThemeMusic {
     }
 
     /// The song downloaded with this account's authorisation header (the
-    /// token never goes in the URL) and played from a temporary file. Like
-    /// the lookup, a refusal never signs anyone out.
+    /// token never goes in the URL) and played from a temporary file. The
+    /// original and any mp3 fallback share one
+    /// ``ThemeSongFiles/openSeconds`` deadline. Like the lookup, a refusal
+    /// never signs anyone out.
     static func stream(for lookup: ThemeSongLookup, connection: JellyfinConnection) async -> ThemeSongStream? {
         guard let id = try? JellyfinConnection.id(lookup.songID) else { return nil }
-        return await ServerThemeSongFormat.download(ServerThemeSongFormat.attempts(for: lookup.container)) { attempt in
-            let route = JellyfinThemeMusic.streamRoute(songID: id, request: attempt)
-            guard let reply = await connection.optionalFile(
-                route.path, query: route.query, maximumBytes: ThemeSongFiles.maximumBytes) else { return nil }
-            return ServerThemeSongDownload(data: reply.data, contentType: reply.contentType)
+        let attempts = ServerThemeSongFormat.attempts(for: lookup.container)
+        return await ThemeSongFiles.withDeadline(seconds: ThemeSongFiles.openSeconds) {
+            await ServerThemeSongFormat.download(attempts) { attempt in
+                let route = JellyfinThemeMusic.streamRoute(songID: id, request: attempt)
+                return await connection.optionalFile(route.path, query: route.query, maximumBytes: ThemeSongFiles.maximumBytes)
+            }
         }
     }
 

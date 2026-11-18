@@ -2,9 +2,10 @@ import Foundation
 
 // Theme songs on Emby: `GET /Items/{id}/ThemeSongs` finds a title's song and
 // `/Audio/{id}/stream` downloads it to a temporary file that plays. Both are
-// optional, so any failure is nil and a refusal (even a 401) never signs
-// anyone out. The format rules below are shared with Jellyfin, which answers
-// in the same shape.
+// optional: a lookup that gets no answer reports `.failed`, a song that
+// can't be opened is nil, and a refusal (even a 401) never signs anyone out.
+// The format rules below are shared with Jellyfin, which answers in the same
+// shape.
 
 /// How Emby and Jellyfin theme songs are read and requested. Both servers
 /// return `{ Items, TotalRecordCount, OwnerId }` and serve the file from
@@ -44,18 +45,16 @@ enum ServerThemeSongFormat {
         }
     }
 
-    /// How long one song download may take.
-    static let downloadSeconds: Double = 20
-
     /// Downloads the song through the account's connection and keeps it as a
     /// temporary file, so `AVPlayer` needs no headers and knows the length.
-    /// A failed, refused, slow or oversized download is nil.
+    /// A failed, refused or oversized download is nil. The caller puts every
+    /// attempt under one ``ThemeSongFiles/openSeconds`` deadline.
     static func download(
         _ attempts: [Request],
         fetch: @escaping @Sendable (Request) async -> ServerThemeSongDownload?
     ) async -> ThemeSongStream? {
         for attempt in attempts {
-            guard let reply = await withDeadline(seconds: downloadSeconds, { await fetch(attempt) }) else { return nil }
+            guard let reply = await fetch(attempt), !Task.isCancelled else { return nil }
             // An unnamed container that isn't a playable format moves on to the conversion.
             guard let ext = container(of: attempt)
                     ?? ThemeSongFiles.fileExtension(contentType: reply.contentType, data: reply.data)
@@ -104,55 +103,54 @@ enum ServerThemeSongFormat {
         return text
     }
 
-    /// The first song in a `ThemeSongs` reply. `validID` returns the song's
-    /// ID when it's safe to put in a path.
-    static func lookup(from reply: [String: Any], item: ThemeMusicItem, validID: (String) -> String?) -> ThemeSongLookup? {
-        guard let song = (reply["Items"] as? [[String: Any]])?.first,
+    /// What a `ThemeSongs` reply says: its first song, `.none` when its
+    /// `Items` list is empty, and `.failed` when the reply is unreadable (not
+    /// a JSON object, no `Items` list, or a first song without a usable ID).
+    /// `validID` returns the song's ID when it's safe to put in a path.
+    static func lookup(from data: Data, item: ThemeMusicItem, validID: (String) -> String?) -> ThemeSongLookupResult {
+        guard let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let items = reply["Items"] as? [Any]
+        else { return .failed }
+        guard let first = items.first else { return .none }
+        guard let song = first as? [String: Any],
               let rawID = song["Id"] as? String,
               let songID = validID(rawID)
-        else { return nil }
-        return ThemeSongLookup(
+        else { return .failed }
+        return .found(ThemeSongLookup(
             ownerID: ownerID(reply["OwnerId"], fallback: item.contentID),
             songID: songID,
-            container: container(of: song))
+            container: container(of: song)))
     }
 
-    /// The operation's result, or nil once `seconds` pass. Theme music that
-    /// arrives long after the page opened is worse than none.
-    static func withDeadline<T: Sendable>(seconds: Double = 4, _ operation: @escaping @Sendable () async -> T?) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { await operation() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-    }
-}
+    /// How long a `ThemeSongs` lookup may take.
+    static let lookupSeconds: Double = 4
 
-/// A downloaded theme song and the type the server gave it.
-struct ServerThemeSongDownload: Sendable {
-    let data: Data
-    let contentType: String?
+    /// A lookup through the connection's optional GET, which is nil for a
+    /// timeout, a network error or any non-2xx answer (a 401 included, and
+    /// without signing out). Those are `.failed`; only a 2xx reply can say
+    /// `.none`.
+    static func lookup(
+        item: ThemeMusicItem,
+        validID: (String) -> String?,
+        fetch: @escaping @Sendable () async -> Data?
+    ) async -> ThemeSongLookupResult {
+        guard let data = await ThemeSongFiles.withDeadline(seconds: lookupSeconds, fetch) else { return .failed }
+        return lookup(from: data, item: item, validID: validID)
+    }
 }
 
 enum EmbyThemeMusic {
-    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookup? {
-        guard let connection = try? await EmbyConnection.current() else { return nil }
+    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookupResult {
+        guard let connection = try? await EmbyConnection.current() else { return .failed }
         return await lookup(for: item, connection: connection)
     }
 
-    static func lookup(for item: ThemeMusicItem, connection: EmbyConnection) async -> ThemeSongLookup? {
-        guard let itemID = try? EmbyConnection.id(item.contentID), let userID = connection.userID else { return nil }
+    static func lookup(for item: ThemeMusicItem, connection: EmbyConnection) async -> ThemeSongLookupResult {
+        guard let itemID = try? EmbyConnection.id(item.contentID), let userID = connection.userID else { return .failed }
         let query = lookupQuery(for: item, userID: userID)
-        let data = await ServerThemeSongFormat.withDeadline {
+        return await ServerThemeSongFormat.lookup(item: item, validID: { try? EmbyConnection.id($0) }) {
             await connection.optionalData("/Items/\(itemID)/ThemeSongs", query: query)
         }
-        guard let data, let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
-        return ServerThemeSongFormat.lookup(from: reply, item: item) { try? EmbyConnection.id($0) }
     }
 
     /// Only seasons and episodes inherit: a movie or series without a theme
@@ -171,15 +169,17 @@ enum EmbyThemeMusic {
     }
 
     /// The song downloaded with this account's headers (the token never goes
-    /// in the URL) and played from a temporary file. Like the lookup, a
-    /// refusal never signs anyone out.
+    /// in the URL) and played from a temporary file. The original and any
+    /// mp3 fallback share one ``ThemeSongFiles/openSeconds`` deadline. Like
+    /// the lookup, a refusal never signs anyone out.
     static func stream(for lookup: ThemeSongLookup, connection: EmbyConnection) async -> ThemeSongStream? {
         guard let id = try? EmbyConnection.id(lookup.songID) else { return nil }
-        return await ServerThemeSongFormat.download(ServerThemeSongFormat.attempts(for: lookup.container)) { attempt in
-            let route = EmbyThemeMusic.streamRoute(songID: id, request: attempt)
-            guard let reply = await connection.optionalFile(
-                route.path, query: route.query, maximumBytes: ThemeSongFiles.maximumBytes) else { return nil }
-            return ServerThemeSongDownload(data: reply.data, contentType: reply.contentType)
+        let attempts = ServerThemeSongFormat.attempts(for: lookup.container)
+        return await ThemeSongFiles.withDeadline(seconds: ThemeSongFiles.openSeconds) {
+            await ServerThemeSongFormat.download(attempts) { attempt in
+                let route = EmbyThemeMusic.streamRoute(songID: id, request: attempt)
+                return await connection.optionalFile(route.path, query: route.query, maximumBytes: ThemeSongFiles.maximumBytes)
+            }
         }
     }
 

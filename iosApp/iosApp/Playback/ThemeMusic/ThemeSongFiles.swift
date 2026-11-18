@@ -8,6 +8,77 @@ enum ThemeSongFiles {
     /// The newest files kept, so a song still fading out isn't deleted
     /// under the player when the next one arrives.
     static let keptFiles = 3
+    /// How long opening one song may take on any server, every request and
+    /// attempt together (Emby's and Jellyfin's mp3 fallback, Silo's grant
+    /// and converted download).
+    static let openSeconds: Double = 20
+
+    /// The operation's result, or nil once `seconds` pass. Theme music that
+    /// arrives long after the page opened is worse than none. The operation
+    /// is cancelled at the deadline, and this returns once it has stopped,
+    /// so it must honour cancellation (URLSession requests do).
+    static func withDeadline<T: Sendable>(seconds: Double, _ operation: @escaping @Sendable () async -> T?) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await operation() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// Reads a song through `session`, so the caller's redirect policy and
+    /// headers apply, and stops as soon as it's clearly too big: a non-2xx
+    /// status or a `Content-Length` over `maximumBytes` is refused before
+    /// the body is read, and the read stops once the running total passes
+    /// `maximumBytes`, whatever the header said. The body is gathered in
+    /// blocks rather than appended a byte at a time. nil on any failure, an
+    /// empty body, or once cancelled; the transfer is cancelled with it.
+    static func download(
+        _ request: URLRequest,
+        session: URLSession,
+        maximumBytes: Int = maximumBytes
+    ) async -> ServerThemeSongDownload? {
+        guard let (bytes, response) = try? await session.bytes(for: request) else { return nil }
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              http.expectedContentLength <= Int64(maximumBytes)
+        else {
+            bytes.task.cancel()
+            return nil
+        }
+        let blockSize = 64 * 1024
+        var data = Data()
+        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
+        var block: [UInt8] = []
+        block.reserveCapacity(blockSize)
+        var total = 0
+        do {
+            for try await byte in bytes {
+                total += 1
+                guard total <= maximumBytes else {
+                    bytes.task.cancel()
+                    return nil
+                }
+                block.append(byte)
+                if block.count == blockSize {
+                    try Task.checkCancellation()
+                    data.append(contentsOf: block)
+                    block.removeAll(keepingCapacity: true)
+                }
+            }
+            try Task.checkCancellation()
+        } catch {
+            bytes.task.cancel()
+            return nil
+        }
+        data.append(contentsOf: block)
+        guard !data.isEmpty else { return nil }
+        return ServerThemeSongDownload(data: data, contentType: http.value(forHTTPHeaderField: "Content-Type"))
+    }
 
     static var defaultFolder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("ThemeMusic", isDirectory: true)
@@ -95,4 +166,10 @@ enum ThemeSongFiles {
         }
         return nil
     }
+}
+
+/// A downloaded theme song and the type the server gave it.
+struct ServerThemeSongDownload: Sendable {
+    let data: Data
+    let contentType: String?
 }

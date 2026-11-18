@@ -55,6 +55,7 @@ Credential changes use Vivid’s reload boundary on both platforms.
 Final playback teardown releases shared audio only when that controller actually started an engine load.
 Discarded, unused SwiftUI player models and repeated stops cannot deactivate another player’s audio session or reset its display criteria.
 Replacement loads retain that ownership until the real final stop.
+Theme music's use of the same session is described in [the player engine guide](../cores/player-engine.md).
 
 - Keep one clear owner for the engine and its observations.
 - Generation-fence loads, session staging, callbacks and recovery.

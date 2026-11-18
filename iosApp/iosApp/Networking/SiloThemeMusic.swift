@@ -12,14 +12,18 @@ import Foundation
 ///   short-lived audio URL, asked for only just before it plays. A
 ///   `converted` stream has no length or byte ranges, which `AVPlayer`
 ///   refuses over HTTP, so it's downloaded (up to 32 MB) into the shared
-///   temporary theme folder first.
+///   temporary theme folder first. The grant and that download share one
+///   ``ThemeSongFiles/openSeconds`` deadline.
 ///
 /// Every request goes through `HTTPClient.optionalSiloV2Request`, which never
 /// starts a token refresh, so a refusal (even a 401) can't sign anyone out.
-/// Every failure is nil. The grant URL carries a credential: it's never
-/// logged or stored beyond the temporary audio file it fetches.
+/// A lookup is `.none` only when the server answered that there's no theme
+/// (or doesn't offer themes at all); a timeout, network error, refusal or
+/// unreadable reply is `.failed`. A stream that can't be opened is nil. The
+/// grant URL carries a credential: it's never logged or stored beyond the
+/// temporary audio file it fetches.
 enum SiloThemeMusic {
-    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookup? {
+    static func lookup(for item: ThemeMusicItem) async -> ThemeSongLookupResult {
         await lookup(for: item, http: .shared, tokenStore: .shared, capabilities: .shared)
     }
 
@@ -29,22 +33,41 @@ enum SiloThemeMusic {
 
     // MARK: - Requests
 
+    /// `optionalSiloV2Request` is nil, with nothing sent, when the account
+    /// isn't Silo or its server doesn't speak v2, which reads as no theme.
     static func lookup(
         for item: ThemeMusicItem,
         http: HTTPClient,
         tokenStore: TokenStore,
         capabilities: SiloThemeCapabilityCache
-    ) async -> ThemeSongLookup? {
-        guard let id = pathSegment(item.contentID),
-              await capabilities.isPlayable(http: http, tokenStore: tokenStore),
-              let response = try? await http.optionalSiloV2Request(
-                  method: "GET", path: "/api/v2/catalog/items/\(id)", quietStatuses: quietStatuses
-              )
-        else { return nil }
+    ) async -> ThemeSongLookupResult {
+        guard let id = pathSegment(item.contentID) else { return .failed }
+        switch await capabilities.isPlayable(http: http, tokenStore: tokenStore) {
+        case true?: break
+        case false?: return .none
+        case nil: return .failed
+        }
+        let response: OptionalSiloV2Response?
+        do {
+            response = try await http.optionalSiloV2Request(
+                method: "GET", path: "/api/v2/catalog/items/\(id)", quietStatuses: quietStatuses
+            )
+        } catch {
+            return .failed
+        }
+        guard let response else { return .none }
         return firstTheme(inDetail: response.data)
     }
 
+    /// The grant and any converted download, within one
+    /// ``ThemeSongFiles/openSeconds`` deadline.
     static func stream(for lookup: ThemeSongLookup, http: HTTPClient) async -> ThemeSongStream? {
+        await ThemeSongFiles.withDeadline(seconds: ThemeSongFiles.openSeconds) {
+            await openStream(for: lookup, http: http)
+        }
+    }
+
+    private static func openStream(for lookup: ThemeSongLookup, http: HTTPClient) async -> ThemeSongStream? {
         guard let owner = pathSegment(lookup.ownerID), let song = pathSegment(lookup.songID),
               let response = try? await http.optionalSiloV2Request(
                   method: "POST", path: "/api/v2/catalog/items/\(owner)/themes/\(song)/playback",
@@ -83,14 +106,15 @@ enum SiloThemeMusic {
     }
 
     /// The first theme song in an item detail document. Silo already applies
-    /// inheritance and sorts the songs by file path.
-    static func firstTheme(inDetail data: Data) -> ThemeSongLookup? {
-        guard let themes = (try? HTTPClient.makeJSONDecoder().decode(Detail.self, from: data))?.themes,
-              !themes.ownerId.isEmpty,
-              let song = themes.items.first, !song.id.isEmpty
-        else { return nil }
+    /// inheritance and sorts the songs by file path. No `themes`, or none in
+    /// it, is `.none`; a document that doesn't decode, or a song set without
+    /// an owner or song ID, is `.failed`.
+    static func firstTheme(inDetail data: Data) -> ThemeSongLookupResult {
+        guard let detail = try? HTTPClient.makeJSONDecoder().decode(Detail.self, from: data) else { return .failed }
+        guard let themes = detail.themes, let song = themes.items.first else { return .none }
+        guard !themes.ownerId.isEmpty, !song.id.isEmpty else { return .failed }
         let container = song.container.flatMap { $0.isEmpty ? nil : $0.lowercased() }
-        return ThemeSongLookup(ownerID: themes.ownerId, songID: song.id, container: container)
+        return .found(ThemeSongLookup(ownerID: themes.ownerId, songID: song.id, container: container))
     }
 
     private struct Capability: Decodable {
@@ -99,9 +123,10 @@ enum SiloThemeMusic {
     }
 
     /// Whether a capabilities document lets this profile play themes:
-    /// `state` is `available` and `allowed` isn't false.
-    static func capabilityAllowsPlayback(_ data: Data) -> Bool {
-        guard let capability = try? HTTPClient.makeJSONDecoder().decode(Capability.self, from: data) else { return false }
+    /// `state` is `available` and `allowed` isn't false. nil when the
+    /// document doesn't decode.
+    static func capabilityAllowsPlayback(_ data: Data) -> Bool? {
+        guard let capability = try? HTTPClient.makeJSONDecoder().decode(Capability.self, from: data) else { return nil }
         return capability.state == "available" && capability.allowed != false
     }
 
@@ -166,7 +191,8 @@ enum SiloThemeMusic {
 
 /// The theme capability per account, credential generation and viewing
 /// profile (`allowed` is profile-scoped). A decoded answer or a 404 (no
-/// theme support) is kept for five minutes; a transport failure isn't kept.
+/// theme support) is kept for five minutes; a failure (timeout, network
+/// error, other refusal or unreadable reply) isn't kept.
 actor SiloThemeCapabilityCache {
     static let shared = SiloThemeCapabilityCache()
 
@@ -184,7 +210,10 @@ actor SiloThemeCapabilityCache {
         self.now = now
     }
 
-    func isPlayable(http: HTTPClient, tokenStore: TokenStore) async -> Bool {
+    /// true when this profile may play themes, false when the server says
+    /// it may not (or has no theme support, or isn't a v2 Silo server), and
+    /// nil when there was no answer.
+    func isPlayable(http: HTTPClient, tokenStore: TokenStore) async -> Bool? {
         guard let auth = await tokenStore.captureOrdinaryRequestAuth() else { return false }
         let key = Key(account: auth.account, profileID: auth.profileId)
         if let answer = answers[key], now().timeIntervalSince(answer.at) < Self.lifetime { return answer.playable }
@@ -194,11 +223,12 @@ actor SiloThemeCapabilityCache {
             guard let response = try await http.optionalSiloV2Request(
                 method: "GET", path: "/api/v2/catalog/themes/capabilities", quietStatuses: SiloThemeMusic.quietStatuses
             ) else { return false }
-            playable = SiloThemeMusic.capabilityAllowsPlayback(response.data)
+            guard let allowed = SiloThemeMusic.capabilityAllowsPlayback(response.data) else { return nil }
+            playable = allowed
         } catch HTTPError.http(let status, _) where status == 404 {
             playable = false
         } catch {
-            return false
+            return nil
         }
         if answers.count >= 16 { answers.removeAll() }
         answers[key] = (playable, now())
@@ -210,40 +240,17 @@ actor SiloThemeCapabilityCache {
 /// and hands them to the shared ``ThemeSongFiles`` store.
 enum SiloThemeDownload {
     /// The whole stream saved as a local `.m4a`; nil on any failure, a
-    /// non-200 status, an empty body, past the size cap, or once cancelled.
+    /// non-2xx status, an empty body, past the size cap, or once cancelled.
+    /// Read through ``ThemeSongFiles/download(_:session:maximumBytes:)``,
+    /// with an ephemeral session that keeps the signed URL and audio out of
+    /// any cache. The caller's deadline bounds the whole download.
     static func converted(_ url: URL) async -> URL? {
-        guard let data = await read(url), !Task.isCancelled else { return nil }
-        return ThemeSongFiles.store(data, fileExtension: "m4a")
-    }
-
-    /// An ephemeral session keeps the signed URL and audio out of any cache.
-    private static func read(_ url: URL) async -> Data? {
-        let maxBytes = ThemeSongFiles.maximumBytes
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 30
         let session = URLSession(configuration: configuration, delegate: PlainHTTPRedirectGuard.SessionDelegate.shared, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        guard let (bytes, response) = try? await session.bytes(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200
-        else { return nil }
-        var data = Data()
-        var chunk: [UInt8] = []
-        chunk.reserveCapacity(65_536)
-        do {
-            for try await byte in bytes {
-                chunk.append(byte)
-                if chunk.count == 65_536 {
-                    data.append(contentsOf: chunk)
-                    chunk.removeAll(keepingCapacity: true)
-                    if data.count > maxBytes { return nil }
-                }
-            }
-        } catch {
-            return nil
-        }
-        data.append(contentsOf: chunk)
-        guard !data.isEmpty, data.count <= maxBytes else { return nil }
-        return data
+        guard let reply = await ThemeSongFiles.download(URLRequest(url: url), session: session), !Task.isCancelled else { return nil }
+        return ThemeSongFiles.store(reply.data, fileExtension: "m4a")
     }
 }

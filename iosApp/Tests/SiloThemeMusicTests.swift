@@ -7,27 +7,33 @@ final class SiloThemeMusicTests: XCTestCase {
     func testFirstThemeTakesTheOwnerAndFirstSong() {
         let detail = #"{"content_id":"episode:9","type":"episode","themes":{"owner_id":"series:4","items":[{"id":"12","title":"Opening","duration_seconds":31,"container":"MP3"},{"id":"13","title":"Other","duration_seconds":20,"container":"m4a"}]}}"#
         XCTAssertEqual(SiloThemeMusic.firstTheme(inDetail: Data(detail.utf8)),
-                       ThemeSongLookup(ownerID: "series:4", songID: "12", container: "mp3"))
+                       .found(ThemeSongLookup(ownerID: "series:4", songID: "12", container: "mp3")))
     }
 
-    func testMissingOrEmptyThemesMeanNone() {
+    func testMissingOrEmptyThemesMeanNoneAndBadDocumentsFail() {
         for detail in [
             #"{"content_id":"movie:1","type":"movie"}"#,
             #"{"content_id":"movie:1","themes":{"owner_id":"movie:1","items":[]}}"#,
+        ] {
+            XCTAssertEqual(SiloThemeMusic.firstTheme(inDetail: Data(detail.utf8)), ThemeSongLookupResult.none, detail)
+        }
+        for detail in [
             #"{"content_id":"movie:1","themes":{"owner_id":"","items":[{"id":"1"}]}}"#,
             "not json",
         ] {
-            XCTAssertNil(SiloThemeMusic.firstTheme(inDetail: Data(detail.utf8)), detail)
+            XCTAssertEqual(SiloThemeMusic.firstTheme(inDetail: Data(detail.utf8)), .failed, detail)
         }
     }
 
     func testCapabilityNeedsAvailableAndNotRefused() {
-        let cases: [(String, Bool)] = [
+        // nil is a document that doesn't decode, which the lookup reports
+        // as a failure rather than "no theme music".
+        let cases: [(String, Bool?)] = [
             (#"{"state":"available","allowed":true,"delivery":"routed"}"#, true),
             (#"{"state":"available"}"#, true),
             (#"{"state":"available","allowed":false}"#, false),
             (#"{"state":"disabled","allowed":true}"#, false),
-            (#"{"allowed":true}"#, false),
+            (#"{"allowed":true}"#, nil),
         ]
         for (body, expected) in cases {
             XCTAssertEqual(SiloThemeMusic.capabilityAllowsPlayback(Data(body.utf8)), expected, body)
@@ -79,7 +85,7 @@ final class SiloThemeMusicTests: XCTestCase {
 
         let item = ThemeMusicItem(contentID: "season:3", type: "season", seriesID: "series:1")
         let found = await SiloThemeMusic.lookup(for: item, http: http, tokenStore: tokens, capabilities: SiloThemeCapabilityCache())
-        let lookup = try XCTUnwrap(found)
+        guard case .found(let lookup) = found else { return XCTFail("Expected a theme, got \(found)") }
         XCTAssertEqual(lookup, ThemeSongLookup(ownerID: "series:1", songID: "8", container: "mp3"))
         let opened = await SiloThemeMusic.stream(for: lookup, http: http)
         let stream = try XCTUnwrap(opened)
@@ -103,7 +109,7 @@ final class SiloThemeMusicTests: XCTestCase {
         }
         let item = ThemeMusicItem(contentID: "movie:1", type: "movie", seriesID: nil)
         let lookup = await SiloThemeMusic.lookup(for: item, http: http, tokenStore: tokens, capabilities: SiloThemeCapabilityCache())
-        XCTAssertNil(lookup)
+        XCTAssertEqual(lookup, ThemeSongLookupResult.none)
     }
 
     func testRefusedGrantNeverRefreshesOrSignsOut() async throws {
@@ -121,7 +127,7 @@ final class SiloThemeMusicTests: XCTestCase {
         let stream = await SiloThemeMusic.stream(for: lookup, http: http)
         XCTAssertNil(stream)
         let capable = await SiloThemeCapabilityCache().isPlayable(http: http, tokenStore: tokens)
-        XCTAssertFalse(capable)
+        XCTAssertNotEqual(capable, true)
 
         await fulfillment(of: [expired], timeout: 0.5)
         // Exactly the discovery, the refused grant and the refused

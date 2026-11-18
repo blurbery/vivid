@@ -1,5 +1,9 @@
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 final class ThemeMusicCenterTests: XCTestCase {
     private func key(
@@ -72,6 +76,66 @@ final class ThemeMusicCenterTests: XCTestCase {
         conditions = allowed
         conditions.isAppActive = false
         XCTAssertFalse(ThemeMusicPolicy.canStart(conditions))
+    }
+
+    // MARK: Lookups
+
+    func testAFailedLookupLeavesTheCurrentSongAlone() {
+        XCTAssertEqual(ThemeMusicPolicy.outcome(of: .failed), .leaveAlone)
+    }
+
+    func testATitleWithNoThemeStopsTheSong() {
+        XCTAssertEqual(ThemeMusicPolicy.outcome(of: .none), .stop)
+    }
+
+    func testAFoundThemeIsConsidered() {
+        let lookup = ThemeSongLookup(ownerID: "series-1", songID: "song-1", container: "mp3")
+        XCTAssertEqual(ThemeMusicPolicy.outcome(of: .found(lookup)), .consider(lookup))
+    }
+
+    func testSeasonsAndEpisodesInheritWhateverTheCase() {
+        for type in ["season", "Season", "EPISODE", " Episode "] {
+            XCTAssertTrue(ThemeMusicItem(contentID: "1", type: type, seriesID: "s").inheritsFromParent, type)
+        }
+        for type in ["movie", "Series", "seasons", ""] {
+            XCTAssertFalse(ThemeMusicItem(contentID: "1", type: type, seriesID: nil).inheritsFromParent, type)
+        }
+    }
+
+    // MARK: Retrying
+
+    func testAnUnreachableServerEarnsARetry() {
+        var conditions = allowed
+        conditions.isServerReachable = false
+        XCTAssertTrue(ThemeMusicPolicy.shouldRetryWhenReachable(conditions))
+
+        // Still worth it while the app is inactive: becoming active retries next.
+        conditions.isAppActive = false
+        XCTAssertTrue(ThemeMusicPolicy.shouldRetryWhenReachable(conditions))
+    }
+
+    func testDeliberateSkipsNeverRetryWhenTheServerReturns() {
+        XCTAssertFalse(ThemeMusicPolicy.shouldRetryWhenReachable(allowed))
+
+        var conditions = allowed
+        conditions.isServerReachable = false
+        conditions.isOtherAudioPlaying = true
+        XCTAssertFalse(ThemeMusicPolicy.shouldRetryWhenReachable(conditions))
+
+        conditions = allowed
+        conditions.isServerReachable = false
+        conditions.isPictureInPictureEngaged = true
+        XCTAssertFalse(ThemeMusicPolicy.shouldRetryWhenReachable(conditions))
+
+        conditions = allowed
+        conditions.isServerReachable = false
+        conditions.isVideoPlayerOnScreen = true
+        XCTAssertFalse(ThemeMusicPolicy.shouldRetryWhenReachable(conditions))
+
+        conditions = allowed
+        conditions.isServerReachable = false
+        conditions.isEnabled = false
+        XCTAssertFalse(ThemeMusicPolicy.shouldRetryWhenReachable(conditions))
     }
 
     // MARK: Volume

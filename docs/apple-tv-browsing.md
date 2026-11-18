@@ -554,6 +554,7 @@ The controls use the tinted glass of the iOS Play button with no fill, and the f
 
 Movie, series, season and episode pages play the title's theme song from the server quietly in the background while Settings > Playback > Play Theme Music is on, as described in [Detail pages and validation](app-design.md#detail-pages-and-validation).
 The song fades in when the page opens, plays once, carries on while moving between a show, its seasons and its episodes when they share it, and fades out when the page closes.
+An episode opens on its series page, so it plays the series' theme.
 Playing a video stops it, and it doesn't start again when the video ends.
 It pauses while Vivid is in the background.
 
