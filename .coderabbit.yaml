@@ -4,7 +4,7 @@
 # Vivid is public, so it uses CodeRabbit's free open-source plan. That plan
 # allows only a few PR reviews per hour, and every push that triggers a review
 # uses one. These settings spend that allowance on the reviews that matter:
-# the first review of each ready PR and one follow-up push, while docs-only PRs,
+# the first review of each ready PR and one follow-up push, while docs PRs,
 # drafts, bot PRs and generated or vendored files are skipped. Comment
 # `@coderabbitai review` on a PR to ask for another look after that, and
 # `@coderabbitai rate limit` to see what's left.
@@ -59,10 +59,12 @@ reviews:
     # `@coderabbitai review` (or `resume`) to carry on.
     auto_incremental_review: true
     auto_pause_after_reviewed_commits: 2
-    # Docs-only PRs are checked by the Docs job. Add "[skip review]" to any
-    # title to skip it, then `@coderabbitai review` if you change your mind.
+    # Docs PRs (titles with `docs:` or `docs(`) are checked by the Docs job.
+    # Add "[skip review]" to any other title to skip it, then comment
+    # `@coderabbitai review` if you change your mind.
     ignore_title_keywords:
       - "docs:"
+      - "docs("
       - "[skip review]"
       - "WIP"
     ignore_usernames:
