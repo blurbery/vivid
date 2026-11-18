@@ -1,13 +1,14 @@
 # CodeRabbit review settings for Vivid.
 # Schema: https://coderabbit.ai/integrations/schema.v2.json
 #
-# Vivid is public, so it uses CodeRabbit's free open-source plan. That plan
-# allows only a few PR reviews per hour, and every push that triggers a review
-# uses one. These settings spend that allowance on the reviews that matter:
-# the first review of each ready PR and a short run of follow-ups, while docs
-# PRs, drafts, bot PRs and large generated or vendored files are skipped. Comment
-# `@coderabbitai review` on a PR to ask for another look after that, and
-# `@coderabbitai rate limit` to see what's left.
+# Vivid is public, so it uses CodeRabbit's free open-source plan. That plan's
+# PR review limit depends on the repository's star count, and Vivid gets one
+# review an hour. Every review, including one asked for in a comment, uses it,
+# and a PR that is rate limited is not reviewed later on its own. So CodeRabbit
+# reviews each ready PR once, automatically, and skips docs PRs, drafts, bot PRs
+# and large generated or vendored files. Batch fixes into one push and comment
+# `@coderabbitai review` when you want it to look again, and comment
+# `@coderabbitai rate limit` to see when the next review is free.
 #
 # CodeRabbit only comments. It never edits PR descriptions, pushes commits,
 # approves or requests changes, so PR checks and commit attribution stay as
@@ -54,12 +55,10 @@ reviews:
     drafts: false
     base_branches:
       - main
-    # Review follow-up pushes automatically, but pause once three commits have
-    # been reviewed (CodeRabbit counts commits, so a push of several commits
-    # counts each one) so a long fix-up cycle doesn't use the hourly
-    # allowance. Comment `@coderabbitai review` (or `resume`) to carry on.
-    auto_incremental_review: true
-    auto_pause_after_reviewed_commits: 3
+    # Only the first review is automatic. Follow-up pushes are reviewed when
+    # someone comments `@coderabbitai review`, so fix-up pushes don't use the
+    # hour's review or crowd out a newly opened PR.
+    auto_incremental_review: false
     # Docs PRs (titles with `docs:` or `docs(`) are checked by the Docs job.
     # Keywords match anywhere in the title, ignoring case, so they are kept
     # specific: a bare "wip" would also skip "fix: wipe downloads". Add
