@@ -116,6 +116,10 @@ Pull requests from branches in `blurbery/vivid` also get an automated Claude rev
 Pull requests from forks do not, because GitHub withholds the review key from them.
 Check its comments against the source like any other review; they are not an approval.
 
+CodeRabbit also reviews every non-draft pull request into `main`, including pull requests from forks, with the settings in `.coderabbit.yaml`.
+It only comments: it does not edit the description, push commits or approve.
+Treat its findings the same way, and reply to `@coderabbitai` in a comment if you want it to look again or explain a finding.
+
 ## Testing status
 
 Ask whether the change has been tested if that is not already confirmed in the conversation.

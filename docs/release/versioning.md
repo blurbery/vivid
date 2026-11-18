@@ -209,6 +209,8 @@ Of a pull request's review comments, it passes Claude only those from the reposi
 A review that stops early (at its cost or turn limit, after a refusal or after a Claude API error) doesn't record the commit as reviewed, so the next push covers what it missed.
 A manual run is a dry-run benchmark that posts nothing, unless its `post` input is ticked: then it reviews the PR's head in full with the chosen model, effort and cost limit (0 for no limit, with each pass stopping at 300 turns) and posts the result like an automatic review.
 With `since` set as well, it reviews only the commits after that one, like a push does, which checks the fixes for earlier findings; it records the head as reviewed only when no unreviewed commits are left before `since`.
+CodeRabbit is a GitHub App rather than a workflow: it reviews non-draft pull requests into `main` with the settings in `.coderabbit.yaml`, skips the generated String Catalogs and `package-lock.json`, and posts a `CodeRabbit` commit status that branch protection does not require.
+It never edits pull request descriptions or pushes commits, so the `PR title, branch and description` check and commit attribution are unaffected.
 Do not enable paid capacity or change distribution settings as part of an ordinary source release.
 See [App Distribution](distribution.md).
 Player regression's build jobs retry the XcodeGen download and resolve Swift packages before building, clearing the runner's SwiftPM artifact cache and the job's Swift packages before each try, up to three times, so a brief GitHub download failure or a stale cache is retried rather than failing the job straight away.
