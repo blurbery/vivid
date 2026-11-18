@@ -132,6 +132,11 @@ actor PlaybackSessionBridge {
 
     private var activeProtocolV3: SiloAttempt?
     private var protocolV3FirstFramePlanIds: Set<String> = []
+    private var pendingProtocolV3Transition: PendingDecision?
+
+    // MARK: - Emby and Jellyfin sessions
+
+    private var embyPlayback: EmbyPlayback?
     /// The plan of the Silo AirPlay receiver attempt, while one is live.
     private var airPlayReceiverPlanId: String?
     #if os(iOS)
@@ -139,11 +144,6 @@ actor PlaybackSessionBridge {
     /// session id.
     private var preparedAirPlayReceivers: [String: PreparedAirPlayReceiver] = [:]
     #endif
-    private var pendingProtocolV3Transition: PendingDecision?
-
-    // MARK: - Emby and Jellyfin sessions
-
-    private var embyPlayback: EmbyPlayback?
     private var jellyfinPlayback: JellyfinPlayback?
     private var playingTracksGeneration: UInt64 = 0
     /// Every start and stop replaces this. A Jellyfin start that finds a
