@@ -246,6 +246,20 @@ final class PlayerSettings {
         didSet { store(enhancedDialogueEnabled, Keys.enhancedDialogueEnabled) }
     }
 
+    /// Theme Music: a title's theme song from the server plays quietly while
+    /// its detail page is open. On by default.
+    var themeMusicEnabled: Bool = true {
+        didSet { store(themeMusicEnabled, Keys.themeMusicEnabled) }
+    }
+
+    /// The Theme Music volume, from 5 to 100 percent.
+    var themeMusicVolumePercent: Int = PlayerSettings.defaultThemeMusicVolumePercent {
+        didSet { store(themeMusicVolumePercent, Keys.themeMusicVolumePercent) }
+    }
+
+    static let defaultThemeMusicVolumePercent = 30
+    static let themeMusicVolumeRange = 5...100
+
     /// What the player applies to the next load.
     var audioEnhancement: VividAudioEnhancement {
         VividAudioEnhancement(
@@ -316,6 +330,8 @@ final class PlayerSettings {
             Keys.volumeBoostEnabled: false,
             Keys.volumeBoostPercent: VividAudioEnhancement.defaultBoostLevel,
             Keys.enhancedDialogueEnabled: false,
+            Keys.themeMusicEnabled: true,
+            Keys.themeMusicVolumePercent: Self.defaultThemeMusicVolumePercent,
             Keys.subtitleAppearance: SubtitleAppearance.default.jsonString,
             Keys.subtitleUsesDeviceAppearanceOverride: false,
             Keys.subtitleMatchesSystemAppearance: false,
@@ -403,6 +419,11 @@ final class PlayerSettings {
     /// Snapped to an offered level.
     func setVolumeBoostPercent(_ percent: Int) { volumeBoostPercent = VividAudioEnhancement.boostLevel(percent) }
     func setEnhancedDialogueEnabled(_ enabled: Bool) { enhancedDialogueEnabled = enabled }
+    func setThemeMusicEnabled(_ enabled: Bool) { themeMusicEnabled = enabled }
+    /// Clamped to ``themeMusicVolumeRange``.
+    func setThemeMusicVolumePercent(_ percent: Int) {
+        themeMusicVolumePercent = Self.clampThemeMusicVolumePercent(percent)
+    }
     func setPlaybackSpeed(_ rate: Double) { playbackSpeed = Self.clampPlaybackSpeed(rate) }
     func setVideoGravity(_ gravity: VideoGravity) { videoGravity = gravity }
     func setPlayerOrientationMode(_ mode: PlayerOrientationMode) { playerOrientationMode = mode }
@@ -442,6 +463,8 @@ final class PlayerSettings {
         volumeBoostEnabled = false
         volumeBoostPercent = VividAudioEnhancement.defaultBoostLevel
         enhancedDialogueEnabled = false
+        themeMusicEnabled = true
+        themeMusicVolumePercent = Self.defaultThemeMusicVolumePercent
         subtitleMatchesSystemAppearance = false
         writeResetValues(scopeID: Self.currentScopeIdentifier)
         loadSavedSettings()
@@ -493,6 +516,10 @@ final class PlayerSettings {
             savedInt(Keys.volumeBoostPercent, default: VividAudioEnhancement.defaultBoostLevel)
         )
         enhancedDialogueEnabled = savedBool(Keys.enhancedDialogueEnabled, default: false)
+        themeMusicEnabled = savedBool(Keys.themeMusicEnabled, default: true)
+        themeMusicVolumePercent = Self.clampThemeMusicVolumePercent(
+            savedInt(Keys.themeMusicVolumePercent, default: Self.defaultThemeMusicVolumePercent)
+        )
         playbackSpeed = Self.clampPlaybackSpeed(savedDouble(Keys.playbackSpeed, default: 1.0))
         subtitleSyncMs = defaults.integer(forKey: Self.cacheKey(Keys.subtitleSyncMs))
         videoGravity = VideoGravity(rawValue: savedString(Keys.videoGravity) ?? "") ?? .fit
@@ -592,6 +619,10 @@ final class PlayerSettings {
         max(0, min(seconds, 120))
     }
 
+    private static func clampThemeMusicVolumePercent(_ percent: Int) -> Int {
+        max(themeMusicVolumeRange.lowerBound, min(percent, themeMusicVolumeRange.upperBound))
+    }
+
     /// Clamp to the contract's range and step for `player.playback_speed`
     /// (0.25 to 3.0 in steps of 0.05), so the value shown is one the server
     /// accepts. Rounded to hundredths afterwards because 0.05 isn't exact in
@@ -620,6 +651,8 @@ final class PlayerSettings {
         static let volumeBoostEnabled = "player.volumeBoostEnabled"
         static let volumeBoostPercent = "player.volumeBoostPercent"
         static let enhancedDialogueEnabled = "player.enhancedDialogueEnabled"
+        static let themeMusicEnabled = "player.themeMusicEnabled"
+        static let themeMusicVolumePercent = "player.themeMusicVolumePercent"
         static let subtitleAppearance = "player.subtitleAppearance"
         static let subtitleUsesDeviceAppearanceOverride = "player.subtitleUsesDeviceAppearanceOverride"
         static let subtitleMatchesSystemAppearance = "player.subtitleMatchesSystemAppearance"

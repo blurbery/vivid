@@ -408,7 +408,8 @@ Secondary, at 60%, is for credit lines, cast roles, a Home card's second line an
 Tertiary, at 50%, is for facts: the genres, year and runtime on a heading line, a season's episode count and year, air dates, dividers and idle arrows.
 A synopsis is therefore always a clear step apart from the name above it and the facts beside it: an episode card's name, summary and air date are Strong, Body and Tertiary, and a season's synopsis and facts line are Body and Tertiary under its name, which is Primary as the current season.
 Intro & Credit Skipper remains a native toggle, and Episodes ends with the Hide Episode Spoilers toggle described in [Playback](playback/README.md).
-An Audio section between Streaming and Episodes holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+An Audio section after Streaming holds Audio Language, the Volume Boost toggle, a Boost Level picker that is disabled while Volume Boost is off, and the Enhanced Dialogue toggle; see [Volume Boost and Enhanced Dialogue](cores/player-engine.md#volume-boost-and-enhanced-dialogue).
+A Theme Music section between Audio and Episodes holds the Play Theme Music toggle and a Volume slider from 5% to 100% in 5% steps, built like the subtitle Background Opacity row and dimmed and disabled while Play Theme Music is off; see [Detail pages and validation](#detail-pages-and-validation).
 On iPhone and iPad, Audio Language, Boost Level and Show Next Up open their own pages in the Settings theme, like Quality, rather than a plain pushed list, and choosing an option returns to Playback as before; Apple TV keeps its native menus.
 Playback offers Auto, Original Quality and three capped choices with a one-time buffering fallback; see [Quality controls](playback/README.md#quality-controls).
 Descriptions stay on one line inside the open picker, not beneath the closed Quality row.
@@ -551,6 +552,20 @@ Cached metadata stays visible during refresh.
 Only the two adjacent episodes are warmed after the active selection is ready; other-season warming waits behind that work.
 Account/profile and request-identity checks reject stale results, and late responses preserve manual version and track choices.
 Subtitle inventory still follows the [detail reader’s media-based rules](playback/architecture.md#tracks-subtitles-and-previews).
+
+Theme music plays on movie, series, season and episode pages on iPhone, iPad and Apple TV when Settings > Playback > Play Theme Music is on, which it is by default.
+When the page opens, Vivid asks the connected server (Silo, Emby or Jellyfin) for the title's theme song, fades it in at the Theme Music volume (30% unless changed) and plays it once, without looping.
+A season or episode with no theme of its own uses its series' theme, and moving between a show, its seasons and its episodes keeps the same song playing instead of starting it again.
+On Apple TV an episode with a series and season number opens on its series page, so it plays the series' theme; any other episode stays on its own page and plays its own theme, or its season's or series' theme when it has none.
+Leaving the page fades the song out.
+Starting a video stops it, and it doesn't resume when the video ends.
+It pauses while Vivid is in the background.
+It mixes with other audio rather than interrupting it, and it is skipped when other audio, such as music from another app, is already playing.
+It also doesn't start while Picture in Picture is up, and it is tried again if the server was unreachable and comes back while the page is open.
+On iPhone it stays quiet while the silent switch is on.
+A title without a theme song or a server that doesn't offer one leaves the page silent, with no error.
+A lookup that fails, for example on a slow connection, never shows an error either, and doesn't cut a song that is already playing straight away; that song still fades out after a four second hold unless a page that finds a song takes over.
+On Silo it needs a server with the V2 API, and the theme has to be a regular `theme.mp3` file (or a file in a `theme-music` folder) in the title's folder; symlinked theme files are ignored.
 
 The September 2026 iPhone detail update passed the [iOS test suite and tvOS build](https://github.com/blurbery/vivid/actions/runs/35821654660).
 After the final series-loading fix was installed on iPhone 16 Pro Max, blurbery reported that media information appeared instantly.

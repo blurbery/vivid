@@ -81,6 +81,14 @@ On iPhone and iPad the slide switches when the lookup lands; on Apple TV a spotl
 Movies already carry their own background.
 A Silo server that sends `series_backdrop_url` with these items would be used directly, resolved against the server like the other artwork fields.
 
+Theme music on detail pages needs a v2 Silo server; on a v1 server pages stay silent.
+[SiloThemeMusic](../../iosApp/iosApp/Networking/SiloThemeMusic.swift) reads `themes` from the page's own v2 item detail, where Silo has already applied inheritance (season, then series), and picks the first song.
+It plays only when the theme capabilities say `available` and don't refuse the profile, an answer kept for five minutes per account and profile.
+The audio grant is asked for only when the song is about to play, listing the formats AVFoundation opens (Ogg and Opus are left out, so Silo converts those to AAC).
+A converted stream has no length, which `AVPlayer` won't stream, so it's downloaded to a temporary file first, stopping as soon as it passes 32 MB, and the grant and download share one 20 second limit; an original plays straight from its short-lived URL, which is never logged or stored.
+These optional requests never refresh the session, so a refusal, even a 401, only leaves the page silent.
+Silo ignores symlinked theme files and symlinked `theme-music` folders, so themes must be regular files.
+
 The source names above are retained implementation identifiers.
 Defining the core in documentation does not rename or refactor these files.
 

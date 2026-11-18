@@ -28,6 +28,16 @@ extension TVSettingsView {
             VividAudioEnhancement.boostLevels.map { MenuOption(id: String($0), label: String(localized: "\($0)%")) }
         }
 
+        private static var themeVolumeOptions: [MenuOption] {
+            stride(from: 10, through: 100, by: 10).map { MenuOption(id: String($0), label: String(localized: "\($0)%")) }
+        }
+
+        /// The menu step nearest the saved Theme Music volume, which can be
+        /// any whole percent from 5 to 100.
+        private static func themeVolumeStep(_ percent: Int) -> String {
+            String(min(100, max(10, Int((Double(percent) / 10).rounded()) * 10)))
+        }
+
         private static var nextUpOptions: [MenuOption] {
             [
                 MenuOption(id: "0", label: String(localized: "At end")),
@@ -83,8 +93,33 @@ extension TVSettingsView {
                     }
                 }
                 TVSettingsFooter("Changes apply the next time a video starts. While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
+                TVSettingsSectionHeader("THEME MUSIC")
+                themeMusicGroup
+                TVSettingsFooter("Plays a title’s theme song from your server quietly while its page is open, and stops when a video starts. Saved for this profile on this Apple TV.")
                 TVSettingsSectionHeader("EPISODES")
                 episodesGroup
+            }
+        }
+
+        private var themeMusicGroup: some View {
+            TVSettingsGroup {
+                TVSettingsToggleRow(title: "Play Theme Music", isOn: model.themeMusicEnabled) {
+                    let enabled = !model.themeMusicEnabled
+                    model.themeMusicEnabled = enabled
+                    Task { model.setThemeMusicEnabled(enabled) }
+                }
+                DependentGroup(isEnabled: model.themeMusicEnabled) {
+                    let step = Self.themeVolumeStep(model.themeMusicVolumePercent)
+                    OptionMenu(title: "Volume",
+                               value: TVSettingsView.optionLabel(Self.themeVolumeOptions, step),
+                               options: Self.themeVolumeOptions, selection: step) { id in
+                        guard let percent = Int(id) else { return }
+                        model.themeMusicVolumePercent = percent
+                        Task { model.setThemeMusicVolumePercent(percent) }
+                    }
+                    .disabled(!model.themeMusicEnabled)
+                    .focused(focus, equals: .themeMusicVolume)
+                }
             }
         }
 

@@ -57,6 +57,8 @@ struct TVItemDetailView: View {
             .task(id: contentId) {
                 await load()
             }
+            // An episode that's about to open its series holds the music instead.
+            .themeMusicClaim(viewModel.detail.flatMap { redirectTarget(for: $0) == nil ? ThemeMusicItem($0) : nil })
             .onAppear {
                 Self.log.debug("itemDetail.appear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
                 probeRemoteTrailers()

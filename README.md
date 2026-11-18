@@ -81,6 +81,7 @@ The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the lay
 
 Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**.
 Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips.
+Detail pages quietly play a title's theme song from your server, which you can turn off or turn down in Settings.
 See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
 ## Languages

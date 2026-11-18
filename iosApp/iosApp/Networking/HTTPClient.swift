@@ -1959,3 +1959,71 @@ private struct AnyEncodable: Encodable {
         try wrapped.encode(to: encoder)
     }
 }
+
+// MARK: - Optional Silo v2 requests
+
+/// The body of an optional Silo v2 request, with the server it came from so
+/// a root-relative URL in it can be resolved.
+struct OptionalSiloV2Response: Sendable {
+    let data: Data
+    let serverURL: String
+}
+
+extension HTTPClient {
+    /// A signed request straight to a Silo v2 route (`path` starts with
+    /// `/api/v2/`, so it skips the v1 mapping) for an optional feature such
+    /// as theme music. It carries the same account, profile and device
+    /// headers, dispatch gate and diagnostics as an ordinary request, but a
+    /// 401 never starts a token refresh: it's retried once only if another
+    /// request has already stored a newer token for the same identity, and
+    /// otherwise comes back as `HTTPError.http`. So an optional route that a
+    /// proxy or an older server refuses can't rotate the tokens or expire the
+    /// session. Nil, with nothing sent, when the active account isn't Silo,
+    /// has no access token, or its server answered that it doesn't speak
+    /// v2; a discovery probe that gets no answer throws instead. `quietStatuses`
+    /// are logged as expected rather than as errors.
+    func optionalSiloV2Request(
+        method: String,
+        path: String,
+        body: Data? = nil,
+        quietStatuses: Set<Int> = []
+    ) async throws -> OptionalSiloV2Response? {
+        guard path.hasPrefix("/api/v2/") else { throw HTTPError.invalidURL(path) }
+        let dispatchRevision = try captureRequestDispatchRevision()
+        guard let auth = await tokenStore.captureOrdinaryRequestAuth(), auth.accessToken != nil,
+              MediaServerProvider.forServerID(auth.account.serverId) == .silo
+        else { return nil }
+        let serverURL = auth.account.serverURL
+        // The same probe URL ordinary requests derive, so the cached answer
+        // is shared. A probe that fails throws, so the caller can tell "no
+        // answer" from a server that really is v1.
+        guard let probe = try buildRequest(serverUrl: serverURL, method: "GET", path: "/api/v1/", query: [:], body: nil).url
+        else { return nil }
+        let usesV2: Bool
+        do {
+            usesV2 = try await apiDiscovery.usesV2(for: probe, session: session)
+        } catch let error as URLError {
+            throw HTTPError.network(underlying: error)
+        }
+        guard usesV2 else { return nil }
+
+        func signed(_ auth: CapturedOrdinaryRequestAuth) throws -> URLRequest {
+            var request = try buildRequest(serverUrl: serverURL, method: method, path: path, query: [:], body: nil)
+            if let body {
+                request.httpBody = body
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+            attachOrdinaryAuthHeaders(&request, auth: auth)
+            return request
+        }
+
+        var (data, response) = try await perform(request: try signed(auth), dispatchRevision: dispatchRevision, reportReachability: false)
+        if response.statusCode == 401,
+           let current = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: auth),
+           current.accessToken != nil, current.accessToken != auth.accessToken {
+            (data, response) = try await perform(request: try signed(current), dispatchRevision: dispatchRevision, reportReachability: false)
+        }
+        try ensureSuccess(data, response, method: method, quietStatuses: quietStatuses)
+        return OptionalSiloV2Response(data: data, serverURL: serverURL)
+    }
+}

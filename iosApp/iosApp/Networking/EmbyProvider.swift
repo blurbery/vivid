@@ -231,6 +231,40 @@ struct EmbyConnection: Sendable {
         return object
     }
 
+    /// A GET whose reply is optional: nil for any failure or non-2xx answer.
+    /// Unlike ``data(_:_:query:body:)``, a 401 here never retires the token
+    /// or signs anyone out, because a proxy or an older server can refuse an
+    /// optional route while the sign-in is still good.
+    func optionalData(_ path: String, query: [String: String] = [:]) async -> Data? {
+        guard (try? await validate()) != nil,
+              let request = optionalRequest(path, query: query, accept: "application/json"),
+              let reply = try? await (sessionOverride ?? Self.session).data(for: request),
+              (try? await validate()) != nil,
+              let response = reply.1 as? HTTPURLResponse,
+              (200..<300).contains(response.statusCode) else { return nil }
+        return reply.0
+    }
+
+    /// An optional file, such as a theme song, read through
+    /// ``ThemeSongFiles/download(_:session:maximumBytes:)`` so it stops as
+    /// soon as it passes `maximumBytes`: nil as for
+    /// ``optionalData(_:query:)``, when it's too big, or when it's empty.
+    func optionalFile(_ path: String, query: [String: String] = [:], maximumBytes: Int) async -> ServerThemeSongDownload? {
+        guard (try? await validate()) != nil,
+              let request = optionalRequest(path, query: query, accept: "*/*"),
+              let reply = await ThemeSongFiles.download(request, session: sessionOverride ?? Self.session, maximumBytes: maximumBytes),
+              (try? await validate()) != nil else { return nil }
+        return reply
+    }
+
+    private func optionalRequest(_ path: String, query: [String: String], accept: String) -> URLRequest? {
+        guard let url = try? Self.url(serverURL: serverURL, path: path, query: query) else { return nil }
+        var request = URLRequest(url: url)
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
+        request.setValue(accept, forHTTPHeaderField: "Accept")
+        return request
+    }
+
     // MARK: Sign-in
 
     private static func anonymous(_ serverURL: String, token: String? = nil, session: URLSession? = nil) -> Self {

@@ -10,6 +10,7 @@ extension AppRootModel {
     // MARK: Sign-in, server and profile changes
 
     func authStateChanged() async {
+        ThemeMusicCenter.shared.sessionDidChange(signedIn: router.authState == .authenticated)
         guard router.authState == .authenticated else { return }
         #if os(iOS)
         DownloadSettings.shared.reloadForCurrentProfile()
@@ -39,11 +40,13 @@ extension AppRootModel {
     }
 
     func activeProfileChanged() async {
+        ThemeMusicCenter.shared.sessionDidChange()
         guard router.authState == .authenticated else { return }
         await UICustomizationPreferences.shared.refresh()
     }
 
     func activeServerChanged() async {
+        ThemeMusicCenter.shared.sessionDidChange()
         // The registry publishes a new server while the switch still holds
         // requests back; nothing server-scoped may run before it commits.
         guard await HTTPClient.shared.waitForRequestDispatchOpen(), !Task.isCancelled else { return }

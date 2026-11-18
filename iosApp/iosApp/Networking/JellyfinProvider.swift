@@ -310,11 +310,28 @@ struct JellyfinConnection: Sendable {
     /// Unlike ``data(_:_:query:body:)``, a 401 here never retires the token
     /// or signs anyone out, because a proxy or an older server can refuse an
     /// optional route while the sign-in is still good.
-    func optionalData(_ path: String) async -> Data? {
+    func optionalData(_ path: String, query: [String: String] = [:]) async -> Data? {
         guard (try? await validate()) != nil,
-              let reply = try? await send("GET", path, query: [:], body: nil),
+              let reply = try? await send("GET", path, query: query, body: nil),
               (200..<300).contains(reply.1.statusCode) else { return nil }
         return reply.0
+    }
+
+    /// An optional file, such as a theme song, read through
+    /// ``ThemeSongFiles/download(_:session:maximumBytes:)`` so it stops as
+    /// soon as it passes `maximumBytes`: nil as for
+    /// ``optionalData(_:query:)``, when it's too big, or when it's empty.
+    /// Signed and scoped to the connection's user like `send`.
+    func optionalFile(_ path: String, query: [String: String] = [:], maximumBytes: Int) async -> ServerThemeSongDownload? {
+        let scopedQuery = userID.map { query.merging(["UserId": $0]) { _, captured in captured } } ?? query
+        guard (try? await validate()) != nil,
+              let url = try? Self.url(serverURL: serverURL, path: path, query: scopedQuery) else { return nil }
+        var request = URLRequest(url: url)
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        guard let reply = await ThemeSongFiles.download(request, session: sessionOverride ?? Self.session, maximumBytes: maximumBytes),
+              (try? await validate()) != nil else { return nil }
+        return reply
     }
 
     /// Sends one request. The connection's own user always goes as `UserId`.
