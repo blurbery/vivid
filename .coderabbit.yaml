@@ -1,0 +1,235 @@
+# CodeRabbit review settings for Vivid.
+# Schema: https://coderabbit.ai/integrations/schema.v2.json
+#
+# Vivid is public, so it uses CodeRabbit's free open-source plan. That plan
+# allows only a few PR reviews per hour, and every push that triggers a review
+# uses one. These settings spend that allowance on the reviews that matter:
+# the first review of each ready PR and a short run of follow-ups, while docs
+# PRs, drafts, bot PRs and large generated or vendored files are skipped. Comment
+# `@coderabbitai review` on a PR to ask for another look after that, and
+# `@coderabbitai rate limit` to see what's left.
+#
+# CodeRabbit only comments. It never edits PR descriptions, pushes commits,
+# approves or requests changes, so PR checks and commit attribution stay as
+# they are. Treat its findings like any other review: check them against the
+# source before changing anything.
+language: en-AU
+tone_instructions: >-
+  Concise Australian English, no em dashes. Prioritise real bugs: state,
+  concurrency, cancellation, error paths, cross-file consistency, security,
+  privacy. Explain the failure scenario. Never propose design changes.
+early_access: false
+enable_free_tier: true
+
+reviews:
+  # Assertive finds more real issues. Pure style points are collapsed as
+  # nitpicks, and the tone above keeps them to a minimum.
+  profile: assertive
+  request_changes_workflow: false
+  # Keep the summary in CodeRabbit's own comment. PR checks parse the
+  # description, so CodeRabbit must not write into it.
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: false
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  abort_on_close: true
+  auto_approvals:
+    enabled: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+    # Review follow-up pushes automatically, but pause once three commits have
+    # been reviewed (CodeRabbit counts commits, so a push of several commits
+    # counts each one) so a long fix-up cycle doesn't use the hourly
+    # allowance. Comment `@coderabbitai review` (or `resume`) to carry on.
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 3
+    # Docs PRs (titles with `docs:` or `docs(`) are checked by the Docs job.
+    # Keywords match anywhere in the title, ignoring case, so they are kept
+    # specific: a bare "wip" would also skip "fix: wipe downloads". Add
+    # "[skip review]" to any other title to skip it, then comment
+    # `@coderabbitai review` if you change your mind.
+    ignore_title_keywords:
+      - "docs:"
+      - "docs("
+      - "[skip review]"
+      - "[WIP]"
+      - "WIP:"
+    ignore_usernames:
+      - "dependabot[bot]"
+  # Every commit on main must be attributed to blurbery, so CodeRabbit must not
+  # push fixes, tests or docstrings to PR branches.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  # The repository's own PR checks already enforce the title and description.
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: warning
+    custom_checks:
+      - name: "Design approval"
+        mode: warning
+        instructions: >-
+          Pass when the PR makes no visual or interaction design change
+          (layout, navigation, focus behaviour, colours, typography, spacing,
+          icons, artwork, animation or transitions), or when its "Design
+          impact and approval" section references blurbery's approval for the
+          change. Fail when the diff changes design and that section says
+          "No design changes" or gives no approval.
+      - name: "Private details"
+        mode: warning
+        instructions: >-
+          Fail when the diff or PR description adds personal or account
+          details: a real name or personal email (anything other than a
+          users.noreply.github.com address), home-folder paths such as
+          /Users/<name>, IP addresses, server hostnames, device or room
+          names, media server usernames, library or account IDs, API keys,
+          tokens or passwords. Placeholders such as example.com,
+          user@example.com and <account-id> are fine. Pass otherwise.
+  path_filters:
+    # Large generated or vendored files that would use up review capacity.
+    # The String Catalogs hold real translations, but at over 2 MB they are
+    # too big to review usefully, so CodeRabbit doesn't check translations.
+    - "!**/*.xcstrings"
+    - "!**/package-lock.json"
+    - "!engine/config/expected-libs/**"
+    - "!iosApp/Tests/Fixtures/**"
+    - "!diagnostics-relay/fixtures/**"
+    - "!website/public/fonts/**"
+  path_instructions:
+    - path: "iosApp/**/*.swift"
+      instructions: >-
+        Vivid's design (layout, navigation, focus behaviour, colours,
+        typography, spacing, icons, artwork and animation) is controlled by
+        blurbery. Do not suggest design changes. If the PR changes design
+        without referencing blurbery's approval, point that out instead.
+        Bug fixes must preserve the approved design. Look hardest at state
+        that can get stuck or lost: async work that outlives its view or
+        player, missing cancellation, main-actor and threading mistakes,
+        retain cycles, rollback after a failed server or profile switch, and
+        behaviour that differs between iOS and tvOS. For tvOS focus code,
+        follow docs/apple-tv-focus.md: prefer a stable native focus graph or
+        a single composite focus owner. Keep each server core (Silo, Emby,
+        Jellyfin) separate and flag changes that alter another provider's
+        authentication, endpoints or playback reporting. Interface text
+        belongs in the String Catalogs (docs/localisation.md). Do not ask for
+        tests on small or UI-only changes.
+    - path: "iosApp/iosApp/Networking/**"
+      instructions: >-
+        Check that auth tokens and API keys never reach logs, diagnostics,
+        URLs shown to the user or other servers. Check size and time limits
+        are enforced while data streams in, not after it is fully buffered,
+        and that a refused or failed optional request never signs the user
+        out. Compare with the same path in the other providers.
+    - path: "iosApp/iosApp/Playback/MPV/**"
+      instructions: >-
+        This is the Lucid Engine adapter. Check it against
+        docs/cores/lucid-engine-architecture.md, and watch for teardown,
+        threading and track ID mistakes.
+    - path: "iosApp/Tests/**"
+      instructions: >-
+        iOS tests come from the whole folder, but the tvOS test target
+        (VividTVTests in iosApp/project.yml) lists its files one by one.
+        Flag a new test file for shared code that is missing from that list.
+        Check that each test really exercises the behaviour it names rather
+        than passing trivially.
+    - path: "iosApp/project*.yml"
+      instructions: >-
+        These XcodeGen specs generate the Xcode project. Bundle IDs, keychain
+        groups, signing and entitlements must not change unless the PR says
+        why. The engine package pin must match Package.resolved.
+    - path: "engine/**"
+      instructions: >-
+        Check engine changes against docs/cores/lucid-engine-build.md and
+        docs/playback/lucid-engine-patch-spec.md.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Every action and reusable workflow (except local ./ actions and
+        docker:// images) must be pinned to a full commit SHA with its version
+        in a trailing comment. Watch for secrets exposed to pull requests from
+        forks and for untrusted input used in run steps. The Validation
+        section of docs/release/versioning.md must describe the change.
+    - path: "**/*.md"
+      instructions: >-
+        Docs use Australian English, no em dashes, and one sentence per line.
+        Check that the text matches the code in this PR and does not
+        contradict other docs. Do not suggest reflowing sentences onto one
+        line.
+  tools:
+    # No SwiftLint config in the repository, so its default rules would only
+    # add noise. markdownlint and LanguageTool would flag the README's HTML
+    # layout and Australian spelling.
+    swiftlint:
+      enabled: false
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    gitleaks:
+      enabled: true
+    zizmor:
+      enabled: true
+    ruff:
+      enabled: true
+
+chat:
+  art: false
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "CONTRIBUTING.md"
+      - "docs/apple-tv-focus.md"
+      - "docs/localisation.md"
+  # Learnings come from replies on Vivid PRs. Keep them to this repository.
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
+
+issue_enrichment:
+  auto_enrich:
+    enabled: false
