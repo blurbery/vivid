@@ -512,7 +512,7 @@ This does not establish complete converted-download or offline-playback coverage
 
 Series details expose Episode, Season and Series watched actions in that order. iOS uses the Watched menu; tvOS places them in the three-dot More menu.
 
-Cast and crew pages use Home-sized filmography posters (three columns on iPhone and compact iPad) and the shared, left-aligned title/year caption settings.
+Cast and crew pages use Home-sized filmography posters on iPhone and iPad (three columns on iPhone and compact iPad), the seven-across grid on Apple TV, and the shared, left-aligned title/year caption settings.
 Cached person metadata appears on reopening while fresh metadata and filmography load concurrently.
 On iOS, iPadOS and tvOS, the shared person formatter displays Emby birth/death timestamps as calendar dates, including timestamps with seven fractional digits.
 It preserves the source day, validates date and time/offset ranges and hides malformed values instead of showing raw numbers.

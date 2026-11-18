@@ -454,7 +454,8 @@ Visible and upcoming posters are warmed before the look-behind, with two request
 Visible or focused catalogue cards always remain eligible to load, and distant cards release their image through the same image view without replacing its subtree.
 Lightweight item metadata remains available for navigation; this is not a fixed total app-memory limit.
 Seven-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives.
-A page of seventy fills exactly ten seven-poster rows, so the last row is only part filled when a page comes back short, such as the last one, or the sixty-title pages of a person's filmography.
+A library page of seventy fills exactly ten seven-poster rows, so its last row is only part filled when a page comes back short, such as the last one.
+Search, collection pages and a person's filmography page by sixty, so their last row stays part filled until the next page arrives and completes it.
 The grids keep posters decoded for eight rows around the screen, two of them behind the first visible row.
 Native card controls, focus styling and layout are unchanged.
 The owner confirmed that the installed scrolling follow-up resolved the Movies and Series focus/artwork issue.
