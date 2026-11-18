@@ -283,10 +283,17 @@ struct MobilePlayerControls: View {
 
     // MARK: - Centre
 
+    /// Each centre button's square tap target: its 44-point circle plus the
+    /// 36-point gap the circles had between them, so the targets meet with
+    /// no spacing and the circles stay exactly where they were. A tap that
+    /// just missed play or pause used to land on the dimmed background and
+    /// hide the controls, which on an iPad took several tries to resume.
+    static let centreHitSize: CGFloat = VividTheme.topBarIconHitSize + 36
+
     /// Every circle matches the detail page's 44-point close and remote
     /// controls. Play and pause keep a white tint without a larger disc.
     private var centerCluster: some View {
-        HStack(spacing: 36) {
+        HStack(spacing: 0) {
             Button {
                 viewModel.skipBackward(10)
             } label: {
@@ -295,7 +302,7 @@ struct MobilePlayerControls: View {
                     .foregroundStyle(.white)
                     .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .buttonStyle(MobilePlayerGlassButtonStyle(hitSize: Self.centreHitSize))
             .accessibilityLabel("Skip Back 10 Seconds")
 
             Button {
@@ -309,7 +316,7 @@ struct MobilePlayerControls: View {
                     .offset(x: viewModel.isPlaying ? 0 : 1.5)
                     .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
+            .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9), hitSize: Self.centreHitSize))
             .accessibilityLabel(viewModel.isPlaying ? "Pause" : "Play")
 
             Button {
@@ -320,7 +327,7 @@ struct MobilePlayerControls: View {
                     .foregroundStyle(.white)
                     .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
             }
-            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .buttonStyle(MobilePlayerGlassButtonStyle(hitSize: Self.centreHitSize))
             .accessibilityLabel("Skip Forward 10 Seconds")
         }
     }

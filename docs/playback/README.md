@@ -68,6 +68,7 @@ Mobile playback retains Vivid’s controls, remaining time and pause indicator.
 While playing, controls dismiss after five seconds without interaction.
 Holding a control suspends dismissal and releasing it restarts the five seconds.
 A tap on the dimmed background hides the controls, except within 1.5 seconds of them appearing: then it restarts the five seconds, so a finger that just misses a centre button, or a quick second tap, doesn't hide them before play or pause can be reached.
+Back 10 seconds, play or pause and forward 10 seconds each take taps across an 80-point square around their 44-point circle, so the three targets meet and a tap between or just beside the circles still presses the nearest one instead of hiding the controls.
 Paused playback keeps controls visible until the viewer dismisses them.
 Four separate round glass buttons open scrollable anchored Quality, Audio, Subtitles and Chapters popovers.
 Quality shows the selected mode and compact one-line descriptions; choosing another mode uses the existing quality-change path and preserves position.

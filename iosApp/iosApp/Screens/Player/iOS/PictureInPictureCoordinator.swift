@@ -93,6 +93,8 @@ final class PictureInPictureCoordinator {
     @ObservationIgnored private var possibleWatch: NSKeyValueObservation?
     @ObservationIgnored private weak var boundLayer: AVPlayerLayer?
     @ObservationIgnored private var boundSampleSource: SampleBufferPiPSource?
+    /// A software picture's playback-state refresh is queued for the next turn.
+    @ObservationIgnored private var sampleRefreshPending = false
 
     // External screens: AirPlay video or a cable. Stays true through
     // AirPlay's short gap while an item reloads.
@@ -220,6 +222,16 @@ final class PictureInPictureCoordinator {
         relay(engine.$softwarePiPSource, from: engine) { coordinator, source in
             coordinator.sampleSourceDidChange(to: source)
         }
+        // A software picture's window asks for its paused state and time
+        // range only when told they changed. Without this, play or pause
+        // from the player, Now Playing or headphones left the window's
+        // button showing the old state, so its next press did nothing.
+        relay(engine.$state, from: engine) { coordinator, _ in
+            coordinator.samplePlaybackStateChanged()
+        }
+        relay(engine.$duration, from: engine) { coordinator, _ in
+            coordinator.samplePlaybackStateChanged()
+        }
         // The track can change while the video is in PiP or on another
         // screen. Hand over again once both the pick and the native track
         // table have settled, so the receiver draws the new track rather than
@@ -252,7 +264,9 @@ final class PictureInPictureCoordinator {
 
     /// Delivers one engine publisher. The engine lives on the main actor and
     /// publishes synchronously, so each value arrives in the same turn as the
-    /// change, and only while that engine is still the bound one.
+    /// change, and only while that engine is still the bound one. `@Published`
+    /// sends in `willSet`: use the delivered value, since the engine's own
+    /// property still holds the old one.
     private func relay<Value>(
         _ publisher: Published<Value>.Publisher,
         from engine: VividEngine,
@@ -630,6 +644,23 @@ final class PictureInPictureCoordinator {
 
     fileprivate func sampleSetPlaying(_ playing: Bool) {
         boundSampleSource?.setPlaying(playing)
+    }
+
+    /// Asks a software picture's window to read its paused state and time
+    /// range again. A native player's window follows the player itself.
+    ///
+    /// `@Published` delivers in `willSet`, while the engine still holds the
+    /// old value, so the window is told on the next main-actor turn, once
+    /// the change has landed. Changes in the same turn share one refresh.
+    private func samplePlaybackStateChanged() {
+        guard !sampleRefreshPending else { return }
+        sampleRefreshPending = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.sampleRefreshPending = false
+            guard self.backend == .sampleBuffer, self.boundSampleSource != nil else { return }
+            self.pipController?.invalidatePlaybackState()
+        }
     }
 
     fileprivate var sampleTimeRange: CMTimeRange {

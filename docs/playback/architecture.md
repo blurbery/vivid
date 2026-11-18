@@ -46,6 +46,9 @@ Credential updates use Vivid’s existing reload boundary.
 
 The iOS target uses the same pinned media package and Lucid Engine adapter as tvOS.
 It exposes the sample-buffer layer through the existing PiP coordinator, forwards PiP compositing state and honours the background-playback preference.
+While Picture in Picture shows the software sample-buffer picture, the coordinator tells its window to read the play state and duration again whenever the engine's play state or duration changes, so its play and pause button matches the player.
+It does this on the next main-actor turn, once the change has landed.
+A native player's window follows the player itself and is unchanged.
 The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation configuration remains platform-specific.
 
 Credential changes use Vivid’s reload boundary on both platforms.
@@ -152,6 +155,7 @@ Quality, Audio, Subtitles and Chapters use scrollable anchored popovers.
 An open popover pins the controls; their presentation host remains mounted during buffering and quality reloads so taps, scrolling and sheets retain a live owner.
 Rotate, Lock, PiP and AirPlay each keep a round glass button.
 The transport buttons sit at the centre of the player.
+Their tap targets are 80-point squares that meet edge to edge around the 44-point circles, so a tap that just misses a circle presses it rather than landing on the background.
 Visible controls remain mounted during seeking and buffering; each transport tap restarts a five-second auto-hide timer, and tapping the surrounding picture dismisses them.
 Open menus and sheets suspend auto-hide. iOS Skip Intro and Skip Credits use the same translucent Liquid Glass as other player buttons and retain a fixed gap above the measured bottom control stack when controls hide.
 The mobile Next Up layout preserves the player surface.
