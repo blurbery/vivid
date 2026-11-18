@@ -4,8 +4,10 @@
 Run by .github/workflows/claude-code-review.yml after its prepare step has
 written .claude-review/ (pr.md, diff.patch, files.txt, comments.md). The
 review runs in two passes: one looks for bugs in the code, then one checks
-what the PR description, docs and comments claim against the code. Claude
-gets read-only tools for reading, searching and listing files, and reports
+what the PR description, docs and comments claim against the code. A PR that
+only changes docs skips the code pass and spends the whole limit on the
+claims pass. Claude gets read-only tools for reading files (at the head commit
+or as they were before the PR), searching and listing files, and reports
 each finding through a tool as it goes, so a run stopped by its cost limit
 or a Claude API error still keeps what it found. This script never writes to
 GitHub; the workflow posts the result.
@@ -60,21 +62,26 @@ How to review:
    - UI states that miss a case: a button, menu item or message offered or worded wrongly for an item that's waiting, registering, failed, skipped or already downloaded.
    - Data assumptions: missing metadata dropped or defaulted so a label claims something not every item has, unknown values treated as a known value, or a filter applied in one place but not another.
    - Partial data: choices built from what's loaded so far (cached pages, the first season) while the rest is still loading.
+   - Regressions: behaviour the old code had that the change drops without the PR saying so, such as an error message with Retry, a loading or empty state, a fallback, a retry, a log line, an accessibility label or a focus target. Read the changed parts as they were before the PR with read_file and revision "base", list what they did, and check the new code still does it.
+   - Shared code changed for one caller: a modifier, style, helper or default changed in a shared component now changes every other caller too (for example a font or padding applied inside a component overrides what callers set). Find the other callers and check each one.
+   - New code that's never wired up: a helper, parameter, setting or view the PR adds that nothing calls or passes, especially when the PR description says the feature works.
+   - Tests: a new test file for shared code missing from the tvOS test target's file list (VividTVTests in iosApp/project.yml lists its files one by one), or a test whose assertions couldn't fail if the code broke (it never reaches the changed path, or a test double makes it pass regardless).
+   - Translations: for String Catalog (.xcstrings) entries the PR adds or changes, check each translation's grammar, gender and number agreement and tone, that its placeholders match the source string (%@, %lld and their order), and that one key isn't reused for two different contexts whose translator comment only fits one.
    - Documentation that says something the code doesn't do.
    - Also ordinary bugs, crashes, regressions, security problems, private details (keys, tokens, personal names or emails, server addresses, home-folder paths) and clear breaks of the AGENTS.md rules.
-4. Before reporting anything, check it again against the code. Trace the real path, confirm the trigger can happen (find a caller that reaches it), and drop the finding if you can't show how it goes wrong. If changed code has no callers at all, report that once as P3 instead of bugs inside it. Skip style nitpicks, requests for more tests and anything the compiler would catch.
+4. Before reporting anything, check it again against the code. Trace the real path, confirm the trigger can happen (find a caller that reaches it), and drop the finding if you can't show how it goes wrong. If changed code has no callers at all, report that once instead of bugs inside it: P2 when the PR says the feature works, P3 otherwise. Skip style nitpicks, general requests for more tests and anything the compiler would catch.
 5. Existing review comments are in the first message. Don't repeat a finding that's already there, even in different words, and accept a reply explaining why something isn't a problem unless the code clearly shows otherwise. When reviewing new commits, check that each earlier finding the author says is fixed really is fixed, and report a fix that's wrong or incomplete.
-6. Report each finding on a line the PR changed, with a priority: P1 for a crash, data loss, a security problem or a core feature broken; P2 for wrong behaviour a user can run into; P3 for minor issues and documentation. In the body, say what goes wrong, the situation that triggers it and how to fix it, in two to four sentences.
+6. Report each finding on a line the PR changed, with a priority: P1 for a crash, data loss, a security problem or a core feature broken; P2 for wrong behaviour a user can run into, behaviour the change drops, a feature the PR promises that isn't wired up, and a privacy, in-app or doc statement that's untrue for some users; P3 for minor issues and wording. In the body, say what goes wrong, the situation that triggers it and how to fix it, in two to four sentences.
 7. Call finish_review with a short summary: one line on what you reviewed, then the findings by priority with file names, or one line saying nothing needs fixing. Mention anything you couldn't check.
 
-Be thorough. Read every changed file, tests and docs included, before you finish, and keep going after your first finding: a review that ends after a couple of tool calls has almost always missed something. To keep it quick, make independent reads and searches together in one turn rather than one per turn, and read the parts of large files you need rather than whole files. Write in Australian English without em dashes."""
+Be thorough. Read every changed file, tests and docs included, before you finish, and keep going after your first finding: a review that ends after a couple of tool calls has almost always missed something. Before you call finish_review, go through each kind of bug in step 3 against each changed file once more and ask whether it applies. To keep it quick, make independent reads and searches together in one turn rather than one per turn, and read the parts of large files you need rather than whole files. Write in Australian English without em dashes."""
 
 CLAIMS_SYSTEM = """You check a pull request for Vivid, an Apple media app written in Swift and SwiftUI. Another reviewer has already looked for bugs in the code. Your only job is to check that what the PR says matches what the code does. You work on your own: nobody reads your messages until the review is posted, so never stop to ask a question.
 
 How to check:
 1. List the claims: each statement about behaviour in the PR description, in the changed docs and in code comments the PR adds or changes. That includes what the description says the PR fixes or adds.
-2. Check each claim against the code with read_file and search_code, following it far enough to know what actually happens. A claim has to hold in every case the code allows, not only the usual one.
-3. Report each claim that is wrong or only partly true with report_finding: P2 when the code doesn't do something the PR or docs promise, P3 when only the wording needs fixing. Say what the claim says, what the code actually does and how to fix it, in two to four sentences. Put it on the changed doc or comment line, or, for a promise in the description, on the changed code line it concerns.
+2. Check each claim against the code with read_file and search_code, following it far enough to know what actually happens. A claim has to hold in every case the code allows, not only the usual one: words like "every", "always", "never", "only", "all", "once" and exact numbers (counts, limits, timeouts, step sizes, request counts, cache and retry behaviour) are where claims usually go wrong, so find the paths that skip, retry, fall back or fail and check the claim still holds on each.
+3. Report each claim that is wrong or only partly true with report_finding: P2 when the code doesn't do something the PR or docs promise, or when a privacy statement (website/public/privacy.html or the in-app privacy text) overstates or understates what the app sends or stores; P3 when only the wording needs fixing. Check a doc sentence against the sentences around it too, and report one the change makes contradict its neighbours. Say what the claim says, what the code actually does and how to fix it, in two to four sentences. Put it on the changed doc or comment line, or, for a promise in the description, on the changed code line it concerns.
 4. Check that the PR keeps the existing docs current. Every PR must update the docs its change affects. Search README.md, docs/, THIRD_PARTY_NOTICES.md and website/public/privacy.html for the behaviour, settings, limits, names, endpoints, dependencies and data flows the changed code touches. Report each existing doc statement the change makes untrue, and each new or changed behaviour that a guide covering that area should now mention, as P3 on the changed code line, naming the doc and the line to update. A dependency change also needs THIRD_PARTY_NOTICES.md and the in-app licences, and a change to what the app sends or stores needs the privacy policy and in-app privacy text.
 5. Don't report claims that hold, wording preferences or anything already in the existing review comments, which include the code review's findings.
 6. Call finish_review with one line on what you checked, then the findings by priority with file names, or one line saying the claims match the code.
@@ -87,11 +94,12 @@ COMMENT_LINE = re.compile(r"^\+[ \t]*(//|/\*|\*|#[ \t])", re.MULTILINE)
 TOOLS = [
     {
         "name": "read_file",
-        "description": "Read lines from a file in the repository at the PR's head commit. Returns numbered lines, at most 400 per call.",
+        "description": "Read lines from a file at the PR's head commit, or as it was before the PR (revision \"base\") to see what the old code did. Returns numbered lines, at most 400 per call.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Path relative to the repository root."},
+                "revision": {"type": "string", "enum": ["head", "base"], "description": "\"head\" (the default) for the PR's version, \"base\" for the version before the PR."},
                 "start_line": {"type": "integer", "description": "First line to read (1-based). Defaults to 1."},
                 "end_line": {"type": "integer", "description": "Last line to read. Defaults to start_line + 399."},
             },
@@ -172,11 +180,26 @@ def safe_path(path):
     return target
 
 
-def read_file(path, start_line=1, end_line=None):
+# The commit the PR branched from, set in main(), for reading files as they
+# were before the PR.
+BASE_SHA = None
+
+
+def read_file(path, start_line=1, end_line=None, revision="head"):
     target = safe_path(path)
-    if not target.is_file():
+    if revision == "base":
+        relative = target.relative_to(Path.cwd().resolve()).as_posix()
+        result = git("show", f"{BASE_SHA}:{relative}")
+        if result.returncode != 0:
+            return f"{path} didn't exist before this PR."
+        lines = result.stdout.splitlines()
+        path = f"{path} (before the PR)"
+    elif revision != "head":
+        raise ValueError(f"unknown revision {revision!r}")
+    elif not target.is_file():
         return f"{path} doesn't exist at the head commit."
-    lines = target.read_text(errors="replace").splitlines()
+    else:
+        lines = target.read_text(errors="replace").splitlines()
     start = max(1, int(start_line))
     end = min(len(lines), int(end_line) if end_line else start + READ_LIMIT - 1, start + READ_LIMIT - 1)
     if start > len(lines):
@@ -239,6 +262,16 @@ def commentable_lines(merge_base, head):
 def changed_files(diff):
     """Files a diff adds or modifies, leaving out deleted and binary files."""
     return sorted({path for path in map(diff_path, diff.splitlines()) if path})
+
+
+def markdown_only(diff):
+    """Whether every file the diff touches, deleted and binary ones included, is Markdown."""
+    paths = []
+    for row in diff.splitlines():
+        if row.startswith("diff --git "):
+            # Both sides, so a rename from or to a non-Markdown file counts.
+            paths += re.findall(r'(?:^| )"?[ab]/(.+?)"?(?= "?b/|$)', row[len("diff --git "):])
+    return bool(paths) and all(path.endswith(".md") for path in paths)
 
 
 def cost_of(usage, prices):
@@ -337,8 +370,10 @@ def run_pass(client, settings, system, opening, to_read, budget):
             data = call.input or {}
             try:
                 if call.name == "read_file":
-                    output = read_file(data["path"], data.get("start_line", 1), data.get("end_line"))
-                    run["files_read"].add(os.path.normpath(data["path"]))
+                    revision = data.get("revision", "head")
+                    output = read_file(data["path"], data.get("start_line", 1), data.get("end_line"), revision)
+                    if revision == "head":
+                        run["files_read"].add(os.path.normpath(data["path"]))
                 elif call.name == "search_code":
                     output = search_code(data["pattern"], data.get("path"))
                 elif call.name == "list_files":
@@ -373,6 +408,8 @@ def main():
     parser.add_argument("--review-dir", default=".claude-review")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
+    global BASE_SHA
+    BASE_SHA = args.merge_base
 
     model = os.environ.get("REVIEW_MODEL", "claude-sonnet-5-5")
     effort = os.environ.get("REVIEW_EFFORT", "low")
@@ -388,13 +425,23 @@ def main():
     review_dir = Path(args.review_dir)
     diff = (review_dir / "diff.patch").read_text(errors="replace")
     to_read = changed_files(diff)
-    code = run_pass(client, settings, SYSTEM, first_message(args, review_dir), to_read, max_cost * CODE_SHARE)
-    passes = [("code", code)]
-    # The claims pass checks what the PR says against the code, with whatever
-    # the code pass left of the limit. New commits that touch no docs or
-    # comments add no claims to check.
     docs = [path for path in to_read if path.endswith(".md")]
-    if code["stopped"] != "refusal" and (args.mode == "full" or docs or COMMENT_LINE.search(diff)):
+    # A diff that only touches Markdown (in a full review, the whole PR; in a
+    # review of new commits, just those) has no code to hunt bugs in, so the
+    # claims pass gets the whole limit. Deleted and binary files count, so a PR
+    # that deletes code isn't treated as docs-only. Otherwise the claims pass
+    # checks what the PR says against the code with whatever the code pass
+    # left. New commits that touch no docs or comments add no claims to check.
+    passes = []
+    docs_only = markdown_only(diff)
+    if docs_only:
+        code = {"findings": [], "summary": None, "stopped": None, "turns": 0, "tool_calls": 0, "cost": 0.0, "files_read": set()}
+    else:
+        code = run_pass(client, settings, SYSTEM, first_message(args, review_dir), to_read, max_cost * CODE_SHARE)
+        passes.append(("code", code))
+    # A Markdown-only change always gets the claims pass, even one that only
+    # deletes or renames docs, so a run never ends with no pass at all.
+    if code["stopped"] != "refusal" and (docs_only or args.mode == "full" or docs or COMMENT_LINE.search(diff)):
         earlier = "\n".join(f"- Code review finding on {f['path']}:{f['line']}: {f['title']}" for f in code["findings"])
         opening = first_message(args, review_dir, earlier)
         passes.append(("claims", run_pass(client, settings, CLAIMS_SYSTEM, opening, docs, max_cost - code["cost"])))

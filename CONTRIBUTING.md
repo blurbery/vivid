@@ -112,7 +112,8 @@ Give reviewers enough detail to reproduce the problem and assess the change with
 Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
 Credit AI assistance accurately and distinguish your direction, review and physical testing from generated work or someone else’s checks.
 
-Pull requests from branches in `blurbery/vivid` also get an automated Claude review from `.github/workflows/claude-code-review.yml`, except drafts and Markdown-only changes.
+Pull requests from branches in `blurbery/vivid` also get an automated Claude review from `.github/workflows/claude-code-review.yml`, except drafts.
+Pull requests that only change Markdown files are reviewed too, with their claims checked against the code.
 Pull requests from forks do not, because GitHub withholds the review key from them.
 Check its comments against the source like any other review; they are not an approval.
 
