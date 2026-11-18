@@ -453,8 +453,8 @@ It keeps a small look-behind and releases earlier decoded image references as sc
 Visible and upcoming posters are warmed before the look-behind, with two requests at a time; queue updates can refill evicted images.
 Visible or focused catalogue cards always remain eligible to load, and distant cards release their image through the same image view without replacing its subtree.
 Lightweight item metadata remains available for navigation; this is not a fixed total app-memory limit.
-Six-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives.
-A page of seventy doesn't fill a whole number of six-poster rows, so the last row can be part filled until the next page arrives and completes it.
+Seven-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives.
+A page of seventy fills exactly ten seven-poster rows, so the last row is only part filled when a page comes back short, such as the last one, or the sixty-title pages of a person's filmography.
 The grids keep posters decoded for eight rows around the screen, two of them behind the first visible row.
 Native card controls, focus styling and layout are unchanged.
 The owner confirmed that the installed scrolling follow-up resolved the Movies and Series focus/artwork issue.
@@ -769,7 +769,7 @@ The changed shared code also needs iOS validation; the current tvOS build does n
 Read [focus ownership rules](apple-tv-focus.md) before changing navigation.
 Preserve series season/episode focus, context-menu restoration, and cancellation of obsolete artwork work.
 
-Cast and crew filmography uses Home’s dense poster width and shared title/year captions.
+Cast and crew filmography uses the same seven-across grid as the other catalogue grids, with shared title/year captions.
 The portrait at the top of a person's page is 200 by 300 points.
 Watchlist and Favourites no longer show Movie or Series pills on iOS or tvOS; the Filter menu's Show choice separates them instead.
 Library’s secondary tabs scroll with Watchlist, Favourites and Collections.
