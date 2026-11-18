@@ -21,9 +21,8 @@ enum TVPosterWallStore {
     }
 
     @MainActor static let revision = Revision()
-    /// Posters kept per profile, and drawn on the wall in all.
+    /// Posters kept per profile.
     private static let perProfile = 40
-    private static let wallLimit = 60
 
     private static var directory: URL {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -83,31 +82,26 @@ enum TVPosterWallStore {
         await writer.delete(scope: scope)
     }
 
-    /// The wall's posters: the saved profiles' posters mixed together.
+    /// One profile's wall: its own posters and nobody else's, so a child's
+    /// profile never shows the posters of a grown-up's library. Empty for a
+    /// profile behind a PIN and for one whose Home hasn't loaded on this
+    /// Apple TV, which then shows plain tiles.
     @MainActor
-    static func posters(for accounts: [TVSavedAccount]) async -> [UIImage] {
-        let folders = accounts.compactMap { account -> URL? in
-            guard !isLocked(account), let scope = scope(for: account) else { return nil }
-            return folder(scope)
+    static func posters(for account: TVSavedAccount) async -> TVPosterWallSet {
+        guard !isLocked(account), let scope = scope(for: account) else { return .empty }
+        let folder = folder(scope)
+        let load = Task.detached(priority: .userInitiated) { () -> TVPosterWallSet in
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            let files = names.filter { $0.hasSuffix(".jpg") }.sorted().map { folder.appendingPathComponent($0) }
+            var images: [UIImage] = []
+            for file in files {
+                // A turn to another profile while this one loads drops it.
+                if Task.isCancelled { return .empty }
+                if let image = UIImage(contentsOfFile: file.path)?.preparingForDisplay() { images.append(image) }
+            }
+            return TVPosterWallSet(files: files.map(\.path), images: images)
         }
-        let limit = wallLimit
-        return await Task.detached(priority: .userInitiated) {
-            let files = folders.map { folder -> [URL] in
-                let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-                return names.filter { $0.hasSuffix(".jpg") }.sorted().map { folder.appendingPathComponent($0) }
-            }
-            var mixed: [URL] = []
-            var seen = Set<String>()
-            var depth = 0
-            while mixed.count < limit, files.contains(where: { $0.count > depth }) {
-                for list in files where list.count > depth && mixed.count < limit {
-                    // Two profiles on one server save the same title once.
-                    if seen.insert(list[depth].lastPathComponent).inserted { mixed.append(list[depth]) }
-                }
-                depth += 1
-            }
-            return mixed.compactMap { UIImage(contentsOfFile: $0.path)?.preparingForDisplay() }
-        }.value
+        return await withTaskCancellationHandler { await load.value } onCancel: { load.cancel() }
     }
 
     /// One writer, so a profile's folder changes in one place.
@@ -167,15 +161,26 @@ enum TVPosterWallStore {
     }
 }
 
-/// Who's watching's background: a tilted wall of posters drifting slowly,
-/// alternate columns in opposite directions, dimmed towards the edges, with
-/// a glow in the focused profile's colour behind the profiles. Plain tiles
-/// stand in until a profile's Home has loaded on this Apple TV, and the wall
-/// holds still with Reduce Motion.
+/// The posters one profile's wall draws, decoded and ready.
+struct TVPosterWallSet: Equatable {
+    static let empty = TVPosterWallSet(files: [], images: [])
+
+    /// The saved files, which tell two sets apart.
+    let files: [String]
+    let images: [UIImage]
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.files == rhs.files }
+}
+
+/// Who's watching's background: a tilted wall of the focused profile's
+/// posters drifting slowly, alternate columns in opposite directions, dimmed
+/// towards the edges. Turning to another profile shuffles its posters in,
+/// tile by tile. Plain tiles stand in for a profile without posters, and
+/// with Reduce Motion the wall holds still and the posters cross-fade.
 struct TVPosterWall: View {
     let posters: [UIImage]
-    /// The focused profile's hue, from 0 to 1.
-    var glowHue: Double?
+    /// Counts the times the posters changed; each change shuffles the wall.
+    var generation = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isDrifting = false
@@ -199,9 +204,10 @@ struct TVPosterWall: View {
                         let rises = column.isMultiple(of: 2)
                         VStack(spacing: spacing) {
                             ForEach(0..<perColumn * 2, id: \.self) { row in
-                                tile(column: column, row: row % perColumn)
-                                    .frame(width: tileWidth, height: tileHeight)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                shuffledTile(
+                                    column: column, row: row % perColumn,
+                                    size: CGSize(width: tileWidth, height: tileHeight)
+                                )
                             }
                         }
                         .offset(y: rises == isDrifting ? -loop : 0)
@@ -220,13 +226,8 @@ struct TVPosterWall: View {
                         .init(color: .black.opacity(0.82), location: 0.6),
                         .init(color: .black.opacity(0.97), location: 1)
                     ],
-                    center: UnitPoint(x: 0.5, y: 0.55), startRadius: 0, endRadius: screen.size.width * 0.62
+                    center: UnitPoint(x: 0.5, y: 0.5), startRadius: 0, endRadius: screen.size.width * 0.62
                 )
-                RadialGradient(
-                    colors: [glowColor.opacity(glowHue == nil ? 0 : 0.42), .clear],
-                    center: UnitPoint(x: 0.5, y: 0.44), startRadius: 0, endRadius: screen.size.width * 0.27
-                )
-                .animation(.easeInOut(duration: reduceMotion ? 0.2 : 0.6), value: glowHue)
             }
             .frame(width: screen.size.width, height: screen.size.height)
             .clipped()
@@ -236,8 +237,28 @@ struct TVPosterWall: View {
         .onAppear { isDrifting = !reduceMotion }
     }
 
-    private var glowColor: Color {
-        Color(hue: glowHue ?? 0, saturation: 0.7, brightness: 0.95)
+    /// A tile that swaps its poster when the wall's posters change: the old
+    /// card shrinks away as the new one grows in, each tile at its own
+    /// moment so the wall looks shuffled. Only the tile changes identity,
+    /// never its column, which would restart the drift. Both copies of a
+    /// poster in a column share their moment, so the loop keeps no seam.
+    private func shuffledTile(column: Int, row: Int, size: CGSize) -> some View {
+        ZStack {
+            tile(column: column, row: row)
+                .frame(width: size.width, height: size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .id(generation)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.55).combined(with: .opacity))
+        }
+        .frame(width: size.width, height: size.height)
+        .animation(shuffle(column: column, row: row), value: generation)
+    }
+
+    private func shuffle(column: Int, row: Int) -> Animation {
+        if reduceMotion { return .easeInOut(duration: 0.4) }
+        // A steady scatter over 0.6 seconds, the same on every shuffle.
+        let step = (column &* 7 &+ row &* 11 &+ column &* row &* 3) % 13
+        return .spring(duration: 0.5, bounce: 0.22).delay(Double(step) / 12 * 0.6)
     }
 
     @ViewBuilder

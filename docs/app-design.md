@@ -439,16 +439,18 @@ The signed-in account has a ring around its saved-account avatar on Who’s watc
 Every card shows its name with the server underneath on Who’s watching (on the Apple TV arc the profiles to either side show their names alone, and the server is in the caption under the centre profile), and every Settings row its name with its role and server (only the server until that profile's session is next saved); a Silo card shows its viewing profile's name in Silo, the primary profile included, and Emby and Jellyfin cards their usernames (see [Silo household profiles](server-connections.md#silo-household-profiles)).
 Apple TV keeps its horizontal profile row in Settings.
 On Apple TV Who’s watching, the profiles sit on a shallow arc under the title, with no logo.
-The chosen profile is in the centre at full size, floating gently inside a white ring, with its name and server in large text underneath; the others are smaller and dimmer along the curve with their names under them.
+The chosen profile is in the centre of the screen at full size, floating gently inside a white ring, with its name and server in large text right under it; the others are smaller and dimmer along the curve with their names under them.
 Left and Right turn the arc to bring the next profile into the centre, and Add Profile is the last place on it.
 With three or more places the arc wraps around, so there are profiles on both sides of the chosen one; with an even number of places, four or more, the one directly opposite the centre is hidden until the arc turns.
 The whole arc is one focus target: centre opens the profile in the middle (its PIN prompt, or its sign-in page when it is signed out).
-Behind it a wall of library posters, tilted nine degrees, drifts slowly with alternate columns moving in opposite directions, darkened towards the edges, and a soft glow in a colour of the chosen profile's own sits behind the arc.
+Behind it a wall of library posters, tilted nine degrees, drifts slowly with alternate columns moving in opposite directions, darkened towards the edges.
+A soft glow sits behind the chosen profile's picture in its main colour, or in a steady colour of the profile's own when it has an emoji or initial, and fades out on Add Profile.
 The posters are small copies Vivid saves on the Apple TV, up to 40 per profile, each time the signed-in profile's Home loads, so the page needs no sign-in or server request; they stay out of the saved profile record and never go to iCloud.
-They come from the rows the profile shows on Home, other than Continue Watching and Next Up, and every profile's posters are mixed into one wall, so it shows nothing about what anyone watched.
+They come from the rows the profile shows on Home, other than Continue Watching and Next Up, so the wall shows nothing about what anyone watched.
+Once the arc settles on a profile, the wall shows only that profile's own posters, so a child's profile never shows posters from a grown-up's library; the outgoing profile's posters stay until the new ones shuffle in tile by tile, and Add Profile keeps the wall it finds.
 A profile with a Vivid PIN or a Silo profile PIN adds no posters, and deleting a profile, on this Apple TV or on another device through iCloud, removes its posters.
-Plain tiles stand in until a profile's Home has loaded once on that Apple TV.
-With Reduce Motion the wall holds still, the arc turns and rearranges without animation, the caption changes without a fade and the chosen profile doesn't float.
+Plain tiles stand in for a profile with a PIN, and for one whose Home hasn't loaded on that Apple TV yet.
+With Reduce Motion the wall holds still and cross-fades between profiles' posters, the arc turns and rearranges without animation, the caption changes without a fade and the chosen profile doesn't float.
 On iPhone and iPad, Who’s watching keeps the original row for one or two accounts, places Add Profile beneath three accounts, and uses a two-by-two layout for four.
 Five to eight use rows of three with the last row centred and Add Profile in the next place, under a smaller logo, and scroll only on a screen too short for them all.
 Each account keeps separate local metadata caches and playback/subtitle preferences.

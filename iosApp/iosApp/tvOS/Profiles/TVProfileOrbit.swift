@@ -1,4 +1,5 @@
 #if os(tvOS)
+import ImageIO
 import SwiftUI
 
 /// Who's watching's profiles, on a shallow arc that turns to bring the
@@ -27,9 +28,14 @@ struct TVProfileOrbit: View {
     @State private var pinAccount: TVSavedAccount?
     @State private var movingID: String?
     @State private var draftOrder: [String] = []
+    /// The main colour of each profile's picture, for the glow, by
+    /// ``TVProfileOrbitPlace/glowKey``.
+    @State private var glowColours: [String: Color] = [:]
+    /// The glow's colour, kept while it fades out on Add Profile.
+    @State private var glowColour: Color?
 
     var body: some View {
-        VStack(spacing: 34) {
+        VStack(spacing: 26) {
             Button(action: activate) {
                 TVProfileOrbitRing(
                     places: places,
@@ -38,6 +44,7 @@ struct TVProfileOrbit: View {
                     showsFocus: isFocused,
                     isArranging: movingID != nil
                 )
+                .background { glow }
             }
             .buttonStyle(.vividFlat)
             .focusEffectDisabled()
@@ -91,6 +98,15 @@ struct TVProfileOrbit: View {
             reportSelection()
         }
         .onAppear { reportSelection() }
+        // The centred profile's colour first. Turning the arc runs it again,
+        // which retries a picture that couldn't be read before.
+        .task(id: [selectedPlace?.glowKey ?? ""] + places.map(\.glowKey)) {
+            let centre = selectedPlace.map { [$0] } ?? []
+            for place in centre + places where glowColours[place.glowKey] == nil {
+                if let colour = await TVProfileGlow.colour(for: place) { glowColours[place.glowKey] = colour }
+                if Task.isCancelled { return }
+            }
+        }
         .task(id: scenePhase == .active && movingID == nil) {
             guard scenePhase == .active, movingID == nil else { return }
             while !Task.isCancelled {
@@ -167,6 +183,37 @@ struct TVProfileOrbit: View {
         let place = selectedPlace
         selectedID = place?.id
         onSelectionChange(place?.account)
+    }
+
+    // MARK: Glow
+
+    /// A soft light in the centred profile's colour, drawn on the avatar
+    /// so it stays centred behind it, and adding light to the posters
+    /// rather than tinting them. Add Profile has none; the glow fades out
+    /// in the colour it had.
+    private var glow: some View {
+        let place = selectedPlace
+        let colour = place.flatMap { place in
+            place.account.map { glowColours[place.glowKey] ?? TVProfileGlow.fallback(for: $0) }
+        }
+        let shown = colour ?? glowColour ?? .clear
+        let size = TVProfileOrbitRing.avatarSize
+        return RadialGradient(
+            stops: [
+                .init(color: shown.opacity(0.6), location: 0),
+                .init(color: shown.opacity(0.22), location: 0.45),
+                .init(color: .clear, location: 1)
+            ],
+            center: .center, startRadius: size * 0.3, endRadius: size * 2
+        )
+        .frame(width: size * 4, height: size * 4)
+        .opacity(colour == nil ? 0 : 1)
+        .blendMode(.plusLighter)
+        .allowsHitTesting(false)
+        .animation(.easeInOut(duration: reduceMotion ? 0.2 : 0.6), value: colour)
+        .onChange(of: colour, initial: true) { _, colour in
+            if let colour { glowColour = colour }
+        }
     }
 
     // MARK: Caption
@@ -314,7 +361,12 @@ struct TVProfileOrbitPlace: Identifiable, Equatable {
         lhs.id == rhs.id && lhs.name == rhs.name && lhs.account == rhs.account && lhs.avatarURL == rhs.avatarURL
     }
 
-    /// A steady colour of the profile's own for the wall's glow, from 0 to 1.
+    /// Tells the glow's colours apart: a new picture, from its image URL or
+    /// an image stored as the avatar, takes a new colour.
+    var glowKey: String { [id, avatarURL ?? "", profile?.avatarEmoji ?? ""].joined(separator: "|") }
+
+    /// A steady colour of the profile's own, for the glow of a profile
+    /// whose picture gives none, from 0 to 1.
     static func hue(for account: TVSavedAccount) -> Double {
         let total = account.id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 360 }
         return Double(total) / 360
@@ -363,7 +415,8 @@ struct TVProfileOrbitRing: View, Animatable {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 340)
+        // The centre avatar and its focus ring; the names hang below.
+        .frame(height: Self.avatarSize + 24)
     }
 
     private var wraps: Bool { places.count >= Self.wrapCount }
@@ -403,27 +456,30 @@ private struct TVProfileOrbitAvatar: View {
     private var floats: Bool { isCentre && !isArranging && !reduceMotion }
 
     var body: some View {
-        VStack(spacing: 18) {
-            avatar
-                .overlay {
-                    Circle().strokeBorder(.white, lineWidth: 5)
-                        .padding(-12)
-                        .opacity(showsFocus ? 1 : 0)
-                }
-                .offset(y: floats ? (isRising ? -7 : 7) : 0)
-                .animation(
-                    floats ? .easeInOut(duration: 2.4).repeatForever(autoreverses: true) : .easeOut(duration: 0.3),
-                    value: isRising
-                )
-                .modifier(ProfileArrangeWobble(active: isArranging && !isCentre))
-            Text(verbatim: place.name)
-                .font(.system(size: 36, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .frame(width: size * 1.5)
-                .shadow(color: .black.opacity(0.7), radius: 14)
-                .opacity(labelOpacity)
-        }
+        avatar
+            .overlay {
+                Circle().strokeBorder(.white, lineWidth: 5)
+                    .padding(-12)
+                    .opacity(showsFocus ? 1 : 0)
+            }
+            .offset(y: floats ? (isRising ? -7 : 7) : 0)
+            .animation(
+                floats ? .easeInOut(duration: 2.4).repeatForever(autoreverses: true) : .easeOut(duration: 0.3),
+                value: isRising
+            )
+            .modifier(ProfileArrangeWobble(active: isArranging && !isCentre))
+            // The name hangs under the avatar without taking room, so the
+            // centre avatar's caption can sit right beneath it.
+            .overlay(alignment: .top) {
+                Text(verbatim: place.name)
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .frame(width: size * 1.5)
+                    .shadow(color: .black.opacity(0.7), radius: 14)
+                    .opacity(labelOpacity)
+                    .offset(y: size + 18)
+            }
         .onChange(of: floats, initial: true) { _, floats in isRising = floats }
     }
 
@@ -444,6 +500,48 @@ private struct TVProfileOrbitAvatar: View {
                 .frame(width: size, height: size)
                 .background(.white.opacity(0.14), in: Circle())
         }
+    }
+}
+
+/// The glow's colour for a profile: the main colour of its picture, lifted
+/// to a bright light, or a steady colour of its own when it has an emoji or
+/// initial instead.
+enum TVProfileGlow {
+    static func fallback(for account: TVSavedAccount) -> Color {
+        Color(hue: TVProfileOrbitPlace.hue(for: account), saturation: 0.6, brightness: 0.9)
+    }
+
+    /// Reads the picture the avatar already loaded; nil without one.
+    static func colour(for place: TVProfileOrbitPlace) async -> Color? {
+        guard let account = place.account else { return nil }
+        let avatar = place.profile?.avatarEmoji?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let raw = ProfileAvatarResolver.serverResolvedImageURL(place.avatarURL)
+            ?? (ProfileAvatarResolver.isImage(avatar) ? ProfileAvatarResolver.imageURL(for: avatar) : nil)
+        guard let raw, let url = URL(string: raw) else { return nil }
+        let scope = place.profile.map {
+            VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: String($0.id))
+        } ?? VividCacheScope.artwork
+        guard let data = try? await VividImagePipeline.shared.data(for: VividImageRequest(url: url, cacheScope: scope))
+        else { return nil }
+        return await Task.detached(priority: .utility) { () -> Color? in
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceThumbnailMaxPixelSize: 48
+                  ] as CFDictionary),
+                  let tint = HeroBackdropPalette.dominantTint(of: thumbnail) else { return nil }
+            return bright(tint)
+        }.value
+    }
+
+    /// The sampled colour is dimmed for gradients, so this keeps its hue
+    /// and raises it to a light. A picture with little colour glows white.
+    private static func bright(_ tint: Color) -> Color {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(tint).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        guard saturation > 0.15 else { return Color(white: 0.85) }
+        return Color(hue: hue, saturation: min(max(saturation, 0.45), 0.8), brightness: 0.95)
     }
 }
 #endif
