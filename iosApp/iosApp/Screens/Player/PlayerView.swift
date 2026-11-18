@@ -289,7 +289,15 @@ struct PlayerView: View {
     private func surfaceWithSubtitles() -> some View {
         VividPlayerSurface(engine: player.vividEngine)
             .background(Color.black)
-            .overlay { subtitleLayer }
+            .overlay {
+                #if os(iOS)
+                // While an AirPlay receiver has the title the phone keeps
+                // only its black video area; the receiver shows subtitles.
+                if !player.isAirPlayVideoHandedOff { subtitleLayer }
+                #else
+                subtitleLayer
+                #endif
+            }
     }
 
     private var subtitleLayer: some View {

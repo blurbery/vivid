@@ -179,7 +179,7 @@ Every signature, label, default, optionality and return type is exact.
 | background hook | `var onEnterBackground: (() -> Void)?` (default nil) | core | Adapter sets it on iOS only, before `initialize` | Declare it on both platforms. Called first in the background handler (section 9.6). *Vivid (`bca4095`)* |
 | initialise | `func initialize(in window: UIWindow, hostView: UIView) -> Bool` | core | Adapter, main, once per core, after the host view has a window | Section 6.2. On `true` the adapter immediately reads its own `managedStreamsRegistered` (set inside the options hook) and `sampleBufferDisplayLayer`, so the options hook must have run synchronously inside this call. On `false` the adapter fails the load with "Lucid could not initialise." and keeps the core until its next `stop()`. |
 | display layer | `var sampleBufferDisplayLayer: VividSampleBufferLayer? { get }` | core | Adapter, main: sets `videoGravity`, wraps it for PiP on iOS (not for audio-only loads) | The same object whose address was passed as `wid`, from a successful `initialize` until `dispose`; nil before and after. One new layer per core. |
-| visibility | `func setVisible(_ visible: Bool)` | core | Adapter, main, always `true`, once per load | Section 9.3. |
+| visibility | `func setVisible(_ visible: Bool)` | core | Adapter, main: `true` once per load; on iOS also `false` while an AirPlay video hand-off is engaged, then `true` when it ends | Sections 9.3 and 9.7. |
 | layout | `func updateFrame(_ frame: CGRect? = nil)` | core | `VividMPVHostView.layoutSubviews` and the adapter's PiP handler, main, always with no argument | Section 7.5. A safe no-op before a successful `initialize` and after `dispose`. |
 | external display refresh | `func externalDisplayDidChange()` | core | Adapter's PiP handler (both platforms), the external-display coordinator; main | Runs the placement refresh (section 9.3). Must exist on tvOS. |
 | PiP subtitle compositing | `func setPipSubtitleCompositing(_ enabled: Bool)` | core | Adapter's PiP handler (both platforms), main | Section 9.5. Must exist on tvOS, where it does nothing. |
@@ -1358,6 +1358,10 @@ In every case the container's `isHidden` then equals "not visible" (implicit ani
 
 `setVisible(true)`: does nothing without a container; otherwise records the core as visible, runs the placement refresh, and unhides the container with implicit animations disabled.
 Vivid calls it once per load, straight after `initialize`; on iOS it reveals the container that `initialize` left hidden (section 6.2), and on both platforms it gives the container its flexible autoresizing mask through the move.
+On iOS Vivid also calls it again when an AirPlay video hand-off ends (section 9.7).
+
+`setVisible(false)`: does nothing without a container; otherwise records the core as not visible, runs the placement refresh, and hides the container.
+Vivid calls it only on iOS, when an AirPlay video hand-off engages, so the device shows a black video area with no picture or subtitles (section 9.7).
 
 On tvOS there is never an external target, so the refresh always keeps or returns the container to the host view.
 
@@ -1411,7 +1415,13 @@ Display-relevant points:
 ### 9.7 AirPlay and screen mirroring
 
 - The bridge has no AirPlay-specific logic.
-  This pipeline has no `AVPlayer` for video, so there is no AirPlay video hand-off.
+  This pipeline has no `AVPlayer` for video, so the bridge never hands video to an AirPlay receiver.
+- On iPhone and iPad, AirPlay to a video receiver (an Apple TV or a TV with AirPlay) is handled outside the bridge, in the player controller.
+  It pauses and mutes the engine through the ordinary caller requests, hides the picture with `setVisible(false)`, and gives the title to a separate `AVPlayer` whose stream the receiver fetches and plays; it never uses the adapter's internal `AVPlayer`.
+  When the receiver is lost, or doesn't start the stream in time, the controller reloads the engine with a fresh load at the receiver's position.
+  Picture in Picture is unavailable during a hand-off.
+  Because that `AVPlayer` prefers external playback, starting a server title while the device is using AirPlay Screen Mirroring to an Apple TV hands the video to the TV as a stream instead of mirroring the host view as the next point describes.
+  The [playback architecture](architecture.md#airplay-video) describes the hand-off.
 - When no external-role scene is adopted (the expected case today, section 9.2), iOS mirrors the device screen to a cable display or to AirPlay Screen Mirroring, so the video is mirrored as part of the host view, and the recorder's `externalScreen` field reads false.
 - If an external-role scene exists at load time and is adopted, video moves as described in section 9.4, and Picture in Picture pulls it back to the device.
 - AirPlay audio (for example to HomePod) is handled by the engine's audio output and the adapter's AirPlay options.
@@ -1943,7 +1953,7 @@ Nothing else calls the setters.
 | A 64-bit integer property setter | No caller. | Nothing. |
 | A second Picture in Picture flag | Declared but never set anywhere. | Every Picture in Picture condition tests only `isPipActive`. |
 | `updateFrame` with an explicit frame | Every call passes no argument. | Keep the signature; a non-nil frame needs no particular behaviour. |
-| `setVisible(false)` | The adapter only passes `true`. | Keep the signature; `false` needs no particular behaviour. |
+| `setVisible(false)` | Only the iOS AirPlay video hand-off passes `false` (section 9.7). | Hide the container as section 9.3 describes. |
 | A second `initialize` on an initialised core | The adapter creates a new core for every load and initialises it once. | Need not be supported; returning `true` with no other effect is the simplest safe choice. |
 | Getters no caller reads: cached duration, time position, video size, signal peak, Dolby Vision profile and level, container frame rate, and "has a live handle"; plus the duration and time-position caches that fed only those getters | No reference outside the previous bridge's files. | No public API. The pause state, signal peak and display caches still exist internally where sections 6 and 8 use them. |
 | A `DEBUG`-only hook that feeds a synthetic `pause` observation | No test calls it. | Nothing. |
@@ -2249,7 +2259,8 @@ iPhone and iPad:
 - [ ] Background with background playback off: playback pauses.
 - [ ] Lock and unlock while paused and while playing.
 - [ ] Control Centre pull-down and release while paused: one paused redraw (a brief seeking state), picture unchanged.
-- [ ] AirPlay audio route change during playback: audio moves, video stays on the device.
+- [ ] AirPlay audio route change during playback to an audio-only receiver (HomePod or an AirPlay speaker): audio moves, video stays on the device.
+- [ ] AirPlay to a video receiver (Apple TV or a TV with AirPlay) during playback: the engine pauses and its picture hides while the receiver plays the title; the device's controls drive the receiver; disconnecting reloads the engine (a fresh load) at the receiver's position with picture and subtitles; a receiver that can't start the stream falls back to the device (section 9.7).
 - [ ] External display with an HDMI adapter, and with AirPlay Screen Mirroring: record whether video moves to the external screen (with a black device screen) or mirrors, and the latest-playback report's `externalScreen` value.
   Unplug during playback and record what the bridge shows (section 14.2).
 - [ ] Simulator: software decoding works.

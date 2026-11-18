@@ -89,6 +89,9 @@ extension PlayerViewModel {
     /// left.
     private var canUseQualityFallback: Bool {
         playbackFallbackMode != nil && !isDisposed && isPlaying
+            // An AirPlay receiver fetches its own stream; Lucid's quality
+            // isn't what's stalling.
+            && !vividPlaybackController.isAirPlayHandOffEngaged
             && playbackFallbackMode?.isActive(qualityID: activeQualityId) == true
             && activeVividLoadEpoch != nil && startedVividLoadEpoch == activeVividLoadEpoch
             && !isAudioOnlyVividLoad && lastLoadRequest?.offlineDownloadId == nil
@@ -119,6 +122,18 @@ extension PlayerViewModel {
             playbackFallbackMode = PlaybackFallbackMode(rawValue: qualityId)
             playbackFallbackGate = PlaybackFallbackGate()
         }
+        #if os(iOS)
+        if vividPlaybackController.isAirPlayHandOffEngaged {
+            // An AirPlay receiver has the title: it gets a new stream at this
+            // quality, which Lucid also uses when it takes the title back.
+            lastLoadRequest?.preferredQualityOverride = resolvedQualityId
+            lastLoadRequest?.carriedBandwidthCap = nil
+            activeQualityId = resolvedQualityId
+            qualitySwitchError = nil
+            restartAirPlayReceiverIfHandedOff()
+            return
+        }
+        #endif
 
         let target = currentTime.isFinite ? max(0, currentTime) : 0
         isQualitySwitching = true

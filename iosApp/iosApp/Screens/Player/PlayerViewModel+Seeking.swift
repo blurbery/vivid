@@ -210,7 +210,10 @@ extension PlayerViewModel {
         pendingUnexpectedEndEpoch = nil
         let clampedTarget = duration > 0 ? min(max(0, target), duration) : max(0, target)
         let requiresReplan: Bool
-        if let timeline = vividPlaybackController.activeSpec?.timeline,
+        if vividPlaybackController.isAirPlayHandOffEngaged {
+            // The receiver's stream covers the title, so its seeks stay local.
+            requiresReplan = false
+        } else if let timeline = vividPlaybackController.activeSpec?.timeline,
            case .local = timeline.seekDisposition(forSourceTime: clampedTarget) {
             requiresReplan = false
         } else {

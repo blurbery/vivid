@@ -239,7 +239,7 @@ The probe never selects the `avfoundation` outputs, so it never touches the AO's
 
 **Audio session.**
 "AirPlay" is decided once per load on tvOS: the current `AVAudioSession` route has an output whose port type is AirPlay.
-Vivid activates the shared session itself (category playback, mode moviePlayback, route-sharing policy longFormAudio) before creating each player, and deactivates it only after every retired player has finished tearing down.
+Vivid activates the shared session itself (category playback, mode moviePlayback, route-sharing policy longFormVideo on iOS and longFormAudio on tvOS) before creating each player, and deactivates it only after every retired player has finished tearing down.
 
 **Never used.**
 Vivid never sets `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x`, `video-scale-y`, `panscan`, `video-aspect-override`, `video-rotate`, `avfoundation-queue-lead-ms`, `avfoundation-osd-max-height`, `avfoundation-osd-video-res`, `audio-buffer`, `audio-device`, `ao-volume`, `ao-mute`, `mute`, `ao-avfoundation-accept-compressed`, `ao-avfoundation-compressed-lead`, `sub-video-rect-aspect`, `deinterlace`, `hwdec-image-format`, `tone-mapping`, any `target-*` option other than `target-colorspace-hint`, `af`, `vf`, `lavfi-complex`, `display-fps`, `override-display-fps`, `video-sync` or `force-window`.

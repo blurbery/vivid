@@ -628,6 +628,7 @@ Emby continues through its separate adapter.
 
 Native v2 playback uses the server's installation identity and sequenced progress contract.
 Its session-scoped stream references are retained, while account credentials remain request headers.
+An AirPlay video receiver can't send headers, so on iPhone and iPad Vivid starts a separate native v2 playback attempt for it without header-authenticated media and hands it a URL carrying the `st` reference, never the account token; Jellyfin and Emby receiver URLs carry the account's access token instead (see [AirPlay video](playback/architecture.md#airplay-video)).
 On native v2, Vivid accepts only relative `/api/v2/` media paths and refuses absolute URLs, so it doesn't ask a v2 server for proxy media origins (`authorized_media_origins_v1`).
 A server that isn't asked for that feature is expected to keep streams on the API origin even when it has a proxy node; one that returns a proxy URL anyway fails every route.
 Download registries and monitors consume every cursor page before reconciliation; file status reports retain the downloaded revision.

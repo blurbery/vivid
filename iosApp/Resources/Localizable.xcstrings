@@ -10486,6 +10486,41 @@
         }
       }
     },
+    "App privacy information · Updated 18 November 2026" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzinformationen der App · Aktualisiert am 18. November 2026"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Información de privacidad de la app · Actualizada el 18 de noviembre de 2026"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidentialité de l’app · Mise à jour le 18 novembre 2026"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appのプライバシー情報 · 2026年11月18日更新"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 隐私信息 · 更新于 2026 年 11 月 18 日"
+          }
+        }
+      }
+    },
     "App privacy information · Updated 19 October 2026" : {
       "extractionState" : "stale",
       "localizations" : {

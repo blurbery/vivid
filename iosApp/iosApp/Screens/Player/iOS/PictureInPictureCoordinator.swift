@@ -19,6 +19,10 @@ import OSLog
 final class PictureInPictureCoordinator {
     static let shared = PictureInPictureCoordinator()
 
+    /// Posted on the main thread whenever Picture in Picture starts, stops
+    /// or fails to start, for state that depends on it (the AirPlay button).
+    static let engagementDidChangeNotification = Notification.Name("VividPictureInPictureEngagementDidChange")
+
     /// Why a tap on Picture in Picture didn't start it, so the player can
     /// say so rather than leave the button looking dead.
     enum StartFailure {
@@ -82,6 +86,9 @@ final class PictureInPictureCoordinator {
     @ObservationIgnored private var callbacks = Callbacks()
     @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
     @ObservationIgnored private var routeObserver: NSObjectProtocol?
+    /// Set while an AirPlay receiver plays the bound engine's title. The
+    /// engine is paused then, so PiP can't start, by hand or automatically.
+    @ObservationIgnored private var isSuppressed = false
 
     // The AVKit controller and the picture it was built from.
     @ObservationIgnored private var backend: Backend?
@@ -189,12 +196,23 @@ final class PictureInPictureCoordinator {
         self.owner === owner && isEngaged
     }
 
+    /// Holds Picture in Picture back while an AirPlay hand-off has `engine`'s
+    /// title. A window already up is left alone: stopping it with the player
+    /// off screen would end the whole session.
+    func setSuppressed(_ suppressed: Bool, for engine: VividEngine) {
+        guard boundEngine === engine, isSuppressed != suppressed else { return }
+        isSuppressed = suppressed
+        pipController?.canStartPictureInPictureAutomaticallyFromInline = !suppressed
+        isPossible = !suppressed && pipController?.isPictureInPicturePossible == true
+    }
+
     func toggle() {
         guard let pipController else { return }
         if pipController.isPictureInPictureActive || isActive {
             pipController.stopPictureInPicture()
             return
         }
+        guard !isSuppressed else { return }
         if pipController.isPictureInPicturePossible {
             pipController.startPictureInPicture()
         } else {
@@ -433,7 +451,7 @@ final class PictureInPictureCoordinator {
         self.bridge = bridge
         self.backend = backend
         controller.delegate = bridge
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = !isSuppressed
         possibleWatch = controller.observe(
             \.isPictureInPicturePossible,
             options: [.initial, .new]
@@ -441,7 +459,7 @@ final class PictureInPictureCoordinator {
             let possible = watched.isPictureInPicturePossible
             Task { @MainActor [weak self] in
                 guard let self, self.controllerToken == token else { return }
-                self.isPossible = possible
+                self.isPossible = possible && !self.isSuppressed
             }
         }
     }
@@ -494,6 +512,7 @@ final class PictureInPictureCoordinator {
         showsOnExternalScreen = false
         rebindAfterStop = false
         stopForRebind = false
+        isSuppressed = false
         boundEngine = nil
         owner = nil
 
@@ -552,6 +571,7 @@ final class PictureInPictureCoordinator {
         isActive = true
         applyNativeSubtitleOwnership()
         Self.log.info("PiP started")
+        NotificationCenter.default.post(name: Self.engagementDidChangeNotification, object: self)
         if stopForRebind {
             pipController?.stopPictureInPicture()
         }
@@ -595,6 +615,7 @@ final class PictureInPictureCoordinator {
         let restored = restoreConfirmed
         restoreConfirmed = false
         Self.log.info("PiP stopped restored=\(restored ? 1 : 0, privacy: .public)")
+        NotificationCenter.default.post(name: Self.engagementDidChangeNotification, object: self)
         rebindIfDeferred()
         finishEngagement(runningCleanup: !restored)
     }
@@ -605,6 +626,7 @@ final class PictureInPictureCoordinator {
         isActive = false
         applyNativeSubtitleOwnership()
         Self.log.error("PiP failed to start: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+        NotificationCenter.default.post(name: Self.engagementDidChangeNotification, object: self)
         callbacks.startFailure?(.failed(error))
         rebindIfDeferred()
         finishEngagement(runningCleanup: true)

@@ -13,6 +13,20 @@ extension PlayerViewModel {
     // MARK: - Audio
 
     func selectAudio(_ track: PlayerTrack) {
+        #if os(iOS)
+        if vividPlaybackController.isAirPlayHandOffEngaged {
+            // An AirPlay receiver has the title: it gets a new stream with
+            // this track, and Lucid picks it up when it takes the title back.
+            viewingAudioLanguage = viewingAudioLanguage(for: track)
+            pendingAudioFfIndex = nil
+            selectedAudioId = track.trackId
+            audioPickedForCurrentItem = true
+            reapplyAutomaticSubtitlePolicy()
+            restartAirPlayReceiverIfHandedOff()
+            scheduleHideControls()
+            return
+        }
+        #endif
         guard activePreparedProtocolV3 != nil else {
             viewingAudioLanguage = viewingAudioLanguage(for: track)
             pendingAudioFfIndex = nil
@@ -164,6 +178,15 @@ extension PlayerViewModel {
     /// The last step of a picker choice: a reload when the server has to
     /// draw a different subtitle in, otherwise the engine switches.
     private func applyUserSubtitlePick(_ trackId: Int64?) {
+        #if os(iOS)
+        // An AirPlay receiver only shows the server's subtitles, so a pick
+        // gets it a new stream; Lucid picks it up when it takes the title
+        // back.
+        if restartAirPlayReceiverIfHandedOff() {
+            scheduleHideControls()
+            return
+        }
+        #endif
         if !reloadForServerBurnInIfNeeded(reason: "user_selection") {
             applySubtitleTrackSelection(trackId, reason: "user_selection")
         }

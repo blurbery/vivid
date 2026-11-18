@@ -232,7 +232,7 @@ extension PlayerViewModel {
         // before the next episode has shown its own first frame.
         guard !hasReachedEndOfFile, error == nil, !isLoading, !isBuffering,
               isPlaying, !isScrubbing, seekTargetTime == nil,
-              !vividPlaybackController.engine.isSeeking, !isQualitySwitching,
+              !vividPlaybackController.isSeeking, !isQualitySwitching,
               protocolV3ReplanTask == nil,
               let epoch = activeVividLoadEpoch,
               startedVividLoadEpoch == epoch else { return }
@@ -401,7 +401,7 @@ extension PlayerViewModel {
     private func updateNextUpCountdownForActivePlayback(at movieTime: Double) {
         guard error == nil, !isLoading, !isBuffering, isPlaying,
               !isScrubbing, seekTargetTime == nil, !isQualitySwitching,
-              !vividPlaybackController.engine.isSeeking, protocolV3ReplanTask == nil,
+              !vividPlaybackController.isSeeking, protocolV3ReplanTask == nil,
               showNextUpScreen,
               !isNextUpTransitioning,
               !nextUpScreenVideoEnded,
