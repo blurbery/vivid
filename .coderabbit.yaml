@@ -5,8 +5,8 @@
 # PR review limit depends on the repository's star count, and Vivid gets one
 # review an hour. Every review, including one asked for in a comment, uses it,
 # and a PR that is rate limited is not reviewed later on its own. So CodeRabbit
-# reviews each ready PR once, automatically, and skips docs PRs, drafts, bot PRs
-# and large generated or vendored files. Batch fixes into one push and comment
+# reviews each ready PR once, automatically, including docs PRs, and skips
+# drafts, bot PRs and large generated or vendored files. Batch fixes into one push and comment
 # `@coderabbitai review` when you want it to look again, and comment
 # `@coderabbitai rate limit` to see when the next review is free.
 #
@@ -59,14 +59,12 @@ reviews:
     # someone comments `@coderabbitai review`, so fix-up pushes don't use the
     # hour's review or crowd out a newly opened PR.
     auto_incremental_review: false
-    # Docs PRs (titles with `docs:` or `docs(`) are checked by the Docs job.
-    # Keywords match anywhere in the title, ignoring case, so they are kept
-    # specific: a bare "wip" would also skip "fix: wipe downloads". Add
-    # "[skip review]" to any other title to skip it, then comment
-    # `@coderabbitai review` if you change your mind.
+    # Docs PRs are reviewed too: the Docs job only checks links, paths and
+    # em dashes, not whether the text is right. Keywords match anywhere in the
+    # title, ignoring case, so they are kept specific: a bare "wip" would also
+    # skip "fix: wipe downloads". Add "[skip review]" to a title to skip it,
+    # then comment `@coderabbitai review` if you change your mind.
     ignore_title_keywords:
-      - "docs:"
-      - "docs("
       - "[skip review]"
       - "[WIP]"
       - "WIP:"
@@ -117,6 +115,22 @@ reviews:
           names, media server usernames, library or account IDs, API keys,
           tokens or passwords. Placeholders such as example.com,
           user@example.com and <account-id> are fine. Pass otherwise.
+      - name: "Docs up to date"
+        mode: warning
+        instructions: >-
+          Every PR must keep Vivid's docs up to date. For each behaviour,
+          setting, default, limit, file path, workflow or process the diff
+          changes, search README.md, CONTRIBUTING.md, AGENTS.md, everything
+          under docs/, website/public/privacy.html and the in-app privacy
+          text for statements about it, including files the PR does not
+          touch. Fail when any of them still describes the old behaviour or
+          now contradicts the code or another doc, naming each file and line
+          and what it should say. Also fail when the PR changes dependencies
+          without updating THIRD_PARTY_NOTICES.md and the in-app licences, or
+          changes what the app sends or stores without updating the privacy
+          policy. Pass otherwise, including when the PR's "Documentation
+          impact" section explains why no doc needed changing and that
+          reason holds.
   path_filters:
     # Large generated or vendored files that would use up review capacity.
     # The String Catalogs hold real translations, but at over 2 MB they are
@@ -128,6 +142,14 @@ reviews:
     - "!diagnostics-relay/fixtures/**"
     - "!website/public/fonts/**"
   path_instructions:
+    - path: "**"
+      instructions: >-
+        Treat the docs as part of the code. When this file changes how
+        something behaves, search README.md, CONTRIBUTING.md, AGENTS.md and
+        docs/ for descriptions of it, even in files this PR does not touch,
+        and flag any that are now wrong or incomplete, quoting the stale
+        line and what it should say. Numbers matter: check defaults, limits,
+        step sizes, timeouts and counts in the docs against the code.
     - path: "iosApp/**/*.swift"
       instructions: >-
         Vivid's design (layout, navigation, focus behaviour, colours,
@@ -183,9 +205,11 @@ reviews:
     - path: "**/*.md"
       instructions: >-
         Docs use Australian English, no em dashes, and one sentence per line.
-        Check that the text matches the code in this PR and does not
-        contradict other docs. Do not suggest reflowing sentences onto one
-        line.
+        Check every factual claim (behaviour, defaults, limits, numbers, file
+        paths, commands, workflow and job names) against the code in the
+        repository, not only the files in this PR, and flag anything that is
+        wrong, out of date or contradicts another doc, quoting both sides.
+        Do not suggest reflowing sentences onto one line.
   tools:
     # No SwiftLint config in the repository, so its default rules would only
     # add noise. markdownlint and LanguageTool would flag the README's HTML
