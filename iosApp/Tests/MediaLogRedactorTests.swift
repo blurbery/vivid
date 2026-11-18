@@ -112,6 +112,11 @@ final class MediaLogRedactorTests: XCTestCase {
         XCTAssertEqual(MediaLogRedactor.sanitize("open url?token=abc123, retries=1"), "open url?token=[redacted], retries=1")
     }
 
+    func testRedactsJellyfinApiKeyQueryParameter() {
+        XCTAssertEqual(MediaLogRedactor.sanitize("open url?ApiKey=abc123, retries=1"), "open url?ApiKey=[redacted], retries=1")
+        XCTAssertEqual(MediaLogRedactor.sanitize("apikey=abc123"), "apikey=[redacted]")
+    }
+
     func testBoundsUntrustedErrorText() {
         XCTAssertLessThanOrEqual(MediaLogRedactor.sanitize(String(repeating: "x", count: 10_000), maxLength: 128).count, 128)
         XCTAssertEqual(MediaLogRedactor.sanitize("secret", maxLength: 2).count, 2)

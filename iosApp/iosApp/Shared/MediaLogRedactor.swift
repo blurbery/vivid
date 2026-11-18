@@ -117,7 +117,7 @@ enum MediaLogRedactor {
 
         static let trailing: [Rule] = [
             // T1: credential query parameters.
-            Rule("\\b(access_token|api_key|auth|authorization|credential|jwt|profile_token|refresh_token|sig|signature|st|token)"
+            Rule("\\b(access_token|api_key|apikey|auth|authorization|credential|jwt|profile_token|refresh_token|sig|signature|st|token)"
                  + "\\s*=\\s*[^&\\s,;\\[\\]}][^&\\s,;\\]}]*", "$1=[redacted]"),
             // T2: tokens shaped like a JWT.
             Rule("\\b[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b", "[redacted-token]"),

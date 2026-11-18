@@ -23,6 +23,7 @@ The current user's details come from `/Users/{userId}`, and its `Policy.IsAdmini
 Requests capture their account identity and reject results after a session switch.
 Authentication uses Jellyfin's MediaBrowser authorisation header.
 Credentials are not placed in generated image, subtitle or media URLs, and API redirects are rejected.
+Credential query parameters such as `ApiKey` and `api_key` are removed from server-provided transcode URLs, because Vivid sends credentials in request headers.
 Custom server base paths are preserved without adding `/emby` or `/jellyfin`.
 
 ### Quick Connect
