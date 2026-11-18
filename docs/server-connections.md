@@ -374,6 +374,30 @@ The Silo and Jellyfin rows come from their source code.
 In the app on simulators (an iPad Pro 13-inch with a Silo account, and an iPhone 18 Pro with Emby and Jellyfin accounts), the index found `spiderman`, `xmen`, `interstelar` and `harry poter goblet` on all three servers, including where the server itself returned nothing (Emby for all four), and a query the index couldn't match fell back to the pieces and the hyphen step.
 Apple TV and physical devices haven't been tried yet.
 
+### Other saved profiles
+
+Below the current profile's results, Search shows a row for each other saved profile on the device that has matches, headed by its picture, name and server nickname (the label Who's watching shows under it), on iPhone, iPad and Apple TV with Silo, Emby and Jellyfin alike.
+Each row holds up to 20 titles from that profile's own server, follows the All, Movies and Series choice, and is left out when that profile finds nothing, fails or takes longer than 20 seconds.
+Each row shows as soon as its profile answers, after the rows already shown, so a slow server only holds back its own row and a shown row never moves.
+Nothing changes for someone with one saved profile.
+A profile with a Vivid PIN or a Silo profile PIN, or one that needs signing in again, is never searched.
+A Silo kids profile only sees its own results, with no other profiles' rows, and neither does a Silo profile whose details haven't loaded yet; Emby and Jellyfin have no kids profiles.
+
+Each profile is searched with its own saved session, straight to its own server, without switching to it.
+These searches never touch the current session: they don't go through its sign-in retry, a refreshed access token stays in memory only, and a refused one leaves the profile's row out rather than signing anything out.
+They send only the query as typed, as one catalogue request for up to 20 titles, without the image-size keys, which follow the current server.
+The on-device library index, the query's pieces and the hyphen step only run for the current profile, so a row only finds what that server matches itself: a typo such as `interstelar`, or `spiderman` on Emby, can find nothing there.
+Artwork comes from that profile's server.
+
+Choosing a title in another profile's row switches to that profile, then opens the title there, so playback, progress and watched state go to the server it's on.
+Choosing a row's header switches to that profile and runs the same search there.
+If the switch doesn't finish, nothing opens, since the same content ID can mean another title on another server.
+Search All Profiles in Settings > Profiles, shown once more than one profile is saved, turns the rows off.
+It's on until turned off and is kept on the device only.
+
+The searches are in [OtherProfileSearch](../iosApp/iosApp/Screens/Search/OtherProfileSearch.swift), the rows in [OtherProfileSearchRows](../iosApp/iosApp/Screens/Search/OtherProfileSearchRows.swift), the switch in [OtherProfileSwitch](../iosApp/iosApp/Screens/Search/OtherProfileSwitch.swift) and the setting in [OtherProfileSearchSettings](../iosApp/iosApp/Screens/Search/OtherProfileSearchSettings.swift).
+`OtherProfileSearchTests` cover which profiles are searched, the requests' credentials and headers, the in-memory refresh, and that the current session is left alone.
+
 ## Private iCloud account sync
 
 When iCloud is available, Vivid stores saved server accounts, login sessions and optional Vivid PIN records in an encrypted-values record (`account-vault-v1`) in the user’s private CloudKit database.

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The Search tab: library titles from the server and the on-device index,
-/// with titles to request below them when Seerr is set up.
+/// then the other saved profiles' titles a row each, with titles to request
+/// below them when Seerr is set up.
 struct SearchView: View {
     private let blurRequest: Int
     @Binding private var seededQuery: AppRouter.SearchRequest?
@@ -9,6 +10,7 @@ struct SearchView: View {
     @State private var model = SearchViewModel()
     @State private var requests = RequestSearchSectionViewModel()
     @State private var seerr = TVSeerrConnectionStore.shared
+    @State private var otherProfileSettings = OtherProfileSearchSettings.shared
     @Environment(AppRouter.self) private var router
 
     #if os(iOS)
@@ -40,6 +42,9 @@ struct SearchView: View {
             }
             .onChange(of: seerr.identity) {
                 updateRequests()
+            }
+            .onChange(of: otherProfileSettings.isEnabled) {
+                model.otherProfilesSettingDidChange()
             }
             .onAppear {
                 model.warmUp()
@@ -96,6 +101,18 @@ struct SearchView: View {
         }
     }
 
+    /// The other saved profiles' rows go under whatever this profile shows,
+    /// "No results" and a failed search included. They wait while this
+    /// profile's first results are still coming, so the grid always lands
+    /// above them and never pushes them down.
+    @ViewBuilder
+    private var otherProfileRows: some View {
+        if otherProfileSettings.isEnabled, !model.isQueryBlank, !model.otherProfiles.isEmpty,
+           !(model.isSearching && model.results.isEmpty) {
+            OtherProfileSearchRows(rows: model.otherProfiles, query: model.otherProfilesQuery)
+        }
+    }
+
     private func emptyState(title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
         VStack {
             Spacer(minLength: 80)
@@ -148,6 +165,7 @@ struct SearchView: View {
                     typeTabs
                 }
                 content
+                otherProfileRows
                 if seerr.isConfigured {
                     RequestSearchSectionView(viewModel: requests)
                 }
@@ -268,6 +286,7 @@ struct SearchView: View {
                     .frame(maxWidth: .infinity)
                     .focusSection()
                 content
+                otherProfileRows
                 if seerr.isConfigured {
                     RequestSearchSectionView(viewModel: requests)
                 }

@@ -10452,7 +10452,7 @@
       }
     },
     "App privacy information · Updated 13 November 2026" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52337,6 +52337,9 @@
         }
       }
     },
+    "SEARCH" : {
+      "extractionState" : "manual"
+    },
     "SEARCH & PROFILE" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53364,6 +53367,10 @@
         }
       }
     },
+    "Search All Profiles" : {
+      "comment" : "Settings switch: Search also shows matches from the other saved profiles",
+      "extractionState" : "manual"
+    },
     "Search Term" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53433,6 +53440,14 @@
           }
         }
       }
+    },
+    "Search also shows matches from the other profiles saved on this Apple TV. Opening one switches to that profile. Profiles with a PIN aren’t searched." : {
+      "comment" : "Settings footer under the Search All Profiles switch on Apple TV",
+      "extractionState" : "manual"
+    },
+    "Search also shows matches from the other profiles saved on this device. Opening one switches to that profile. Profiles with a PIN aren’t searched." : {
+      "comment" : "Settings footer under the Search All Profiles switch on iPhone and iPad",
+      "extractionState" : "manual"
     },
     "Search and Profile stay at opposite ends. Only the tabs below move within the centre." : {
       "extractionState" : "manual",
@@ -53570,6 +53585,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索电影或剧集以进行请求"
+          }
+        }
+      }
+    },
+    "Search in %@ on %@" : {
+      "comment" : "Accessibility label for a saved profile's heading under Search's results, which switches to that profile and runs the same search there. The second value is the profile's server name, for example Emby",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search in %1$@ on %2$@"
           }
         }
       }

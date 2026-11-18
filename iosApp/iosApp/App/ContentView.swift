@@ -170,6 +170,7 @@ struct ContentView: View {
                     .onAppear { model.beginLoginPreparation() }
             case .authenticated:
                 TVMainTabView(router: router)
+                    .modifier(ProfileSwitchDestinationOpener(router: router))
             }
         }
     }
@@ -202,6 +203,7 @@ struct ContentView: View {
                     .onAppear { model.beginLoginPreparation() }
             case .authenticated:
                 MainTabView(router: router)
+                    .modifier(ProfileSwitchDestinationOpener(router: router))
             }
         }
     }
@@ -240,5 +242,21 @@ struct ContentView: View {
             EmptyStateView(icon: "questionmark.circle", title: "Unknown", subtitle: nil)
                 .vividPageBackground()
         }
+    }
+}
+
+/// Opens what a switch to another saved profile asked for (a title or a
+/// search from Search's other-profile rows) once the shell the switch
+/// rebuilt is showing. The switch sets it just after `select` returns, while
+/// the old shell is already gone, so `initial: true` catches it as the new
+/// shell appears; one set while a shell is up opens straight away.
+private struct ProfileSwitchDestinationOpener: ViewModifier {
+    let router: AppRouter
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: router.profileSwitchDestination, initial: true) {
+                router.openProfileSwitchDestination(contentRevision: TVSavedAccountStore.shared.contentRevision)
+            }
     }
 }

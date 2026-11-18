@@ -92,9 +92,14 @@ final class AppRouter {
     var itemDetailPath = NavigationPath()
     #endif
 
-    #if os(tvOS)
     var requestedSearch: SearchRequest?
-    #endif
+    /// What a switch to another saved profile opens once the signed-in shell
+    /// it rebuilt is up. The root view opens it (see ``openProfileSwitchDestination(contentRevision:)``).
+    private(set) var profileSwitchDestination: ProfileSwitchDestination?
+    /// The app's own router, set on a router that drives only one page over
+    /// it (Search on iPhone and iPad), so a profile switch started there
+    /// signs in, resets and navigates the app rather than that page.
+    @ObservationIgnored weak var appRouter: AppRouter?
 
     /// Why the next sign-in state change happens, for its breadcrumb.
     @ObservationIgnored private var stagedReason: String?
@@ -269,11 +274,11 @@ final class AppRouter {
         requestedTab = tab
     }
 
-    #if os(tvOS)
     func requestSearch(query: String) {
         requestedSearch = SearchRequest(query: query)
     }
 
+    #if os(tvOS)
     /// Search alone on the stack, in one step, so the shell never sees an
     /// empty stack on the way and moves focus to the top level.
     func showSearchReplacingStack() {
@@ -282,6 +287,39 @@ final class AppRouter {
         path = NavigationPath([Route.search])
     }
     #endif
+
+    // MARK: After a profile switch
+
+    /// Opens `destination` once the shell rebuilt for `contentRevision` (the
+    /// saved-profile store's revision after the switch) is showing.
+    func openAfterProfileSwitch(_ destination: ProfileSwitchDestination.Target, contentRevision: UUID) {
+        profileSwitchDestination = ProfileSwitchDestination(target: destination, contentRevision: contentRevision)
+    }
+
+    /// Called by the root view as the signed-in shell appears and whenever
+    /// a destination is set. A destination left from an earlier rebuild is
+    /// dropped: a content ID only means something on the server it came from.
+    @MainActor
+    func openProfileSwitchDestination(contentRevision: UUID) {
+        guard let destination = profileSwitchDestination else { return }
+        profileSwitchDestination = nil
+        guard destination.contentRevision == contentRevision, authState == .authenticated else { return }
+        switch destination.target {
+        case .route(let route):
+            #if os(iOS)
+            // A turn later, so the rebuilt shell's item detail cover is in
+            // a window before it presents.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.authState == .authenticated else { return }
+                self.navigate(to: route)
+            }
+            #else
+            navigate(to: route)
+            #endif
+        case .search(let query):
+            requestSearch(query: query)
+        }
+    }
 
     // MARK: Item detail
 
@@ -423,6 +461,19 @@ final class AppRouter {
         if presentedPlayer?.id == id { presentedPlayer = nil }
     }
     #endif
+}
+
+/// A page waiting for the shell a saved-profile switch rebuilt, and the
+/// rebuild it belongs to.
+struct ProfileSwitchDestination: Equatable {
+    enum Target: Equatable {
+        case route(Route)
+        case search(String)
+    }
+
+    let id = UUID()
+    let target: Target
+    let contentRevision: UUID
 }
 
 /// The cards around an opened item. Cards build and pass it; nothing reads

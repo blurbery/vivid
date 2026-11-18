@@ -107,8 +107,10 @@ actor HTTPClient {
     private let requestCaptureBarrier: (@Sendable () async -> Void)?
     private let responseReceivedBarrier: (@Sendable () async -> Void)?
 
-    /// Refresh tokens rotate per server account, so ordinary and
-    /// captured-identity requests share one flight per account.
+    /// Each refresh returns a new token pair for the server account, which
+    /// the active session saves, so ordinary and captured-identity requests
+    /// share one flight per account. Silo doesn't revoke the refresh token it
+    /// was given (see `refreshedAccessForSavedProfile`).
     private var inFlightRefreshes: [RefreshAccountIdentity: RefreshFlight] = [:]
     /// Cancellation passes run one after another, so a new identity can wait
     /// for its own pass without an older one cancelling its requests later.
@@ -276,6 +278,61 @@ actor HTTPClient {
         else { return }
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         _ = try? await perform(request: request, dispatchRevision: revision, reportReachability: false)
+    }
+
+    /// Reads a Silo route for a saved profile other than the active one,
+    /// signed only with that profile's own credentials, so Search can look in
+    /// its library without switching. Nothing here reads or writes
+    /// `TokenStore`, refreshes, or reports reachability. A 401 is expected
+    /// (an expired access token) and is thrown quietly for the caller to
+    /// refresh in memory. A profile switch closes the gate and cancels it
+    /// like any other request.
+    func getForSavedProfile(
+        serverURL: String,
+        path: String,
+        query: [String: String],
+        accessToken: String,
+        profileID: String?,
+        profileToken: String?
+    ) async throws -> Data {
+        let revision = try captureRequestDispatchRevision()
+        var request = try buildRequest(serverUrl: ServerRegistry.normalize(url: serverURL), method: "GET",
+                                       path: path, query: query, body: nil)
+        // The same headers a captured-identity request carries.
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        if let profileID { request.setValue(profileID, forHTTPHeaderField: "X-Profile-Id") }
+        if let profileToken { request.setValue(profileToken, forHTTPHeaderField: "X-Profile-Token") }
+        AppleDeviceIdentity.current.applyHeaders(to: &request)
+        let (data, response) = try await perform(request: request, dispatchRevision: revision, reportReachability: false)
+        try ensureSuccess(data, response, method: "GET", quietStatuses: [401])
+        return data
+    }
+
+    /// A new access token for a saved profile other than the active one,
+    /// returned to the caller and never saved. Silo's refresh checks the
+    /// session and issues a new pair without revoking the refresh token it
+    /// was given, so the saved pair keeps working until it expires as before. Unlike `refreshTokens`, a
+    /// refusal here never clears a session or posts its expiry.
+    func refreshedAccessForSavedProfile(serverURL: String, refreshToken: String) async throws -> String {
+        let revision = try captureRequestDispatchRevision()
+        var request = try buildRequest(serverUrl: ServerRegistry.normalize(url: serverURL), method: "POST",
+                                       path: "/api/v1/auth/refresh", query: [:],
+                                       body: RefreshRequest(refreshToken: refreshToken))
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.performRefreshTransport(request: request, session: session, apiDiscovery: apiDiscovery)
+        } catch {
+            guard isDispatchOpen(at: revision) else { throw HTTPError.requestIdentityChanged }
+            throw HTTPError.network(underlying: error)
+        }
+        guard isDispatchOpen(at: revision) else { throw HTTPError.requestIdentityChanged }
+        guard let http = response as? HTTPURLResponse else { throw HTTPError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else { throw HTTPError.http(statusCode: http.statusCode, body: nil) }
+        let token = try decoder.decode(RefreshResponse.self, from: data).accessToken
+        guard !token.isEmpty else { throw HTTPError.invalidResponse }
+        return token
     }
     #endif
 

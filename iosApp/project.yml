@@ -146,6 +146,7 @@ targets:
       - path: Tests/PlainHTTPRedirectGuardTests.swift
       # Theme music: same-song, start, retry and lookup decisions.
       - path: Tests/ThemeMusicCenterTests.swift
+      - path: Tests/OtherProfileSearchTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

@@ -145,6 +145,7 @@ struct TVSettingsProfilesPage: View {
     @State private var pinAccount: TVSavedAccount?
     @State private var movingID: String?
     @State private var draftOrder: [String] = []
+    @State private var otherProfileSearch = OtherProfileSearchSettings.shared
     @FocusState private var focused: String?
     @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
@@ -170,6 +171,10 @@ struct TVSettingsProfilesPage: View {
                         }
                     }
                     .padding(.top, TVSettingsLayout.scaled(18))
+                    // Only matters with another profile to search.
+                    if store.accounts.count > 1 {
+                        searchGroup
+                    }
                 }
                 .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
                 .padding(.bottom, TVSettingsLayout.scaled(64))
@@ -211,6 +216,24 @@ struct TVSettingsProfilesPage: View {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
+    }
+
+    @ViewBuilder
+    private var searchGroup: some View {
+        TVSettingsSectionHeader("SEARCH")
+        TVSettingsGroup {
+            TVSettingsToggleRow(
+                title: LocalizedStringResource("Search All Profiles",
+                                               comment: "Settings switch: Search also shows matches from the other saved profiles"),
+                isOn: otherProfileSearch.isEnabled
+            ) {
+                otherProfileSearch.isEnabled.toggle()
+            }
+            // Like Add Profile, out of reach while a profile is being moved.
+            .disabled(movingID != nil)
+        }
+        TVSettingsFooter(String(localized: "Search also shows matches from the other profiles saved on this Apple TV. Opening one switches to that profile. Profiles with a PIN aren’t searched.",
+                                comment: "Settings footer under the Search All Profiles switch on Apple TV"))
     }
 
     @ViewBuilder

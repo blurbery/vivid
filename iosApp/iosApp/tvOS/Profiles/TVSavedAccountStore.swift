@@ -122,6 +122,12 @@ final class TVSavedAccountStore {
         readJSON(TVSavedAccountSession.self, from: sessionKey(id))
     }
 
+    /// A saved profile's stored session, read only, so Search can look in
+    /// its library without switching to it.
+    func savedSession(for account: TVSavedAccount) -> TVSavedAccountSession? {
+        session(account.id)
+    }
+
     /// Keychain items hold their JSON as a UTF-8 string.
     private func readJSON<Value: Decodable>(_ type: Value.Type, from key: String) -> Value? {
         guard let string = keychain.get(key), let data = string.data(using: .utf8) else { return nil }
