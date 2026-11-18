@@ -994,6 +994,7 @@ final class EmbyAdapterTests: XCTestCase {
             var playable = media
             playable["TranscodingUrl"] = "/videos/item-1/master.m3u8?MediaSourceId=source-1&TranscodeReasons=ContainerNotSupported"
                 + (index < 0 ? "" : "&SubtitleStreamIndex=\(index)&SubtitleMethod=Hls")
+                + "&api_key=secret&ApiKey=secret"
             return (200, ["MediaSources":[playable],"PlaySessionId":index < 0 ? "probe" : "unconfirmed"])
         }
         let raw: [String:Any] = ["Id":"item-1","Name":"Example","Type":"Movie","MediaSources":[media]]
@@ -1006,6 +1007,11 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(bodies.map { $0["SubtitleStreamIndex"] as? Int }, [-1, 2])
         XCTAssertEqual(prepared.session.sessionId, "probe")
         XCTAssertNil(playback.subtitleIndex)
+        let query = try XCTUnwrap(playback.stream.url.query)
+        XCTAssertFalse(query.lowercased().contains("api_key"))
+        XCTAssertFalse(query.lowercased().contains("apikey"))
+        let items = try XCTUnwrap(URLComponents(url: playback.stream.url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertFalse(items.contains { StreamRequest.credentialQueryNames.contains($0.name.lowercased()) })
         XCTAssertEqual(prepared.transcodeSubtitles, ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: 2, copiesVideo: true))
         XCTAssertEqual(prepared.session.subtitleUrls?.count, 0)
     }

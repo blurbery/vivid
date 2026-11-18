@@ -268,6 +268,16 @@ struct StreamRequest {
         !value.isEmpty && value.allSatisfy { $0.isASCII && $0.isNumber } && Int(value) != nil
     }
 
+    // MARK: - Credential query names
+
+    /// Lowercased query parameter names that carry an Emby or Jellyfin
+    /// account credential. Both providers drop these from a server-provided
+    /// transcode URL, because Vivid sends the credential in request headers.
+    /// Jellyfin 10.11 and later appends the token as `ApiKey`.
+    static let credentialQueryNames: Set<String> = [
+        "api_key", "apikey", "x-emby-token", "x-mediabrowser-token", "token", "access_token",
+    ]
+
     // MARK: - Origins
 
     static func hasSameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {

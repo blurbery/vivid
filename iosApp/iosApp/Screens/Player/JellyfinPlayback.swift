@@ -194,7 +194,8 @@ final class JellyfinPlayback {
                   candidate.user == nil, candidate.password == nil {
             var components = URLComponents(url: candidate, resolvingAgainstBaseURL: false)!
             components.queryItems = components.queryItems?.filter {
-                !["api_key", "x-emby-token", "token", "access_token", "starttimeticks"].contains($0.name.lowercased())
+                let name = $0.name.lowercased()
+                return !StreamRequest.credentialQueryNames.contains(name) && name != "starttimeticks"
             }
             guard let resolved = components.url else { throw JellyfinError.invalidURL }
             url = resolved

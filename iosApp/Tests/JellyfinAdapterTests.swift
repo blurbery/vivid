@@ -1165,7 +1165,7 @@ final class JellyfinAdapterTests: XCTestCase {
             var playable = media
             playable["TranscodingUrl"] = "/videos/\(self.item)/master.m3u8?MediaSourceId=\(self.source)&PlaySessionId=\(session)"
                 + (index < 0 ? "&TranscodeReasons=ContainerBitrateExceedsLimit" : "&SubtitleStreamIndex=\(index)&SubtitleMethod=Encode")
-                + "&api_key=secret"
+                + "&api_key=secret&ApiKey=secret"
             return (200, ["MediaSources":[playable],"PlaySessionId":session])
         }
         let raw: [String:Any] = ["Id":item,"Name":"Example","Type":"Movie","MediaSources":[media]]
@@ -1183,6 +1183,9 @@ final class JellyfinAdapterTests: XCTestCase {
         let query = try XCTUnwrap(playback.stream.url.query)
         XCTAssertTrue(query.contains("SubtitleMethod=Encode"))
         XCTAssertFalse(query.contains("api_key"))
+        XCTAssertFalse(query.lowercased().contains("apikey"), "Jellyfin 10.11 appends the token as ApiKey")
+        let items = try XCTUnwrap(URLComponents(url: playback.stream.url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertFalse(items.contains { StreamRequest.credentialQueryNames.contains($0.name.lowercased()) })
         XCTAssertEqual(prepared.transcodeSubtitles, ServerTranscodeSubtitles(burnedIndex: 3, failedIndex: nil, copiesVideo: false))
         XCTAssertEqual(prepared.session.subtitleUrls?.map(\.index), [2], "Only text travels beside the transcode")
     }

@@ -17,6 +17,7 @@ Its current feature and verification limits are listed below.
 ## Provider boundary
 
 Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting.
+Credential query parameters such as `ApiKey` and `api_key` are removed from server-provided transcode URLs, because Vivid sends credentials in request headers.
 Silo keeps its existing connection and Protocol V3 path.
 Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged.
 Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
