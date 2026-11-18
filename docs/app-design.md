@@ -554,7 +554,7 @@ Subtitle inventory still follows the [detail reader’s media-based rules](playb
 Theme music plays on movie, series, season and episode pages on iPhone, iPad and Apple TV when Settings > Playback > Play Theme Music is on, which it is by default.
 When the page opens, Vivid asks the connected server (Silo, Emby or Jellyfin) for the title's theme song, fades it in at the Theme Music volume (30% unless changed) and plays it once, without looping.
 A season or episode with no theme of its own uses its series' theme, and moving between a show, its seasons and its episodes keeps the same song playing instead of starting it again.
-On Apple TV an episode with a series and season number opens on its series page, so it plays the series' theme; any other episode stays on its own page and plays its own theme.
+On Apple TV an episode with a series and season number opens on its series page, so it plays the series' theme; any other episode stays on its own page and plays its own theme, or its season's or series' theme when it has none.
 Leaving the page fades the song out.
 Starting a video stops it, and it doesn't resume when the video ends.
 It pauses while Vivid is in the background.
