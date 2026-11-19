@@ -50,7 +50,16 @@ final class ScrubPreviewSheetStore {
     /// Most recently used last.
     private var decoded: [(sheet: Int, image: CGImage)] = []
     private var data: [(sheet: Int, bytes: Data)] = []
-    private var downloads: [Int: Task<Data?, Never>] = [:]
+    /// What a download came back with. A request dropped from the line is
+    /// told apart from a failure by the download itself, so a later request
+    /// for the same still can't change what an earlier one meant.
+    private enum Fetched {
+        case bytes(Data)
+        case dropped
+        case failed
+    }
+
+    private var downloads: [Int: Task<Fetched, Never>] = [:]
     private var decodes: [Int: Task<CGImage?, Never>] = [:]
     private var failures: [Int: Date] = [:]
     private var isShutDown = false
@@ -59,8 +68,6 @@ final class ScrubPreviewSheetStore {
     /// One range request runs at a time; the newest waiting goes next.
     private var isFetchingRange = false
     private var rangeWaiters: [CheckedContinuation<Bool, Never>] = []
-    /// Stills whose request was dropped from the line, which is no failure.
-    private var skipped: Set<Int> = []
     /// How many sheets stay decoded: two while a scrub runs, one between.
     private var decodedLimit: Int
     /// These move on whenever decoded sheets or JPEGs are given back, so
@@ -82,6 +89,11 @@ final class ScrubPreviewSheetStore {
     var willDecode: (@MainActor (Int) async -> Void)?
     /// Tests only: how many range requests were dropped from the line.
     private(set) var droppedRangeRequests = 0
+    /// Tests only: how many range requests are waiting their turn.
+    var rangeWaiterCount: Int { rangeWaiters.count }
+    /// Tests only: runs when a range request has been dropped from the
+    /// line, before anyone waiting on it hears so.
+    var didDropRange: (@MainActor (ClosedRange<Int>) async -> Void)?
 
     private var observers: [NSObjectProtocol] = []
 
@@ -178,7 +190,7 @@ final class ScrubPreviewSheetStore {
         let epoch = decodedEpoch
         let task = Task { @MainActor [weak self] () -> CGImage? in
             guard let self else { return nil }
-            let image = await self.fetchAndDecode(sheet)
+            let (image, wasDropped) = await self.fetchAndDecode(sheet)
             // Settled here, before any caller sharing this task resumes, so
             // each of them sees the same failure or the same dropped request.
             self.decodes[sheet] = nil
@@ -186,7 +198,7 @@ final class ScrubPreviewSheetStore {
                 // Memory given back while this decoded stays given back; the
                 // caller still gets its still.
                 if epoch == self.decodedEpoch { self.remember(image, for: sheet) }
-            } else if !self.isShutDown, self.skipped.remove(sheet) == nil {
+            } else if !self.isShutDown, !wasDropped {
                 self.markFailed(sheet)
             }
             return image
@@ -195,17 +207,24 @@ final class ScrubPreviewSheetStore {
         return await task.value
     }
 
-    private func fetchAndDecode(_ sheet: Int) async -> CGImage? {
-        guard let bytes = await bytes(sheet) else { return nil }
+    /// The decoded sheet, and whether its request was dropped from the
+    /// line rather than failing.
+    private func fetchAndDecode(_ sheet: Int) async -> (CGImage?, wasDropped: Bool) {
+        let fetched = await bytes(sheet)
+        guard case let .bytes(bytes) = fetched else {
+            if case .dropped = fetched { return (nil, true) }
+            return (nil, false)
+        }
         await enterDecode()
         defer { leaveDecode() }
-        guard !isShutDown, !Task.isCancelled else { return nil }
+        guard !isShutDown, !Task.isCancelled else { return (nil, false) }
         await willDecode?(sheet)
         let side = Self.maximumSheetSide
         let pixels = Self.maximumSheetPixels
-        return await Task.detached(priority: .userInitiated) {
+        let image = await Task.detached(priority: .userInitiated) {
             Self.decode(bytes, maximumSide: side, maximumPixels: pixels)
         }.value
+        return (image, false)
     }
 
     /// Takes the decode turn, waiting in line if a sheet is decoding.
@@ -267,19 +286,19 @@ final class ScrubPreviewSheetStore {
 
     // MARK: - Fetching
 
-    private func bytes(_ sheet: Int) async -> Data? {
+    private func bytes(_ sheet: Int) async -> Fetched {
         if let whole, let container = sheets.container {
-            return Self.slice(whole, container.range(ofStill: sheet))
+            return Self.slice(whole, container.range(ofStill: sheet)).map(Fetched.bytes) ?? .failed
         }
         if let position = data.firstIndex(where: { $0.sheet == sheet }) {
             let entry = data.remove(at: position)
             data.append(entry)
-            return entry.bytes
+            return .bytes(entry.bytes)
         }
         return await download(sheet).value
     }
 
-    private func download(_ sheet: Int) -> Task<Data?, Never> {
+    private func download(_ sheet: Int) -> Task<Fetched, Never> {
         if let running = downloads[sheet] { return running }
         if let container = sheets.container { return downloadRun(around: sheet, in: container) }
         var request = URLRequest(url: sheets.sheetURLs[sheet])
@@ -294,18 +313,18 @@ final class ScrubPreviewSheetStore {
         let carriesHeaders = !sheets.headers.isEmpty
         let limit = Self.maximumSheetBytes
         let epoch = dataEpoch
-        let task = Task { @MainActor [weak self] () -> Data? in
+        let task = Task { @MainActor [weak self] () -> Fetched in
             let fetched = await ScrubPreviewFetch.fetch(request, session: session, limit: limit) { from, to in
                 !carriesHeaders && PlainHTTPRedirectGuard.allows(from: from, to: to)
             }.body
-            guard let self, !Task.isCancelled else { return nil }
+            guard let self, !Task.isCancelled else { return .failed }
             self.downloads[sheet] = nil
-            if let fetched {
-                if epoch == self.dataEpoch { self.remember(fetched, for: sheet) }
-            } else {
+            guard let fetched else {
                 self.failures[sheet] = self.now()
+                return .failed
             }
-            return fetched
+            if epoch == self.dataEpoch { self.remember(fetched, for: sheet) }
+            return .bytes(fetched)
         }
         downloads[sheet] = task
         return task
@@ -316,7 +335,7 @@ final class ScrubPreviewSheetStore {
     /// One range request for the wanted still and the neighbours around it
     /// that aren't held, on their way or failed. Every still in the run
     /// shares the request, so asking for a neighbour starts nothing new.
-    private func downloadRun(around sheet: Int, in container: ScrubPreviewSheets.Container) -> Task<Data?, Never> {
+    private func downloadRun(around sheet: Int, in container: ScrubPreviewSheets.Container) -> Task<Fetched, Never> {
         func size(_ still: Int) -> Int { container.range(ofStill: still).count }
         func isWanted(_ still: Int) -> Bool {
             (0..<sheets.sheetCount).contains(still) && downloads[still] == nil && failures[still] == nil
@@ -348,23 +367,21 @@ final class ScrubPreviewSheetStore {
         let fileEnd = container.offsets[container.offsets.count - 1]
         let epoch = dataEpoch
         let expectedWholeEpoch = wholeEpoch
-        skipped.subtract(members)
 
-        let run = Task { @MainActor [weak self] () -> [Int: Data]? in
-            guard let self else { return nil }
+        // No stills and not dropped means the run failed.
+        let run = Task { @MainActor [weak self] () -> (stills: [Int: Data]?, wasDropped: Bool) in
+            guard let self else { return (nil, false) }
             guard await self.enterRange() else {
                 // Dropped from the line. Not a failure: the still is asked
                 // for again when a target next needs it.
-                guard !self.isShutDown else { return nil }
+                guard !self.isShutDown else { return (nil, false) }
                 self.droppedRangeRequests += 1
-                for member in members {
-                    self.downloads[member] = nil
-                    self.skipped.insert(member)
-                }
-                return nil
+                for member in members { self.downloads[member] = nil }
+                await self.didDropRange?(members)
+                return (nil, true)
             }
             defer { self.leaveRange() }
-            guard !self.isShutDown else { return nil }
+            guard !self.isShutDown else { return (nil, false) }
             var stills: [Int: Data] = [:]
             var wholeFile = self.whole
             if wholeFile == nil {
@@ -375,7 +392,7 @@ final class ScrubPreviewSheetStore {
                 ) { from, to in
                     !carriesHeaders && PlainHTTPRedirectGuard.allows(from: from, to: to)
                 }
-                guard !self.isShutDown else { return nil }
+                guard !self.isShutDown else { return (nil, false) }
                 if let body = reply.body {
                     if reply.status == 206, reply.rangeStart == lower, body.count == upper - lower {
                         for member in members {
@@ -397,7 +414,7 @@ final class ScrubPreviewSheetStore {
             guard stills.count == members.count else {
                 let failedAt = self.now()
                 for member in members { self.failures[member] = failedAt }
-                return nil
+                return (nil, false)
             }
             if self.whole == nil, epoch == self.dataEpoch {
                 // The wanted still last, so it's the most recently used.
@@ -406,11 +423,18 @@ final class ScrubPreviewSheetStore {
                 }
                 if let bytes = stills[sheet] { self.remember(bytes, for: sheet) }
             }
-            return stills
+            return (stills, false)
         }
-        let wanted = Task { @MainActor in await run.value?[sheet] }
+        func share(_ member: Int) -> Task<Fetched, Never> {
+            Task { @MainActor in
+                let outcome = await run.value
+                if outcome.wasDropped { return .dropped }
+                return outcome.stills?[member].map(Fetched.bytes) ?? .failed
+            }
+        }
+        let wanted = share(sheet)
         for member in members {
-            downloads[member] = member == sheet ? wanted : Task { @MainActor in await run.value?[member] }
+            downloads[member] = member == sheet ? wanted : share(member)
         }
         return wanted
     }

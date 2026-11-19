@@ -86,6 +86,11 @@ final class VividScrubPreviewProvider {
     /// The one sheet being fetched, so a fast drag never decodes several at
     /// once. The newest target is picked up when it lands.
     private var sheetFetch: UUID?
+    /// Tests only: a target's own sheet fetch is starting, before it asks
+    /// the store for anything. Neighbour prefetches don't call it.
+    var willFetchSheet: (@MainActor (Int) -> Void)?
+    /// Tests only: a target's sheet fetch has been fully handled.
+    var didFinishSheetFetch: (@MainActor (Int) -> Void)?
     /// The still on screen, so a target inside the same still publishes
     /// nothing new.
     private var shownTile: Int?
@@ -457,9 +462,13 @@ final class VividScrubPreviewProvider {
         let fetch = UUID()
         sheetFetch = fetch
         let expected = session
+        willFetchSheet?(sheet)
         Task { @MainActor [weak self] in
             let image = await store.image(sheet)
-            guard let self, self.sheetFetch == fetch else { return }
+            guard let self else { return }
+            // After everything below, whichever way it returns.
+            defer { self.didFinishSheetFetch?(sheet) }
+            guard self.sheetFetch == fetch else { return }
             self.sheetFetch = nil
             guard self.session == expected, self.store === store, self.storeIsLive,
                   let target = self.sheetTarget
