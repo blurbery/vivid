@@ -163,6 +163,8 @@ targets:
         buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_h264_bframes.mp4
         buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_late_video.mkv
+        buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_h264_one_keyframe.mp4
         buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_h264_rotated.mp4

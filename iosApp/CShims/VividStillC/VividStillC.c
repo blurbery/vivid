@@ -35,7 +35,7 @@
 #define MIN_OUTPUT_WIDTH 16
 #define MAX_OUTPUT_SIDE 4096
 // Index entries looked at, and keyframes kept. A long film at one keyframe
-// a second has about ten thousand.
+// a second has about ten thousand. An index past either limit isn't used.
 #define MAX_INDEX_SCAN 4000000
 #define MAX_INDEX_KEPT 400000
 // Packets read while looking for the keyframe after a seek.
@@ -88,6 +88,10 @@ struct VividStill {
     int is_matroska;
     /// The first video packet's time in the stream's time base.
     int64_t start;
+    /// The earliest time any sound or picture stream starts at, in
+    /// `AV_TIME_BASE` units, or `AV_NOPTS_VALUE`. A player counts its clock
+    /// from here.
+    int64_t container_start;
     double seconds_per_tick;
     const AVCodec *codec;
     AVCodecContext *decoder;
@@ -373,7 +377,9 @@ static int compare_index_points(const void *left, const void *right) {
 static int collect_index(VividStill *still) {
     int total = avformat_index_get_entries_count(still->stream);
     if (total <= 0) return VIVID_STILL_OK;
-    if (total > MAX_INDEX_SCAN) total = MAX_INDEX_SCAN;
+    // Too long to look through. What lies past the limit is unknown, so a
+    // prefix mustn't pass for the whole index: the file gets none.
+    if (total > MAX_INDEX_SCAN) return VIVID_STILL_OK;
 
     int keyframes = 0;
     for (int i = 0; i < total; i++) {
@@ -445,6 +451,19 @@ static void learn_facts(PictureFacts *facts, int width, int height, int layout, 
     if (range_tag(range) != VIVID_STILL_RANGE_UNKNOWN) facts->range = range;
 }
 
+/// Takes `time`, in `stream`'s time base, as the container's start if it
+/// is the earliest seen. Only sound and pictures count, as they do for the
+/// container's own start time: subtitles, data and cover art don't.
+static void note_container_time(VividStill *still, const AVStream *stream, int64_t time) {
+    if (stream == NULL || stream->codecpar == NULL || time == AV_NOPTS_VALUE) return;
+    enum AVMediaType type = stream->codecpar->codec_type;
+    if (type != AVMEDIA_TYPE_VIDEO && type != AVMEDIA_TYPE_AUDIO) return;
+    if (stream->disposition & (AV_DISPOSITION_ATTACHED_PIC | AV_DISPOSITION_TIMED_THUMBNAILS)) return;
+    if (stream->time_base.num <= 0 || stream->time_base.den <= 0) return;
+    int64_t start = av_rescale_q(time, stream->time_base, AV_TIME_BASE_Q);
+    if (still->container_start == AV_NOPTS_VALUE || start < still->container_start) still->container_start = start;
+}
+
 static void fill_info(VividStill *still, const PictureFacts *facts) {
     const AVCodecParameters *parameters = still->stream->codecpar;
     VividStillInfo *info = &still->info;
@@ -457,8 +476,20 @@ static void fill_info(VividStill *still, const PictureFacts *facts) {
         info->duration_seconds = (double)still->format->duration / (double)AV_TIME_BASE;
     }
     info->start_seconds = (double)still->start * still->seconds_per_tick;
-    if (still->format->start_time != AV_NOPTS_VALUE) {
-        double offset = info->start_seconds - (double)still->format->start_time / (double)AV_TIME_BASE;
+    // The container's start time stays unset without a full probe of the
+    // streams, which this handle never makes. What the demuxer gave each
+    // stream and the packets read before the first picture stand in.
+    for (unsigned i = 0; i < still->format->nb_streams; i++) {
+        const AVStream *stream = still->format->streams[i];
+        if (stream != NULL) note_container_time(still, stream, stream->start_time);
+    }
+    int64_t container_start = still->container_start;
+    if (still->format->start_time != AV_NOPTS_VALUE &&
+        (container_start == AV_NOPTS_VALUE || still->format->start_time < container_start)) {
+        container_start = still->format->start_time;
+    }
+    if (container_start != AV_NOPTS_VALUE) {
+        double offset = info->start_seconds - (double)container_start / (double)AV_TIME_BASE;
         if (isfinite(offset) && offset > 0) info->video_start_offset_seconds = offset;
     }
     info->width = facts->width;
@@ -646,7 +677,16 @@ static int read_first_packet(VividStill *still, int64_t *time, int64_t *position
     for (int count = 0; count < MAX_PACKETS_TO_KEYFRAME; count++) {
         int read = av_read_frame(still->format, still->packet);
         if (read < 0) return stop_reason(still, VIVID_STILL_ERROR_OPEN_TOO_COSTLY, VIVID_STILL_ERROR_OPEN);
-        if (still->packet->stream_index != still->stream->index) {
+        // Packets come in time order, so those read before the first
+        // picture show whether another stream starts before it.
+        int index = still->packet->stream_index;
+        if (index >= 0 && (unsigned)index < still->format->nb_streams) {
+            int64_t packet_time = still->packet->pts != AV_NOPTS_VALUE ? still->packet->pts : still->packet->dts;
+            note_container_time(still, still->format->streams[index], packet_time);
+        }
+        if (index != still->stream->index) {
+            // One packet is all a sound stream is read for.
+            if (index >= 0 && (unsigned)index < still->format->nb_streams) still->format->streams[index]->discard = AVDISCARD_ALL;
             av_packet_unref(still->packet);
             continue;
         }
@@ -724,6 +764,7 @@ int vivid_still_open(const VividStillCallbacks *callbacks, const VividStillOpenO
     VividStill *still = calloc(1, sizeof(VividStill));
     if (still == NULL) return VIVID_STILL_ERROR_MEMORY;
     still->callbacks = *callbacks;
+    still->container_start = AV_NOPTS_VALUE;
     still->max_pixels = MAX_PICTURE_PIXELS;
     int64_t open_limit = OPEN_BYTE_LIMIT;
     if (options != NULL) {
@@ -793,9 +834,14 @@ int vivid_still_open(const VividStillCallbacks *callbacks, const VividStillOpenO
         result = VIVID_STILL_ERROR_NO_VIDEO;
         goto fail;
     }
-    // Nothing is wanted from any other stream, now or later.
+    // Nothing is wanted from any other stream, except the first packet of
+    // each sound stream, whose time says where the player's clock starts.
+    // `read_first_packet` turns each one off once it has that.
     for (unsigned i = 0; i < still->format->nb_streams; i++) {
-        if (still->format->streams[i] != still->stream) still->format->streams[i]->discard = AVDISCARD_ALL;
+        AVStream *other = still->format->streams[i];
+        if (other == still->stream) continue;
+        int is_sound = other->codecpar != NULL && other->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
+        if (!is_sound) other->discard = AVDISCARD_ALL;
     }
 
     const AVCodecParameters *parameters = still->stream->codecpar;
@@ -819,6 +865,11 @@ int vivid_still_open(const VividStillCallbacks *callbacks, const VividStillOpenO
     int64_t first_position = -1;
     int first_is_keyframe = 0;
     result = read_first_packet(still, &first_time, &first_position, &first_is_keyframe);
+    // Sound streams the picture came before were never read. Nothing more
+    // is wanted from them either.
+    for (unsigned i = 0; i < still->format->nb_streams; i++) {
+        if (still->format->streams[i] != still->stream) still->format->streams[i]->discard = AVDISCARD_ALL;
+    }
     if (result != VIVID_STILL_OK) goto fail;
     still->start = first_time != AV_NOPTS_VALUE ? first_time : 0;
 

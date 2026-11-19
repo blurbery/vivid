@@ -152,10 +152,23 @@ final class KeyframeStillService {
     private var readAhead: Set<Int> = []
     /// Read-ahead reads that are for the stretch near the playhead.
     private var nearReads: Set<Int> = []
-    private var readAheadBytes: Int
-    private var nearBytes: Int
+    /// Shared with every other load of the same file, so that bytes
+    /// counted after this load ends still reach the next.
+    private let spend: Spend
+    private var readAheadBytes: Int {
+        get { spend.readAhead }
+        set { spend.readAhead = newValue }
+    }
+    private var nearBytes: Int {
+        get { spend.near }
+        set { spend.near = newValue }
+    }
     /// What the source had fetched when it was last looked at.
     private var lastReceived = 0
+    /// Reads given to the reader and not yet back, oldest first. The reader
+    /// runs them in this order, so bytes fetched and not yet settled are
+    /// the first one's.
+    private var sent: [(position: Int, kind: Kind, isNear: Bool)] = []
     private var typicalStillBytes = HTTPStillByteSource.minimumBlockBytes
     private var lastLadderRead: TimeInterval = -.infinity
     private var noLadderWalkBefore: TimeInterval = -.infinity
@@ -195,9 +208,11 @@ final class KeyframeStillService {
         isLocalFile = spec.sourceURL.isFileURL
         isLocalNetwork = Self.isLocalHost(spec.sourceURL.host)
         carryKey = Self.carryKey(for: spec.sourceURL)
-        let carries = carried?.key == carryKey
-        readAheadBytes = carries ? carried?.readAheadBytes ?? 0 : 0
-        nearBytes = carries ? carried?.nearBytes ?? 0 : 0
+        if let carried, carried.key == carryKey {
+            spend = carried.spend
+        } else {
+            spend = Spend()
+        }
         // Three observers and a timer, and nothing else until the load has
         // played steadily: the network monitor waits for that (see
         // `pump()`), and the provider makes the service a turn after the
@@ -231,15 +246,10 @@ final class KeyframeStillService {
         }
     }
 
-    /// What read-ahead has spent, for the next load of the same file.
-    /// Bytes fetched since the last read was settled count too, as long as
-    /// no viewer read is out to share them: read before `shutdown()`, the
-    /// carry must not miss a read ahead still running.
-    var carry: Carry {
-        var unsettled = 0
-        if viewerAsked == nil, let total = source?.receivedBytes?() { unsettled = max(0, total - lastReceived) }
-        return Carry(key: carryKey, readAheadBytes: readAheadBytes + unsettled, nearBytes: nearBytes)
-    }
+    /// What read-ahead has spent, for the next load of the same file. It
+    /// stays live: bytes of a read ahead still running when the load ends
+    /// are added once the reader has stopped.
+    var carry: Carry { Carry(key: carryKey, spend: spend) }
 
     /// The frame reader can't read this load after all, so the service
     /// takes it. Steady play counted while standing by still counts.
@@ -463,8 +473,15 @@ final class KeyframeStillService {
     /// source's cancel must not depend on when that task gets a turn.
     private func closeReader() {
         readerEpoch &+= 1
-        if let fetched = takeReceived() { readAheadBytes += fetched }
+        // What is still arriving for the read or open being stopped is
+        // counted once the reader has stopped and the source with it,
+        // against whichever started it. The viewer's bytes never count
+        // against read-ahead.
+        let received = source?.receivedBytes, settledUpTo = lastReceived
+        let owner = isPreparing || sent.isEmpty ? (kind: Kind.ahead, isNear: false) : (kind: sent[0].kind, isNear: sent[0].isNear)
+        let spend = spend
         lastReceived = 0
+        sent = []
         inFlight = []
         viewerAsked = nil
         stopped = []
@@ -482,7 +499,12 @@ final class KeyframeStillService {
         guard let reader = source?.reader else { return }
         source = nil
         reader.cancel()
-        closings.append(Task.detached(priority: .utility) { await reader.shutdown() })
+        closings.append(Task.detached(priority: .utility) {
+            await reader.shutdown()
+            guard owner.kind == .ahead, let received else { return }
+            let late = max(0, received() - settledUpTo)
+            if late > 0 { await MainActor.run { spend.add(late, isNear: owner.isNear) } }
+        })
     }
 
     /// The app has gone to the background: the reader, the stills, the
@@ -844,6 +866,7 @@ final class KeyframeStillService {
             lastLadderRead = environment.uptime()
         }
         inFlight.insert(position)
+        sent.append((position, kind, isNear))
         decoderMayBeOpen = true
         let time = index[position].time, epoch = readerEpoch, memory = memoryEpoch
         quickenTicker()
@@ -857,6 +880,7 @@ final class KeyframeStillService {
         // The reader this was asked of has gone, and its books with it.
         guard epoch == readerEpoch, !isFinished else { return }
         inFlight.remove(position)
+        if let place = sent.firstIndex(where: { $0.position == position && $0.kind == kind }) { sent.remove(at: place) }
         if kind == .viewer, viewerAsked == position { viewerAsked = nil }
         let wasStopped = stopped.remove(position) != nil
         let isNear = nearReads.remove(position) != nil
@@ -878,10 +902,11 @@ final class KeyframeStillService {
             } else {
                 lastViewerRead = still.indexPosition
             }
-            // A read ahead started before a memory warning doesn't refill
-            // the cache the warning emptied. Its bytes are still counted.
-            // The viewer's own still is kept: it is wanted on screen now.
-            if kind == .viewer || memory == memoryEpoch {
+            // A read started before a memory warning doesn't refill the
+            // caches the warning emptied. Its bytes are still counted.
+            // The viewer's own still is kept only while a scrub is still
+            // going to show it.
+            if memory == memoryEpoch || (kind == .viewer && target != nil) {
                 // Kept decoded only while someone is looking.
                 if kind == .viewer || target != nil { keepDecoded(still.indexPosition, still.image) }
                 keepEncoded(still)
@@ -938,7 +963,10 @@ final class KeyframeStillService {
     /// The limits are checked against a read's expected cost before it
     /// starts, not during it, so a keyframe isn't left half fetched. A read
     /// that fetches more than expected can take the spend past a limit by
-    /// that much, and nothing more is read ahead after it.
+    /// that much. Past the near half, reads on the ladder still go ahead
+    /// while the whole budget allows them; past the whole budget, nothing
+    /// more is read ahead. Opening the file isn't checked against the
+    /// budget at all, as the viewer's own reads need it.
     private func nextReadAhead(playhead: Double, now: TimeInterval) -> (position: Int, isNear: Bool)? {
         guard let time = readerTime(forSourceTime: playhead), let budget = readAheadBudget, !index.isEmpty else { return nil }
         func isWanted(_ position: Int, isNear: Bool) -> Bool {

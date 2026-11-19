@@ -1412,6 +1412,10 @@ final class KeyframeStillServiceTests: XCTestCase {
         for times in [[0, 4, 3.0e13], [0, 8, 4], [0, .nan], [-1, 4], [0, .infinity]] {
             XCTAssertNil(KeyframeStillService.usableIndex(entries(times), duration: 7200), "\(times)")
         }
+        // The shim keeps one entry past its 400,000 limit so a longer index
+        // arrives here too long, never cut short. A fixture with that many
+        // keyframes would run to many megabytes, so the edge is checked here.
+        XCTAssertNotNil(KeyframeStillService.usableIndex(entries(Array(repeating: 1, count: 400_000)), duration: 7200))
         XCTAssertNil(KeyframeStillService.usableIndex(entries(Array(repeating: 1, count: 400_001)), duration: 7200))
 
         // One cue a million years out, or cues out of order: the file gets
@@ -1450,7 +1454,12 @@ final class KeyframeStillServiceTests: XCTestCase {
         await service.settle()
     }
 
-    func testTheCarryCountsWhatARunningReadAheadHasFetched() async throws {
+    /// The app goes to the background while a read ahead is part way
+    /// through a block and a viewer read waits behind it. Every byte of the
+    /// read ahead counts, including those landing while the reader stops,
+    /// and none of the viewer's do. A carry taken before the reader stopped
+    /// sees them too, so the next load of the file doesn't spend them again.
+    func testBytesStillArrivingWhenTheReaderStopsAreCountedForTheTitle() async throws {
         let rig = Rig()
         let reader = ScriptedReader()
         reader.fetchedPerStill = 0
@@ -1465,10 +1474,42 @@ final class KeyframeStillServiceTests: XCTestCase {
             await service.settle()
         }
         try await waitUntil { reader.asked.count == 1 }
-        XCTAssertEqual(service.carry.readAheadBytes, 0)
-        // Part of a block has come in for the read still running.
         reader.addFetched(250_000)
-        XCTAssertEqual(service.carry.readAheadBytes, 250_000, "the next load of the file doesn't spend it again")
+        _ = service.request(atSourceTime: 3000) { _, _ in }
+        try await waitUntil { reader.asked.count == 2 }
+        let carry = service.carry
+        reader.fetchedWhenStopped = 50_000
+        rig.centre.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        try await waitUntil { !service.holdings.hasReader }
+        await service.shutdown()?.value
+        XCTAssertEqual(service.readAheadSpent, 300_000)
+        XCTAssertEqual(service.nearSpent, 300_000, "it was a read near the playhead")
+        XCTAssertEqual(carry.readAheadBytes, 300_000)
+        XCTAssertEqual(carry.nearBytes, 300_000)
+
+        // The next load of the same file starts from there.
+        let next = Rig()
+        next.reader = ScriptedReader()
+        let again = try XCTUnwrap(next.makeService(try Self.directSpec(), carried: carry))
+        XCTAssertEqual(again.readAheadSpent, 300_000)
+        await again.shutdown()?.value
+    }
+
+    func testAViewerReadFromBeforeAMemoryWarningIsDroppedOnceTheScrubHasEnded() async throws {
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = nil
+        let reader = ScriptedReader()
+        reader.holds = true
+        rig.reader = reader
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        _ = service.request(atSourceTime: 97) { _, _ in }
+        try await waitUntil { reader.heldTimes.count == 1 }
+        rig.centre.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        service.endScrub()
+        reader.release()
+        try await waitUntil { rig.lines.contains { $0.hasPrefix("still viewer ") } }
+        XCTAssertEqual(service.holdings.heldStills, 0, "nothing is left to show it, so it isn't kept")
         await service.shutdown()?.value
         await service.settle()
     }
@@ -1955,6 +1996,7 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
     private var extras = (holdsPrepare: false, fetchedPerStill: nil as Int?, fetchedTotal: 0,
                           stoppedResult: KeyframeStillResult.cancelled)
     private var script: (@Sendable (Int) -> KeyframeStillResult)?
+    private var lateBytes = 0
     private var box: KeyframeStillHeaders?
 
     init(seconds: Double = 7200, lastIsReadable: Bool = true, info: KeyframeStillInfo? = nil) {
@@ -1993,6 +2035,12 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
     func addFetched(_ bytes: Int) {
         lock.withLock { extras.fetchedTotal += bytes }
     }
+
+    /// Bytes that land once the reader is told to stop, before it has.
+    var fetchedWhenStopped: Int {
+        get { lock.withLock { lateBytes } }
+        set { lock.withLock { lateBytes = newValue } }
+    }
     var fetched: Int { lock.withLock { extras.fetchedTotal } }
 
     /// How a read that is told to stop ends. The real reader says
@@ -2007,6 +2055,8 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
     func cancel() {
         lock.lock()
         counts.cancels += 1
+        extras.fetchedTotal += lateBytes
+        lateBytes = 0
         // A reader that answers late ignores being told to stop.
         guard !settings.answersWhenShutDown else { return lock.unlock() }
         let stale = waiting

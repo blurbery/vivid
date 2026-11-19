@@ -235,13 +235,29 @@ extension KeyframeStillService {
         }
     }
 
+    /// What read-ahead has spent on a file. Every load of the same file
+    /// shares one, so bytes counted after a load has ended, once its
+    /// reader has stopped, still reach the next.
+    @MainActor
+    final class Spend {
+        var readAhead = 0
+        /// The part of it spent near the playhead.
+        var near = 0
+
+        func add(_ bytes: Int, isNear: Bool) {
+            readAhead += bytes
+            if isNear { near += bytes }
+        }
+    }
+
     /// What read-ahead has already spent on a file, kept across a reload of
     /// the same file so the budget is per title and not per load.
-    struct Carry: Equatable {
+    @MainActor
+    struct Carry {
         let key: String
-        let readAheadBytes: Int
-        /// The part of it spent near the playhead.
-        var nearBytes = 0
+        let spend: Spend
+        var readAheadBytes: Int { spend.readAhead }
+        var nearBytes: Int { spend.near }
     }
 
     enum Tuning {

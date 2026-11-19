@@ -16,6 +16,7 @@ final class KeyframeStillReaderTests: XCTestCase {
     private static let rotated = "stills_h264_rotated.mp4"
     private static let withAudio = "stills_h264_with_audio.mkv"
     private static let oneKeyframe = "stills_h264_one_keyframe.mp4"
+    private static let lateVideo = "stills_h264_late_video.mkv"
 
     // MARK: - Index and stream facts
 
@@ -312,6 +313,28 @@ final class KeyframeStillReaderTests: XCTestCase {
         XCTAssertEqual(finished.bytes - opened.bytes, total, "nothing but the stills' own reads")
         XCTAssertEqual(source.readsOfTheFileStart(), opened.startReads, "the header is read once")
         await reader.shutdown()
+    }
+
+    /// The sound starts two seconds before the picture. The player's clock
+    /// counts from the sound, so the shim reports the gap for the service
+    /// to take off, worked out from the file and nothing else.
+    func testTheVideosLateStartIsMeasuredFromTheFile() async throws {
+        let reader = KeyframeStillReader(source: try Self.source(Self.lateVideo))
+        let info = try await Self.unwrap(await reader.prepare())
+        XCTAssertEqual(info.startTime, 2, accuracy: 0.05)
+        XCTAssertEqual(info.videoStartOffset, 2, accuracy: 0.05)
+        XCTAssertEqual(try XCTUnwrap(reader.index.first).time, 0, accuracy: 0.05, "the index counts from the picture")
+        let still = try await Self.unwrap(await reader.still(at: 1.5, maxWidth: 160))
+        XCTAssertEqual(still.time, 1, accuracy: 0.05)
+        await reader.shutdown()
+
+        // Files whose picture starts first have no gap.
+        for name in [Self.matroska, Self.mp4, Self.hevc, Self.withAudio] {
+            let other = KeyframeStillReader(source: try Self.source(name))
+            let facts = try await Self.unwrap(await other.prepare(), name)
+            XCTAssertEqual(facts.videoStartOffset, 0, accuracy: 0.05, name)
+            await other.shutdown()
+        }
     }
 
     /// The Matroska fixture counts in milliseconds. A time a fraction of a

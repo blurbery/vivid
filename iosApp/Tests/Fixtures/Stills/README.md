@@ -43,6 +43,13 @@ Its 40 pixel square is red for two seconds and then green:
 ffmpeg -f lavfi -i "testsrc2=size=160x90:rate=24:duration=4,drawbox=w=40:h=40:t=fill:c=red:enable='lt(t,2)',drawbox=w=40:h=40:t=fill:c=lime:enable='gte(t,2)'" -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=4" -c:v libx264 -preset medium -b:v 100k -g 24 -keyint_min 24 -sc_threshold 0 -bf 2 -pix_fmt yuv420p -bsf:v filter_units=remove_types=6 -c:a flac -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact stills_h264_with_audio.mkv
 ```
 
+`stills_h264_late_video.mkv` has a five-second FLAC sound track that starts two seconds before its three seconds of 160 by 90 video, which has a keyframe every second.
+It checks that still times are put on the player's clock, which counts from the start of the sound:
+
+```sh
+ffmpeg -itsoffset 2 -f lavfi -i "testsrc2=size=160x90:rate=24:duration=3,drawbox=w=40:h=40:t=fill:c=red:enable='lt(t,1)',drawbox=w=40:h=40:t=fill:c=lime:enable='gte(t,1)'" -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=5" -map 0:v -map 1:a -c:v libx264 -preset medium -b:v 100k -g 24 -keyint_min 24 -sc_threshold 0 -bf 2 -pix_fmt yuv420p -bsf:v filter_units=remove_types=6 -c:a flac -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact stills_h264_late_video.mkv
+```
+
 `stills_h264_one_keyframe.mp4` is one second at 160 by 90 with a blue 40 pixel square and a single keyframe:
 
 ```sh
