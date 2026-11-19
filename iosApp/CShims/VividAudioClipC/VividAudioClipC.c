@@ -915,6 +915,7 @@ int vivid_audio_clip_read(VividAudioClip *clip, double start_seconds, double dur
     out_samples->music = music;
     out_samples->count = count;
     out_samples->start_seconds = clip->cursor_seconds;
+    out_samples->ended_at_boundary = clip->at_boundary && count < wanted;
     drop_pending(clip, count);
     clip->next_seconds = clip->cursor_seconds;
     // A clip cut short by the end of the file, a gap or a new layout

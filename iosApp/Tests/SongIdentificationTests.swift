@@ -19,6 +19,7 @@ final class SongIdentificationTests: XCTestCase {
     private static let centre51 = "songclip_ac3_51_centre.mkv"
     private static let stereo = "songclip_aac_stereo.mp4"
     private static let twoTracks = "songclip_flac_two_tracks.mkv"
+    private static let gap = "songclip_flac_gap.mkv"
     private static let melody = "songclip_melody.mkv"
     private static let melodyReference = "songclip_melody_reference.m4a"
     private static let otherReference = "songclip_other_reference.m4a"
@@ -59,6 +60,18 @@ final class SongIdentificationTests: XCTestCase {
         // Carrying on reads only what follows; a seek would go back to the
         // keyframe before the time and read the second's bytes again.
         XCTAssertLessThan(reader.bytesRead - afterFirst, afterFirst)
+    }
+
+    func testAClipEndsAtAGapInTheTrack() async throws {
+        // Sound from 0 to 2 seconds, then from 7 to 9.
+        let reader = try Self.reader(Self.gap)
+        let before = try await reader.clip(from: 1, duration: 3)
+        XCTAssertEqual(before.startSeconds, 1, accuracy: 0.001)
+        XCTAssertLessThan(before.duration, 1.1, "nothing from after the gap is joined on")
+        XCTAssertTrue(before.endedAtBoundary, "short because of the gap, not the end of the file")
+        let after = try await reader.clip(from: 7, duration: 1)
+        XCTAssertEqual(after.startSeconds, 7, accuracy: 0.01)
+        XCTAssertFalse(after.endedAtBoundary)
     }
 
     func testTheTrackAskedForIsTheOneRead() async throws {
@@ -223,6 +236,19 @@ final class SongIdentificationTests: XCTestCase {
         XCTAssertEqual(outcome, .failed(.unreachable))
         let durations = await catalog.durations
         XCTAssertEqual(durations.count, 1)
+    }
+
+    func testIdentificationCarriesOnPastAGap() async throws {
+        // From 0: the first step stops at the gap two seconds in, and later
+        // steps carry on from seven seconds, as a fresh run.
+        let catalog = StubCatalog(answers: [])
+        let outcome = await SongIdentifier(catalog: catalog).identify(reader: try Self.reader(Self.gap), at: 4)
+        XCTAssertEqual(outcome, .notFound)
+        let asked = await catalog.asked
+        XCTAssertEqual(asked.count, 2, "the sound on each side of the gap is asked about")
+        for duration in asked {
+            XCTAssertLessThan(duration, 2.5, "the two sides are never joined into one signature")
+        }
     }
 
     func testAnUnreadableFileIsReportedBeforeShazamIsAsked() async throws {

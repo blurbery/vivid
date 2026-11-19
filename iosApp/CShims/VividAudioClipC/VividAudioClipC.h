@@ -112,6 +112,10 @@ typedef struct VividAudioClipSamples {
     int count;
     /// When the first sample plays, on the player's clock.
     double start_seconds;
+    /// Non-zero when the clip is short because the sound stopped being one
+    /// continuous run (a gap in the track, or a new channel layout) rather
+    /// than because the file ended. There is more sound after it.
+    int ended_at_boundary;
 } VividAudioClipSamples;
 
 /// Opens a file through the callbacks and picks its sound stream:

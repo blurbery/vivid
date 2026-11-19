@@ -140,6 +140,13 @@ struct SongIdentifier: Sendable {
     /// A later step that adds less than this, because the file ends, isn't
     /// worth asking about again.
     static let shortestUsefulStepSeconds = 1.0
+    /// Reads per attempt at most. A clip that ends at a gap or a new channel
+    /// layout takes another read to carry on, so this bounds the reads
+    /// rather than the clip's length.
+    static let mostSteps = 4
+    /// A clip starting this much later than the last one ended follows a
+    /// gap in the track, and isn't joined on to it.
+    static let gapSeconds = 0.25
 
     private static let logger = Logger(subsystem: "com.blurbery.vivid", category: "SongID")
 
@@ -177,7 +184,7 @@ struct SongIdentifier: Sendable {
         var lastFailureCode: Int?
         var steps = 0
 
-        while Double(mix.count) / SongClip.sampleRate < longest - 0.01 {
+        while Double(mix.count) / SongClip.sampleRate < longest - 0.01, steps < Self.mostSteps {
             if Task.isCancelled { return finish(.failed(.cancelled), reader: reader, steps: steps, started: started) }
             if steps > 0, await !mayReadMore() { break }
             let have = Double(mix.count) / SongClip.sampleRate
@@ -196,6 +203,12 @@ struct SongIdentifier: Sendable {
                 return finish(.failed(.unreadable), reader: reader, steps: steps, started: started)
             }
             steps += 1
+            // After a gap the sound starts again later: a fresh run, never
+            // joined to what came before the gap.
+            if !mix.isEmpty, abs(clip.startSeconds - next) > Self.gapSeconds {
+                mix = []
+                music = []
+            }
             mix += clip.mix
             if let part = clip.music, music != nil {
                 music! += part
@@ -204,7 +217,9 @@ struct SongIdentifier: Sendable {
             }
             next = clip.startSeconds + clip.duration
             let total = Double(mix.count) / SongClip.sampleRate
-            let reachedEnd = clip.duration < wanted - 0.01
+            // Short at a gap or a new layout isn't the end: there's more
+            // after it.
+            let reachedEnd = clip.duration < wanted - 0.01 && !clip.endedAtBoundary
             // A sliver from the end of the file adds nothing worth asking
             // about again. Before anything has been asked, though, it may be
             // what makes the clip long enough to ask at all.

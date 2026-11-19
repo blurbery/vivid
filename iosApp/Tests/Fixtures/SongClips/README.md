@@ -30,6 +30,13 @@ It checks that the track asked for is the one read, and that times are on the pl
 ffmpeg -f lavfi -i "$V" -itsoffset 1 -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=5" -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=6" -map 0:v -map 1:a -map 2:a -c:v libx264 -preset medium -g 12 -b:v 40k -pix_fmt yuv420p -bsf:v filter_units=remove_types=6 -c:a flac $BE songclip_flac_two_tracks.mkv
 ```
 
+`songclip_flac_gap.mkv` has nine seconds of picture and a 440 Hz FLAC tone with a gap in its timestamps: two seconds of sound, then nothing until seven seconds in, then two more.
+It checks that a clip ends at a gap rather than joining the sound on either side:
+
+```sh
+ffmpeg -f lavfi -i "testsrc2=size=160x90:rate=12:duration=9" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=4" -filter_complex "[1]asetpts='PTS+if(gte(T,2),5/TB,0)'[a]" -map 0:v -map "[a]" -c:v libx264 -preset medium -g 12 -b:v 30k -pix_fmt yuv420p -bsf:v filter_units=remove_types=6 -c:a flac $BE songclip_flac_gap.mkv
+```
+
 `songclip_melody.mkv` is twenty seconds of made-up music beside a test pattern, as stereo AAC: eleven seconds of one tune, `$A`, then the first nine seconds of another, `$B`.
 `songclip_melody_reference.m4a` is twenty seconds of `$B` on its own, from which the tests make a custom ShazamKit catalogue, so identification is tested without reaching Shazam.
 Asked about nine seconds in, the first six-second step (five to eleven seconds) holds only `$A` and can't match, and the second step reaches into `$B` and does, which checks that a clip is lengthened when the first try finds nothing:

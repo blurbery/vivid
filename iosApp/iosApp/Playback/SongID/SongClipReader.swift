@@ -13,6 +13,10 @@ struct SongClip: Sendable {
     let music: [Float]?
     /// When the first sample plays, on the player's clock.
     let startSeconds: Double
+    /// True when the clip is short because the sound stopped being one
+    /// continuous run (a gap, or a new channel layout), not because the
+    /// file ended: there is more sound to read after it.
+    var endedAtBoundary = false
 
     var duration: Double { Double(mix.count) / Self.sampleRate }
 }
@@ -95,7 +99,8 @@ final class SongClipReader: @unchecked Sendable {
         guard count > 0, let mix = samples.mix else { throw SongClipError.noSound }
         return SongClip(mix: Array(UnsafeBufferPointer(start: mix, count: count)),
                         music: samples.music.map { Array(UnsafeBufferPointer(start: $0, count: count)) },
-                        startSeconds: samples.start_seconds)
+                        startSeconds: samples.start_seconds,
+                        endedAtBoundary: samples.ended_at_boundary != 0)
     }
 
     private func openIfNeeded() throws -> OpaquePointer {

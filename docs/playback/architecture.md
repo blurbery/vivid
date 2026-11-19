@@ -391,7 +391,7 @@ The player comes first: a streamed file isn't read while the player is buffering
 A download is always read.
 An attempt that hasn't finished after 45 seconds gives up and says so, and a second step that only finds a sliver at the end of the file isn't asked about again once the first was asked about.
 A second step is also skipped after a seek or an audio track change; the playhead's expected movement allows for the playback speed and hold-to-fast-forward.
-A gap in the track's timestamps or a new channel layout ends a clip there, rather than joining sound from different points or mixed with the wrong weights.
+A gap in the track's timestamps or a new channel layout ends a clip there, rather than joining sound from different points or mixed with the wrong weights; the next read carries on after it, starting a fresh run after a gap, with at most four reads in all.
 Only a ShazamKit signature leaves the device, never the sound, and the unified log (category `SongID`) records only the outcome, steps, bytes read, time taken and ShazamKit's error code, with no titles, addresses or tokens.
 
 Save to Shazam adds the song to the viewer's synced Shazam library with `SHLibrary`, available on iOS 17 and tvOS 17 and later.
