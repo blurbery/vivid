@@ -652,6 +652,8 @@ extension TVMainTabView {
     struct MenuPressBridge: UIViewRepresentable {
         let isActive: Bool
         var onlyWithoutFocus = false
+        /// Asked as a press arrives; true leaves the press alone.
+        var isBlocked: () -> Bool = { false }
         let onPress: () -> Void
 
         func makeUIView(context: Context) -> InstallerView {
@@ -661,6 +663,7 @@ extension TVMainTabView {
         func updateUIView(_ view: InstallerView, context: Context) {
             context.coordinator.isActive = isActive
             context.coordinator.onlyWithoutFocus = onlyWithoutFocus
+            context.coordinator.isBlocked = isBlocked
             context.coordinator.onPress = onPress
         }
 
@@ -673,10 +676,13 @@ extension TVMainTabView {
         final class Coordinator: NSObject, UIGestureRecognizerDelegate {
             var isActive = false
             var onlyWithoutFocus = false
+            var isBlocked: () -> Bool = { false }
             var onPress: () -> Void = {}
-            /// Set when a press caught with nothing focused didn't bring
-            /// focus back, so the next one soon after goes to tvOS.
-            private var unrecoveredAt: ContinuousClock.Instant?
+            /// True from when a press caught with nothing focused has failed
+            /// to bring focus back until focus is next seen, so the next
+            /// Menu in that same outage goes to tvOS.
+            private var isUnrecovered = false
+            private var outageWatch: Task<Void, Never>?
 
             /// Menu presses only; no touches, so clickpad touches stay with
             /// the focused button.
@@ -693,10 +699,26 @@ extension TVMainTabView {
                 guard recogniser.state == .ended else { return }
                 onPress()
                 guard onlyWithoutFocus else { return }
-                // Once the recovery has had time to land.
-                let window = recogniser.view as? UIWindow
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self, weak window] in
-                    self?.unrecoveredAt = Self.hasFocus(in: window) ? nil : .now
+                watchOutage(in: recogniser.view as? UIWindow)
+            }
+
+            /// Once the recovery has had time to land, marks the press as
+            /// having failed if nothing has focus, then clears the mark as
+            /// soon as focus is back or after ten seconds, so it never
+            /// outlives the outage it belongs to. A later press restarts it.
+            private func watchOutage(in window: UIWindow?) {
+                outageWatch?.cancel()
+                isUnrecovered = false
+                outageWatch = Task { @MainActor [weak self, weak window] in
+                    try? await Task.sleep(for: .milliseconds(800))
+                    guard !Task.isCancelled, let self, !Self.hasFocus(in: window) else { return }
+                    self.isUnrecovered = true
+                    for _ in 0..<20 {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
+                        if Self.hasFocus(in: window) { break }
+                    }
+                    self.isUnrecovered = false
                 }
             }
 
@@ -706,17 +728,16 @@ extension TVMainTabView {
             }
 
             func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-                guard isActive else { return false }
+                guard isActive, !isBlocked() else { return false }
                 let hasFocus = Self.hasFocus(in: gestureRecognizer.view as? UIWindow)
                 // The bar's own bridge only acts while something has focus,
                 // so the two never both take a press.
                 guard onlyWithoutFocus else { return hasFocus }
                 guard !hasFocus else { return false }
-                // The press after one that didn't bring focus back goes to
-                // tvOS, so Menu can always leave the app. Reads only: UIKit
-                // may ask more than once for a press.
-                if let unrecoveredAt, ContinuousClock.now - unrecoveredAt < .seconds(10) { return false }
-                return true
+                // A press after one that didn't bring focus back goes to tvOS,
+                // so Menu can always leave the app. Reads only: UIKit may
+                // ask more than once for a press.
+                return !isUnrecovered
             }
         }
 

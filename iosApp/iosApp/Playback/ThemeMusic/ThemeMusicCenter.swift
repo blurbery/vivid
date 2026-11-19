@@ -193,7 +193,7 @@ final class ThemeMusicCenter {
     /// Only one video player is ever on screen, so the latest appear or
     /// disappear wins. A plain flag can't get stuck the way a count could if
     /// an appear ever fired twice.
-    private var isVideoPlayerOnScreen = false
+    private(set) var isVideoPlayerOnScreen = false
     private var lastVideoPlayerExit: ContinuousClock.Instant?
 
     private var lastSessionIdentity: SessionIdentity

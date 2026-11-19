@@ -151,6 +151,8 @@ struct TVMainTabView: View {
             MenuPressBridge(
                 isActive: scenePhase == .active && router.presentedPlayer == nil,
                 onlyWithoutFocus: true,
+                // A player pushed as a page, not presented over the shell.
+                isBlocked: { ThemeMusicCenter.shared.isVideoPlayerOnScreen },
                 onPress: recoverFocusOnMenu
             )
             .frame(width: 0, height: 0)
