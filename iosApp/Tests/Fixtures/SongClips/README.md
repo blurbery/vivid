@@ -30,6 +30,16 @@ It checks that the track asked for is the one read, and that times are on the pl
 ffmpeg -f lavfi -i "$V" -itsoffset 1 -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=5" -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=6" -map 0:v -map 1:a -map 2:a -c:v libx264 -preset medium -g 12 -b:v 40k -pix_fmt yuv420p -bsf:v filter_units=remove_types=6 -c:a flac $BE songclip_flac_two_tracks.mkv
 ```
 
+`songclip_ac3_layout_change.mkv` has four seconds of picture and an AC-3 track whose channel layout changes halfway, as broadcast AC-3 can: two seconds of 3.0, with a 440 Hz tone in front left and right and a 1 kHz tone in the centre, then two seconds of 2.1, with the same 440 Hz tone and a 60 Hz tone in the low-frequency channel.
+The two halves are encoded separately and joined:
+
+```sh
+ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=2" -filter_complex "[0]asplit[l][r];[l][r][1]join=inputs=3:channel_layout=3.0:map=0.0-FL|1.0-FR|2.0-FC[a]" -map "[a]" -c:a ac3 -b:a 192k -fflags +bitexact -flags:a +bitexact first.ac3
+ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" -f lavfi -i "sine=frequency=60:sample_rate=48000:duration=2" -filter_complex "[0]asplit[l][r];[l][r][1]join=inputs=3:channel_layout=2.1:map=0.0-FL|1.0-FR|2.0-LFE[a]" -map "[a]" -c:a ac3 -b:a 192k -fflags +bitexact -flags:a +bitexact second.ac3
+cat first.ac3 second.ac3 > both.ac3
+ffmpeg -f lavfi -i "testsrc2=size=160x90:rate=12:duration=4" -i both.ac3 -map 0:v -map 1:a -c:v libx264 -preset medium -g 12 -b:v 30k -pix_fmt yuv420p -bsf:v filter_units=remove_types=6 -c:a copy $BE songclip_ac3_layout_change.mkv
+```
+
 `songclip_flac_gap.mkv` has nine seconds of picture and a 440 Hz FLAC tone with a gap in its timestamps: two seconds of sound, then nothing until seven seconds in, then two more.
 It checks that a clip ends at a gap rather than joining the sound on either side:
 

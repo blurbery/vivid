@@ -183,6 +183,8 @@ targets:
         buildPhase: resources
       - path: Tests/Fixtures/SongClips/songclip_ac3_51_centre.mkv
         buildPhase: resources
+      - path: Tests/Fixtures/SongClips/songclip_ac3_layout_change.mkv
+        buildPhase: resources
       - path: Tests/Fixtures/SongClips/songclip_flac_gap.mkv
         buildPhase: resources
       - path: Tests/Fixtures/SongClips/songclip_flac_two_tracks.mkv

@@ -20,6 +20,7 @@ final class SongIdentificationTests: XCTestCase {
     private static let stereo = "songclip_aac_stereo.mp4"
     private static let twoTracks = "songclip_flac_two_tracks.mkv"
     private static let gap = "songclip_flac_gap.mkv"
+    private static let layoutChange = "songclip_ac3_layout_change.mkv"
     private static let melody = "songclip_melody.mkv"
     private static let melodyReference = "songclip_melody_reference.m4a"
     private static let otherReference = "songclip_other_reference.m4a"
@@ -72,6 +73,26 @@ final class SongIdentificationTests: XCTestCase {
         let after = try await reader.clip(from: 7, duration: 1)
         XCTAssertEqual(after.startSeconds, 7, accuracy: 0.01)
         XCTAssertFalse(after.endedAtBoundary)
+    }
+
+    func testAClipEndsAtAChannelLayoutChange() async throws {
+        // 3.0 with a 1 kHz centre for two seconds, then 2.1 with a 60 Hz
+        // low-frequency channel: the same three channels, laid out apart.
+        let reader = try Self.reader(Self.layoutChange)
+        let before = try await reader.clip(from: 0.5, duration: 3)
+        XCTAssertTrue(before.endedAtBoundary, "short because the layout changed, not the end of the file")
+        XCTAssertLessThan(before.startSeconds + before.duration, 2.1, "nothing after the change is mixed with 3.0's weights")
+        let music = try XCTUnwrap(before.music, "3.0 has a centre channel")
+        XCTAssertGreaterThan(Self.level(before.mix, at: 1000), 0.005)
+        XCTAssertLessThan(Self.level(music, at: 1000), 0.0005, "the music mix leaves the centre out")
+
+        // The next read carries on in 2.1, mixed with 2.1's own weights.
+        let after = try await reader.clip(from: before.startSeconds + before.duration, duration: 1.5)
+        XCTAssertEqual(after.startSeconds, before.startSeconds + before.duration, accuracy: 0.05)
+        XCTAssertNil(after.music, "2.1 has no centre channel")
+        XCTAssertGreaterThan(Self.level(after.mix, at: 440), 0.005)
+        XCTAssertLessThan(Self.level(after.mix, at: 60), 0.0005, "the low-frequency channel isn't mixed in")
+        XCTAssertLessThan(Self.level(after.mix, at: 1000), 0.0005)
     }
 
     func testTheTrackAskedForIsTheOneRead() async throws {

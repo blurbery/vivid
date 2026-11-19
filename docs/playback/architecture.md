@@ -387,10 +387,10 @@ Sound is interleaved with the picture in the file, so a clip reads about as much
 Opening the file may pass at most 16 MB to FFmpeg, and each step at most 128 MB, or identification stops with a message saying the file's sound can't be read.
 These limits count the bytes given to FFmpeg, not what is downloaded: each request to the server fetches a whole block of up to 1 MB, so when FFmpeg jumps around the file (to its index, or to the point a step starts) a download can be a few MB more than the count.
 A read that fails at a later step, for that or a lost connection, ends with that failure too rather than "No song found", since the longer clip was never asked about; only running out of file there leaves the first step's answer standing.
-The player comes first: a streamed file isn't read while the player is buffering or has less than 10 seconds buffered ahead (less near the end, where the buffer can only hold what is left), and the same check runs before the second step, which is skipped if it fails.
+The player comes first: a streamed file isn't read while the player is buffering or has less than 10 seconds buffered ahead (less near the end, where the buffer can only hold what is left), and the same check runs before each later step, which is skipped if it fails.
 A download is always read.
-An attempt that hasn't finished after 45 seconds gives up and says so, and a second step that only finds a sliver at the end of the file isn't asked about again once the first was asked about.
-A second step is also skipped after a seek or an audio track change; the playhead's expected movement allows for the playback speed and hold-to-fast-forward.
+An attempt that hasn't finished after 45 seconds gives up and says so, and a later step that only finds a sliver at the end of the file isn't asked about again once an earlier one was asked about.
+Later steps are also skipped after a seek or an audio track change; the playhead's expected movement allows for the playback speed and hold-to-fast-forward.
 A gap in the track's timestamps or a new channel layout ends a clip there, rather than joining sound from different points or mixed with the wrong weights; the next read carries on after it, starting a fresh run after a gap, with at most four reads in all.
 Only a ShazamKit signature leaves the device, never the sound, and the unified log (category `SongID`) records only the outcome, steps, bytes read, time taken and ShazamKit's error code, with no titles, addresses or tokens.
 
