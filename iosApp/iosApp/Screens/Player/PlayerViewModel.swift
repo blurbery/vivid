@@ -80,7 +80,9 @@ class PlayerViewModel {
     /// engine's display and audio hand-off and this item's OpenSubtitles files.
     @discardableResult
     func disposeVividPlayback(forReplacement: Bool = false) -> Task<Void, Never>? {
-        let previewShutdown = scrubPreviewProvider.endSession()
+        // A replacement may be the same file again (a quality change, or a
+        // seek that reloads), which keeps its preview sheets.
+        let previewShutdown = scrubPreviewProvider.endSession(keepingSheets: forReplacement)
         isLoadingSubtitles = false
         activeVividLoadEpoch = nil
         establishedVividLoadEpoch = nil
@@ -818,6 +820,7 @@ class PlayerViewModel {
             self.scrubPreviewImage = preview?.image
             self.scrubPreviewImageSourceTime = preview?.sourceTime
         }
+        scrubPreviewProvider.stillPlayerSource = self
         vividPlaybackController.onEvent = { [weak self] event in
             self?.handleVividEvent(event)
         }

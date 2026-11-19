@@ -274,12 +274,79 @@ The overlay receives updates only when its active cues or selected track change;
 The loader keeps SubRip and WebVTT bold, italic, underline, strike-through and `<font color>` tags as styled runs and `{\anN}` as the cue's alignment, dropping other tags, and the overlay stacks overlapping cues as libass does, with the latest furthest from the edge.
 Native ASS and embedded rendering keep their authored styles.
 
-Apple TV scrubbing shows the timeline and target time without a thumbnail overlay.
-Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker.
-Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
+Scrub previews come from the server's own seek-bar preview sheets where it has them: JPEG sheets holding a grid of small stills taken at a fixed interval, usually 10 seconds.
+Silo lists them at `GET /api/v2/watch/{id}/trickplay`, asked for when a file with video plays through a Protocol V3 plan unless its version says `trickplay_available` is `false`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
+Emby keeps its stills in one container file instead, described after the sheets below, and downloads have none.
+[ScrubPreviewSheets](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) maps a source-media time to a sheet and a cell, and [ScrubPreviewSheetStore](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheetStore.swift) downloads and decodes sheets off the main thread.
+A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
+One sheet is decoded at a time, others waiting their turn in order, and the newest target decides which is asked for next; the JPEGs of the sheets either side download in the background, two requests at a time at most.
+The store keeps two sheets decoded while scrubbing and one between scrubs, plus the JPEGs of up to twelve; nothing is asked of the server for previews until the load's first frame is up, even if a scrub starts first (the iPhone and iPad frame reader waits too), then the sheet list and the sheet around the playhead are fetched, and the sheets either side of the target while scrubbing.
+A memory warning drops them all, and going to the background drops the decoded ones; a decode already running then, and after a memory warning a download too, doesn't put its result back.
+A sheet's download stops as soon as it passes 16 MB.
+A target inside the still already showing publishes nothing, and a still left from another sheet is cleared if the next sheet takes longer than a quarter of a second.
+A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a replan, quality change or reloading seek of the same file keeps the sheets it has.
+Skip presses show the target time only and ask for no still.
+Sheets are indexed by source time, so a target the loaded transport can't reach still has a still.
 
-iOS scrub previews use the existing bounded request owner and platform engine frame extractor.
+Emby's stills live in one BIF file per video: a 64-byte header, an index of timestamps and byte offsets, then one JPEG per still.
+[EmbyScrubPreviews](../../iosApp/iosApp/Screens/Player/EmbyScrubPreviews.swift) builds only the file's address (`GET /Videos/{id}/index.bif?Width=320`) at prepare, and after the first frame reads the header and index with one `Range` request for the first 64 KiB, or a second when the index is longer.
+The same model, store and provider then serve it as sheets of a single cell: still `i` is "sheet" `i`, found by a binary search of the stills' own start times (the last one starting at or before the target, the first for a target before them all), so nothing assumes an even interval.
+The store fetches stills by `Range`, a run of up to eight (the wanted still, two before it and five after) in no more than 512 KiB per request.
+That limit only stops neighbours being added: a wanted still bigger than 512 KiB on its own, up to the 2 MiB a still may be, is fetched by itself in one request.
+One request runs at a time with the newest waiting run next; at most three wait, and an older one is dropped without counting as a failure, so a target that comes back to it asks for it again.
+It holds up to 8 MiB of still JPEGs, keeps 24 stills decoded while scrubbing and four between scrubs, and decodes the stills either side of the target ahead once they are downloaded.
+A reply that isn't the range asked for fails the run for 30 seconds, like a sheet.
+A server that ignores `Range` and sends the whole file has it kept and sliced when it's 16 MB or less; a memory warning or going to the background drops it, and it's downloaded once more when next needed.
+A 404 for the file means the item has no previews, and that load doesn't ask again.
+These requests carry the Emby account's headers and never follow a redirect.
+The BIF path is covered by tests on files made in the tests; see the [Emby core](../cores/emby.md#playback-and-settings) for what was checked against a server.
+
+Apple TV shows the still above the playhead once a timeline selection or hold has moved the target, and in the hold-to-seek panel.
+While it is up, the title, shortcut circles and skip prompts it would cover are hidden.
+Apple TV has no AVFoundation frame reader, so without server sheets its stills come from the keyframe reader described below, and where that can't serve the load scrubbing shows the timeline and target time only.
+Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged.
+
+On iPhone and iPad the still fills the existing preview bubble.
+Without server sheets, or for a sheet or sheet list that failed, they fall back to the bounded request owner and the platform engine frame extractor.
+The provider reaches that extractor through the small [ScrubStillSource](../../iosApp/iosApp/Screens/Player/ScrubStillSource.swift) protocol.
+That reader opens the stream a second time, so it also waits for the load's first frame: a scrub that starts earlier shows the target time only, and gets its still once the first frame is up.
 Late images from an old source or gesture must not paint over a new selection.
+
+A third source is stills Vivid makes itself from the playing file's own keyframes, used only when the server has no preview sheets for the load, so server sheets always take priority.
+It is on by default.
+There is no setting for it; the hidden default `vivid.debug.keyframeStills` set to false (for example the launch argument `-vivid.debug.keyframeStills NO`) turns it off, and then no reader, network monitor, timer or request is created.
+The default is read once for each load, when its first frame is up, and every path into the keyframe code returns on that one answer.
+[KeyframeStillService](../../iosApp/iosApp/Screens/Player/KeyframeStillService.swift) serves a load only when all of these hold: the server has no preview sheets for it, the platform's frame extractor is absent or has said it can't read the file, the load is a download, Emby or Jellyfin direct play or Silo's `original_http` delivery, it has video, the device isn't an Apple TV HD, and neither an AirPlay hand-off nor Picture in Picture has the picture.
+HLS, transcodes and server remuxes never qualify.
+The load spec records which it is from what the app itself asked for (`VividLoadSpec.playsStoredFile`): for Emby and Jellyfin the app must both have asked for direct play, not a transcode, and have built an address that asks for the stored file with `Static=true`.
+Once the file is open, Dolby Vision with no HDR10, HLG or SDR base picture (profile 5) and a file with no keyframe index end the service for that load.
+While the main player decodes in software, or hasn't yet said how it decodes, nothing is read; the simulators always decode in software, so there the service reads nothing in the app.
+Nothing is created before the load's first frame; the service is made in the turn after it, and the reader and the network monitor only after five further seconds of steady playback.
+On iPhone and iPad the service is made standing by while the frame extractor still has the load: it counts that steady playback and nothing else, so it is ready if the extractor turns out not to be able to read the file.
+An index with more than 400,000 keyframes or more than four million entries in all, or with a time that isn't a number, runs backwards or lies more than 24 hours in, ends the service for that load, as does a duration over 24 hours.
+The reader is [KeyframeStillReader](../../iosApp/iosApp/Playback/Stills/KeyframeStillReader.swift), which calls the FFmpeg already shipped in Lucid Engine through the app's own C shim (`iosApp/CShims/VividStillC/`), separately from the player's libmpv context: it reads the container's keyframe index, then for each still makes one small read and decodes one frame on its own thread.
+It reads the load's original `http(s)` or file address with its own bounded range requests, never the player's `vividstream://` reader, and takes the load's current request headers before every read without asking the player to refresh them.
+The service keeps one reader for the load, closes its decoder three seconds after a scrub ends, and holds stills as JPEGs in memory (up to 8 MB on Apple TV and 16 MB on iPhone and iPad) with the last six decoded.
+A still is shown only if its keyframe is at or before the target and no more than 10 seconds before it, or while the target is moving fast, no further back than the target moves in a fifth of a second, up to two minutes; otherwise the time shows alone.
+While the target is moving fast that wider window is looked at once more about half a second after the last move, so a still from well before the target comes down as soon as the target stops.
+The viewer's target always goes first, one read at a time; a read already running finishes and is shown if it is still inside that window.
+Scrub reads wait too while the player is unsettled: while it is buffering, loading, replanning, recovering, changing quality, in error or at the end of the file, no file is opened and nothing is read, and a target is answered only from stills already held, then read once playback has settled if it is still the target.
+Seeking alone doesn't hold a scrub read up, because scrubbing itself reports it.
+A read or an open that is already running is stopped at once, not left to finish, when the load changes, the picture is handed to AirPlay or Picture in Picture, the app stops being active, the player turns to software decoding or playback becomes unsettled in any of those ways; the gates are looked at four times a second while a read is out and on every scrub request, and a read stopped this way is not counted as a failure.
+Between scrubs it reads ahead only while playback is settled (not seeking either), the app is active and the network path is neither expensive (mobile data) nor constrained, starting once the player reports at least 30 seconds buffered ahead and stopping when that falls below 20: first one keyframe for each 10 seconds within two minutes either side of the playhead, nearest first, then one every five minutes across the title and the points halfway between, at most one every two seconds.
+Read-ahead stops at a byte budget for the title: 1% of the file up to 60 MB, or 2% for a local file or a server at a private or link-local address.
+The budget counts the bytes the byte source actually fetched, which over HTTP is at least a 256 KiB block for each uncached read, not the smaller number handed to the demuxer, and the stills near the playhead may take at most half of it, so the points across the title are always reached.
+Each read is checked against its expected cost before it starts, so a keyframe is never left half fetched; one read can go past a limit by what it fetched beyond that estimate.
+Once the stills near the playhead have gone past their half, reads across the title still go ahead while the whole budget allows them; once the whole budget is spent, nothing more is read ahead.
+Opening the file to read its header and keyframe index isn't checked against the budget, because the viewer's own scrubs need it, so a reader opened again after the app returns from the background can add to the spend even when the budget is used up.
+Budgets are kept per file, keyed by its address without the query except `MediaSourceId`, so two versions of one title don't share a budget.
+Bytes still arriving for a read ahead when the load ends or the app goes to the background are counted once its reader has stopped, and the next load of the same file shares the same count.
+Times are put on the player's axis by taking off how far the first video packet sits after the start of the container.
+The shim never probes the streams in full, which is what sets the container's own start time, so it takes the start from the earliest sound or picture time among the streams' start times and the packets read before the first picture.
+The service ends with the load and on any new load.
+When the app goes to the background its reader is shut down and its stills, timer and network monitor go, but the service keeps the steady playback it has counted and the budget it has spent, and opens a new reader when next needed after the app returns.
+A memory warning drops its stills and closes the decoder.
+It only reads player state the view model already publishes, and writes one line per still and a summary per load to the unified log (category `KeyframeStills`), with the player's dropped-frame count, buffer and A/V sync beside each, and no addresses, titles or tokens.
 
 Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication.
 Recovery and the Apple TV timeline receive every delivered buffer update.

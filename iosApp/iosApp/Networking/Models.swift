@@ -719,6 +719,9 @@ struct FileVersion: Codable, Identifiable, Hashable {
     /// Server-resolved default audio track ordinal for this version.
     let effectiveAudioTrackIndex: Int?
     let effectiveAudioLanguage: String?
+    /// Silo v2: whether seek-bar previews are published for this file. Nil
+    /// when the server didn't say.
+    let trickplayAvailable: Bool?
     var id: Int { fileId }
     var editionDisplayLabel: String {
         Self.normalizedEditionLabel(Self.firstNonEmpty(editionRaw, edition))
@@ -746,7 +749,8 @@ struct FileVersion: Codable, Identifiable, Hashable {
         editionKey: String? = nil,
         edition: String? = nil,
         effectiveAudioTrackIndex: Int? = nil,
-        effectiveAudioLanguage: String? = nil
+        effectiveAudioLanguage: String? = nil,
+        trickplayAvailable: Bool? = nil
     ) {
         self.fileId = fileId
         self.fileName = fileName
@@ -770,6 +774,7 @@ struct FileVersion: Codable, Identifiable, Hashable {
         self.edition = edition
         self.effectiveAudioTrackIndex = effectiveAudioTrackIndex
         self.effectiveAudioLanguage = effectiveAudioLanguage
+        self.trickplayAvailable = trickplayAvailable
     }
 
     init(from decoder: Decoder) throws {
@@ -796,6 +801,7 @@ struct FileVersion: Codable, Identifiable, Hashable {
         edition = try c.decodeIfPresent(String.self, forKey: .edition)
         effectiveAudioTrackIndex = try c.decodeIfPresent(Int.self, forKey: .effectiveAudioTrackIndex)
         effectiveAudioLanguage = try c.decodeIfPresent(String.self, forKey: .effectiveAudioLanguage)
+        trickplayAvailable = try? c.decodeIfPresent(Bool.self, forKey: .trickplayAvailable)
     }
 
     private static func normalizedEditionLabel(_ raw: String?) -> String {

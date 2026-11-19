@@ -99,6 +99,12 @@ A converted stream has no length, which `AVPlayer` won't stream, so it's downloa
 These optional requests never refresh the session, so a refusal, even a 401, only leaves the page silent.
 Silo ignores symlinked theme files and symlinked `theme-music` folders, so themes must be regular files.
 
+Scrub previews in the player also need a v2 Silo server, with seek previews turned on for the library.
+For a file with video played through a Protocol V3 plan, unless its version says `trickplay_available` is `false`, [SiloScrubPreviews](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) reads `GET /api/v2/watch/{id}/trickplay` for it once the first frame is up, so it never competes with startup; a 404 means no previews.
+The sheet URLs carry their own authorisation and may be on the server's storage origin, so they are fetched with no account, profile or device headers.
+The request never refreshes the session, and the URLs are asked for again when they are about to expire.
+This has not been verified against a live Silo server.
+
 The source names above are retained implementation identifiers.
 Defining the core in documentation does not rename or refactor these files.
 

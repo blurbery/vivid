@@ -667,6 +667,11 @@ Detail pages read `themes` from `GET /api/v2/catalog/items/{id}` and play the fi
 The short-lived audio URL comes from `POST /api/v2/catalog/items/{owner}/themes/{theme}/playback` just before the song plays; a `converted` stream is downloaded to a temporary file first, because it has no length for `AVPlayer` to stream.
 Unlike video, a theme grant may be an absolute URL on a proxy node's origin, and Vivid plays it when it's http or https; a root-relative one is resolved against the server like artwork.
 These requests carry the normal account and profile headers but never start a token refresh, so a refused theme can't sign anyone out.
+
+Silo scrub previews are v2 only as well.
+The player reads `GET /api/v2/watch/{id}/trickplay?file_id=` through the same optional request when a file with video plays through a Protocol V3 plan, unless its version reports `trickplay_available` as `false`, then fetches the signed sheet URLs with no account headers.
+Jellyfin's come from the playing item's `Trickplay` member.
+Emby's come from the playing item's BIF file at `GET /Videos/{id}/index.bif?Width=320`, read by `Range` with the account's request headers once playback has started; see the [Emby core](cores/emby.md#playback-and-settings).
 See the [Silo core](cores/silo.md) for the details.
 
 The compatibility work follows the Silo v2 contract deployed from `dd8c474b40d1cc485bf37d3117f7c148a891d4a6`.

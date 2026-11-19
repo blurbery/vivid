@@ -143,7 +143,8 @@ final class JellyfinPlayback {
         let connection = try await JellyfinConnection.current()
         let adapter = JellyfinAdapter(connection: connection)
         // The server's own skip markers ride along on each media source.
-        let raw = await adapter.addingMediaSegments(to: try await adapter.rawItem(contentID))
+        let raw = await adapter.addingMediaSegments(
+            to: try await adapter.rawItem(contentID, fields: JellyfinAdapter.playbackFields))
         let payload = try await adapter.watchWithPreferences(raw)
         let detail = try JSONDecoder().decode(WatchDetail.self, from: JSONSerialization.data(withJSONObject: payload))
         try await connection.validate()
@@ -243,7 +244,10 @@ final class JellyfinPlayback {
             nativeHLS: !direct, transcodeSubtitles: transcodeSubtitles,
             nativeQualityOptions: playable["SupportsTranscoding"] as? Bool == true
                 ? ApplePlaybackQuality.settingsOptions
-                : [ApplePlaybackQuality.auto, ApplePlaybackQuality.original])
+                : [ApplePlaybackQuality.auto, ApplePlaybackQuality.original],
+            scrubPreviewSheets: JellyfinScrubPreviews.sheets(
+                item: metadata.raw, itemID: detail.contentId, sourceID: sourceID,
+                serverURL: connection.serverURL, headers: connection.headers))
         return (prepared, playback)
     }
 

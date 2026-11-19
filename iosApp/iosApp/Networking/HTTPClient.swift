@@ -2042,6 +2042,7 @@ extension HTTPClient {
     func optionalSiloV2Request(
         method: String,
         path: String,
+        query: [String: String] = [:],
         body: Data? = nil,
         quietStatuses: Set<Int> = []
     ) async throws -> OptionalSiloV2Response? {
@@ -2065,7 +2066,7 @@ extension HTTPClient {
         guard usesV2 else { return nil }
 
         func signed(_ auth: CapturedOrdinaryRequestAuth) throws -> URLRequest {
-            var request = try buildRequest(serverUrl: serverURL, method: method, path: path, query: [:], body: nil)
+            var request = try buildRequest(serverUrl: serverURL, method: method, path: path, query: query, body: nil)
             if let body {
                 request.httpBody = body
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")

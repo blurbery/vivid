@@ -23,6 +23,9 @@ targets:
           - "**/*.xcworkspace"
           - "Info.plist"
 
+      - path: CShims/VividStillC/VividStillC.c
+        # Plain includes: the packaged FFmpeg module maps don't build.
+        compilerFlags: ["-fno-modules"]
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -36,6 +39,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTV
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
         # AVKit supplies UIWindow.avDisplayManager as an Objective-C category.
         # Keep the framework loaded even when no AVKit class is instantiated.
         OTHER_LDFLAGS: "$(inherited) -Wl,-needed_framework,AVKit"
@@ -116,6 +120,9 @@ targets:
       - path: Tests/TVDetailScrollMaterialMaskTests.swift
       - path: Tests/TVCatalogGridIndexTests.swift
       - path: Tests/TVLibraryGridRefreshTests.swift
+      # Server preview sheets drive the Apple TV scrub still too.
+      - path: Tests/ScrubPreviewSheetsTests.swift
+      - path: Tests/EmbyScrubPreviewsTests.swift
       # Vivid's player bridge, tested on Apple TV as well as iOS.
       - path: Tests/VividPlayerConversionTests.swift
       - path: Tests/VividPlayerCoreTests.swift
@@ -147,6 +154,25 @@ targets:
       # Theme music: same-song, start, retry and lookup decisions.
       - path: Tests/ThemeMusicCenterTests.swift
       - path: Tests/OtherProfileSearchTests.swift
+      # Keyframe stills: the C shim over the shipped FFmpeg, the byte
+      # sources and the tone mapper, with their generated fixtures.
+      - path: Tests/KeyframeStillReaderTests.swift
+      # The keyframe still service: gates, cache, read-ahead and teardown.
+      - path: Tests/KeyframeStillServiceTests.swift
+      - path: Tests/Fixtures/Stills/stills_h264_bframes.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_bframes.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_late_video.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_one_keyframe.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_rotated.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_with_audio.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_hevc10_pq_opengop.mkv
+        buildPhase: resources
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:
@@ -157,6 +183,9 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTVTests
+        # The app imports its C shim module, so `@testable import` has to
+        # find that module too.
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
         PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.tvtest.PerformanceTests
         CODE_SIGN_ENTITLEMENTS: ""
         GENERATE_INFOPLIST_FILE: "YES"

@@ -49,6 +49,9 @@ struct TVPlayerControls: View {
     /// Mirrors the timeline's time selection, which is modal, so the circles
     /// can leave the focus graph while it runs.
     @State private var isSelectingTime = false
+    /// The scrub preview still is up. It sits where the title, shortcuts and
+    /// skip prompts are, so they clear out of its way.
+    @State private var scrubStillShowing = false
     /// Whether committing the selection should resume playback. A selection
     /// started while paused stays paused; one started by Select while playing
     /// resumes.
@@ -120,10 +123,12 @@ struct TVPlayerControls: View {
             }
             if viewModel.showIntroSkip && !hudShown {
                 introPrompt
+                    .opacity(scrubStillShowing ? 0 : 1)
                     .transition(.opacity)
             }
             if viewModel.showCreditsSkip && !hudShown {
                 creditsPrompt
+                    .opacity(scrubStillShowing ? 0 : 1)
                     .transition(.opacity)
             }
             if hudShown {
@@ -387,6 +392,8 @@ struct TVPlayerControls: View {
                 Spacer(minLength: 24)
                 shortcuts
             }
+            .opacity(scrubStillShowing ? 0 : 1)
+            .animation(.easeOut(duration: VividTheme.fastDuration), value: scrubStillShowing)
             TVPlayerScrubber(
                 viewModel: viewModel,
                 isFocused: $timelineFocused,
@@ -414,6 +421,7 @@ struct TVPlayerControls: View {
                 },
                 isSelecting: $isSelectingTime,
                 resumesAfterSelection: $selectionResumesPlayback,
+                isShowingStill: $scrubStillShowing,
                 cancelsScrubOnBlur: scrubCancelsOnBlur
             )
             PlayerTickIsolated { clockRow }
