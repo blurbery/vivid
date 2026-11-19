@@ -153,6 +153,17 @@ targets:
       # Theme music: same-song, start, retry and lookup decisions.
       - path: Tests/ThemeMusicCenterTests.swift
       - path: Tests/OtherProfileSearchTests.swift
+      # Keyframe stills: the C shim over the shipped FFmpeg, the byte
+      # sources and the tone mapper, with their generated fixtures.
+      - path: Tests/KeyframeStillReaderTests.swift
+      - path: Tests/Fixtures/Stills/stills_h264_bframes.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_bframes.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_rotated.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_hevc10_pq_opengop.mkv
+        buildPhase: resources
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:
@@ -163,6 +174,9 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTVTests
+        # The app imports its C shim module, so `@testable import` has to
+        # find that module too.
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
         PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.tvtest.PerformanceTests
         CODE_SIGN_ENTITLEMENTS: ""
         GENERATE_INFOPLIST_FILE: "YES"
