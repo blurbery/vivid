@@ -163,8 +163,8 @@ Click the image to open it, then click a sponsor to visit their profile.
 </p>
 
 A massive thank you to [CodeRabbit](https://coderabbit.link/blurbery) for supporting Vivid.
-CodeRabbit reviews Vivid's pull requests line by line, catches bugs before they reach the app and checks every change against Vivid's own rules.
-The CodeRabbit team kindly gave Vivid extra review credits, so every pull request now gets a proper review, even on days when I open several.
+CodeRabbit reviews Vivid's pull requests line by line, catches bugs before they reach the app and checks them against Vivid's own rules.
+The CodeRabbit team kindly gave Vivid extra review credits, which makes a real difference on days when I open several pull requests.
 It's been a genuinely useful second set of eyes, and it's free for open-source projects, so if you maintain one it's well worth a look.
 
 ## Licence
