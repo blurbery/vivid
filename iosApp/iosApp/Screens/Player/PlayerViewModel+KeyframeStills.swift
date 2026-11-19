@@ -3,8 +3,10 @@ import UIKit
 
 /// What the keyframe still service may know about the player. Everything
 /// here is read from state the player already publishes; nothing is
-/// written, and the engine is never asked to do anything.
-extension PlayerViewModel {
+/// written, and the engine is never asked to do anything. Nothing here is
+/// built or run unless the hidden switch is on: the provider only holds a
+/// weak reference to the view model until then.
+extension PlayerViewModel: KeyframeStillPlayerSource {
     var keyframeStillPlayer: KeyframeStillService.Player {
         KeyframeStillService.Player(
             state: { [weak self] in self?.keyframeStillPlayerState },
@@ -12,46 +14,41 @@ extension PlayerViewModel {
         )
     }
 
-    /// Nil unless the load that is playing has shown its first frame.
+    /// Nil unless the load that is playing has shown its first frame. The
+    /// values are only gathered here; what they mean to the service is
+    /// worked out in `KeyframeStillService.playerState(from:)`.
     private var keyframeStillPlayerState: KeyframeStillService.PlayerState? {
         guard !isDisposed, let epoch = activeVividLoadEpoch, startedVividLoadEpoch == epoch,
               vividPlaybackController.activeLoadEpoch == epoch
         else { return nil }
         let engine = vividEngine
         let telemetry = engine.liveTelemetry
-        var unsettled: KeyframeStillService.PlayerState.Unsettled?
-        if error != nil || hasReachedEndOfFile {
-            unsettled = .ended
-        } else if protocolV3ReplanTask != nil {
-            unsettled = .replanning
-        } else if authenticationReloadGeneration != nil || staleSessionRecoveryTask != nil {
-            unsettled = .recovering
-        } else if isQualitySwitching {
-            unsettled = .changingQuality
-        } else if isScrubbing || seekTargetTime != nil || vividPlaybackController.isSeeking {
-            unsettled = .seeking
-        } else if isLoading {
-            unsettled = .loading
-        } else if isBuffering {
-            unsettled = .buffering
-        }
-        var isHandedOff = vividPlaybackController.isAirPlayHandOffEngaged
-        #if os(iOS)
-        isHandedOff = isHandedOff || engine.pictureInPictureActive
-        #endif
-        return KeyframeStillService.PlayerState(
+        var snapshot = KeyframeStillService.PlayerSnapshot(
             sourceTime: currentTime,
             isPlaying: isPlaying,
-            unsettled: unsettled,
+            hasError: error != nil,
+            hasReachedEnd: hasReachedEndOfFile,
+            isReplanning: protocolV3ReplanTask != nil,
+            isRecovering: authenticationReloadGeneration != nil || staleSessionRecoveryTask != nil,
+            isChangingQuality: isQualitySwitching,
+            isSeeking: isScrubbing || seekTargetTime != nil || vividPlaybackController.isSeeking,
+            isLoading: isLoading,
+            isBuffering: isBuffering,
             bufferedAheadSeconds: playbackReadAheadSeconds,
             isAppActive: UIApplication.shared.applicationState == .active,
-            isHandedOff: isHandedOff,
-            // The engine names the decoder it is using. Anything other than
-            // VideoToolbox is decoding on the processor.
-            decodesInSoftware: engine.activeVideoDecoder.map { !$0.lowercased().contains("videotoolbox") },
+            isAirPlayHandOff: vividPlaybackController.isAirPlayHandOffEngaged,
+            // The engine names the decoder it is using.
+            videoDecoder: engine.activeVideoDecoder,
             droppedFrames: telemetry?.droppedFrameCount,
             avSyncGapMilliseconds: telemetry?.avSyncGapMs
         )
+        // Picture in Picture is only read on iPhone and iPad, where the
+        // app runs it. On Apple TV only the AirPlay hand-off counts as
+        // handed off.
+        #if os(iOS)
+        snapshot.isPictureInPicture = engine.pictureInPictureActive
+        #endif
+        return KeyframeStillService.playerState(from: snapshot)
     }
 
     /// The headers the playing load's source takes now, which a token

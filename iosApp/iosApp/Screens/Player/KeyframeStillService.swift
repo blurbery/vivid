@@ -13,8 +13,15 @@ import UIKit
 /// Nothing is opened until the load has shown its first frame and then
 /// played steadily for a few seconds. After that one reader is kept for the
 /// load. The viewer's target always has the lane; in between, while the
-/// player's buffer is healthy and nothing else is going on, the keyframes
+/// player's buffer is healthy and nothing else is going on, keyframes
 /// around the playhead are read ahead within a byte budget.
+///
+/// The player always comes first. A read that is out is stopped the moment
+/// a gate closes: the load changes, the picture is handed off, the app
+/// stops being active, the player turns to software decoding, or playback
+/// stops being settled. While playback is unsettled for any reason but
+/// the scrub's own seeking, even the viewer's target is answered only from
+/// stills already held.
 ///
 /// Times: the scrub bar and the playhead are in source-media time. The
 /// loaded transport's clock is that time less the plan's timeline offset
@@ -47,9 +54,17 @@ final class KeyframeStillService {
     private(set) var isFinished = false
     /// True once this load can never have keyframe stills.
     private(set) var isRuledOut = false
+    /// True while the platform's frame reader still has the load. The
+    /// service then only counts steady play, so that it is ready the moment
+    /// that reader turns out not to be able to read the file.
+    private(set) var isStandingBy: Bool
+    /// True while the app is in the background: no reader, no timer and no
+    /// stills, but what the service has learnt about the load is kept.
+    private(set) var isSuspended = false
 
     private let player: Player
     private let environment: Environment
+    private let notifications: NotificationCenter
     private let sourceURL: URL
     private let timeline: PlaybackTimelineMapper
     private let isLocalFile: Bool
@@ -59,10 +74,13 @@ final class KeyframeStillService {
 
     private var watch: KeyframeStillNetworkWatch?
     private var ticker: Task<Void, Never>?
+    private var tickerIsFast = false
     private var observers: [NSObjectProtocol] = []
     private var tasks: [UInt64: Task<Void, Never>] = [:]
     private var nextTask: UInt64 = 0
-    private var closing: Task<Void, Never>?
+    /// Readers on their way out: one for each time the app went to the
+    /// background, and the last.
+    private var closings: [Task<Void, Never>] = []
 
     // Steady play
     private var lastSample: (time: Double, uptime: TimeInterval)?
@@ -71,7 +89,14 @@ final class KeyframeStillService {
 
     // The reader
     private var source: KeyframeStillSource?
+    /// Moves on whenever the reader is let go, so work started for an
+    /// earlier reader finds it has nothing to report to.
+    private var readerEpoch = 0
     private var isOpening = false
+    /// The part of opening that the reader itself does, and can be told to
+    /// stop.
+    private var isPreparing = false
+    private var openWasCancelled = false
     private var failedOpens = 0
     private var info: KeyframeStillInfo?
     private var index: [KeyframeIndexEntry] = []
@@ -82,6 +107,9 @@ final class KeyframeStillService {
     /// only replace `target`, and the newest is asked for when it lands, so
     /// the order the reader hears them in never depends on task scheduling.
     private var viewerAsked: Int?
+    /// Reads the service itself stopped. However they end, it isn't the
+    /// file's fault or the server's.
+    private var stopped: Set<Int> = []
     private var refused: Set<Int> = []
     private var consecutiveRefusals = 0
     private var transientFailures = 0
@@ -93,6 +121,9 @@ final class KeyframeStillService {
     private var encoded: [Int: Data] = [:]
     /// Least recently used first.
     private var encodedOrder: [Int] = []
+    /// The same positions in index order, to find the one before a target
+    /// without walking the index.
+    private var encodedSorted: [Int] = []
     private var encodedBytes = 0
     /// Most recently used last.
     private var decoded: [(position: Int, image: CGImage)] = []
@@ -110,12 +141,21 @@ final class KeyframeStillService {
     private var lastMove: (time: Double, uptime: TimeInterval)?
     private var targetRate: Double = 0
     private var rateUptime: TimeInterval = -.infinity
+    /// Looks at the window again once a fast-moving target has stopped.
+    private var windowCheck: Task<Void, Never>?
 
     // Read-ahead
     private var readAhead: Set<Int> = []
+    /// Read-ahead reads that are for the stretch near the playhead.
+    private var nearReads: Set<Int> = []
     private var readAheadBytes: Int
+    private var nearBytes: Int
+    /// What the source had fetched when it was last looked at.
+    private var lastReceived = 0
     private var typicalStillBytes = HTTPStillByteSource.minimumBlockBytes
     private var lastLadderRead: TimeInterval = -.infinity
+    private var noLadderWalkBefore: TimeInterval = -.infinity
+    private var bufferIsHealthy = false
 
     // Measurements
     private var holdReason: String?
@@ -132,40 +172,72 @@ final class KeyframeStillService {
     /// A service for this load, or nil when a gate says no. Nothing is
     /// opened here: no reader, no file and no connection.
     static func makeIfEligible(for spec: VividLoadSpec, hasServerSheets: Bool, player: Player,
-                               environment: Environment, carried: Carry?) -> KeyframeStillService? {
+                               environment: Environment, carried: Carry?, standingBy: Bool = false) -> KeyframeStillService? {
         // The switch first, so with it off not even the player is asked.
         guard environment.isEnabled(),
               gate(for: spec, hasServerSheets: hasServerSheets, state: player.state(), environment: environment) == nil
         else { return nil }
-        return KeyframeStillService(spec: spec, player: player, environment: environment, carried: carried)
+        return KeyframeStillService(spec: spec, player: player, environment: environment, carried: carried,
+                                    standingBy: standingBy)
     }
 
-    private init(spec: VividLoadSpec, player: Player, environment: Environment, carried: Carry?) {
+    private init(spec: VividLoadSpec, player: Player, environment: Environment, carried: Carry?, standingBy: Bool) {
         self.player = player
         self.environment = environment
+        notifications = environment.notifications
+        isStandingBy = standingBy
         sourceURL = spec.sourceURL
         timeline = spec.timeline
         isLocalFile = spec.sourceURL.isFileURL
         isLocalNetwork = Self.isLocalHost(spec.sourceURL.host)
         carryKey = Self.carryKey(for: spec.sourceURL)
-        readAheadBytes = carried?.key == carryKey ? carried?.readAheadBytes ?? 0 : 0
-        // A file on the device needs no network to read ahead.
-        if !isLocalFile { watch = environment.makeNetworkWatch() }
-        let centre = environment.notifications
+        let carries = carried?.key == carryKey
+        readAheadBytes = carries ? carried?.readAheadBytes ?? 0 : 0
+        nearBytes = carries ? carried?.nearBytes ?? 0 : 0
+        // Three observers and a timer, and nothing else until the load has
+        // played steadily: the network monitor waits for that (see
+        // `pump()`), and the provider makes the service a turn after the
+        // first frame's own.
         observers = [
-            centre.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.finish(.background) }
+            notifications.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.suspend() }
             },
-            centre.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+            notifications.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.resume() }
+            },
+            notifications.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.releaseMemory() }
             },
         ]
         if environment.startsTicker { startTicker() }
-        log("start local=\(isLocalFile || isLocalNetwork ? 1 : 0) carried=\(readAheadBytes)")
+        log("start local=\(isLocalFile || isLocalNetwork ? 1 : 0) carried=\(readAheadBytes) standby=\(standingBy ? 1 : 0)")
+    }
+
+    /// A service let go without `shutdown()` still leaves nothing behind.
+    /// Everything here is safe from whichever thread drops the last
+    /// reference.
+    deinit {
+        ticker?.cancel()
+        windowCheck?.cancel()
+        observers.forEach { notifications.removeObserver($0) }
+        watch?.cancel()
+        if let reader = source?.reader {
+            reader.cancel()
+            Task.detached(priority: .utility) { await reader.shutdown() }
+        }
     }
 
     /// What read-ahead has spent, for the next load of the same file.
-    var carry: Carry { Carry(key: carryKey, readAheadBytes: readAheadBytes) }
+    var carry: Carry { Carry(key: carryKey, readAheadBytes: readAheadBytes, nearBytes: nearBytes) }
+
+    /// The frame reader can't read this load after all, so the service
+    /// takes it. Steady play counted while standing by still counts.
+    func leaveStandby() {
+        guard isStandingBy, !isFinished else { return }
+        isStandingBy = false
+        log("standby over steady=\(hasPlayedSteadily ? 1 : 0)")
+        if environment.startsTicker, ticker == nil, !isSuspended { startTicker() }
+    }
 
     // MARK: - The scrub
 
@@ -173,7 +245,7 @@ final class KeyframeStillService {
     /// A still that arrives later for the newest target goes to `deliver`,
     /// as does nil when the still showing stops being honest.
     func request(atSourceTime sourceTime: Double, deliver: @escaping @MainActor (CGImage?, Double) -> Void) -> Answer {
-        guard !isFinished, let time = readerTime(forSourceTime: sourceTime), canAnswer() else {
+        guard !isFinished, !isStandingBy, !isSuspended, let time = readerTime(forSourceTime: sourceTime), canAnswer() else {
             let wasShowing = shown != nil
             clearTarget()
             return wasShowing ? .cleared : .unchanged
@@ -192,6 +264,7 @@ final class KeyframeStillService {
         if firstRequestUptime == nil { firstRequestUptime = now }
         target = Target(time: time, sourceTime: sourceTime)
         self.deliver = deliver
+        scheduleWindowCheck(at: now)
         // Answered before anything is started, so what a read or an
         // unpacked JPEG brings later can only follow this answer.
         let answer: Answer
@@ -212,18 +285,27 @@ final class KeyframeStillService {
         return answer
     }
 
-    /// A decoded still that is honest for this time, without asking for
-    /// anything: its keyframe is at or before the time and no further back
-    /// than the window.
-    func cachedStill(forSourceTime sourceTime: Double) -> CGImage? {
-        guard !isFinished, let time = readerTime(forSourceTime: sourceTime) else { return nil }
-        let window = target == nil ? Tuning.window : window(at: environment.uptime())
-        guard let position = nearestHeld(at: time, window: window, in: { self.decodedImage($0) != nil }) else { return nil }
-        return decodedImage(position)
+    /// A target that is moving fast may be shown a still from well before
+    /// it. Requests stop coming when it stops, so the window is looked at
+    /// once more just after the rate has gone stale, and a still that is
+    /// then too far back is taken down without waiting for the next tick.
+    private func scheduleWindowCheck(at now: TimeInterval) {
+        windowCheck?.cancel()
+        windowCheck = nil
+        guard window(at: now) > Tuning.window else { return }
+        let sleep = environment.sleep
+        windowCheck = Task { @MainActor [weak self] in
+            await sleep(Tuning.rateHoldSeconds + 0.05)
+            guard !Task.isCancelled, let self, !self.isFinished else { return }
+            self.windowCheck = nil
+            self.publishBest()
+        }
     }
 
     /// Forgets the target, so nothing more is delivered for it.
     func clearTarget() {
+        windowCheck?.cancel()
+        windowCheck = nil
         target = nil
         deliver = nil
         shown = nil
@@ -240,10 +322,11 @@ final class KeyframeStillService {
 
     // MARK: - The clock
 
-    /// Once a second: counts steady play, lets the next read go, and tidies
-    /// up after the last one.
+    /// Once a second, and four times a second while a read is out: counts
+    /// steady play, stops a read a gate has closed on, lets the next read
+    /// go, and tidies up after the last one.
     func tick() {
-        guard !isFinished else { return }
+        guard !isFinished, !isSuspended else { return }
         guard environment.isEnabled() else {
             finish(.switchedOff)
             return
@@ -251,7 +334,13 @@ final class KeyframeStillService {
         let now = environment.uptime()
         let state = player.state()
         noteSteadyPlay(state, now: now)
+        if isStandingBy {
+            // Nothing more to count, so nothing more to wake up for.
+            if hasPlayedSteadily { stopTicker() }
+            return
+        }
         noteHold(state)
+        stopReadsIfNeeded(state)
         // The window narrows again once the target stops moving.
         publishBest()
         if decoderMayBeOpen, inFlight.isEmpty, !isOpening,
@@ -267,14 +356,39 @@ final class KeyframeStillService {
         pump()
     }
 
+    /// True while the reader has been asked for something it hasn't
+    /// answered.
+    private var hasWorkOut: Bool { !inFlight.isEmpty || isPreparing }
+
+    /// How long until the gates are next looked at.
+    var sampleInterval: TimeInterval { hasWorkOut ? Tuning.busyTickSeconds : Tuning.tickSeconds }
+
     private func startTicker() {
+        ticker?.cancel()
         ticker = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Tuning.tickSeconds))
+                guard let interval = self?.nextSampleInterval() else { return }
+                try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled, let self, !self.isFinished else { return }
                 self.tick()
             }
         }
+    }
+
+    private func nextSampleInterval() -> TimeInterval {
+        tickerIsFast = hasWorkOut
+        return sampleInterval
+    }
+
+    private func stopTicker() {
+        ticker?.cancel()
+        ticker = nil
+    }
+
+    /// A read has just gone out while the timer is part-way through a
+    /// one-second wait: start it again on the short one.
+    private func quickenTicker() {
+        if ticker != nil, !tickerIsFast { startTicker() }
     }
 
     /// Five seconds of the playhead moving on at about the speed of
@@ -308,26 +422,80 @@ final class KeyframeStillService {
     @discardableResult
     func shutdown() -> Task<Void, Never>? {
         finish(.loadEnded)
-        return closing
+        let closings = closings
+        guard !closings.isEmpty else { return nil }
+        return Task {
+            for closing in closings {
+                await closing.value
+            }
+        }
     }
 
     private func finish(_ reason: End) {
         guard !isFinished else { return }
         isFinished = true
         isRuledOut = reason.rulesOutTheLoad
-        ticker?.cancel()
-        ticker = nil
-        observers.forEach { environment.notifications.removeObserver($0) }
+        stopTicker()
+        observers.forEach { notifications.removeObserver($0) }
         observers = []
         watch?.cancel()
         watch = nil
         logSummary(reason)
         clearTarget()
         dropHeldStills()
-        if let reader = source?.reader {
-            source = nil
-            closing = Task.detached(priority: .utility) { await reader.shutdown() }
-        }
+        closeReader()
+    }
+
+    /// Lets the reader go. A read or an open that is running is stopped
+    /// here and now, on the main actor, before the wait for the reader's
+    /// thread is handed to a background task: the abort flag and the
+    /// source's cancel must not depend on when that task gets a turn.
+    private func closeReader() {
+        readerEpoch &+= 1
+        if let fetched = takeReceived() { readAheadBytes += fetched }
+        lastReceived = 0
+        inFlight = []
+        viewerAsked = nil
+        stopped = []
+        nearReads = []
+        isOpening = false
+        isPreparing = false
+        openWasCancelled = false
+        decoderMayBeOpen = false
+        info = nil
+        index = []
+        guard let reader = source?.reader else { return }
+        source = nil
+        reader.cancel()
+        closings.append(Task.detached(priority: .utility) { await reader.shutdown() })
+    }
+
+    /// The app has gone to the background: the reader, the stills, the
+    /// timer and the network monitor go, and the service stays, with the
+    /// steady play it has counted and the budget it has spent. Were it
+    /// ended here, the next one could only be made by a scrub, and would
+    /// then wait for steady play that can't be counted during a scrub.
+    private func suspend() {
+        guard !isFinished, !isSuspended else { return }
+        isSuspended = true
+        stopTicker()
+        watch?.cancel()
+        watch = nil
+        lastSample = nil
+        let wasShowing = shown != nil
+        let deliver = deliver, sourceTime = target?.sourceTime ?? 0
+        clearTarget()
+        if wasShowing { deliver?(nil, sourceTime) }
+        dropHeldStills()
+        closeReader()
+        log("suspended")
+    }
+
+    private func resume() {
+        guard isSuspended, !isFinished else { return }
+        isSuspended = false
+        log("resumed")
+        if environment.startsTicker, !(isStandingBy && hasPlayedSteadily) { startTicker() }
     }
 
     /// A memory warning: the stills and the decoder go, the reader and what
@@ -344,6 +512,7 @@ final class KeyframeStillService {
         memoryEpoch &+= 1
         encoded = [:]
         encodedOrder = []
+        encodedSorted = []
         encodedBytes = 0
         decoded = []
         decoding = []
@@ -371,8 +540,36 @@ final class KeyframeStillService {
         return nil
     }
 
+    /// Whether a target may be answered at all. Asked on every scrub
+    /// request, so a gate that has just closed stops a read here too, not
+    /// only at the next tick.
     private func canAnswer() -> Bool {
-        hold(player.state()) == nil
+        let state = player.state()
+        stopReadsIfNeeded(state)
+        return hold(state) == nil
+    }
+
+    /// Why even the viewer's reads must wait, or nil: a hold, or playback
+    /// that isn't settled for any reason but the scrub's own seeking.
+    private func viewerHold(_ state: PlayerState?) -> String? {
+        if let reason = hold(state) { return reason }
+        if let unsettled = state?.unsettled, unsettled.stopsViewerReads { return unsettled.rawValue }
+        return nil
+    }
+
+    /// Stops whatever the reader is doing when a gate has closed on it.
+    /// The reader's `cancel()` returns at once. A read stopped this way is
+    /// not a failure: it brings no wait before the next read and doesn't
+    /// count against the file.
+    private func stopReadsIfNeeded(_ state: PlayerState?) {
+        guard hasWorkOut, let reason = viewerHold(state), let reader = source?.reader else { return }
+        let fresh = inFlight.subtracting(stopped)
+        let stopsOpen = isPreparing && !openWasCancelled
+        guard !fresh.isEmpty || stopsOpen else { return }
+        stopped.formUnion(fresh)
+        if stopsOpen { openWasCancelled = true }
+        reader.cancel()
+        log("stop \(reason) reads=\(fresh.count) open=\(stopsOpen ? 1 : 0)")
     }
 
     private func noteHold(_ state: PlayerState?) {
@@ -389,11 +586,20 @@ final class KeyframeStillService {
     }
 
     /// Why nothing may be read ahead just now, or nil. Checked before every
-    /// single read.
+    /// single read. The buffer has to reach the healthy figure to start
+    /// read-ahead and fall below the low one to stop it.
     private func readAheadHold(_ state: PlayerState) -> String? {
         if let unsettled = state.unsettled { return unsettled.rawValue }
-        guard let buffered = state.bufferedAheadSeconds, buffered.isFinite else { return "bufferUnknown" }
-        guard buffered >= Tuning.healthyBufferSeconds else { return "bufferLow" }
+        guard let buffered = state.bufferedAheadSeconds, buffered.isFinite else {
+            bufferIsHealthy = false
+            return "bufferUnknown"
+        }
+        if buffered >= Tuning.healthyBufferSeconds {
+            bufferIsHealthy = true
+        } else if buffered < Tuning.lowBufferSeconds {
+            bufferIsHealthy = false
+        }
+        guard bufferIsHealthy else { return "bufferLow" }
         guard isLocalFile || watch?.allowsReadAhead == true else { return "network" }
         return nil
     }
@@ -412,7 +618,7 @@ final class KeyframeStillService {
     /// Starts whatever may be read next: the file, then the viewer's
     /// target, then one read ahead.
     private func pump() {
-        guard !isFinished else { return }
+        guard !isFinished, !isSuspended, !isStandingBy else { return }
         guard environment.isEnabled() else {
             finish(.switchedOff)
             return
@@ -420,7 +626,17 @@ final class KeyframeStillService {
         let state = player.state()
         let now = environment.uptime()
         guard let state, hold(state) == nil, hasPlayedSteadily, now >= noReadBefore else { return }
-        if target == nil, readAheadHold(state) != nil { return }
+        // Made here, the first time anything might be read, and not when
+        // the service is: a file on the device never needs it.
+        if watch == nil, !isLocalFile { watch = environment.makeNetworkWatch() }
+        if target != nil {
+            // With playback unsettled, the target makes do with what is
+            // held: no file is opened and nothing is read. `tick()` comes
+            // back here once it has settled.
+            guard viewerHold(state) == nil else { return }
+        } else if readAheadHold(state) != nil {
+            return
+        }
         guard let source else {
             open()
             return
@@ -435,20 +651,20 @@ final class KeyframeStillService {
             return
         }
         // One read at a time, always.
-        guard inFlight.isEmpty, let position = nextReadAhead(playhead: state.sourceTime, now: now) else { return }
-        read(position, .ahead)
+        guard inFlight.isEmpty, let next = nextReadAhead(playhead: state.sourceTime, now: now) else { return }
+        read(next.position, .ahead, isNear: next.isNear)
     }
 
     private func open() {
         guard !isOpening, let fields = player.headers(sourceURL) else { return }
         headers.current = fields
         isOpening = true
-        let url = sourceURL, box = headers, open = environment.open
+        let url = sourceURL, box = headers, open = environment.open, epoch = readerEpoch
         track { [weak self] in
             // Made off the main actor: a file is opened here, or a session
             // built.
             let opened = await Task.detached(priority: .utility) { open(url, box) }.value
-            guard let self, !self.isFinished else {
+            guard let self, !self.isFinished, self.readerEpoch == epoch else {
                 await opened?.reader.shutdown()
                 return
             }
@@ -468,18 +684,38 @@ final class KeyframeStillService {
         guard !isOpening, let fields = player.headers(sourceURL) else { return }
         headers.current = fields
         isOpening = true
+        isPreparing = true
+        let epoch = readerEpoch
+        quickenTicker()
         track { [weak self] in
             let info = await reader.prepare()
-            guard let self, !self.isFinished else { return }
+            // The index is checked once, here and off the main actor, so
+            // nothing on it ever has to walk the whole of it.
+            var checked: (entries: [KeyframeIndexEntry]?, hasReadable: Bool) = (nil, false)
+            if let info {
+                checked = await Task.detached(priority: .utility) {
+                    let entries = Self.usableIndex(reader.index, duration: info.duration)
+                    return (entries, entries?.contains(where: \.isReadable) == true)
+                }.value
+            }
+            guard let self, !self.isFinished, self.readerEpoch == epoch else { return }
             self.isOpening = false
-            self.opened(info, reader: reader)
+            self.isPreparing = false
+            self.opened(info, entries: checked.entries, hasReadable: checked.hasReadable)
         }
     }
 
-    private func opened(_ info: KeyframeStillInfo?, reader: any KeyframeStillReading) {
+    private func opened(_ info: KeyframeStillInfo?, entries: [KeyframeIndexEntry]?, hasReadable: Bool) {
         let now = environment.uptime()
         lastReadEnded = now
+        let wasStopped = openWasCancelled
+        openWasCancelled = false
+        let fetched = takeReceived()
         guard let info else {
+            readAheadBytes += fetched ?? 0
+            // Stopped by the service itself: nothing is held against the
+            // file, and it is opened again when the gates allow.
+            if wasStopped { return }
             // The reader keeps its own wait after a failed open. This only
             // stops a file that won't open from being tried all night.
             failedOpens += 1
@@ -491,18 +727,21 @@ final class KeyframeStillService {
             }
             return
         }
+        readAheadBytes += fetched ?? info.bytesReadToOpen
         guard info.canProduceStills else {
             finish(.cannotProduceStills)
             return
         }
-        let entries = reader.index
-        guard info.hasKeyframeIndex, entries.contains(where: \.isReadable) else {
+        guard let entries else {
+            finish(.badIndex)
+            return
+        }
+        guard info.hasKeyframeIndex, hasReadable else {
             finish(.noKeyframeIndex)
             return
         }
         self.info = info
         index = entries
-        readAheadBytes += info.bytesReadToOpen
         log("open keyframes=\(entries.count) bytes=\(info.bytesReadToOpen) width=\(info.codedWidth) height=\(info.codedHeight) "
             + "transfer=\(info.transfer) dv=\(info.dolbyVisionProfile ?? 0)")
         pump()
@@ -533,62 +772,97 @@ final class KeyframeStillService {
     /// the window a still may be shown from once the target is at rest.
     private func wantedPosition(for time: Double) -> Int? {
         guard var position = Self.position(at: time, in: index) else { return nil }
-        while position >= 0, time - index[position].time <= Tuning.window {
+        var steps = 0
+        while position >= 0, steps < Tuning.walkLimit, time - index[position].time <= Tuning.window {
             // The last Matroska cue is never asked for.
             if index[position].isReadable, !refused.contains(position) { return position }
             position -= 1
+            steps += 1
         }
         return nil
     }
 
-    private func read(_ position: Int, _ kind: Kind) {
+    /// What the source has fetched since it was last asked, or nil for a
+    /// source that only counts what it hands the reader. A read waiting
+    /// behind the one that just finished may already have fetched a little
+    /// of its own, which is then counted one read early.
+    private func takeReceived() -> Int? {
+        guard let total = source?.receivedBytes?() else { return nil }
+        defer { lastReceived = total }
+        return max(0, total - lastReceived)
+    }
+
+    private func charge(_ bytes: Int, _ kind: Kind, isNear: Bool) {
+        if kind == .ahead {
+            readAheadBytes += bytes
+            if isNear { nearBytes += bytes }
+        } else {
+            viewerBytes += bytes
+        }
+    }
+
+    private func read(_ position: Int, _ kind: Kind, isNear: Bool = false) {
         guard let reader = source?.reader, index.indices.contains(position) else { return }
         // The load's headers as they are now: the player may have renewed
         // its token since the last read.
         guard let fields = player.headers(sourceURL) else { return }
         headers.current = fields
-        let now = environment.uptime()
         if !isInBurst {
             isInBurst = true
             log("burst begin \(Self.sample(player.state()))")
         }
-        if kind == .ahead, !isNear(position, playhead: player.state()?.sourceTime) { lastLadderRead = now }
+        if isNear {
+            nearReads.insert(position)
+        } else if kind == .ahead {
+            lastLadderRead = environment.uptime()
+        }
         inFlight.insert(position)
         decoderMayBeOpen = true
-        let time = index[position].time
+        let time = index[position].time, epoch = readerEpoch
+        quickenTicker()
         track { [weak self] in
             let result = await reader.result(at: time, maxWidth: Tuning.stillWidth, urgent: kind == .viewer)
-            self?.finished(position, kind, result)
+            self?.finished(position, kind, result, epoch: epoch)
         }
     }
 
-    private func finished(_ position: Int, _ kind: Kind, _ result: KeyframeStillResult) {
+    private func finished(_ position: Int, _ kind: Kind, _ result: KeyframeStillResult, epoch: Int) {
+        // The reader this was asked of has gone, and its books with it.
+        guard epoch == readerEpoch, !isFinished else { return }
         inFlight.remove(position)
         if kind == .viewer, viewerAsked == position { viewerAsked = nil }
+        let wasStopped = stopped.remove(position) != nil
+        let isNear = nearReads.remove(position) != nil
+        let fetched = takeReceived()
         let now = environment.uptime()
         lastReadEnded = now
-        guard !isFinished else { return }
+        // The budget is spent by what was fetched, whatever came of it.
+        if result.still == nil { charge(fetched ?? 0, kind, isNear: isNear) }
         switch result {
         case let .still(still):
+            let cost = fetched ?? still.bytesRead
+            charge(cost, kind, isNear: isNear)
             transientFailures = 0
             consecutiveRefusals = 0
             stillsMade += 1
-            typicalStillBytes = max(typicalStillBytes, still.bytesRead)
+            typicalStillBytes = max(typicalStillBytes, cost)
             if kind == .ahead {
-                readAheadBytes += still.bytesRead
                 readAhead.insert(position)
             } else {
-                viewerBytes += still.bytesRead
                 lastViewerRead = still.indexPosition
             }
             // Kept decoded only while someone is looking.
             if kind == .viewer || target != nil { keepDecoded(still.indexPosition, still.image) }
             keepEncoded(still)
-            log("still \(kind.rawValue) pos=\(still.indexPosition) bytes=\(still.bytesRead) reads=\(still.readCount) "
+            log("still \(kind.rawValue) pos=\(still.indexPosition) bytes=\(still.bytesRead) fetched=\(cost) reads=\(still.readCount) "
                 + "keyframe=\(still.keyframeBytes) ms=\(Int((still.elapsed * 1000).rounded())) cache=miss "
                 + Self.sample(player.state()))
             publishBest()
         case .superseded, .cancelled:
+            break
+        case .transientFailure where wasStopped, .notPossible where wasStopped, .overLimit where wasStopped:
+            // A read the service stopped can come back as any failure. It
+            // is none of them.
             break
         case .transientFailure:
             failureCounts["transient", default: 0] += 1
@@ -608,50 +882,79 @@ final class KeyframeStillService {
 
     // MARK: - Read-ahead
 
-    private func isNear(_ position: Int, playhead: Double?) -> Bool {
-        guard let playhead, let time = readerTime(forSourceTime: playhead) else { return false }
-        return abs(index[position].time - time) <= Tuning.nearSpanSeconds
+    /// What one more read-ahead read is taken to cost: the keyframe's size
+    /// where the container gives it, or the most a still has cost so far,
+    /// and over a network never less than the block one request fetches.
+    private func expectedCost(of position: Int) -> Int {
+        max(index[position].size ?? typicalStillBytes, isLocalFile ? 0 : HTTPStillByteSource.minimumBlockBytes)
     }
 
-    /// The next keyframe worth reading ahead: the nearest one within two
-    /// minutes of the playhead, either side, then the nearest point of the
-    /// sparse ladder across the title, no more often than every two
-    /// seconds. Nil when there is none, or the budget is spent.
-    private func nextReadAhead(playhead: Double, now: TimeInterval) -> Int? {
+    /// The next keyframe worth reading ahead, or nil when there is none or
+    /// the budget is spent.
+    ///
+    /// First the stretch near the playhead: one keyframe for every ten
+    /// seconds within two minutes either side, nearest first. It may take
+    /// half the budget and no more, so that the sparse ladder across the
+    /// title is always reached: every five minutes, then the points
+    /// halfway between, nearest first and no more often than every two
+    /// seconds.
+    ///
+    /// Each call looks at a fixed number of points, each found by a binary
+    /// search, however many keyframes the file has and whatever its
+    /// metadata says about its length.
+    private func nextReadAhead(playhead: Double, now: TimeInterval) -> (position: Int, isNear: Bool)? {
         guard let time = readerTime(forSourceTime: playhead), let budget = readAheadBudget, !index.isEmpty else { return nil }
-        func isWanted(_ position: Int) -> Bool {
+        func isWanted(_ position: Int, isNear: Bool) -> Bool {
             let entry = index[position]
-            return entry.isReadable && !refused.contains(position) && !readAhead.contains(position)
-                && !isHeld(position) && readAheadBytes + (entry.size ?? typicalStillBytes) <= budget
+            guard entry.isReadable, !refused.contains(position), !readAhead.contains(position), !isHeld(position),
+                  !packing.contains(position)
+            else { return false }
+            let cost = expectedCost(of: position)
+            guard readAheadBytes + cost <= budget else { return false }
+            return !isNear || nearBytes + cost <= budget / Tuning.nearBudgetDivisor
         }
-        var behind = Self.position(at: time, in: index) ?? -1
-        var ahead = behind + 1
-        while true {
-            let behindGap = behind >= 0 ? time - index[behind].time : .infinity
-            let aheadGap = ahead < index.count ? index[ahead].time - time : .infinity
-            guard min(behindGap, aheadGap) <= Tuning.nearSpanSeconds else { break }
-            if aheadGap <= behindGap {
-                if isWanted(ahead) { return ahead }
-                ahead += 1
-            } else {
-                if isWanted(behind) { return behind }
-                behind -= 1
+        let slot = Tuning.nearSlotSeconds
+        let home = (time / slot).rounded(.down)
+        for distance in 0...Int(Tuning.nearSpanSeconds / slot) {
+            for side in distance == 0 ? [0.0] : [Double(distance), -Double(distance)] {
+                let point = (home + side) * slot
+                guard point >= 0, abs(point - time) <= Tuning.nearSpanSeconds,
+                      let position = Self.position(at: point, in: index),
+                      abs(index[position].time - time) <= Tuning.nearSpanSeconds
+                else { continue }
+                if isWanted(position, isNear: true) { return (position, true) }
             }
         }
-        guard now - lastLadderRead >= Tuning.ladderPauseSeconds else { return nil }
-        let end = max(info?.duration ?? 0, index.last?.time ?? 0)
+        guard now - lastLadderRead >= Tuning.ladderPauseSeconds, now >= noLadderWalkBefore else { return nil }
+        let end = min(max(info?.duration ?? 0, index.last?.time ?? 0), Tuning.longestFileSeconds)
         for rung in Tuning.ladder {
-            var best: (position: Int, gap: Double)?
-            var point = rung.offset
-            while point < end {
-                if let position = Self.position(at: point, in: index), isWanted(position) {
-                    let gap = abs(point - time)
-                    if gap < (best?.gap ?? .infinity) { best = (position, gap) }
-                }
-                point += rung.step
+            guard end > rung.offset else { continue }
+            // The points are offset + n * step for n in 0...last, walked
+            // outwards from the one nearest the playhead.
+            let last = min(Int(((end - rung.offset) / rung.step).rounded(.up)) - 1, Tuning.ladderStepLimit)
+            guard last >= 0 else { continue }
+            let nearest = Int(min(max(((time - rung.offset) / rung.step - 0.5).rounded(.up), 0), Double(last)))
+            func wanted(_ step: Int) -> Int? {
+                guard step >= 0, step <= last,
+                      let position = Self.position(at: rung.offset + Double(step) * rung.step, in: index),
+                      isWanted(position, isNear: false)
+                else { return nil }
+                return position
             }
-            if let best { return best.position }
+            if let position = wanted(nearest) { return (position, false) }
+            for distance in 1...max(last, 1) {
+                let below = nearest - distance, above = nearest + distance
+                guard below >= 0 || above <= last else { break }
+                let belowGap = abs(rung.offset + Double(below) * rung.step - time)
+                let aboveGap = abs(rung.offset + Double(above) * rung.step - time)
+                for step in belowGap <= aboveGap ? [below, above] : [above, below] {
+                    if let position = wanted(step) { return (position, false) }
+                }
+            }
         }
+        // Nothing left on the ladder. A still dropped from the cache can
+        // make a point wanted again, so it is walked again, but not often.
+        noLadderWalkBefore = now + Tuning.ladderRestSeconds
         return nil
     }
 
@@ -687,12 +990,18 @@ final class KeyframeStillService {
                 self.encodedBytes -= old.count
                 self.encodedOrder.removeAll { $0 == position }
             }
+            if self.encoded[position] == nil {
+                self.encodedSorted.insert(position, at: Self.insertionPoint(for: position, in: self.encodedSorted))
+            }
             self.encoded[position] = data
             self.encodedOrder.append(position)
             self.encodedBytes += data.count
-            while self.encodedBytes > Tuning.encodedByteLimit, self.encodedOrder.count > 1 {
+            while self.encodedBytes > Tuning.encodedByteLimit || self.encodedOrder.count > Tuning.encodedCountLimit,
+                  self.encodedOrder.count > 1 {
                 let oldest = self.encodedOrder.removeFirst()
                 if let dropped = self.encoded.removeValue(forKey: oldest) { self.encodedBytes -= dropped.count }
+                let place = Self.insertionPoint(for: oldest, in: self.encodedSorted)
+                if place < self.encodedSorted.count, self.encodedSorted[place] == oldest { self.encodedSorted.remove(at: place) }
             }
             self.publishBest()
         }
@@ -722,15 +1031,39 @@ final class KeyframeStillService {
         return min(max(targetRate * Tuning.glanceSeconds, Tuning.window), Tuning.widestWindow)
     }
 
-    /// The nearest position at or before `time`, no further back than
-    /// `window`, that `isHeld` says yes to. Never one after the time.
-    private func nearestHeld(at time: Double, window: Double, in isHeld: (Int) -> Bool) -> Int? {
-        guard var position = Self.position(at: time, in: index) else { return nil }
-        while position >= 0, time - index[position].time <= window {
-            if isHeld(position) { return position }
-            position -= 1
+    /// Where `position` is, or would go, in an ascending list.
+    private static func insertionPoint(for position: Int, in sorted: [Int]) -> Int {
+        var low = 0, high = sorted.count
+        while low < high {
+            let middle = (low + high) / 2
+            if sorted[middle] < position {
+                low = middle + 1
+            } else {
+                high = middle
+            }
         }
-        return nil
+        return low
+    }
+
+    /// The nearest decoded still at or before `time` and no further back
+    /// than `window`. Never one after the time. Only the few decoded
+    /// stills are looked at, never the index.
+    private func nearestDecoded(at time: Double, window: Double) -> Int? {
+        var best: Int?
+        for item in decoded where index.indices.contains(item.position) {
+            let gap = time - index[item.position].time
+            if gap >= 0, gap <= window, item.position > best ?? -1 { best = item.position }
+        }
+        return best
+    }
+
+    /// The same for stills held as JPEGs, by binary search.
+    private func nearestEncoded(at time: Double, window: Double) -> Int? {
+        guard let position = Self.position(at: time, in: index) else { return nil }
+        let place = Self.insertionPoint(for: position + 1, in: encodedSorted)
+        guard place > 0 else { return nil }
+        let held = encodedSorted[place - 1]
+        return time - index[held].time <= window ? held : nil
     }
 
     /// The decoded still to show the target now. A nearer one that is only
@@ -738,8 +1071,8 @@ final class KeyframeStillService {
     private func bestDecoded(at now: TimeInterval) -> (position: Int, image: CGImage)? {
         guard let target, !index.isEmpty else { return nil }
         let window = window(at: now)
-        let ready = nearestHeld(at: target.time, window: window) { self.decodedImage($0) != nil }
-        if let packed = nearestHeld(at: target.time, window: window, in: { self.encoded[$0] != nil }), packed > ready ?? -1 {
+        let ready = nearestDecoded(at: target.time, window: window)
+        if let packed = nearestEncoded(at: target.time, window: window), packed > ready ?? -1 {
             decode(packed)
         }
         guard let ready, let image = decodedImage(ready) else { return nil }
@@ -823,6 +1156,7 @@ final class KeyframeStillService {
         var hasReader = false
         var hasTicker = false
         var hasNetworkWatch = false
+        var hasWindowCheck = false
         var observers = 0
         var pendingWork = 0
         var heldStills = 0
@@ -830,11 +1164,21 @@ final class KeyframeStillService {
 
     var holdings: Holdings {
         Holdings(hasReader: source != nil, hasTicker: ticker != nil, hasNetworkWatch: watch != nil,
-                 observers: observers.count, pendingWork: tasks.count, heldStills: encoded.count + decoded.count)
+                 hasWindowCheck: windowCheck != nil, observers: observers.count, pendingWork: tasks.count, heldStills: encoded.count + decoded.count)
     }
 
     var heldPositions: Set<Int> { Set(encoded.keys).union(decoded.map(\.position)) }
     var readAheadSpent: Int { readAheadBytes }
+    var nearSpent: Int { nearBytes }
+    var hasSteadyPlay: Bool { hasPlayedSteadily }
+
+    /// Tests only: a decoded still that is honest for this time, without
+    /// asking for anything.
+    func cachedStill(forSourceTime sourceTime: Double) -> CGImage? {
+        guard !isFinished, let time = readerTime(forSourceTime: sourceTime) else { return nil }
+        let window = target == nil ? Tuning.window : window(at: environment.uptime())
+        return nearestDecoded(at: time, window: window).flatMap { decodedImage($0) }
+    }
 
     /// Tests only: waits for everything the service has started to finish.
     func settle() async {

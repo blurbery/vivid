@@ -12,8 +12,10 @@ import Foundation
 ///
 /// A third source sits behind a hidden switch that is off unless set:
 /// ``KeyframeStillService`` makes stills from the file's own keyframes for
-/// a load with no sheets and no working frame reader. With the switch off
-/// none of it is created.
+/// a load with no sheets and no working frame reader. The switch is read
+/// once for each load, when its first frame is up; with it off none of it
+/// is created, and every path into it returns on that one remembered
+/// answer.
 ///
 /// The controls scrub in source-media time. Sheets are indexed on that axis,
 /// but the engine's frame reader works on the loaded transport's own clock.
@@ -102,10 +104,27 @@ final class VividScrubPreviewProvider {
     /// before the scrub starts.
     private var warmSourceTime: Double?
 
-    /// The player as the keyframe still service sees it. Nil, as in most
-    /// tests, means the service is never made.
+    /// The player as the keyframe still service sees it, set directly by
+    /// tests. With neither this nor `stillPlayerSource` the service is
+    /// never made.
     var stillPlayer: KeyframeStillService.Player?
-    private let stills: KeyframeStillService.Environment
+    /// Where the app gets that view: the view model, held weakly and asked
+    /// only once the switch is known to be on.
+    weak var stillPlayerSource: KeyframeStillPlayerSource?
+    private let isStillSwitchOn: @MainActor () -> Bool
+    private let makeStillEnvironment: @MainActor () -> KeyframeStillService.Environment
+    /// Built the first time the switch is found on, never before.
+    private var builtStillEnvironment: KeyframeStillService.Environment?
+    /// The switch as it was at this load's first frame. False until then,
+    /// so nothing to do with keyframe stills runs before it.
+    private var stillsAreOn = false
+    /// Makes the service a turn after the first frame's own.
+    private var stillStart: Task<Void, Never>?
+    /// On Apple TV the still isn't shown until the selection has moved, so
+    /// nothing is read for the place a scrub began at.
+    private let stillsWaitForMove: Bool
+    /// Where the scrub began, until its target moves.
+    private var scrubOrigin: Double?
     /// Whether this platform has a frame reader to try before keyframe
     /// stills. Where it has, the service waits until the reader has shown
     /// it can't read the load.
@@ -116,6 +135,9 @@ final class VividScrubPreviewProvider {
     private var stillShutdowns: [UUID: Task<Void, Never>] = [:]
     /// The frame reader said it can't take stills from this load.
     private var readerIsUnusable = false
+    /// Asks a frame reader that gave no still whether it can read the load
+    /// at all. Its own task, so that ending the session never waits on it.
+    private var readerProbe: Task<Void, Never>?
     /// A scrub found no frame reader for this load.
     private var readerIsMissing = false
     /// The load can never have keyframe stills, so none is tried again.
@@ -126,19 +148,24 @@ final class VividScrubPreviewProvider {
         engine: VividEngine,
         makeStore: @escaping @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore = { ScrubPreviewSheetStore(sheets: $0) },
         makeReader: (@MainActor (VividLoadSpec) -> (any ScrubStillSource)?)? = nil,
-        stills: KeyframeStillService.Environment = .init(),
-        expectsFrameReader: Bool? = nil
+        stillSwitch: (@MainActor () -> Bool)? = nil,
+        stills: @autoclosure @escaping @MainActor () -> KeyframeStillService.Environment = .init(),
+        expectsFrameReader: Bool? = nil,
+        stillsWaitForMove: Bool? = nil
     ) {
         self.engine = engine
         self.makeStore = makeStore
         self.makeReader = makeReader ?? { spec in
             engine.makeFrameExtractor(url: spec.sourceURL, httpHeaders: spec.options.httpHeaders)
         }
-        self.stills = stills
+        isStillSwitchOn = stillSwitch ?? { KeyframeStillService.isSwitchedOn() }
+        makeStillEnvironment = stills
         #if os(iOS)
         self.expectsFrameReader = expectsFrameReader ?? true
+        self.stillsWaitForMove = stillsWaitForMove ?? false
         #else
         self.expectsFrameReader = expectsFrameReader ?? false
+        self.stillsWaitForMove = stillsWaitForMove ?? true
         #endif
     }
 
@@ -180,14 +207,28 @@ final class VividScrubPreviewProvider {
         } else if let sheetSource, sheetLoad == nil {
             loadSheets(from: sheetSource)
         }
+        // The one place the hidden switch is read for this load. With it
+        // off, nothing else in the keyframe path runs, here or anywhere.
+        stillsAreOn = (stillPlayer != nil || stillPlayerSource != nil) && isStillSwitchOn()
+        if stillsAreOn {
+            // Not in the first frame's own turn: the service, its observers
+            // and its timer are made in the next one.
+            let expected = session
+            stillStart = Task { @MainActor [weak self] in
+                guard let self, self.session == expected, !Task.isCancelled else { return }
+                self.stillStart = nil
+                // A scrub already going gets its answer from the service.
+                if self.startStillService(), self.sheetLoad == nil, let pending = self.scrubSourceTime {
+                    self.request(atSourceTime: pending)
+                }
+            }
+        }
         // A scrub that began before the first frame. With a sheet list on
-        // its way, the list answers it when it lands.
-        if sheetLoad == nil, let pending = scrubSourceTime {
+        // its way, the list answers it when it lands, and where only the
+        // keyframe service could, the service does once it is made.
+        if sheetLoad == nil, let pending = scrubSourceTime, !stillsAreOn || expectsFrameReader {
             request(atSourceTime: pending)
         }
-        // Only now, after the first frame. With the switch off this makes
-        // nothing.
-        startStillService()
     }
 
     /// Opens one scrub and clears the last still.
@@ -197,6 +238,7 @@ final class VividScrubPreviewProvider {
         shownTile = nil
         stillService?.clearTarget()
         refreshSheetsIfNeeded()
+        scrubOrigin = stillsWaitForMove ? sourceTime : nil
         request(atSourceTime: sourceTime)
     }
 
@@ -232,6 +274,7 @@ final class VividScrubPreviewProvider {
 
     func endInteraction() {
         scrubSourceTime = nil
+        scrubOrigin = nil
         store?.setScrubbing(false)
         supersedePending()
         retireReader()
@@ -261,6 +304,13 @@ final class VividScrubPreviewProvider {
         sheetFetch = nil
         warmSourceTime = nil
         if !keepingSheets { dropStore() }
+        stillStart?.cancel()
+        stillStart = nil
+        stillsAreOn = false
+        // Cancelled and left behind: the task returned below never waits
+        // on an asset load.
+        readerProbe?.cancel()
+        readerProbe = nil
         retireStillService()
         readerIsUnusable = false
         readerIsMissing = false
@@ -513,20 +563,35 @@ final class VividScrubPreviewProvider {
 
             let still = await job.reader.thumbnail(at: job.transportTime, maxWidth: Self.stillWidth)
 
-            if still == nil, job.session == session, stillPlayer != nil, stills.isEnabled(),
-               !(await job.reader.canProduceStills()), job.session == session {
-                // AVFoundation can't read this file at all. The keyframe
-                // service takes the load from here, where it may.
-                readerIsUnusable = true
-                retireReader()
-                if startStillService(), let pending = scrubSourceTime {
-                    request(atSourceTime: pending)
-                }
-                continue
+            if still == nil, job.session == session, stillsAreOn, !readerIsUnusable {
+                probe(job.reader)
             }
             guard job.session == session, job.ticket == ticket, let still else { continue }
             shownTile = nil
             onPreview?(Preview(image: still, sourceTime: job.sourceTime))
+        }
+    }
+
+    /// Asks a reader that gave no still whether it can read the load at
+    /// all, and hands the load to the keyframe service if it can't. The
+    /// question may wait on AVFoundation loading the asset, so it runs on
+    /// its own: the worker goes on, and `endSession` cancels it and never
+    /// waits for it.
+    private func probe(_ asked: any ScrubStillSource) {
+        guard readerProbe == nil else { return }
+        let expected = session
+        readerProbe = Task { @MainActor [weak self] in
+            let canRead = await asked.canProduceStills()
+            guard let self, !Task.isCancelled, self.session == expected else { return }
+            self.readerProbe = nil
+            guard !canRead else { return }
+            // AVFoundation can't read this file at all. The keyframe
+            // service takes the load from here, where it may.
+            self.readerIsUnusable = true
+            self.retireReader()
+            if self.startStillService(), let pending = self.scrubSourceTime {
+                self.request(atSourceTime: pending)
+            }
         }
     }
 
@@ -542,25 +607,46 @@ final class VividScrubPreviewProvider {
 
     // MARK: - Keyframe stills
 
-    /// True when this load has a keyframe still service, making one if it
-    /// has none yet and every gate allows it: the hidden switch, no server
-    /// sheets, no frame reader that works, and the service's own (see
+    /// The environment the service runs in, built on first use.
+    private var stills: KeyframeStillService.Environment {
+        if let builtStillEnvironment { return builtStillEnvironment }
+        let made = makeStillEnvironment()
+        builtStillEnvironment = made
+        return made
+    }
+
+    /// True when this load has a keyframe still service that may answer,
+    /// making one if it has none yet and every gate allows it: the hidden
+    /// switch, no server sheets, and the service's own (see
     /// `KeyframeStillService.gate`). Never before the load's first frame.
+    ///
+    /// Where the platform has a frame reader, the service is made standing
+    /// by: it counts steady play and does nothing else until the reader has
+    /// shown it can't read the load. Were it only made then, in the middle
+    /// of a scrub, its wait for steady play could not even begin until the
+    /// scrub was over.
     @discardableResult
     private func startStillService() -> Bool {
+        // The switch as read at the first frame. Off, or not read yet:
+        // nothing else is looked at.
+        guard stillsAreOn, stillStart == nil else { return false }
+        let readerIsOut = !expectsFrameReader || readerIsUnusable || readerIsMissing
         if let stillService {
-            if !stillService.isFinished { return true }
-            // It ended itself: the app went to the background, or the file
-            // turned out to be one it can't read.
+            if !stillService.isFinished {
+                if readerIsOut { stillService.leaveStandby() }
+                return !stillService.isStandingBy
+            }
+            // It ended itself: the file turned out to be one it can't read.
             retireStillService()
         }
-        guard hasStarted, !stillsAreRuledOut, let spec = load, let stillPlayer,
-              !expectsFrameReader || readerIsUnusable || readerIsMissing
+        guard hasStarted, !stillsAreRuledOut, let spec = load,
+              let player = stillPlayer ?? stillPlayerSource?.keyframeStillPlayer
         else { return false }
         let hasSheets = storeIsLive || sheetLoad != nil || (sheetSource != nil && sheetLoadFailedAt == nil)
         stillService = KeyframeStillService.makeIfEligible(
-            for: spec, hasServerSheets: hasSheets, player: stillPlayer, environment: stills, carried: stillCarry)
-        return stillService != nil
+            for: spec, hasServerSheets: hasSheets, player: player, environment: stills, carried: stillCarry,
+            standingBy: !readerIsOut)
+        return stillService != nil && readerIsOut
     }
 
     /// Hands the target to the keyframe service. What it already holds
@@ -577,6 +663,12 @@ final class VividScrubPreviewProvider {
             shownTile = nil
             stillService.clearTarget()
             onPreview?(nil)
+        }
+        if let origin = scrubOrigin {
+            // The selection hasn't moved from where the scrub began, so no
+            // still would be shown: nothing is asked for yet.
+            if sourceTime == origin { return }
+            scrubOrigin = nil
         }
         let expectedSession = session, expectedTicket = ticket
         let answer = stillService.request(atSourceTime: sourceTime) { [weak self] image, target in

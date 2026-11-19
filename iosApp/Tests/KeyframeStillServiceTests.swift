@@ -29,7 +29,8 @@ final class KeyframeStillServiceTests: XCTestCase {
                 readersMade += 1
                 return nil
             },
-            stills: rig.environment, expectsFrameReader: false)
+            stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: false,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         var previews: [VividScrubPreviewProvider.Preview?] = []
         provider.onPreview = { previews.append($0) }
@@ -40,7 +41,10 @@ final class KeyframeStillServiceTests: XCTestCase {
         provider.request(atSourceTime: 25)
         for _ in 0..<8 { rig.advance() }
 
+        await Task.yield()
         XCTAssertNil(provider.debugStillService)
+        XCTAssertEqual(rig.switchAsks, 1, "the switch is read once for the load, at its first frame")
+        XCTAssertEqual(rig.environmentsBuilt, 0, "and with it off the service's environment is never built")
         XCTAssertEqual(rig.opens.value, 0, "no reader")
         XCTAssertEqual(rig.watchesMade, 0, "no network monitor")
         XCTAssertEqual(rig.stateAsks, 0, "the player isn't even asked")
@@ -58,7 +62,8 @@ final class KeyframeStillServiceTests: XCTestCase {
         let frames = FrameReader(image: nil, canRead: false)
         let controller = try VividPlaybackController()
         let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in frames },
-                                                 stills: rig.environment, expectsFrameReader: true)
+                                                 stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: true,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         provider.activate(try Self.directSpec())
         provider.playbackStarted()
@@ -69,6 +74,8 @@ final class KeyframeStillServiceTests: XCTestCase {
         XCTAssertEqual(frames.questions, 0)
         XCTAssertEqual(frames.shutdowns, 1, "retired at the end of the scrub, as before")
         XCTAssertEqual(rig.opens.value, 0)
+        XCTAssertEqual(rig.switchAsks, 1)
+        XCTAssertEqual(rig.environmentsBuilt, 0)
     }
 
     func testEachGateLeavesTheLoadWithoutAService() throws {
@@ -80,7 +87,11 @@ final class KeyframeStillServiceTests: XCTestCase {
                                           headers: [:], startPosition: 0, audioOnly: false)
         let audioOnly = try VividLoadSpec(directURL: Self.address("/Audio/1/stream.flac?Static=true"), headers: [:],
                                           startPosition: 0, audioOnly: true)
+        // The address asks for the stored file, but the app asked for HLS.
+        let staticHLS = try VividLoadSpec(directURL: Self.address("/Videos/1/master.m3u8?Static=true&MediaSourceId=1"),
+                                          headers: [:], startPosition: 0, audioOnly: false, nativeHLS: true)
         let cases: [(name: String, spec: VividLoadSpec, sheets: Bool, change: (Rig) -> Void, gate: Gate)] = [
+            ("HLS at an address that says Static", staticHLS, false, { _ in }, .notOriginalFile),
             ("switch off", direct, false, { $0.enabled = false }, .switchedOff),
             ("server sheets", direct, true, { _ in }, .serverSheets),
             ("HLS", hls, false, { _ in }, .notOriginalFile),
@@ -106,7 +117,8 @@ final class KeyframeStillServiceTests: XCTestCase {
     func testOnlyAFilePlayedAsStoredIsEligible() throws {
         let original = PlaybackProtocolV3.PlanDelivery.originalHTTP
         func isOriginal(_ path: String, delivery: String = original, plan: String = "legacy-direct", hls: Bool = false) -> Bool {
-            KeyframeStillService.isOriginalFile(url: Self.address(path), delivery: delivery, planID: plan, nativeRemoteHLS: hls)
+            VividLoadSpec.playsStoredFile(url: Self.address(path), delivery: delivery, isLegacyDirect: plan == "legacy-direct",
+                                          nativeRemoteHLS: hls)
         }
         XCTAssertTrue(isOriginal("/Videos/1/stream.mkv?Static=true&MediaSourceId=1"), "Jellyfin and Emby direct play")
         XCTAssertTrue(isOriginal("/Videos/1/stream.mkv?static=TRUE"))
@@ -126,6 +138,7 @@ final class KeyframeStillServiceTests: XCTestCase {
         let silo = try VividLoadSpec(validating: PlaybackEndFixtures.plan(sessionId: "s1", durationSeconds: 7200),
                                      sessionID: "s1", matchContentEnabled: false, sourceURLOverride: Self.address("/stream/s1"))
         for spec in [download, silo, try Self.directSpec()] {
+            XCTAssertTrue(spec.playsStoredFile)
             XCTAssertNil(KeyframeStillService.gate(for: spec, hasServerSheets: false, state: rig.state, environment: rig.environment))
         }
     }
@@ -174,7 +187,8 @@ final class KeyframeStillServiceTests: XCTestCase {
                 readersMade += 1
                 return nil
             },
-            stills: rig.environment, expectsFrameReader: false)
+            stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: false,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
@@ -188,9 +202,16 @@ final class KeyframeStillServiceTests: XCTestCase {
         XCTAssertEqual(rig.stateAsks, 0)
 
         provider.playbackStarted()
+        // The first frame's own turn reads the switch and nothing else: no
+        // service, no observer, no timer, and the player isn't asked.
+        XCTAssertNil(provider.debugStillService)
+        XCTAssertEqual(rig.switchAsks, 1)
+        XCTAssertEqual(rig.stateAsks, 0)
+        XCTAssertEqual(rig.environmentsBuilt, 0)
+        try await waitUntil { provider.debugStillService != nil }
         let service = try XCTUnwrap(provider.debugStillService)
-        XCTAssertEqual(rig.watchesMade, 1)
-        XCTAssertFalse(service.holdings.hasReader)
+        XCTAssertEqual(service.holdings, .init(observers: 3), "and then no monitor, reader or work until steady play")
+        XCTAssertEqual(rig.watchesMade, 0)
 
         // The first tick only takes a sample, so four more seconds are
         // four seconds of steady play: not enough.
@@ -207,9 +228,12 @@ final class KeyframeStillServiceTests: XCTestCase {
         await service.settle()
         XCTAssertEqual(rig.opens.value, 0)
 
+        XCTAssertEqual(rig.watchesMade, 0, "the network monitor waits for steady play too")
         rig.advance(service)
         try await waitUntil { latest?.sourceTime == 97 }
         XCTAssertEqual(rig.opens.value, 1)
+        XCTAssertEqual(rig.watchesMade, 1)
+        XCTAssertEqual(rig.switchAsks, 1, "still the one read")
         XCTAssertEqual(reader.asked.map(\.time), [96], "the scrub that was waiting gets its keyframe")
         XCTAssertEqual(readersMade, 0, "no frame reader is expected here, so none is looked for")
         await provider.endSession()?.value
@@ -225,8 +249,8 @@ final class KeyframeStillServiceTests: XCTestCase {
         rig.opensRealFiles = true
         let spec = try VividLoadSpec(offlineURL: try Self.fixtureURL(Self.mp4), startPosition: 0, audioOnly: false)
         let service = try XCTUnwrap(rig.makeService(spec))
-        XCTAssertFalse(service.holdings.hasNetworkWatch, "a file on the device needs no network monitor")
         rig.playSteadily(service)
+        XCTAssertEqual(rig.watchesMade, 0, "a file on the device needs no network monitor")
 
         var delivered: [(image: CGImage?, time: Double)] = []
         guard case .unchanged = service.request(atSourceTime: 3.5, deliver: { delivered.append(($0, $1)) }) else {
@@ -290,14 +314,16 @@ final class KeyframeStillServiceTests: XCTestCase {
         other.state?.sourceTime = 30
         let filling = try XCTUnwrap(other.makeService(try Self.localNetworkSpec()))
         other.playSteadily(filling)
-        try await waitUntil { reader.asked.count == 9 }
-        for _ in 0..<4 { other.advance(filling, seconds: 2) }
+        // One keyframe for each ten seconds: those at or before 30, 20, 10
+        // and 0. The points from 40 on all fall in the last cue.
+        try await waitUntil { reader.asked.count == 4 }
+        for _ in 0..<4 { other.advance(filling, seconds: 2, playing: false) }
         await filling.settle()
-        XCTAssertEqual(reader.asked.count, 9)
-        XCTAssertFalse(reader.asked.contains { $0.time == 36 }, "\(reader.asked)")
+        XCTAssertEqual(reader.asked.map(\.time), [28, 20, 8, 0])
         _ = filling.request(atSourceTime: 39) { _, _ in }
         await filling.settle()
-        XCTAssertEqual(reader.asked.count, 9, "the viewer gets the keyframe before it, already held")
+        XCTAssertEqual(reader.asked.map(\.time), [28, 20, 8, 0, 32], "the viewer gets the keyframe before the last cue")
+        XCTAssertFalse(reader.asked.contains { $0.time == 36 }, "\(reader.asked)")
         await filling.shutdown()?.value
     }
 
@@ -471,23 +497,27 @@ final class KeyframeStillServiceTests: XCTestCase {
 
     func testReadAheadRunsOnlyWhileEveryConditionHoldsAndStopsAtOnce() async throws {
         typealias Unsettled = KeyframeStillService.PlayerState.Unsettled
-        let conditions: [(name: String, spoil: (Rig) -> Void, mend: (Rig) -> Void)] = [
-            ("buffering", { $0.state?.unsettled = .buffering }, { $0.state?.unsettled = nil }),
-            ("loading", { $0.state?.unsettled = .loading }, { $0.state?.unsettled = nil }),
-            ("seeking", { $0.state?.unsettled = .seeking }, { $0.state?.unsettled = nil }),
-            ("replanning", { $0.state?.unsettled = .replanning }, { $0.state?.unsettled = nil }),
-            ("recovering", { $0.state?.unsettled = .recovering }, { $0.state?.unsettled = nil }),
-            ("changing quality", { $0.state?.unsettled = .changingQuality }, { $0.state?.unsettled = nil }),
-            ("ended", { $0.state?.unsettled = .ended }, { $0.state?.unsettled = nil }),
-            ("buffer low", { $0.state?.bufferedAheadSeconds = 19 }, { $0.state?.bufferedAheadSeconds = 40 }),
-            ("no buffer telemetry", { $0.state?.bufferedAheadSeconds = nil }, { $0.state?.bufferedAheadSeconds = 40 }),
-            ("not active", { $0.state?.isAppActive = false }, { $0.state?.isAppActive = true }),
-            ("handed off", { $0.state?.isHandedOff = true }, { $0.state?.isHandedOff = false }),
-            ("software decoding", { $0.state?.decodesInSoftware = true }, { $0.state?.decodesInSoftware = false }),
-            ("decoding unknown", { $0.state?.decodesInSoftware = nil }, { $0.state?.decodesInSoftware = false }),
-            ("mobile data", { $0.watch.allows = false }, { $0.watch.allows = true }),
-            ("another load", { rig in rig.held = rig.state; rig.state = nil }, { rig in rig.state = rig.held }),
-            ("no headers", { $0.headers = nil }, { $0.headers = [:] }),
+        // `stops` marks the conditions that mean the player needs the
+        // device or the connection to itself right now: a read that is
+        // already out is stopped, not left to finish.
+        let conditions: [(name: String, stops: Bool, spoil: (Rig) -> Void, mend: (Rig) -> Void)] = [
+            ("buffering", true, { $0.state?.unsettled = .buffering }, { $0.state?.unsettled = nil }),
+            ("loading", true, { $0.state?.unsettled = .loading }, { $0.state?.unsettled = nil }),
+            ("seeking", false, { $0.state?.unsettled = .seeking }, { $0.state?.unsettled = nil }),
+            ("replanning", true, { $0.state?.unsettled = .replanning }, { $0.state?.unsettled = nil }),
+            ("recovering", true, { $0.state?.unsettled = .recovering }, { $0.state?.unsettled = nil }),
+            ("changing quality", true, { $0.state?.unsettled = .changingQuality }, { $0.state?.unsettled = nil }),
+            ("an error", true, { $0.state?.unsettled = .failed }, { $0.state?.unsettled = nil }),
+            ("ended", true, { $0.state?.unsettled = .ended }, { $0.state?.unsettled = nil }),
+            ("buffer low", false, { $0.state?.bufferedAheadSeconds = 19 }, { $0.state?.bufferedAheadSeconds = 40 }),
+            ("no buffer telemetry", false, { $0.state?.bufferedAheadSeconds = nil }, { $0.state?.bufferedAheadSeconds = 40 }),
+            ("not active", true, { $0.state?.isAppActive = false }, { $0.state?.isAppActive = true }),
+            ("handed off", true, { $0.state?.isHandedOff = true }, { $0.state?.isHandedOff = false }),
+            ("software decoding", true, { $0.state?.decodesInSoftware = true }, { $0.state?.decodesInSoftware = false }),
+            ("decoding unknown", true, { $0.state?.decodesInSoftware = nil }, { $0.state?.decodesInSoftware = false }),
+            ("mobile data", false, { $0.watch.allows = false }, { $0.watch.allows = true }),
+            ("another load", true, { rig in rig.held = rig.state; rig.state = nil }, { rig in rig.state = rig.held }),
+            ("no headers", false, { $0.headers = nil }, { $0.headers = [:] }),
         ]
         let rig = Rig()
         let reader = ScriptedReader()
@@ -503,23 +533,40 @@ final class KeyframeStillServiceTests: XCTestCase {
         try await waitUntil { reader.asked.count == 1 }
         XCTAssertEqual(reader.asked.first?.urgent, false, "read-ahead is never urgent")
 
+        XCTAssertEqual(service.sampleInterval, 0.25, "with a read out the gates are looked at four times a second")
+
         var expected = 1
+        var cancels = 0
         for condition in conditions {
-            // Spoilt while a read is running: that read finishes, and not
-            // one more starts.
+            // Spoilt while a read is running, and not one more starts.
             condition.spoil(rig)
-            reader.release()
+            if condition.stops {
+                // The read that is out is stopped at the next look, in
+                // that call, not whenever a background task gets a turn.
+                rig.advance(service, seconds: 0.25)
+                cancels += 1
+                XCTAssertEqual(reader.cancels, cancels, "stopped at once: \(condition.name)")
+            } else {
+                // Not a reason to break off a read: it finishes.
+                rig.advance(service, seconds: 0.25)
+                XCTAssertEqual(reader.cancels, cancels, "left to finish: \(condition.name)")
+                reader.release()
+            }
             try await waitUntil { reader.heldTimes.isEmpty }
             await service.settle()
+            XCTAssertEqual(service.sampleInterval, 1)
             for _ in 0..<3 { rig.advance(service, seconds: 2) }
             await service.settle()
             XCTAssertEqual(reader.asked.count, expected, "no read while: \(condition.name)")
             condition.mend(rig)
+            // The very next look reads again: a stopped read brought no
+            // wait with it.
             rig.advance(service)
             expected += 1
             try await waitUntil { reader.asked.count == expected }
             XCTAssertEqual(reader.heldTimes.count, 1, "one read at a time: \(condition.name)")
         }
+        XCTAssertFalse(rig.lines.contains { $0.contains("transient") })
 
         // A viewer's target takes the lane from read-ahead.
         _ = service.request(atSourceTime: 3000) { _, _ in }
@@ -549,33 +596,34 @@ final class KeyframeStillServiceTests: XCTestCase {
         rig.state?.sourceTime = 594
         let service = try XCTUnwrap(rig.makeService(try Self.localNetworkSpec()))
         rig.playSteadily(service)
-        // Steady play moved the playhead on to 600 seconds. Every keyframe
-        // within two minutes either side is read back to back, in one go.
-        try await waitUntil { reader.asked.count >= 62 }
+        // Steady play moved the playhead on to 600 seconds. One keyframe
+        // for each ten seconds within two minutes either side (the file
+        // has one every four) is read back to back, in one go.
+        try await waitUntil { reader.asked.count >= 26 }
         await service.settle()
         let times = reader.asked.map(\.time)
-        XCTAssertEqual(Array(times.prefix(7)), [600, 604, 596, 608, 592, 612, 588], "nearest first, ahead then behind")
-        XCTAssertEqual(Set(times.prefix(61)), Set(stride(from: 480.0, through: 720, by: 4)))
+        XCTAssertEqual(Array(times.prefix(7)), [600, 608, 588, 620, 580, 628, 568], "nearest first, ahead then behind")
+        XCTAssertEqual(Set(times.prefix(25)), Set(stride(from: 480.0, through: 720, by: 10).map { ($0 / 4).rounded(.down) * 4 }))
         XCTAssertFalse(reader.asked.contains(where: \.urgent))
         // Then the ladder: one read, and no more until two seconds pass.
-        XCTAssertEqual(times.count, 62)
-        XCTAssertEqual(times[61], 300, "the five-minute point nearest the playhead")
+        XCTAssertEqual(times.count, 26)
+        XCTAssertEqual(times[25], 300, "the five-minute point nearest the playhead")
         rig.advance(service, seconds: 1, playing: false)
         await service.settle()
-        XCTAssertEqual(reader.asked.count, 62, "paced: not yet")
+        XCTAssertEqual(reader.asked.count, 26, "paced: not yet")
         rig.advance(service, seconds: 1, playing: false)
-        try await waitUntil { reader.asked.count == 63 }
+        try await waitUntil { reader.asked.count == 27 }
         await service.settle()
-        XCTAssertEqual(reader.asked.count, 63, "one at a time")
-        XCTAssertEqual(reader.asked[62].time, 900)
+        XCTAssertEqual(reader.asked.count, 27, "one at a time")
+        XCTAssertEqual(reader.asked[26].time, 900)
 
         var guardCount = 0
-        while reader.asked.count < 61 + 23 + 24, guardCount < 200 {
+        while reader.asked.count < 25 + 23 + 24, guardCount < 200 {
             rig.advance(service, seconds: 2, playing: false)
             await service.settle()
             guardCount += 1
         }
-        let ladder = reader.asked.dropFirst(61).map(\.time)
+        let ladder = reader.asked.dropFirst(25).map(\.time)
         XCTAssertEqual(ladder.count, 23 + 24)
         XCTAssertEqual(Set(ladder.prefix(23)), Set(stride(from: 0.0, to: 7200, by: 300)).subtracting([600]),
                        "every five minutes across the title")
@@ -586,7 +634,7 @@ final class KeyframeStillServiceTests: XCTestCase {
             rig.advance(service, seconds: 2, playing: false)
             await service.settle()
         }
-        XCTAssertEqual(reader.asked.count, 61 + 23 + 24, "and then it is done")
+        XCTAssertEqual(reader.asked.count, 25 + 23 + 24, "and then it is done")
         XCTAssertEqual(Set(reader.asked.map(\.time)).count, reader.asked.count, "nothing is read twice")
         await service.shutdown()?.value
         await service.settle()
@@ -594,7 +642,8 @@ final class KeyframeStillServiceTests: XCTestCase {
 
     func testReadAheadKeepsToItsByteBudget() async throws {
         // 100 MB on a far server: one per cent, 1 MB. Each still costs
-        // 300,000 bytes, so three fit.
+        // 300,000 bytes, so three fit: one near the playhead, which may
+        // take half the budget, and two points of the ladder.
         let megabyte: Int64 = 1_000_000
         let cases: [(name: String, spec: VividLoadSpec, size: Int64?, bytes: Int, reads: Int)] = [
             ("far server", try Self.directSpec(), 100 * megabyte, 300_000, 3),
@@ -618,6 +667,7 @@ final class KeyframeStillServiceTests: XCTestCase {
             }
             XCTAssertEqual(reader.asked.count, item.reads, item.name)
             XCTAssertEqual(service.readAheadSpent, item.reads * item.bytes, item.name)
+            XCTAssertEqual(service.nearSpent, item.reads / 2 * item.bytes, "\(item.name): the stretch near the playhead took half")
             XCTAssertLessThanOrEqual(service.readAheadSpent, 60 * 1024 * 1024, item.name)
 
             // The budget belongs to the title: a reload of the same file
@@ -680,7 +730,8 @@ final class KeyframeStillServiceTests: XCTestCase {
         rig.headers = ["X-Emby-Token": "token-one"]
         rig.openOverride = { url, headers in
             let source = HTTPStillByteSource(url: url, session: StillRangeStub.session(), headers: { headers.current })
-            return KeyframeStillSource(reader: KeyframeStillReader(source: source), fileSize: { source.size })
+            return KeyframeStillSource(reader: KeyframeStillReader(source: source), fileSize: { source.size },
+                                       receivedBytes: { source.counters.bytes })
         }
         let spec = try Self.directSpec()
         let service = try XCTUnwrap(rig.makeService(spec))
@@ -709,14 +760,17 @@ final class KeyframeStillServiceTests: XCTestCase {
         reader.holds = true
         rig.reader = reader
         let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
-        XCTAssertEqual(service.holdings, .init(hasNetworkWatch: true, observers: 2))
+        XCTAssertEqual(service.holdings, .init(observers: 3))
         rig.playSteadily(service)
         try await waitUntil { reader.asked.count == 1 }
         XCTAssertTrue(service.holdings.hasReader)
+        XCTAssertTrue(service.holdings.hasNetworkWatch)
         var delivered = 0
         _ = service.request(atSourceTime: 97) { _, _ in delivered += 1 }
 
         let closing = service.shutdown()
+        XCTAssertEqual(reader.cancels, 1, "the read that was out is stopped in the call that ends the service")
+        XCTAssertEqual(reader.shutdowns, 0, "before the wait for the reader's thread has even begun")
         XCTAssertTrue(service.isFinished)
         XCTAssertFalse(service.isRuledOut)
         await closing?.value
@@ -743,27 +797,57 @@ final class KeyframeStillServiceTests: XCTestCase {
         XCTAssertEqual(service.holdings, .init())
     }
 
-    func testGoingToTheBackgroundTearsItDown() async throws {
+    func testGoingToTheBackgroundShutsTheReaderAndComingBackNeedsNoNewSpellOfSteadyPlay() async throws {
         let rig = Rig()
         rig.state?.bufferedAheadSeconds = nil
         let reader = ScriptedReader()
         rig.reader = reader
         let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
         rig.playSteadily(service)
-        var delivered = 0
-        _ = service.request(atSourceTime: 97) { _, _ in delivered += 1 }
-        try await waitUntil { delivered == 1 }
+        var delivered: [CGImage?] = []
+        _ = service.request(atSourceTime: 97) { image, _ in delivered.append(image) }
+        try await waitUntil { delivered.count == 1 }
         XCTAssertEqual(service.heldPositions, [24])
+        reader.holds = true
+        _ = service.request(atSourceTime: 201) { image, _ in delivered.append(image) }
+        try await waitUntil { reader.heldTimes == [200] }
 
         rig.centre.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
-        try await waitUntil { service.isFinished }
-        XCTAssertFalse(service.isRuledOut, "a new one may be made when the app is back")
+        XCTAssertEqual(reader.cancels, 1, "the read that was out is stopped there and then")
+        XCTAssertFalse(service.isFinished, "the service stays, with what it knows")
+        XCTAssertTrue(service.isSuspended)
+        await service.settle()
+        try await waitUntil { reader.shutdowns == 1 }
+        XCTAssertEqual(service.holdings, .init(observers: 3), "no reader, stills, timer or monitor in the background")
+        XCTAssertTrue(rig.watch.isCancelled)
+        // Nothing happens in the background, whatever is asked.
+        rig.advance(service)
+        guard case .unchanged = service.request(atSourceTime: 97, deliver: { image, _ in delivered.append(image) }) else {
+            return XCTFail("nothing in the background")
+        }
+        await service.settle()
+        XCTAssertEqual(rig.opens.value, 1)
+
+        // Back again, paused and scrubbing straight away: steady play can't
+        // be counted now, and doesn't need to be.
+        let next = ScriptedReader()
+        rig.reader = next
+        rig.centre.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        XCTAssertFalse(service.isSuspended)
+        rig.state?.isPlaying = false
+        rig.state?.unsettled = .seeking
+        let before = delivered.count
+        _ = service.request(atSourceTime: 97) { image, _ in delivered.append(image) }
+        try await waitUntil { delivered.count == before + 1 }
+        XCTAssertTrue(delivered.last.flatMap { $0 } === next.image(24))
+        XCTAssertEqual(rig.opens.value, 2, "a new reader, opened without waiting")
+        XCTAssertFalse(rig.lines.contains { $0.hasPrefix("summary ") })
+
         await service.shutdown()?.value
         await service.settle()
         XCTAssertEqual(service.holdings, .init())
-        XCTAssertEqual(reader.shutdowns, 1)
-        XCTAssertTrue(rig.watch.isCancelled)
-        XCTAssertTrue(rig.lines.contains { $0.hasPrefix("summary end=background ") })
+        XCTAssertEqual(next.shutdowns, 1)
+        XCTAssertEqual(rig.lines.filter { $0.hasPrefix("summary end=loadEnded ") }.count, 1)
     }
 
     func testAMemoryWarningDropsTheStillsAndTheDecoderButKeepsTheReader() async throws {
@@ -832,7 +916,7 @@ final class KeyframeStillServiceTests: XCTestCase {
         let spec = try Self.localNetworkSpec()
         let service = try XCTUnwrap(rig.makeService(spec))
         rig.playSteadily(service)
-        try await waitUntil { reader.asked.count == 30 }
+        try await waitUntil { reader.asked.count == 13 }
         await service.settle()
         var delivered = 0
         _ = service.request(atSourceTime: 50) { _, _ in delivered += 1 }
@@ -844,10 +928,10 @@ final class KeyframeStillServiceTests: XCTestCase {
 
         XCTAssertTrue(rig.lines.contains("burst begin drops=7 buffer=40.0 avsync=1.5"), "\(rig.lines.prefix(6))")
         XCTAssertTrue(rig.lines.contains("burst end drops=7 buffer=40.0 avsync=1.5"))
-        XCTAssertEqual(rig.lines.filter { $0.hasPrefix("still ahead ") && $0.contains("cache=miss drops=7 buffer=40.0 avsync=1.5") }.count, 30)
+        XCTAssertEqual(rig.lines.filter { $0.hasPrefix("still ahead ") && $0.contains("cache=miss drops=7 buffer=40.0 avsync=1.5") }.count, 13)
         XCTAssertTrue(rig.lines.contains { $0.hasPrefix("still viewer pos=12 bytes=0 reads=0 keyframe=0 ms=0 cache=hit") })
         let summary = try XCTUnwrap(rig.lines.last)
-        XCTAssertTrue(summary.hasPrefix("summary end=loadEnded served=1 hits=1 hit_rate=100 stills=30 ahead_bytes=30000 "), summary)
+        XCTAssertTrue(summary.hasPrefix("summary end=loadEnded served=1 hits=1 hit_rate=100 stills=13 ahead_bytes=13000 "), summary)
         XCTAssertTrue(summary.contains("first_still_ms=") && summary.hasSuffix("failures=none"), summary)
         let host = try XCTUnwrap(spec.sourceURL.host)
         for line in rig.lines {
@@ -863,17 +947,23 @@ final class KeyframeStillServiceTests: XCTestCase {
         let frames = FrameReader(image: image, canRead: true)
         let controller = try VividPlaybackController()
         let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in frames },
-                                                 stills: rig.environment, expectsFrameReader: true)
+                                                 stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: true,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
         provider.activate(try Self.directSpec())
         provider.playbackStarted()
-        XCTAssertNil(provider.debugStillService, "the frame reader is tried first where there is one")
+        try await waitUntil { provider.debugStillService != nil }
+        let service = try XCTUnwrap(provider.debugStillService)
+        XCTAssertTrue(service.isStandingBy, "the frame reader is tried first where there is one")
+        rig.playSteadily(service)
         provider.begin(atSourceTime: 15)
         try await waitUntil { latest?.sourceTime == 15 }
         XCTAssertTrue(latest?.image === image)
-        XCTAssertNil(provider.debugStillService)
+        XCTAssertTrue(service.isStandingBy, "and while it works the service only ever counted steady play")
+        XCTAssertTrue(service.hasSteadyPlay)
+        XCTAssertEqual(service.holdings, .init(observers: 3), "with its timer stopped once that was counted")
         XCTAssertEqual(frames.questions, 0)
         XCTAssertEqual(rig.watchesMade, 0)
         XCTAssertEqual(rig.opens.value, 0)
@@ -894,19 +984,28 @@ final class KeyframeStillServiceTests: XCTestCase {
                 readersMade += 1
                 return frames
             },
-            stills: rig.environment, expectsFrameReader: true)
+            stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: true,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
         provider.activate(try Self.directSpec())
         provider.playbackStarted()
-        provider.begin(atSourceTime: 97)
+        // Steady play is counted from the first frame, while the frame
+        // reader still has the load, so the first scrub doesn't have to
+        // wait for a spell of it that can't happen during a scrub.
         try await waitUntil { provider.debugStillService != nil }
         let service = try XCTUnwrap(provider.debugStillService)
+        XCTAssertTrue(service.isStandingBy)
+        rig.playSteadily(service)
+        XCTAssertEqual(rig.opens.value, 0, "standing by, it opens nothing")
+        rig.state?.isPlaying = false
+        rig.state?.unsettled = .seeking
+        provider.begin(atSourceTime: 97)
+        try await waitUntil { latest?.sourceTime == 97 }
+        XCTAssertFalse(service.isStandingBy)
         XCTAssertEqual(frames.thumbnails, 1)
         XCTAssertEqual(frames.questions, 1)
-        rig.playSteadily(service)
-        try await waitUntil { latest?.sourceTime == 97 }
         XCTAssertEqual(frames.shutdowns, 1)
         XCTAssertTrue(latest?.image === reader.image(24))
 
@@ -932,7 +1031,8 @@ final class KeyframeStillServiceTests: XCTestCase {
         let provider = VividScrubPreviewProvider(
             engine: controller.engine,
             makeStore: { ScrubPreviewSheetStore(sheets: $0, session: StillRangeStub.session()) },
-            makeReader: { _ in nil }, stills: rig.environment, expectsFrameReader: false)
+            makeReader: { _ in nil }, stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: false,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         let sheets = try XCTUnwrap(ScrubPreviewSheets(
             key: "k", intervalMilliseconds: 10_000, columns: 4, rows: 2, thumbnailCount: 8,
@@ -954,10 +1054,11 @@ final class KeyframeStillServiceTests: XCTestCase {
         provider.playbackStarted()
         XCTAssertNil(provider.debugStillService)
         try await waitUntil { provider.debugStillService != nil }
-        XCTAssertEqual(rig.watchesMade, 1)
+        let service = try XCTUnwrap(provider.debugStillService)
+        XCTAssertFalse(service.isStandingBy)
         await provider.endSession()?.value
         XCTAssertNil(provider.debugStillService)
-        XCTAssertTrue(rig.watch.isCancelled)
+        XCTAssertTrue(service.isFinished)
     }
 
     func testAStillFromAnOldLoadNeverPublishes() async throws {
@@ -970,13 +1071,17 @@ final class KeyframeStillServiceTests: XCTestCase {
         rig.reader = reader
         let controller = try VividPlaybackController()
         let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in nil },
-                                                 stills: rig.environment, expectsFrameReader: false)
+                                                 stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: false,
+            stillsWaitForMove: false)
         provider.stillPlayer = rig.player
         var previews: [VividScrubPreviewProvider.Preview] = []
         provider.onPreview = { if let preview = $0 { previews.append(preview) } }
         provider.activate(try Self.directSpec())
         provider.playbackStarted()
         provider.begin(atSourceTime: 97)
+        // The service is made a turn after the first frame, and takes the
+        // scrub that is already going.
+        try await waitUntil { provider.debugStillService != nil }
         let first = try XCTUnwrap(provider.debugStillService)
         rig.playSteadily(first)
         try await waitUntil { reader.asked.count == 1 }
@@ -998,6 +1103,7 @@ final class KeyframeStillServiceTests: XCTestCase {
         provider.playbackStarted()
         nextReader.holds = true
         provider.begin(atSourceTime: 97)
+        try await waitUntil { provider.debugStillService != nil }
         let second = try XCTUnwrap(provider.debugStillService)
         rig.playSteadily(second)
         try await waitUntil { nextReader.asked.count == 1 }
@@ -1007,6 +1113,470 @@ final class KeyframeStillServiceTests: XCTestCase {
         XCTAssertTrue(previews.isEmpty)
         XCTAssertEqual(second.heldPositions, [24], "though the still is kept for the next scrub")
         await provider.endSession()?.value
+    }
+
+    // MARK: - The player comes first
+
+    func testAGateClosingStopsAViewersReadAtOnceAndThatIsNotAFailure() async throws {
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = nil
+        let reader = ScriptedReader()
+        reader.holds = true
+        // Even a read that loses the race and comes back as a failure.
+        reader.stoppedResult = .transientFailure
+        rig.reader = reader
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        var delivered: [(image: CGImage?, time: Double)] = []
+        let deliver: @MainActor (CGImage?, Double) -> Void = { delivered.append(($0, $1)) }
+        _ = service.request(atSourceTime: 97, deliver: deliver)
+        try await waitUntil { reader.heldTimes == [96] }
+        XCTAssertEqual(service.sampleInterval, 0.25)
+
+        // The picture goes to an AirPlay receiver. The very next scrub
+        // request sees it, with no tick in between, and stops the read in
+        // that call.
+        rig.state?.isHandedOff = true
+        _ = service.request(atSourceTime: 98, deliver: deliver)
+        XCTAssertEqual(reader.cancels, 1)
+        try await waitUntil { reader.heldTimes.isEmpty }
+        await service.settle()
+        XCTAssertFalse(service.isFinished)
+
+        // Back again, and the keyframe is asked for straight away: the
+        // stopped read brought no wait.
+        rig.state?.isHandedOff = false
+        rig.advance(service, seconds: 0.25)
+        _ = service.request(atSourceTime: 97, deliver: deliver)
+        try await waitUntil { reader.heldTimes == [96] }
+        XCTAssertEqual(reader.asked.count, 2)
+
+        // The player starts buffering. The tick stops the read, the target
+        // stays, and nothing is read for it until playback has settled.
+        rig.state?.unsettled = .buffering
+        rig.advance(service, seconds: 0.25)
+        XCTAssertEqual(reader.cancels, 2)
+        try await waitUntil { reader.heldTimes.isEmpty }
+        await service.settle()
+        for _ in 0..<3 {
+            rig.advance(service)
+            await service.settle()
+        }
+        XCTAssertEqual(reader.asked.count, 2)
+        XCTAssertTrue(delivered.isEmpty)
+        reader.holds = false
+        rig.state?.unsettled = nil
+        rig.advance(service)
+        try await waitUntil { delivered.count == 1 }
+        XCTAssertEqual(delivered[0].time, 97, "the target that was waiting is answered once playback settles")
+        XCTAssertEqual(reader.asked.count, 3)
+        await service.shutdown()?.value
+        await service.settle()
+        XCTAssertTrue(try XCTUnwrap(rig.lines.last).hasSuffix("failures=none"), "\(rig.lines.last ?? "")")
+        XCTAssertEqual(rig.lines.filter { $0.hasPrefix("stop ") }, ["stop handedOff reads=1 open=0", "stop buffering reads=1 open=0"])
+    }
+
+    func testAGateClosingStopsAnOpenThatIsRunningAndTheFileIsOpenedAgainLater() async throws {
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = nil
+        let reader = ScriptedReader()
+        reader.holdsPrepare = true
+        rig.reader = reader
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        var delivered = 0
+        _ = service.request(atSourceTime: 97) { _, _ in delivered += 1 }
+        try await waitUntil { reader.prepares == 1 }
+        XCTAssertEqual(service.sampleInterval, 0.25)
+
+        rig.state?.unsettled = .loading
+        rig.advance(service, seconds: 0.25)
+        XCTAssertEqual(reader.cancels, 1)
+        await service.settle()
+        XCTAssertFalse(service.isFinished)
+
+        reader.holdsPrepare = false
+        rig.state?.unsettled = nil
+        rig.advance(service, seconds: 0.25)
+        try await waitUntil { delivered == 1 }
+        XCTAssertEqual(reader.prepares, 2, "opened again at the next look, with no wait")
+        XCTAssertEqual(rig.opens.value, 1, "by the reader it already had")
+        await service.shutdown()?.value
+        await service.settle()
+        XCTAssertTrue(try XCTUnwrap(rig.lines.last).hasSuffix("failures=none"))
+    }
+
+    func testWhilePlaybackIsUnsettledAScrubIsAnsweredOnlyFromWhatIsHeld() async throws {
+        typealias Unsettled = KeyframeStillService.PlayerState.Unsettled
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = nil
+        let reader = ScriptedReader()
+        rig.reader = reader
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        var delivered: [(image: CGImage?, time: Double)] = []
+        let deliver: @MainActor (CGImage?, Double) -> Void = { delivered.append(($0, $1)) }
+
+        // No reader yet, and the player is buffering: none is opened.
+        rig.state?.unsettled = .buffering
+        _ = service.request(atSourceTime: 97, deliver: deliver)
+        rig.advance(service)
+        await service.settle()
+        XCTAssertEqual(rig.opens.value, 0, "no file is opened for a scrub while the player is buffering")
+        // Settled, with the target still the current one: now it is.
+        rig.state?.unsettled = nil
+        rig.advance(service)
+        try await waitUntil { delivered.count == 1 }
+        XCTAssertEqual(reader.asked.map(\.time), [96])
+
+        for unsettled in [Unsettled.buffering, .loading, .replanning, .recovering, .changingQuality, .failed, .ended] {
+            service.clearTarget()
+            rig.state?.unsettled = unsettled
+            guard case let .still(held) = service.request(atSourceTime: 98, deliver: deliver) else {
+                return XCTFail("a still already held is still shown: \(unsettled)")
+            }
+            XCTAssertTrue(held === reader.image(24))
+            guard case .cleared = service.request(atSourceTime: 301, deliver: deliver) else {
+                return XCTFail("nothing held for it: \(unsettled)")
+            }
+            rig.advance(service)
+            await service.settle()
+            XCTAssertEqual(reader.asked.count, 1, "and nothing is read for it: \(unsettled)")
+        }
+
+        // Seeking is what a scrub itself reports, so it holds nothing up.
+        rig.state?.unsettled = .seeking
+        _ = service.request(atSourceTime: 301, deliver: deliver)
+        try await waitUntil { reader.asked.count == 2 }
+        XCTAssertEqual(reader.asked.last?.time, 300)
+        XCTAssertEqual(reader.cancels, 0)
+        await service.shutdown()?.value
+        await service.settle()
+    }
+
+    func testThePlayersStateIsMappedOneCaseAtATime() {
+        typealias Snapshot = KeyframeStillService.PlayerSnapshot
+        func state(_ change: (inout Snapshot) -> Void) -> KeyframeStillService.PlayerState {
+            var snapshot = Snapshot(sourceTime: 42, isPlaying: true, bufferedAheadSeconds: 31, videoDecoder: "hevc (VideoToolbox)",
+                                    droppedFrames: 3, avSyncGapMilliseconds: 1.5)
+            change(&snapshot)
+            return KeyframeStillService.playerState(from: snapshot)
+        }
+        XCTAssertEqual(state { _ in }, .init(sourceTime: 42, isPlaying: true, unsettled: nil, bufferedAheadSeconds: 31,
+                                             isAppActive: true, isHandedOff: false, decodesInSoftware: false,
+                                             droppedFrames: 3, avSyncGapMilliseconds: 1.5))
+        XCTAssertEqual(state { $0.hasError = true }.unsettled, .failed)
+        XCTAssertEqual(state { $0.hasReachedEnd = true }.unsettled, .ended)
+        XCTAssertEqual(state { $0.isReplanning = true }.unsettled, .replanning)
+        XCTAssertEqual(state { $0.isRecovering = true }.unsettled, .recovering)
+        XCTAssertEqual(state { $0.isChangingQuality = true }.unsettled, .changingQuality)
+        XCTAssertEqual(state { $0.isSeeking = true }.unsettled, .seeking)
+        XCTAssertEqual(state { $0.isLoading = true }.unsettled, .loading)
+        XCTAssertEqual(state { $0.isBuffering = true }.unsettled, .buffering)
+        // With several at once, the gravest is the one reported.
+        let flags: [(WritableKeyPath<Snapshot, Bool>, KeyframeStillService.PlayerState.Unsettled)] = [
+            (\.hasError, .failed), (\.hasReachedEnd, .ended), (\.isReplanning, .replanning), (\.isRecovering, .recovering),
+            (\.isChangingQuality, .changingQuality), (\.isSeeking, .seeking), (\.isLoading, .loading), (\.isBuffering, .buffering),
+        ]
+        for first in flags.indices {
+            let reported = state { snapshot in
+                for flag in flags[first...] { snapshot[keyPath: flag.0] = true }
+            }
+            XCTAssertEqual(reported.unsettled, flags[first].1)
+        }
+        // Only seeking lets the viewer's own reads go on.
+        for unsettled in flags.map(\.1) {
+            XCTAssertEqual(unsettled.stopsViewerReads, unsettled != .seeking, "\(unsettled)")
+        }
+
+        XCTAssertTrue(state { $0.isAirPlayHandOff = true }.isHandedOff)
+        XCTAssertTrue(state { $0.isPictureInPicture = true }.isHandedOff)
+        XCTAssertFalse(state { $0.isAppActive = false }.isAppActive)
+        XCTAssertNil(state { $0.videoDecoder = nil }.decodesInSoftware, "not known until the engine says")
+        XCTAssertEqual(state { $0.videoDecoder = "hevc" }.decodesInSoftware, true)
+        XCTAssertEqual(state { $0.videoDecoder = "h264 (videotoolbox-copy)" }.decodesInSoftware, false)
+        XCTAssertNil(state { $0.bufferedAheadSeconds = nil }.bufferedAheadSeconds)
+        XCTAssertFalse(state { $0.isPlaying = false }.isPlaying)
+    }
+
+    // MARK: - Bounds
+
+    func testADamagedIndexIsRefusedAndNoWalkDependsOnWhatTheFileSays() async throws {
+        func entries(_ times: [Double]) -> [KeyframeIndexEntry] {
+            times.map { KeyframeIndexEntry(time: $0, bytePosition: 0, size: nil, isReadable: true) }
+        }
+        XCTAssertNotNil(KeyframeStillService.usableIndex(entries([0, 4, 8, 8]), duration: 7200))
+        XCTAssertNotNil(KeyframeStillService.usableIndex(entries([0, 4]), duration: nil))
+        for duration in [3.0e13, .infinity, .nan, -1] {
+            XCTAssertNil(KeyframeStillService.usableIndex(entries([0, 4]), duration: duration), "\(duration)")
+        }
+        for times in [[0, 4, 3.0e13], [0, 8, 4], [0, .nan], [-1, 4], [0, .infinity]] {
+            XCTAssertNil(KeyframeStillService.usableIndex(entries(times), duration: 7200), "\(times)")
+        }
+        XCTAssertNil(KeyframeStillService.usableIndex(entries(Array(repeating: 1, count: 400_001)), duration: 7200))
+
+        // One cue a million years out, or cues out of order: the file gets
+        // no stills, and nothing is asked of it.
+        for times in [[0, 4, 8, 3.0e13], [0, 8, 4]] {
+            let rig = Rig()
+            let reader = ScriptedReader(times: times, duration: 7200)
+            rig.reader = reader
+            let service = try XCTUnwrap(rig.makeService(try Self.localNetworkSpec()))
+            rig.playSteadily(service)
+            try await waitUntil { service.isFinished }
+            XCTAssertTrue(service.isRuledOut)
+            XCTAssertEqual(reader.asked.count, 0)
+            await service.shutdown()?.value
+            await service.settle()
+            XCTAssertTrue(rig.lines.contains { $0.hasPrefix("summary end=badIndex ") })
+        }
+
+        // A file that is all keyframes: 8,000 of them in under seven
+        // minutes. Near the playhead it is still one for each ten seconds,
+        // and the ladder is the one point not already held.
+        let rig = Rig()
+        let reader = ScriptedReader(times: (0..<8_000).map { Double($0) * 0.05 }, duration: 400)
+        rig.reader = reader
+        rig.state?.sourceTime = 194
+        let service = try XCTUnwrap(rig.makeService(try Self.localNetworkSpec()))
+        rig.playSteadily(service)
+        for _ in 0..<6 {
+            rig.advance(service, seconds: 2, playing: false)
+            await service.settle()
+        }
+        XCTAssertEqual(reader.asked.count, 26, "25 near the playhead and the start of the file")
+        XCTAssertEqual(Set(reader.asked.map(\.time)).count, 26)
+        XCTAssertEqual(reader.asked.last?.time, 0)
+        await service.shutdown()?.value
+        await service.settle()
+    }
+
+    func testTheBudgetCountsWhatTheSourceFetchedNotWhatTheReaderWasHanded() async throws {
+        // 100 MB on a far server: 1 MB to spend. The reader is handed
+        // 1,000 bytes for each still, but the source fetched 300,000.
+        let rig = Rig()
+        let reader = ScriptedReader()
+        reader.fetchedPerStill = 300_000
+        rig.reader = reader
+        rig.fileSize.value = 100_000_000
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        try await waitUntil { rig.opens.value == 1 }
+        for _ in 0..<8 {
+            rig.advance(service, seconds: 2, playing: false)
+            await service.settle()
+        }
+        XCTAssertEqual(reader.asked.count, 3)
+        XCTAssertEqual(service.readAheadSpent, 900_000)
+        XCTAssertEqual(service.nearSpent, 300_000)
+        XCTAssertTrue(rig.lines.contains { $0.hasPrefix("still ahead ") && $0.contains(" bytes=1000 fetched=300000 ") })
+        // The viewer's own reads are counted the same way, and never
+        // against the budget.
+        var delivered = 0
+        _ = service.request(atSourceTime: 3000) { _, _ in delivered += 1 }
+        try await waitUntil { delivered == 1 }
+        XCTAssertEqual(service.readAheadSpent, 900_000)
+        await service.shutdown()?.value
+        await service.settle()
+        XCTAssertTrue(try XCTUnwrap(rig.lines.last).contains(" viewer_bytes=300000 "))
+
+        // An ordinary film, 2 GB on a far server, with half a megabyte
+        // fetched for each still: the stretch near the playhead stops at
+        // half the 20 MB, and the ladder across the title gets the rest.
+        let film = Rig()
+        let filmReader = ScriptedReader()
+        filmReader.fetchedPerStill = 512 * 1024
+        film.reader = filmReader
+        film.fileSize.value = 2_000_000_000
+        let filling = try XCTUnwrap(film.makeService(try Self.directSpec()))
+        film.playSteadily(filling)
+        for _ in 0..<40 {
+            film.advance(filling, seconds: 2, playing: false)
+            await filling.settle()
+        }
+        let times = filmReader.asked.map(\.time)
+        XCTAssertEqual(times.count, 38)
+        XCTAssertTrue(times.prefix(19).allSatisfy { abs($0 - 606) <= 120 }, "\(times.prefix(19))")
+        XCTAssertTrue(times.dropFirst(19).allSatisfy { abs($0 - 606) > 120 }, "the ladder is reached: \(times.dropFirst(19))")
+        XCTAssertLessThanOrEqual(filling.nearSpent, 10_000_000)
+        XCTAssertLessThanOrEqual(filling.readAheadSpent, 20_000_000)
+        await filling.shutdown()?.value
+        await filling.settle()
+    }
+
+    func testReadAheadStartsAtAHealthyBufferAndStopsOnlyAtALowOne() async throws {
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = 25
+        let reader = ScriptedReader()
+        reader.holds = true
+        rig.reader = reader
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        for _ in 0..<2 { rig.advance(service) }
+        await service.settle()
+        XCTAssertEqual(rig.opens.value, 0, "25 seconds is not enough to start on")
+
+        rig.state?.bufferedAheadSeconds = 30
+        rig.advance(service)
+        try await waitUntil { reader.asked.count == 1 }
+        // Once started, it goes on through a dip that stays above 20.
+        rig.state?.bufferedAheadSeconds = 25
+        reader.release()
+        try await waitUntil { reader.asked.count == 2 }
+        // Below 20 it stops.
+        rig.state?.bufferedAheadSeconds = 19.9
+        reader.release()
+        try await waitUntil { reader.heldTimes.isEmpty }
+        for _ in 0..<2 { rig.advance(service) }
+        await service.settle()
+        XCTAssertEqual(reader.asked.count, 2)
+        // And 25 no longer starts it again.
+        rig.state?.bufferedAheadSeconds = 25
+        for _ in 0..<2 { rig.advance(service) }
+        await service.settle()
+        XCTAssertEqual(reader.asked.count, 2)
+        rig.state?.bufferedAheadSeconds = 30
+        rig.advance(service)
+        try await waitUntil { reader.asked.count == 3 }
+        await service.shutdown()?.value
+        await service.settle()
+    }
+
+    func testAWideWindowIsLookedAtAgainJustAfterTheTargetStops() async throws {
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = nil
+        let gate = Gate()
+        let slept = Shared<[TimeInterval]>([])
+        rig.sleep = { seconds in
+            slept.value += [seconds]
+            await gate.wait()
+        }
+        let reader = ScriptedReader()
+        rig.reader = reader
+        let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
+        rig.playSteadily(service)
+        var delivered: [(image: CGImage?, time: Double)] = []
+        let deliver: @MainActor (CGImage?, Double) -> Void = { delivered.append(($0, $1)) }
+        _ = service.request(atSourceTime: 97, deliver: deliver)
+        try await waitUntil { delivered.count == 1 }
+        service.clearTarget()
+        reader.holds = true
+
+        // A slow start, then 50 seconds in a tenth of a second: the still
+        // from 84 seconds back will do while the target moves like that.
+        _ = service.request(atSourceTime: 130, deliver: deliver)
+        XCTAssertFalse(service.holdings.hasWindowCheck, "nothing to look at again while the window is the usual one")
+        rig.now += 0.1
+        guard case .still = service.request(atSourceTime: 180, deliver: deliver) else { return XCTFail("a fast move widens the window") }
+        XCTAssertTrue(service.holdings.hasWindowCheck)
+        try await waitUntil { gate.waiting == 1 }
+        XCTAssertEqual(slept.value.count, 1)
+        XCTAssertEqual(slept.value[0], 0.55, accuracy: 0.051, "just after the rate goes stale")
+
+        // The target stops there. No further request comes and no tick
+        // either: the one look that was arranged takes the far still down.
+        rig.now += 0.6
+        gate.open()
+        try await waitUntil { delivered.count == 2 }
+        XCTAssertNil(delivered[1].image)
+        XCTAssertEqual(delivered[1].time, 180)
+        XCTAssertFalse(service.holdings.hasWindowCheck)
+        reader.cancelHeld()
+        await service.shutdown()?.value
+        await service.settle()
+    }
+
+    // MARK: - Lifetime, continued
+
+    func testAServiceLetGoWithoutShutdownLeavesNothingBehind() async throws {
+        let rig = Rig()
+        let reader = ScriptedReader()
+        reader.holds = true
+        rig.reader = reader
+        var service = rig.makeService(try Self.directSpec())
+        rig.playSteadily(try XCTUnwrap(service))
+        try await waitUntil { reader.asked.count == 1 }
+        weak var released = service
+        service = nil
+        XCTAssertNil(released)
+        XCTAssertEqual(reader.cancels, 1, "the read that was out is stopped")
+        XCTAssertTrue(rig.watch.isCancelled)
+        try await waitUntil { reader.shutdowns == 1 }
+        // Its observers went with it.
+        rig.centre.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        rig.centre.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        XCTAssertEqual(reader.decoderCloses, 0)
+    }
+
+    // MARK: - In the provider, continued
+
+    func testEndingTheSessionNeverWaitsForTheFrameReadersAnswer() async throws {
+        let rig = Rig()
+        let frames = FrameReader(image: nil, canRead: false)
+        let gate = Gate()
+        frames.answerGate = gate
+        let controller = try VividPlaybackController()
+        let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in frames },
+                                                 stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: true,
+                                                 stillsWaitForMove: false)
+        provider.stillPlayer = rig.player
+        provider.activate(try Self.directSpec())
+        provider.playbackStarted()
+        provider.begin(atSourceTime: 97)
+        // The reader gave no still and is being asked whether it can read
+        // the file at all, which can wait on an asset load.
+        try await waitUntil { gate.waiting == 1 }
+        XCTAssertEqual(frames.questions, 1)
+
+        // The session ends, and what it hands back finishes with the
+        // question still unanswered.
+        await provider.endSession()?.value
+        XCTAssertEqual(gate.waiting, 1)
+        XCTAssertEqual(frames.shutdowns, 1)
+
+        // The late answer goes nowhere.
+        gate.open()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertNil(provider.debugStillService)
+        XCTAssertEqual(rig.opens.value, 0)
+    }
+
+    func testWhereAStillWaitsForTheSelectionToMoveNothingIsReadUntilItDoes() async throws {
+        let rig = Rig()
+        rig.state?.bufferedAheadSeconds = nil
+        let reader = ScriptedReader()
+        rig.reader = reader
+        let controller = try VividPlaybackController()
+        // As on Apple TV, where the still isn't shown until then.
+        let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in nil },
+                                                 stillSwitch: rig.switchRead, stills: rig.environment, expectsFrameReader: false,
+                                                 stillsWaitForMove: true)
+        provider.stillPlayer = rig.player
+        var latest: VividScrubPreviewProvider.Preview?
+        provider.onPreview = { latest = $0 }
+        provider.activate(try Self.directSpec())
+        provider.playbackStarted()
+        try await waitUntil { provider.debugStillService != nil }
+        let service = try XCTUnwrap(provider.debugStillService)
+        rig.playSteadily(service)
+        await service.settle()
+
+        provider.begin(atSourceTime: 97)
+        provider.request(atSourceTime: 97)
+        rig.advance(service)
+        await service.settle()
+        XCTAssertEqual(rig.opens.value, 0, "a scrub that hasn't moved opens nothing")
+        XCTAssertEqual(reader.asked.count, 0)
+
+        provider.request(atSourceTime: 101)
+        try await waitUntil { latest?.sourceTime == 101 }
+        XCTAssertEqual(reader.asked.map(\.time), [100])
+        // Back where it began. It has moved now, so that is read too.
+        provider.request(atSourceTime: 97)
+        try await waitUntil { latest?.sourceTime == 97 }
+        XCTAssertEqual(reader.asked.map(\.time), [100, 96])
+        await provider.endSession()?.value
+        await service.settle()
     }
 
     // MARK: - Helpers
@@ -1079,6 +1649,11 @@ private final class Rig {
     var held: KeyframeStillService.PlayerState?
     var headers: [String: String]? = [:]
     var stateAsks = 0
+    var switchAsks = 0
+    var environmentsBuilt = 0
+    /// Stands in for the wait before a wide window is looked at again.
+    /// Nil returns at once.
+    var sleep: (@Sendable (TimeInterval) async -> Void)?
     var headerAsks = 0
     var headerURLs: Set<URL> = []
     var watchesMade = 0
@@ -1110,8 +1685,18 @@ private final class Rig {
             })
     }
 
+    /// The hidden switch as the provider reads it.
+    var switchRead: @MainActor () -> Bool {
+        { [unowned self] in
+            switchAsks += 1
+            return enabled
+        }
+    }
+
     var environment: KeyframeStillService.Environment {
+        environmentsBuilt += 1
         var environment = KeyframeStillService.Environment()
+        environment.sleep = sleep ?? { _ in }
         environment.isEnabled = { [unowned self] in enabled }
         environment.machineIdentifier = machine
         environment.uptime = { [unowned self] in now }
@@ -1122,7 +1707,9 @@ private final class Rig {
             if real { return KeyframeStillService.openSource(url, headers) }
             guard let reader = readerBox.value else { return nil }
             reader.headers = headers
-            return KeyframeStillSource(reader: reader, fileSize: { fileSize.value })
+            var received: (@Sendable () -> Int)?
+            if reader.countsFetched { received = { reader.fetched } }
+            return KeyframeStillSource(reader: reader, fileSize: { fileSize.value }, receivedBytes: received)
         }
         environment.makeNetworkWatch = { [unowned self] in
             watchesMade += 1
@@ -1134,9 +1721,10 @@ private final class Rig {
         return environment
     }
 
-    func makeService(_ spec: VividLoadSpec, carried: KeyframeStillService.Carry? = nil) -> KeyframeStillService? {
+    func makeService(_ spec: VividLoadSpec, carried: KeyframeStillService.Carry? = nil,
+                     standingBy: Bool = false) -> KeyframeStillService? {
         KeyframeStillService.makeIfEligible(for: spec, hasServerSheets: false, player: player, environment: environment,
-                                            carried: carried)
+                                            carried: carried, standingBy: standingBy)
     }
 
     /// Moves the clock on, and the playhead with it while playing.
@@ -1208,8 +1796,12 @@ private final class FrameReader: ScrubStillSource {
         return image
     }
 
+    /// Set to hold the answer back, as a slow asset load would.
+    var answerGate: Gate?
+
     func canProduceStills() async -> Bool {
         questions += 1
+        await answerGate?.wait()
         return canRead
     }
 
@@ -1231,8 +1823,11 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
     private var waiting: [(time: Double, continuation: CheckedContinuation<KeyframeStillResult, Never>)] = []
     private var pictures: [Int: CGImage] = [:]
     private var seen: [[String: String]] = []
-    private var counts = (prepares: 0, decoderCloses: 0, shutdowns: 0, superseded: 0, late: 0)
+    private var counts = (prepares: 0, decoderCloses: 0, shutdowns: 0, superseded: 0, late: 0, cancels: 0)
     private var settings = (holds: false, bytes: 1_000, answersWhenShutDown: false)
+    private var opening: [CheckedContinuation<KeyframeStillInfo?, Never>] = []
+    private var extras = (holdsPrepare: false, fetchedPerStill: nil as Int?, fetchedTotal: 0,
+                          stoppedResult: KeyframeStillResult.cancelled)
     private var script: (@Sendable (Int) -> KeyframeStillResult)?
     private var box: KeyframeStillHeaders?
 
@@ -1243,6 +1838,63 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
                                isReadable: lastIsReadable || $0 < count - 1)
         }
         facts = info ?? KeyframeStillServiceTests.info(duration: seconds, keyframes: count)
+    }
+
+    /// A reader with exactly this index.
+    init(times: [Double], duration: Double) {
+        entries = times.enumerated().map {
+            KeyframeIndexEntry(time: $0.element, bytePosition: Int64($0.offset) * 100_000 + 4_096, size: nil, isReadable: true)
+        }
+        facts = KeyframeStillServiceTests.info(duration: duration, keyframes: times.count)
+    }
+
+    /// Holds the opening of the file back until `releasePrepare()`.
+    var holdsPrepare: Bool {
+        get { lock.withLock { extras.holdsPrepare } }
+        set { lock.withLock { extras.holdsPrepare = newValue } }
+    }
+
+    /// What the source fetches for each still, where that is more than the
+    /// reader is handed. Nil for a source that doesn't count it.
+    var fetchedPerStill: Int? {
+        get { lock.withLock { extras.fetchedPerStill } }
+        set { lock.withLock { extras.fetchedPerStill = newValue } }
+    }
+
+    var countsFetched: Bool { lock.withLock { extras.fetchedPerStill != nil } }
+    var fetched: Int { lock.withLock { extras.fetchedTotal } }
+
+    /// How a read that is told to stop ends. The real reader says
+    /// `.cancelled`; a failure here stands for one that lost the race.
+    var stoppedResult: KeyframeStillResult {
+        get { lock.withLock { extras.stoppedResult } }
+        set { lock.withLock { extras.stoppedResult = newValue } }
+    }
+
+    var cancels: Int { lock.withLock { counts.cancels } }
+
+    func cancel() {
+        lock.lock()
+        counts.cancels += 1
+        // A reader that answers late ignores being told to stop.
+        guard !settings.answersWhenShutDown else { return lock.unlock() }
+        let stale = waiting
+        waiting = []
+        let openers = opening
+        opening = []
+        let result = extras.stoppedResult
+        lock.unlock()
+        stale.forEach { $0.continuation.resume(returning: result) }
+        openers.forEach { $0.resume(returning: nil) }
+    }
+
+    func releasePrepare() {
+        let openers = lock.withLock { () -> [CheckedContinuation<KeyframeStillInfo?, Never>] in
+            defer { opening = [] }
+            isOpen = true
+            return opening
+        }
+        openers.forEach { $0.resume(returning: facts) }
     }
 
     var holds: Bool {
@@ -1283,10 +1935,17 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
     var index: [KeyframeIndexEntry] { lock.withLock { isOpen ? entries : [] } }
 
     func prepare() async -> KeyframeStillInfo? {
-        lock.withLock {
+        await withCheckedContinuation { continuation in
+            lock.lock()
             counts.prepares += 1
+            if extras.holdsPrepare {
+                opening.append(continuation)
+                lock.unlock()
+                return
+            }
             isOpen = true
-            return facts
+            lock.unlock()
+            continuation.resume(returning: facts)
         }
     }
 
@@ -1345,6 +2004,9 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
             isShutDown = true
             let stale = waiting
             waiting = []
+            let openers = opening
+            opening = []
+            openers.forEach { $0.resume(returning: nil) }
             let late = settings.answersWhenShutDown
             if late { counts.late += stale.count }
             return stale.map { ($0.continuation, late ? made(at: $0.time) : .cancelled) }
@@ -1362,6 +2024,7 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
         if let script { return script(position) }
         guard entries[position].isReadable else { return .lastCue }
         guard let image = picture(position) else { return .notPossible }
+        if let fetchedPerStill = extras.fetchedPerStill { extras.fetchedTotal += fetchedPerStill }
         return .still(KeyframeStill(image: image, time: entries[position].time, indexPosition: position,
                                     bytesRead: settings.bytes, readCount: 1, keyframeBytes: settings.bytes,
                                     packetsDecoded: 1, elapsed: 0.012))
@@ -1384,6 +2047,37 @@ private final class ScriptedReader: KeyframeStillReading, @unchecked Sendable {
         context.setFillColor(red: grey, green: grey, blue: grey, alpha: 1)
         context.fill(CGRect(x: 0, y: 0, width: 16, height: 8))
         return context.makeImage()
+    }
+}
+
+/// Something a test opens when it is ready, for work that has to wait.
+private final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    var waiting: Int { lock.withLock { waiters.count } }
+
+    func wait() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if isOpen {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    func open() {
+        let woken = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            isOpen = true
+            defer { waiters = [] }
+            return waiters
+        }
+        woken.forEach { $0.resume() }
     }
 }
 
