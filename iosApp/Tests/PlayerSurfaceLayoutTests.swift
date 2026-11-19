@@ -187,8 +187,8 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
             if size.width >= 1000 {
                 // iPad: the preview grows with the screen.
                 XCTAssertGreaterThan(frames.preview.width, 600)
-            } else {
-                // iPhone keeps its fixed size.
+            } else if !PhoneDuo.isDuo {
+                // iPhone keeps its fixed size. The Duo scales on every screen.
                 XCTAssertLessThanOrEqual(frames.preview.width, 260)
             }
             XCTAssertGreaterThanOrEqual(frames.preview.minX, frames.panel.minX)

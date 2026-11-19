@@ -1153,8 +1153,11 @@ struct PlayerNextUpScreen: View {
     private func tabletopLayout(_ tabletop: DuoTabletop, in proxy: GeometryProxy) -> some View {
         let top = proxy.frame(in: .global).minY
         return ZStack(alignment: .topLeading) {
+            // The video starts at the top of the screen, above this view's
+            // safe area, so Keep Watching does too.
             previewSlot(fillsFrame: true)
-                .frame(width: proxy.size.width, height: max(0, tabletop.crease.minY - top))
+                .frame(width: proxy.size.width, height: max(0, tabletop.crease.minY))
+                .offset(y: -top)
             mobileNextUpPanel()
                 .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(actions: $0) }
                 .frame(maxWidth: 360, alignment: .leading)
