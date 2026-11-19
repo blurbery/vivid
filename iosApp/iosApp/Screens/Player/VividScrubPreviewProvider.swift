@@ -246,6 +246,11 @@ final class VividScrubPreviewProvider {
             self.sheetLoad = nil
             guard let sheets, sheets.key == source.key, !sheets.isExpiring() else {
                 self.sheetLoadFailedAt = Date()
+                // A scrub that was waiting on the list goes to the frame
+                // reader instead, where there is one.
+                if self.store == nil, let pending = self.scrubSourceTime {
+                    self.request(atSourceTime: pending)
+                }
                 return
             }
             self.sheetLoadFailedAt = nil

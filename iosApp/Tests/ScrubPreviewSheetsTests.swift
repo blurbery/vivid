@@ -526,6 +526,21 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         await provider.endSession()?.value
     }
 
+    func testAScrubWaitingOnASheetListThatNeverComesGoesToTheFrameReader() async throws {
+        var readersMade = 0
+        let controller = try VividPlaybackController()
+        let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in
+            readersMade += 1
+            return nil
+        })
+        provider.activate(try Self.spec(), sheets: .init(key: "none") { nil })
+        provider.begin(atSourceTime: 15)
+        provider.playbackStarted()
+        XCTAssertEqual(readersMade, 0, "the list is asked first")
+        try await waitUntil { readersMade == 1 }
+        await provider.endSession()?.value
+    }
+
     func testAFastDragFetchesOneSheetAtATimeAndEndsOnTheNewestTarget() async throws {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
         SheetStub.configure { _ in (200, jpeg) }

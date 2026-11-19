@@ -289,7 +289,8 @@ Apple TV has no frame reader, so without server sheets scrubbing shows the timel
 Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged.
 
 On iPhone and iPad the still fills the existing preview bubble.
-Without server sheets, or for a sheet that failed, they fall back to the bounded request owner and the platform engine frame extractor.
+Without server sheets, or for a sheet or sheet list that failed, they fall back to the bounded request owner and the platform engine frame extractor.
+That reader opens the stream a second time, so it also waits for the load's first frame: a scrub that starts earlier shows the target time only, and gets its still once the first frame is up.
 Late images from an old source or gesture must not paint over a new selection.
 
 Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication.
