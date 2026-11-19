@@ -147,6 +147,9 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         none(["Trickplay": ["src": ["320": ["TileWidth": 0, "TileHeight": 10, "ThumbnailCount": 5, "Interval": 10_000]]]])
         none(["Trickplay": ["src": ["wide": ["TileWidth": 10, "TileHeight": 10, "ThumbnailCount": 5, "Interval": 10_000]]]])
         none(["Trickplay": ["src": [:] as [String: Any]]])
+        // Huge counts are refused before they're multiplied.
+        none(["Trickplay": ["src": ["320": ["TileWidth": Int.max, "TileHeight": Int.max, "ThumbnailCount": 5, "Interval": 10_000]]]])
+        none(["Trickplay": ["src": ["320": ["TileWidth": 10, "TileHeight": 10, "ThumbnailCount": Int.max, "Interval": 10_000]]]])
     }
 
     // MARK: - Store
@@ -356,6 +359,31 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         XCTAssertNil(latest?.sourceTime == 5 ? latest : nil, "no sheet still for the failed sheet")
         provider.request(atSourceTime: 95)
         try await waitUntil { latest?.sourceTime == 95 }
+        await provider.endSession()?.value
+    }
+
+    func testAScrubRightAfterAReloadIsAnsweredWhileTheOldFetchIsStillRunning() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in
+            Thread.sleep(forTimeInterval: 0.25)
+            return (200, jpeg)
+        }
+        let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
+        let (provider, _) = try makeProvider()
+        var latest: VividScrubPreviewProvider.Preview?
+        provider.onPreview = { latest = $0 }
+        let source = VividScrubPreviewProvider.SheetSource(key: sheets.key) { sheets }
+        provider.activate(try Self.spec(), sheets: source)
+        provider.begin(atSourceTime: 15)
+        try await Task.sleep(for: .milliseconds(50))
+
+        // The same file loads again with the sheet still downloading, and
+        // a scrub starts and holds on one target.
+        provider.endSession(keepingSheets: true)
+        provider.activate(try Self.spec(), sheets: source)
+        provider.begin(atSourceTime: 35)
+        try await waitUntil { latest?.sourceTime == 35 }
+        XCTAssertEqual(SheetStub.requests().count, 1, "the running download is shared")
         await provider.endSession()?.value
     }
 

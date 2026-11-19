@@ -191,6 +191,11 @@ final class VividScrubPreviewProvider {
         sheetLoad?.cancel()
         sheetLoad = nil
         storeIsLive = false
+        // A fetch still running belongs to the load that just ended. It's
+        // disowned here, so the next load's first target starts its own
+        // (the store shares the download) instead of waiting on one that
+        // will never answer it.
+        sheetFetch = nil
         warmSourceTime = nil
         if !keepingSheets { dropStore() }
         // Read after `endInteraction()`, so the reader it just retired is

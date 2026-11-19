@@ -35,8 +35,8 @@ struct ScrubPreviewSheets: Equatable, Sendable {
 
     /// The most cells one sheet may have on a side. Silo uses up to 10 and
     /// Jellyfin 10 by default.
-    private static let maximumGridSide = 32
-    private static let maximumThumbnailCount = 100_000
+    static let maximumGridSide = 32
+    static let maximumThumbnailCount = 100_000
 
     /// Nil when the description can't address every still it promises.
     init?(
@@ -203,12 +203,14 @@ enum JellyfinScrubPreviews {
               let columns = chosen.info["TileWidth"] as? Int,
               let rows = chosen.info["TileHeight"] as? Int,
               let count = chosen.info["ThumbnailCount"] as? Int,
-              columns > 0, rows > 0, count > 0,
+              // Checked before any arithmetic, so a bogus reply can't overflow.
+              (1...ScrubPreviewSheets.maximumGridSide).contains(columns),
+              (1...ScrubPreviewSheets.maximumGridSide).contains(rows),
+              (1...ScrubPreviewSheets.maximumThumbnailCount).contains(count),
               let pathID = try? JellyfinConnection.id(itemID)
         else { return nil }
         let perSheet = columns * rows
         let sheetCount = (count + perSheet - 1) / perSheet
-        guard sheetCount <= 4096 else { return nil }
         var urls: [URL] = []
         for sheet in 0..<sheetCount {
             guard let url = try? JellyfinConnection.url(
