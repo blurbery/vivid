@@ -120,9 +120,12 @@ final class ScrubPreviewSheetStore {
         let epoch = decodedEpoch
         let previous = lastDecode
         let task = Task { @MainActor [weak self] () -> CGImage? in
-            guard let self, let bytes = await self.bytes(sheet) else { return nil }
+            guard let self else { return nil }
+            let bytes = await self.bytes(sheet)
+            // Waited for even when this sheet has nothing to decode, so the
+            // one after it can't start while the one before still runs.
             await previous?.value
-            guard !Task.isCancelled else { return nil }
+            guard let bytes, !Task.isCancelled else { return nil }
             let side = Self.maximumSheetSide
             let pixels = Self.maximumSheetPixels
             return await Task.detached(priority: .userInitiated) {

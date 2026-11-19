@@ -253,6 +253,56 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         XCTAssertEqual(SheetStub.requests().count, 2, "and its JPEG wasn't kept either")
     }
 
+    func testADownloadWithNoLengthStopsOnceItPassesTheLimit() async throws {
+        // 40 MB in 4 MB chunks with no Content-Length: the request has to be
+        // cancelled part-way, not rejected after the whole body arrived.
+        SheetStub.configure(chunks: 10, chunkSize: 4 * 1024 * 1024) { _ in (200, Data()) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        let image = await store.image(0)
+        XCTAssertNil(image)
+        XCTAssertTrue(store.hasFailed(0))
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(SheetStub.wasStopped())
+        XCTAssertLessThan(SheetStub.chunksSent(), 10)
+    }
+
+    func testADeclaredLengthOverTheLimitIsRefusedBeforeAnyBody() async throws {
+        SheetStub.configure(chunks: 4, chunkSize: 1024, declaredLength: 20 * 1024 * 1024) { _ in (200, Data()) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        let image = await store.image(0)
+        XCTAssertNil(image)
+        XCTAssertTrue(store.hasFailed(0))
+        XCTAssertTrue(SheetStub.wasStopped())
+        XCTAssertLessThan(SheetStub.chunksSent(), 4)
+    }
+
+    func testAFailedSheetDoesNotLetTheNextDecodeOvertakeARunningOne() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { request in
+            switch request.url?.lastPathComponent {
+            case "0.jpg":
+                Thread.sleep(forTimeInterval: 0.2)
+                return (200, jpeg)
+            case "1.jpg": return (500, Data())
+            default: return (200, jpeg)
+            }
+        }
+        let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        store.setScrubbing(true)
+        var order: [Int] = []
+        async let slow: Void = { _ = await store.image(0); order.append(0) }()
+        try await Task.sleep(for: .milliseconds(20))
+        async let failed: Void = { _ = await store.image(1); order.append(1) }()
+        try await Task.sleep(for: .milliseconds(20))
+        async let next: Void = { _ = await store.image(2); order.append(2) }()
+        _ = await (slow, failed, next)
+        XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: 0)), try XCTUnwrap(order.firstIndex(of: 2)),
+                          "sheet 2 waits for sheet 0 although sheet 1 failed in between")
+    }
+
     func testAnOversizedSheetIsRefused() async throws {
         SheetStub.configure { _ in (200, Data(count: 17 * 1024 * 1024)) }
         let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
@@ -515,11 +565,34 @@ private final class SheetStub: URLProtocol {
     private static let lock = NSLock()
     private static var handler: ((URLRequest) -> Reply)?
     private static var recorded: [URLRequest] = []
+    /// When set, the body is this many chunks of zeros, a few milliseconds
+    /// apart, instead of the handler's data.
+    private static var chunkPlan: (count: Int, size: Int)?
+    private static var declaredLength: Int?
+    private static var sent = 0
+    private static var stopped = false
+    private let stopLock = NSLock()
+    private var isStopped = false
 
-    static func configure(_ body: @escaping (URLRequest) -> Reply) {
+    static func configure(chunks: Int? = nil, chunkSize: Int = 0, declaredLength: Int? = nil,
+                          _ body: @escaping (URLRequest) -> Reply) {
         lock.lock(); defer { lock.unlock() }
         handler = body
         recorded = []
+        chunkPlan = chunks.map { ($0, chunkSize) }
+        Self.declaredLength = declaredLength
+        sent = 0
+        stopped = false
+    }
+
+    static func chunksSent() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return sent
+    }
+
+    static func wasStopped() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return stopped
     }
 
     static func requests() -> [URLRequest] {
@@ -534,18 +607,45 @@ private final class SheetStub: URLProtocol {
         Self.lock.lock()
         Self.recorded.append(request)
         let body = Self.handler
+        let plan = Self.chunkPlan
+        let declared = Self.declaredLength
         Self.lock.unlock()
         guard let body, let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
         let (status, data) = body(request)
-        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "image/jpeg"])!
+        var headers = ["Content-Type": "image/jpeg"]
+        if let declared { headers["Content-Length"] = String(declared) }
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        guard let plan else {
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        DispatchQueue.global().async { [self] in
+            for _ in 0..<plan.count {
+                Thread.sleep(forTimeInterval: 0.02)
+                stopLock.lock()
+                let halted = isStopped
+                stopLock.unlock()
+                if halted { return }
+                client?.urlProtocol(self, didLoad: Data(count: plan.size))
+                Self.lock.lock()
+                Self.sent += 1
+                Self.lock.unlock()
+            }
+            client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        stopLock.lock()
+        isStopped = true
+        stopLock.unlock()
+        Self.lock.lock()
+        Self.stopped = true
+        Self.lock.unlock()
+    }
 }
