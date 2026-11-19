@@ -67,6 +67,9 @@ final class ScrubPreviewSheetStore {
     /// work that was already running then doesn't put its result back.
     private var decodedEpoch = 0
     private var dataEpoch = 0
+    /// Moves on when a whole container file may no longer be held, so one
+    /// still on its way then isn't kept when it lands.
+    private var wholeEpoch = 0
     /// One sheet decodes at a time. A sheet that's ready while another is
     /// decoding waits here, in order, so two never decode together even
     /// when two loads of the same file overlap.
@@ -77,6 +80,8 @@ final class ScrubPreviewSheetStore {
     /// Tests only: runs just before a sheet is decoded, once the decode
     /// before it has finished.
     var willDecode: (@MainActor (Int) async -> Void)?
+    /// Tests only: how many range requests were dropped from the line.
+    private(set) var droppedRangeRequests = 0
 
     private var observers: [NSObjectProtocol] = []
 
@@ -105,15 +110,19 @@ final class ScrubPreviewSheetStore {
     func releaseMemory() {
         decodedEpoch &+= 1
         dataEpoch &+= 1
+        wholeEpoch &+= 1
         decoded = []
         data = []
         whole = nil
     }
 
-    private func enteredBackground() {
+    /// Called when the app goes to the background; internal for tests.
+    func enteredBackground() {
         decodedEpoch &+= 1
         decoded = []
-        // A whole container file is too much to sit on in the background.
+        // A whole container file is too much to sit on in the background,
+        // including one still on its way. The small JPEGs stay.
+        wholeEpoch &+= 1
         if whole != nil {
             dataEpoch &+= 1
             whole = nil
@@ -168,28 +177,35 @@ final class ScrubPreviewSheetStore {
         if let running = decodes[sheet] { return await running.value }
         let epoch = decodedEpoch
         let task = Task { @MainActor [weak self] () -> CGImage? in
-            guard let self, let bytes = await self.bytes(sheet) else { return nil }
-            await self.enterDecode()
-            defer { self.leaveDecode() }
-            guard !self.isShutDown, !Task.isCancelled else { return nil }
-            await self.willDecode?(sheet)
-            let side = Self.maximumSheetSide
-            let pixels = Self.maximumSheetPixels
-            return await Task.detached(priority: .userInitiated) {
-                Self.decode(bytes, maximumSide: side, maximumPixels: pixels)
-            }.value
+            guard let self else { return nil }
+            let image = await self.fetchAndDecode(sheet)
+            // Settled here, before any caller sharing this task resumes, so
+            // each of them sees the same failure or the same dropped request.
+            self.decodes[sheet] = nil
+            if let image {
+                // Memory given back while this decoded stays given back; the
+                // caller still gets its still.
+                if epoch == self.decodedEpoch { self.remember(image, for: sheet) }
+            } else if !self.isShutDown, self.skipped.remove(sheet) == nil {
+                self.markFailed(sheet)
+            }
+            return image
         }
         decodes[sheet] = task
-        let image = await task.value
-        decodes[sheet] = nil
-        if let image {
-            // Memory given back while this decoded stays given back; the
-            // caller still gets its still.
-            if epoch == decodedEpoch { remember(image, for: sheet) }
-        } else if !isShutDown, skipped.remove(sheet) == nil {
-            markFailed(sheet)
-        }
-        return image
+        return await task.value
+    }
+
+    private func fetchAndDecode(_ sheet: Int) async -> CGImage? {
+        guard let bytes = await bytes(sheet) else { return nil }
+        await enterDecode()
+        defer { leaveDecode() }
+        guard !isShutDown, !Task.isCancelled else { return nil }
+        await willDecode?(sheet)
+        let side = Self.maximumSheetSide
+        let pixels = Self.maximumSheetPixels
+        return await Task.detached(priority: .userInitiated) {
+            Self.decode(bytes, maximumSide: side, maximumPixels: pixels)
+        }.value
     }
 
     /// Takes the decode turn, waiting in line if a sheet is decoding.
@@ -331,6 +347,7 @@ final class ScrubPreviewSheetStore {
         let carriesHeaders = !sheets.headers.isEmpty
         let fileEnd = container.offsets[container.offsets.count - 1]
         let epoch = dataEpoch
+        let expectedWholeEpoch = wholeEpoch
         skipped.subtract(members)
 
         let run = Task { @MainActor [weak self] () -> [Int: Data]? in
@@ -339,6 +356,7 @@ final class ScrubPreviewSheetStore {
                 // Dropped from the line. Not a failure: the still is asked
                 // for again when a target next needs it.
                 guard !self.isShutDown else { return nil }
+                self.droppedRangeRequests += 1
                 for member in members {
                     self.downloads[member] = nil
                     self.skipped.insert(member)
@@ -366,7 +384,7 @@ final class ScrubPreviewSheetStore {
                         }
                     } else if reply.status == 200, body.count >= fileEnd {
                         wholeFile = body
-                        if epoch == self.dataEpoch { self.whole = body }
+                        if epoch == self.dataEpoch, expectedWholeEpoch == self.wholeEpoch { self.whole = body }
                     }
                 }
             }
@@ -490,30 +508,66 @@ enum ScrubPreviewFetch {
 
     /// Receives the body in the chunks the session delivers, on its own
     /// queue, and cancels as soon as it passes `limit`, so an oversized
-    /// reply is never held whole.
+    /// reply is never held whole. Cancelling the calling task stops the
+    /// request, and one cancelled before it starts ends straight away.
     static func fetch(
         _ request: URLRequest,
         session: URLSession,
         limit: Int,
         allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool
     ) async -> Reply {
-        await withCheckedContinuation { continuation in
-            let task = session.dataTask(with: request)
-            task.delegate = SheetReceiver(limit: limit, allowsRedirect: allowsRedirect, continuation: continuation)
-            task.resume()
+        let running = RunningTask()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let task = session.dataTask(with: request)
+                task.delegate = SheetReceiver(limit: limit, allowsRedirect: allowsRedirect, continuation: continuation)
+                running.start(task)
+            }
+        } onCancel: {
+            running.cancel()
         }
     }
 
-    /// `bytes 0-99/1234` gives (0, 1234); `bytes 0-99/*` gives (0, nil).
-    static func contentRange(_ header: String?) -> (start: Int, total: Int?)? {
+    /// `bytes 0-99/1234` gives (0, 99, 1234); `bytes 0-99/*` gives
+    /// (0, 99, nil). Nil for anything else, including an end before the
+    /// start or a length the range doesn't fit in.
+    static func contentRange(_ header: String?) -> (start: Int, end: Int, total: Int?)? {
         guard let header else { return nil }
         let parts = header.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1)
         guard parts.count == 2, parts[0].lowercased() == "bytes" else { return nil }
         let sides = parts[1].split(separator: "/", maxSplits: 1)
-        guard sides.count == 2,
-              let start = sides[0].split(separator: "-").first.flatMap({ Int($0) }), start >= 0
+        guard sides.count == 2 else { return nil }
+        let bounds = sides[0].split(separator: "-", maxSplits: 1)
+        guard bounds.count == 2, let start = Int(bounds[0]), let end = Int(bounds[1]), start >= 0, end >= start
         else { return nil }
-        return (start, Int(sides[1]).flatMap { $0 > 0 ? $0 : nil })
+        if sides[1] == "*" { return (start, end, nil) }
+        guard let total = Int(sides[1]), total > end else { return nil }
+        return (start, end, total)
+    }
+
+    /// The data task of one fetch, so cancelling the fetch can stop it.
+    private final class RunningTask: @unchecked Sendable {
+        private let lock = NSLock()
+        private var task: URLSessionDataTask?
+        private var isCancelled = false
+
+        func start(_ task: URLSessionDataTask) {
+            lock.lock()
+            self.task = task
+            let cancelled = isCancelled
+            lock.unlock()
+            task.resume()
+            // Cancelled before it started: it ends at once, with no body.
+            if cancelled { task.cancel() }
+        }
+
+        func cancel() {
+            lock.lock()
+            isCancelled = true
+            let task = task
+            lock.unlock()
+            task?.cancel()
+        }
     }
 }
 
@@ -526,7 +580,7 @@ private final class SheetReceiver: NSObject, URLSessionDataDelegate, @unchecked 
     private var body = Data()
     private var refused = false
     private var status: Int?
-    private var range: (start: Int, total: Int?)?
+    private var range: (start: Int, end: Int, total: Int?)?
 
     init(limit: Int, allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool,
          continuation: CheckedContinuation<ScrubPreviewFetch.Reply, Never>) {
@@ -572,6 +626,11 @@ private final class SheetReceiver: NSObject, URLSessionDataDelegate, @unchecked 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let received = error == nil && !refused && !body.isEmpty ? body : nil
         body = Data()
+        // A range is only reported when the body is exactly the part it
+        // names, so no caller files bytes under offsets they don't hold.
+        let range = range.flatMap { range in
+            received?.count == range.end - range.start + 1 ? range : nil
+        }
         continuation?.resume(returning: .init(
             status: status, body: received, rangeStart: range?.start, totalLength: range?.total))
         continuation = nil

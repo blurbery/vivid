@@ -237,16 +237,20 @@ final class ScrubPreviewSheetsTests: XCTestCase {
 
     func testMemoryGivenBackStaysGivenBackWhenWorkLandsLate() async throws {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        let gate = DispatchSemaphore(value: 0)
         SheetStub.configure { _ in
-            Thread.sleep(forTimeInterval: 0.15)
+            Self.hold(gate)
             return (200, jpeg)
         }
         let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
         let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
         async let running = store.image(0)
-        try await Task.sleep(for: .milliseconds(40))
+        // The download is under way, and held, when the memory goes.
+        try await waitUntil { SheetStub.requests().count == 1 }
         store.releaseMemory()
+        gate.signal()
         let image = await running
+        gate.signal()
         XCTAssertNotNil(image, "the caller still gets its sheet")
         XCTAssertNil(store.cached(0))
         _ = await store.image(0)
@@ -321,15 +325,30 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         store.willDecode = { sheet in
             if sheet == 0 { await withCheckedContinuation { releaseSheetZero = $0 } }
         }
-        async let slow = store.image(0)
+        // Sheet 0 is let go however the test ends, so nothing is left
+        // waiting on it.
+        defer {
+            releaseSheetZero?.resume()
+            releaseSheetZero = nil
+        }
+        // Unstructured, so a failure here never waits on either of them.
+        let slow = Task { await store.image(0) }
         try await waitUntil { releaseSheetZero != nil }
-        async let parked = store.image(1)
+        let parkedDone = expectation(description: "sheet 1 finished while sheet 0 is still held")
+        var afterShutdown: CGImage?
+        let parked = Task {
+            afterShutdown = await store.image(1)
+            parkedDone.fulfill()
+        }
         try await waitUntil { store.decodeWaiterCount == 1 }
         store.shutdown()
-        let afterShutdown = await parked
+        await fulfillment(of: [parkedDone], timeout: 5)
         XCTAssertNil(afterShutdown)
+        XCTAssertNotNil(releaseSheetZero, "sheet 0 was still held throughout")
         releaseSheetZero?.resume()
-        _ = await slow
+        releaseSheetZero = nil
+        _ = await slow.value
+        _ = await parked.value
     }
 
     func testAnOversizedSheetIsRefused() async throws {
@@ -385,7 +404,11 @@ final class ScrubPreviewSheetsTests: XCTestCase {
 
     func testAStillForAnEndedLoadNeverLands() async throws {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
-        SheetStub.configure { _ in (200, jpeg) }
+        let gate = DispatchSemaphore(value: 0)
+        SheetStub.configure { _ in
+            Self.hold(gate)
+            return (200, jpeg)
+        }
         let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
         let (provider, _) = try makeProvider()
         var stills = 0
@@ -393,12 +416,46 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
         provider.playbackStarted()
         provider.begin(atSourceTime: 15)
+        // The sheet's request is out, and its reply held, when the load ends.
+        try await waitUntil { SheetStub.requests().count == 1 }
         await provider.endSession()?.value
-        try await Task.sleep(for: .milliseconds(300))
+        gate.signal()
+        try await waitUntil { SheetStub.answered() == 1 }
+        for _ in 0..<100 { await Task.yield() }
         XCTAssertEqual(stills, 0)
         provider.request(atSourceTime: 20)
-        try await Task.sleep(for: .milliseconds(100))
+        for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(stills, 0, "nothing is asked for without a load")
+        XCTAssertEqual(SheetStub.requests().count, 1)
+    }
+
+    func testAnInvalidTargetIsNotAnsweredLaterInPlaceOfTheOneItReplaced() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in (200, jpeg) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
+        let (provider, _) = try makeProvider()
+        var latest: VividScrubPreviewProvider.Preview?
+        provider.onPreview = { latest = $0 }
+        let source = VividScrubPreviewProvider.SheetSource(key: sheets.key) { sheets }
+        provider.activate(try Self.spec(), sheets: source)
+        provider.playbackStarted()
+        provider.begin(atSourceTime: 15)
+        try await waitUntil { latest != nil }
+        provider.endInteraction()
+
+        // A reload of the same file keeps the decoded sheet. A scrub before
+        // its first frame is replaced by a target that can't be shown.
+        provider.endSession(keepingSheets: true)
+        provider.activate(try Self.spec(), sheets: source)
+        provider.begin(atSourceTime: 25)
+        provider.request(atSourceTime: .nan)
+        provider.playbackStarted()
+        XCTAssertNil(latest, "the replaced target isn't answered when the first frame is up")
+
+        // A real target after it is answered from the kept sheet at once.
+        provider.request(atSourceTime: 35)
+        XCTAssertEqual(latest?.sourceTime, 35)
+        await provider.endSession()?.value
     }
 
     func testSheetsThatArriveMidScrubAnswerTheCurrentTarget() async throws {
@@ -545,17 +602,43 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
         SheetStub.configure { _ in (200, jpeg) }
         let sheets = try XCTUnwrap(Self.sheets(count: 64, columns: 4, rows: 2))
-        let (provider, _) = try makeProvider()
+        let controller = try VividPlaybackController()
+        // Only a target's own fetch decodes a sheet; the neighbours either
+        // side are only downloaded. So the decodes are the target fetches.
+        var decoded: [Int] = []
+        var releaseFirst: CheckedContinuation<Void, Never>?
+        defer {
+            releaseFirst?.resume()
+            releaseFirst = nil
+        }
+        let provider = VividScrubPreviewProvider(
+            engine: controller.engine,
+            makeStore: { sheets in
+                let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+                store.willDecode = { sheet in
+                    decoded.append(sheet)
+                    if decoded.count == 1 { await withCheckedContinuation { releaseFirst = $0 } }
+                }
+                return store
+            },
+            makeReader: { _ in nil }
+        )
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
         provider.playbackStarted()
         provider.begin(atSourceTime: 5)
+        // The first target's sheet is held mid-decode while the drag runs on.
+        try await waitUntil { releaseFirst != nil }
         for target in stride(from: 85.0, through: 565, by: 80) {
             provider.request(atSourceTime: target)
         }
+        XCTAssertEqual(decoded, [0])
+        releaseFirst?.resume()
+        releaseFirst = nil
         try await waitUntil { latest?.sourceTime == 565 }
         XCTAssertEqual(Self.level(of: try XCTUnwrap(latest).image), Self.level(forCell: 0), accuracy: 12)
+        XCTAssertEqual(decoded, [0, 7], "no sheet the drag only passed through was fetched for it")
         await provider.endSession()?.value
     }
 
@@ -580,8 +663,9 @@ final class ScrubPreviewSheetsTests: XCTestCase {
 
     func testAScrubRightAfterAReloadIsAnsweredWhileTheOldFetchIsStillRunning() async throws {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        let gate = DispatchSemaphore(value: 0)
         SheetStub.configure { _ in
-            Thread.sleep(forTimeInterval: 0.25)
+            Self.hold(gate)
             return (200, jpeg)
         }
         let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
@@ -592,7 +676,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         provider.activate(try Self.spec(), sheets: source)
         provider.playbackStarted()
         provider.begin(atSourceTime: 15)
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitUntil { SheetStub.requests().count == 1 }
 
         // The same file loads again with the sheet still downloading, and
         // a scrub starts and holds on one target.
@@ -600,6 +684,8 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         provider.activate(try Self.spec(), sheets: source)
         provider.playbackStarted()
         provider.begin(atSourceTime: 35)
+        XCTAssertNil(latest, "the download is still held")
+        gate.signal()
         try await waitUntil { latest?.sourceTime == 35 }
         XCTAssertEqual(SheetStub.requests().count, 1, "the running download is shared")
         await provider.endSession()?.value
@@ -618,12 +704,23 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         return (provider, controller)
     }
 
+    /// Throws once the wait runs out, so nothing after it runs on a state
+    /// that never came.
     private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
         for _ in 0..<200 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("timed out", file: file, line: line)
+        throw TimedOut()
+    }
+
+    private struct TimedOut: Error {}
+
+    /// Holds a stub reply until the test lets it go, or for ten seconds at
+    /// most, so a test that stops early never leaves a reply blocked.
+    nonisolated private static func hold(_ gate: DispatchSemaphore) {
+        _ = gate.wait(timeout: .now() + 10)
     }
 
     private static func spec() throws -> VividLoadSpec {
@@ -672,14 +769,18 @@ final class ScrubPreviewSheetsTests: XCTestCase {
     /// The grey level at the middle of an image, 0 to 255.
     private static func level(of image: CGImage) -> Double {
         var pixel = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return -1 }
-        context.interpolationQuality = .none
-        let width = CGFloat(image.width), height = CGFloat(image.height)
-        context.draw(image, in: CGRect(x: -width / 2, y: -height / 2, width: width, height: height))
-        return Double(pixel[0])
+        // The context draws into the buffer, so it's made, drawn into and
+        // read inside the one scope where the buffer's address holds.
+        return pixel.withUnsafeMutableBytes { buffer -> Double in
+            guard let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                          bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return -1 }
+            context.interpolationQuality = .none
+            let width = CGFloat(image.width), height = CGFloat(image.height)
+            context.draw(image, in: CGRect(x: -width / 2, y: -height / 2, width: width, height: height))
+            return Double(buffer[0])
+        }
     }
 }
 
@@ -694,6 +795,7 @@ private final class SheetStub: URLProtocol {
     private static var declaredLength: Int?
     private static var sent = 0
     private static var stopped = false
+    private static var finished = 0
     private let stopLock = NSLock()
     private var isStopped = false
 
@@ -706,11 +808,18 @@ private final class SheetStub: URLProtocol {
         Self.declaredLength = declaredLength
         sent = 0
         stopped = false
+        finished = 0
     }
 
     static func chunksSent() -> Int {
         lock.lock(); defer { lock.unlock() }
         return sent
+    }
+
+    /// How many replies have been handed over in full.
+    static func answered() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return finished
     }
 
     static func wasStopped() -> Bool {
@@ -753,6 +862,9 @@ private final class SheetStub: URLProtocol {
         guard let plan else {
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
+            Self.lock.lock()
+            Self.finished += 1
+            Self.lock.unlock()
             return
         }
         DispatchQueue.global().async { [self] in

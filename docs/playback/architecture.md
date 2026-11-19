@@ -286,7 +286,9 @@ Sheets are indexed by source time, so a target the loaded transport can't reach 
 Emby's stills live in one BIF file per video: a 64-byte header, an index of timestamps and byte offsets, then one JPEG per still.
 [EmbyScrubPreviews](../../iosApp/iosApp/Screens/Player/EmbyScrubPreviews.swift) builds only the file's address (`GET /Videos/{id}/index.bif?Width=320`) at prepare, and after the first frame reads the header and index with one `Range` request for the first 64 KiB, or a second when the index is longer.
 The same model, store and provider then serve it as sheets of a single cell: still `i` is "sheet" `i`, found by a binary search of the stills' own start times (the last one starting at or before the target, the first for a target before them all), so nothing assumes an even interval.
-The store fetches stills by `Range`, a run of up to eight neighbours and 512 KiB per request (two before the wanted still, five after), one request at a time with the newest waiting run next; at most three wait, and an older one is dropped without counting as a failure.
+The store fetches stills by `Range`, a run of up to eight (the wanted still, two before it and five after) in no more than 512 KiB per request.
+That limit only stops neighbours being added: a wanted still bigger than 512 KiB on its own, up to the 2 MiB a still may be, is fetched by itself in one request.
+One request runs at a time with the newest waiting run next; at most three wait, and an older one is dropped without counting as a failure, so a target that comes back to it asks for it again.
 It holds up to 8 MiB of still JPEGs, keeps 24 stills decoded while scrubbing and four between scrubs, and decodes the stills either side of the target ahead once they are downloaded.
 A reply that isn't the range asked for fails the run for 30 seconds, like a sheet.
 A server that ignores `Range` and sends the whole file has it kept and sliced when it's 16 MB or less; a memory warning or going to the background drops it, and it's downloaded once more when next needed.

@@ -261,7 +261,9 @@ final class VividScrubPreviewProvider {
     func request(atSourceTime sourceTime: Double) {
         guard sourceTime.isFinite, sourceTime >= 0 else {
             // Even a bad target replaces what was being decoded, so a stale
-            // still can't land after it.
+            // still can't land after it, and the target it replaced isn't
+            // asked for again when the sheets or the first frame arrive.
+            scrubSourceTime = nil
             supersedePending()
             return
         }
@@ -469,6 +471,12 @@ final class VividScrubPreviewProvider {
             }
             self.sheetTarget = nil
             if let image, self.publish(target.tile, from: image, in: store, sourceTime: target.sourceTime) {
+                return
+            }
+            if image == nil, !store.hasFailed(sheet) {
+                // The store dropped the request from its line, which is no
+                // failure: the target asks for it again.
+                self.request(atSourceTime: target.sourceTime)
                 return
             }
             // Marked as failed, so this target goes to the frame reader.

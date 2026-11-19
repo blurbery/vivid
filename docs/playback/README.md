@@ -241,7 +241,7 @@ The playhead is a horizontal oval with a thicker centre.
 Next-up artwork is a background layer constrained to the viewport so it cannot push Play Now or the countdown below the screen.
 
 Select the timeline and swipe left or right to preview the target time.
-When the server has seek-bar previews for the file (Silo and Jellyfin), a still of the target appears above the playhead, and in the hold-to-seek panel.
+When the server has seek-bar previews for the file (Silo, Jellyfin and Emby), a still of the target appears above the playhead, and in the hold-to-seek panel.
 Without server previews, Vivid makes the still itself from the file's own keyframes when the file is played as stored; transcodes and a few other cases show the target time only.
 Repeated swipes move farther through the item; Select confirms and Back cancels.
 Directional button seeking remains available.
