@@ -69,6 +69,9 @@ class PlayerViewModel {
     var pendingProtocolV3TrackChange: QueuedProtocolV3TrackChange?
     @ObservationIgnored
     var scrubPreviewProvider: VividScrubPreviewProvider!
+    /// "What's this song?" for the item playing. Observed on its own.
+    @ObservationIgnored
+    let songIdentification = SongIdentificationModel()
     @MainActor var vividEngine: VividEngine { vividPlaybackController.engine }
     var hasActiveVividSession: Bool {
         vividPlaybackController.activeSpec != nil
@@ -83,6 +86,8 @@ class PlayerViewModel {
         // A replacement may be the same file again (a quality change, or a
         // seek that reloads), which keeps its preview sheets.
         let previewShutdown = scrubPreviewProvider.endSession(keepingSheets: forReplacement)
+        // A song found belongs to the load that played it.
+        songIdentification.reset()
         isLoadingSubtitles = false
         activeVividLoadEpoch = nil
         establishedVividLoadEpoch = nil
@@ -821,6 +826,7 @@ class PlayerViewModel {
             self.scrubPreviewImageSourceTime = preview?.sourceTime
         }
         scrubPreviewProvider.stillPlayerSource = self
+        connectSongIdentification()
         vividPlaybackController.onEvent = { [weak self] event in
             self?.handleVividEvent(event)
         }

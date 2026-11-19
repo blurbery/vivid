@@ -14,7 +14,7 @@ extension MobilePlayerControls {
 
     /// Close, the info card, PiP and AirPlay; large back, play or pause and
     /// forward tiles; the scrubber and time; then the Quality, Audio,
-    /// Subtitles and Chapters tiles.
+    /// Subtitles, Song and Chapters tiles.
     func tabletopDeck(_ tabletop: DuoTabletop) -> some View {
         VStack(spacing: 18) {
             // Close, PiP and AirPlay stand as tall as the info card.

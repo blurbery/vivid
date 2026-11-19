@@ -20,7 +20,8 @@ The [Lucid Engine patch specification](lucid-engine-patch-spec.md) does the same
 
 Vivid supplies the player UI for every playback path.
 On Apple TV, the bar uses a slim timeline, with a subtitle shortcut beside a round sliders control above its right end.
-The sliders control opens a compact panel with Home-style tabs for Info, Stats, Video, Audio and Chapters when applicable.
+The sliders control opens a compact panel with Home-style tabs for Info, Stats, Video, Audio, Song and Chapters when applicable.
+Song identifies the music playing with Shazam and can save it to the viewer's Shazam library; see [Song identification](architecture.md#song-identification).
 Chapters scroll vertically with remote focus.
 The subtitle shortcut opens a glass selection menu, with embedded tracks, Off and a native OpenSubtitles submenu; subtitle options include the opened media’s tracks and, when connected in Plugins, manual OpenSubtitles search and temporary SRT downloads.
 Embedded bitmap subtitles such as PGS end the previous display set when its replacement begins, preventing successive dialogue images from stacking.
@@ -70,7 +71,8 @@ Holding a control suspends dismissal and releasing it restarts the five seconds.
 A tap on the dimmed background hides the controls, except within 1.5 seconds of them appearing: then it restarts the five seconds, so a finger that just misses a centre button, or a quick second tap, doesn't hide them before play or pause can be reached.
 Back 10 seconds, play or pause and forward 10 seconds each take taps across an 80-point square around their 44-point circle, so the three targets meet and a tap between or just beside the circles still presses the nearest one instead of hiding the controls.
 Paused playback keeps controls visible until the viewer dismisses them.
-Four separate round glass buttons open scrollable anchored Quality, Audio, Subtitles and Chapters popovers.
+Five separate round glass buttons open scrollable anchored Quality, Audio, Subtitles, Song and Chapters popovers.
+Song starts listening as it opens and shows the song Shazam finds, with Save to Shazam and Apple Music; see [Song identification](architecture.md#song-identification).
 Quality shows the selected mode and compact one-line descriptions; choosing another mode uses the existing quality-change path and preserves position.
 The host stays mounted during buffering and reloads, and open popovers pin the controls.
 Chapters show names and start times; selection seeks and closes the popover, with no timeline chapter ticks.
@@ -94,7 +96,7 @@ System-volume changes require a physical device; Simulator cannot verify them.
 The existing hidden-controls gestures, transport buttons and timeline retain their behaviour.
 
 On the iPhone Duo, folding the inner screen like a laptop while it's in portrait moves the video, with its subtitles, above the crease without reloading playback, and puts a control deck below it that stays up.
-The deck is built from rounded squares: a full-height close tile; an info card with the poster (an episode shows its series poster), the show and episode line, the title and as much of the synopsis as fits in whole sentences; PiP over AirPlay, dimmed while unavailable; large back 10, play/pause and forward 10 tiles; the timeline; and Quality, Audio, Subtitles and Chapters as four equal tiles.
+The deck is built from rounded squares: a full-height close tile; an info card with the poster (an episode shows its series poster), the show and episode line, the title and as much of the synopsis as fits in whole sentences; PiP over AirPlay, dimmed while unavailable; large back 10, play/pause and forward 10 tiles; the timeline; and Quality, Audio, Subtitles, Song and Chapters as five equal tiles.
 Taps and gestures on the video, the loading dots and the skip buttons stay above the crease.
 The player holds portrait while half folded, and the rotate and lock buttons hide.
 The deck was checked in the iPhone Duo simulator; see [iPhone Duo](../app-design.md#iphone-duo).

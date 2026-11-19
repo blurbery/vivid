@@ -1,0 +1,4 @@
+module VividAudioClipC {
+    header "VividAudioClipC.h"
+    export *
+}

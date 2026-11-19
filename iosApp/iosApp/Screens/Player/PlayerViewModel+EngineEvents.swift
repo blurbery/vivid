@@ -300,6 +300,8 @@ extension PlayerViewModel {
         guard startedVividLoadEpoch != epoch else { return }
         startedVividLoadEpoch = epoch
         hasStartedPlayback = true
+        // The Song panel's wait message ends here.
+        songIdentification.loadDidStart()
         // Preview sheets are asked for only now, so they never share the
         // connection or the main thread with startup.
         scrubPreviewProvider.playbackStarted()
