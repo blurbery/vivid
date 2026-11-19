@@ -669,7 +669,7 @@ Unlike video, a theme grant may be an absolute URL on a proxy node's origin, and
 These requests carry the normal account and profile headers but never start a token refresh, so a refused theme can't sign anyone out.
 
 Silo scrub previews are v2 only as well.
-The player reads `GET /api/v2/watch/{id}/trickplay?file_id=` through the same optional request when the file's version reports `trickplay_available`, then fetches the signed sheet URLs with no account headers.
+The player reads `GET /api/v2/watch/{id}/trickplay?file_id=` through the same optional request unless the file's version reports `trickplay_available` as `false`, then fetches the signed sheet URLs with no account headers.
 Jellyfin's come from the playing item's `Trickplay` member; Emby has no preview sheets in Vivid.
 See the [Silo core](cores/silo.md) for the details.
 

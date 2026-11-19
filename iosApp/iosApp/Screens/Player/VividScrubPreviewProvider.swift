@@ -54,6 +54,7 @@ final class VividScrubPreviewProvider {
 
     private let engine: VividEngine
     private let makeStore: @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore
+    private let makeReader: @MainActor (VividLoadSpec) -> FrameExtractor?
     private var load: VividLoadSpec?
     private var reader: FrameExtractor?
     /// Moves on with every load and every session end.
@@ -66,7 +67,8 @@ final class VividScrubPreviewProvider {
     private var readerShutdowns: [UUID: Task<Void, Never>] = [:]
 
     /// The sheets of the file last loaded. They outlive a session end that
-    /// asks to keep them, so a replan of the same file doesn't fetch again.
+    /// asks to keep them, so a replan, quality change or reloading seek of
+    /// the same file doesn't fetch again.
     private var store: ScrubPreviewSheetStore?
     /// Whether `store` belongs to the current load.
     private var storeIsLive = false
@@ -94,10 +96,14 @@ final class VividScrubPreviewProvider {
 
     init(
         engine: VividEngine,
-        makeStore: @escaping @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore = { ScrubPreviewSheetStore(sheets: $0) }
+        makeStore: @escaping @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore = { ScrubPreviewSheetStore(sheets: $0) },
+        makeReader: (@MainActor (VividLoadSpec) -> FrameExtractor?)? = nil
     ) {
         self.engine = engine
         self.makeStore = makeStore
+        self.makeReader = makeReader ?? { spec in
+            engine.makeFrameExtractor(url: spec.sourceURL, httpHeaders: spec.options.httpHeaders)
+        }
     }
 
     /// Starts previews for a load that has opened. `sheets` is nil for a
@@ -356,7 +362,7 @@ final class VividScrubPreviewProvider {
             return
         }
         if reader == nil {
-            reader = engine.makeFrameExtractor(url: spec.sourceURL, httpHeaders: spec.options.httpHeaders)
+            reader = makeReader(spec)
         }
         // Apple TV has no frame reader, so it starts no worker either.
         guard let reader else {

@@ -35,17 +35,22 @@ final class ScrubPreviewSheetStore {
     private var failures: [Int: Date] = [:]
     private var isShutDown = false
 
-    private var memoryWarning: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
 
     init(sheets: ScrubPreviewSheets, session: URLSession? = nil, now: @escaping () -> Date = Date.init) {
         self.sheets = sheets
         self.session = session ?? Self.makeSession()
         self.now = now
-        memoryWarning = NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.releaseMemory() }
-        }
+        let centre = NotificationCenter.default
+        observers = [
+            centre.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.releaseMemory() }
+            },
+            // In the background only the small JPEGs are worth holding.
+            centre.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.decoded = [] }
+            },
+        ]
     }
 
     /// Drops everything decoded and downloaded; it's fetched again on demand.
@@ -121,8 +126,8 @@ final class ScrubPreviewSheetStore {
     /// Stops every request and drops everything held.
     func shutdown() {
         isShutDown = true
-        if let memoryWarning { NotificationCenter.default.removeObserver(memoryWarning) }
-        memoryWarning = nil
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
         downloads.values.forEach { $0.cancel() }
         decodes.values.forEach { $0.cancel() }
         downloads = [:]
@@ -152,14 +157,17 @@ final class ScrubPreviewSheetStore {
         request.setValue("image/jpeg, image/*;q=0.8", forHTTPHeaderField: "Accept")
         let session = session
         // A request carrying the account's header must never follow a
-        // redirect to somewhere else.
-        let guardsRedirects = !sheets.headers.isEmpty
+        // redirect to somewhere else. A signed URL may be redirected, but
+        // not from HTTPS down to public plain HTTP.
+        let redirects: URLSessionTaskDelegate = sheets.headers.isEmpty
+            ? PlainHTTPRedirectGuard.SessionDelegate.shared
+            : SheetRedirectGuard()
         let limit = Self.maximumSheetBytes
         let task = Task { @MainActor [weak self] () -> Data? in
             let fetched: Data? = await {
                 do {
                     let (bytes, response) = try await session.data(
-                        for: request, delegate: guardsRedirects ? SheetRedirectGuard() : nil)
+                        for: request, delegate: redirects)
                     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
                           !bytes.isEmpty, bytes.count <= limit
                     else { return nil }

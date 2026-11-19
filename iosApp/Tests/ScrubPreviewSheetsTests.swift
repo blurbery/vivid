@@ -363,9 +363,12 @@ final class ScrubPreviewSheetsTests: XCTestCase {
 
     private func makeProvider() throws -> (VividScrubPreviewProvider, VividPlaybackController) {
         let controller = try VividPlaybackController()
-        let provider = VividScrubPreviewProvider(engine: controller.engine) {
-            ScrubPreviewSheetStore(sheets: $0, session: Self.stubSession())
-        }
+        // No frame reader, so nothing here opens the stream.
+        let provider = VividScrubPreviewProvider(
+            engine: controller.engine,
+            makeStore: { ScrubPreviewSheetStore(sheets: $0, session: Self.stubSession()) },
+            makeReader: { _ in nil }
+        )
         return (provider, controller)
     }
 

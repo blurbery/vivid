@@ -270,15 +270,20 @@ The loader keeps SubRip and WebVTT bold, italic, underline, strike-through and `
 Native ASS and embedded rendering keep their authored styles.
 
 Scrub previews come from the server's own seek-bar preview sheets where it has them: JPEG sheets holding a grid of small stills taken at a fixed interval, usually 10 seconds.
-Silo lists them at `GET /api/v2/watch/{id}/trickplay` for a file whose version says `trickplay_available`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
+Silo lists them at `GET /api/v2/watch/{id}/trickplay`, asked for unless the file's version says `trickplay_available` is `false`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
 Emby and downloads have none.
 [ScrubPreviewSheets](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) maps a source-media time to a sheet and a cell, and [ScrubPreviewSheetStore](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheetStore.swift) downloads and decodes sheets off the main thread.
 A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
-The store keeps two sheets decoded and the JPEGs of up to twelve; the sheet around the playhead is downloaded when the load opens, and the sheets either side of the target while scrubbing.
-A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a reload of the same file keeps the sheets it has.
+One sheet is fetched and decoded at a time, and the newest target decides which comes next.
+The store keeps two sheets decoded while scrubbing and one between scrubs, plus the JPEGs of up to twelve; the sheet around the playhead is downloaded when the load opens, and the sheets either side of the target while scrubbing.
+A memory warning drops them all, and going to the background drops the decoded ones.
+A target inside the still already showing publishes nothing, and a still left from another sheet is cleared if the next sheet takes longer than a quarter of a second.
+A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a replan, quality change or reloading seek of the same file keeps the sheets it has.
+Skip presses show the target time only and ask for no still.
 Sheets are indexed by source time, so a target the loaded transport can't reach still has a still.
 
-Apple TV shows the still above the playhead while the timeline is selected or held, and in the hold-to-seek panel.
+Apple TV shows the still above the playhead once a timeline selection or hold has moved the target, and in the hold-to-seek panel.
+While it is up, the title, shortcut circles and skip prompts it would cover are hidden.
 Apple TV has no frame reader, so without server sheets scrubbing shows the timeline and target time only and starts no reader, decoder or request worker.
 Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged.
 

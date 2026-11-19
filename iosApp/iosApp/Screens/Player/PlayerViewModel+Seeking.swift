@@ -68,23 +68,14 @@ extension PlayerViewModel {
     /// burst of presses becomes a single seek once they stop. Seeking on the
     /// first press and again at the end made the picture jump twice.
     private func queueSkipDebounce(delta: Double) {
-        #if !os(tvOS)
-        let wasScrubbing = isScrubbing
-        #endif
         let base = isScrubbing ? scrubPreviewTime : currentTime
         let cap = duration > 0 ? duration : base + abs(delta)
         let target = max(0, min(base + delta, cap))
 
         isScrubbing = true
         scrubPreviewTime = target
-        // Apple TV draws no still for a skip press, so it asks for none.
-        #if !os(tvOS)
-        if wasScrubbing {
-            scrubPreviewProvider.request(atSourceTime: target)
-        } else {
-            scrubPreviewProvider.begin(atSourceTime: target)
-        }
-        #endif
+        // A skip press shows its target time only. A still would flash up
+        // and vanish with every press, so none is asked for.
         Self.logger.info(
             "[CMP-SEEK] skip debounce queued delta=\(delta, privacy: .public) base=\(base, privacy: .public) target=\(target, privacy: .public) duration=\(self.duration, privacy: .public)"
         )
