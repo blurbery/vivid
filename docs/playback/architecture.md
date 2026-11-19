@@ -270,13 +270,13 @@ The loader keeps SubRip and WebVTT bold, italic, underline, strike-through and `
 Native ASS and embedded rendering keep their authored styles.
 
 Scrub previews come from the server's own seek-bar preview sheets where it has them: JPEG sheets holding a grid of small stills taken at a fixed interval, usually 10 seconds.
-Silo lists them at `GET /api/v2/watch/{id}/trickplay`, asked for unless the file's version says `trickplay_available` is `false`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
+Silo lists them at `GET /api/v2/watch/{id}/trickplay`, asked for when a file with video plays through a Protocol V3 plan unless its version says `trickplay_available` is `false`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
 Emby and downloads have none.
 [ScrubPreviewSheets](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) maps a source-media time to a sheet and a cell, and [ScrubPreviewSheetStore](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheetStore.swift) downloads and decodes sheets off the main thread.
 A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
 One sheet is decoded at a time, and the newest target decides which comes next; the JPEGs of the sheets either side download in the background, two requests at a time at most.
 The store keeps two sheets decoded while scrubbing and one between scrubs, plus the JPEGs of up to twelve; the sheet around the playhead is downloaded when the load opens, and the sheets either side of the target while scrubbing.
-A memory warning drops them all, and going to the background drops the decoded ones; a download or decode already running then doesn't put its result back.
+A memory warning drops them all, and going to the background drops the decoded ones; a decode already running then, and after a memory warning a download too, doesn't put its result back.
 A sheet's download stops as soon as it passes 16 MB.
 A target inside the still already showing publishes nothing, and a still left from another sheet is cleared if the next sheet takes longer than a quarter of a second.
 A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a replan, quality change or reloading seek of the same file keeps the sheets it has.

@@ -36,9 +36,10 @@ final class ScrubPreviewSheetStore {
     private var isShutDown = false
     /// How many sheets stay decoded: two while a scrub runs, one between.
     private var decodedLimit = ScrubPreviewSheetStore.scrubbingDecodedLimit
-    /// Moves on whenever memory is given back, so work that was already
-    /// running then doesn't put its result back.
-    private var memoryEpoch = 0
+    /// These move on whenever decoded sheets or JPEGs are given back, so
+    /// work that was already running then doesn't put its result back.
+    private var decodedEpoch = 0
+    private var dataEpoch = 0
     /// The newest decode. The next waits for it, so two sheets never decode
     /// together even when two loads of the same file overlap.
     private var lastDecode: Task<Void, Never>?
@@ -63,13 +64,14 @@ final class ScrubPreviewSheetStore {
 
     /// Drops everything decoded and downloaded; it's fetched again on demand.
     func releaseMemory() {
-        memoryEpoch &+= 1
+        decodedEpoch &+= 1
+        dataEpoch &+= 1
         decoded = []
         data = []
     }
 
     private func releaseDecoded() {
-        memoryEpoch &+= 1
+        decodedEpoch &+= 1
         decoded = []
     }
 
@@ -115,7 +117,7 @@ final class ScrubPreviewSheetStore {
         if let image = cached(sheet) { return image }
         guard !isShutDown, sheets.sheetURLs.indices.contains(sheet), !hasFailed(sheet) else { return nil }
         if let running = decodes[sheet] { return await running.value }
-        let epoch = memoryEpoch
+        let epoch = decodedEpoch
         let previous = lastDecode
         let task = Task { @MainActor [weak self] () -> CGImage? in
             guard let self, let bytes = await self.bytes(sheet) else { return nil }
@@ -134,7 +136,7 @@ final class ScrubPreviewSheetStore {
         if let image {
             // Memory given back while this decoded stays given back; the
             // caller still gets its still.
-            if epoch == memoryEpoch { remember(image, for: sheet) }
+            if epoch == decodedEpoch { remember(image, for: sheet) }
         } else if !isShutDown {
             markFailed(sheet)
         }
@@ -187,17 +189,17 @@ final class ScrubPreviewSheetStore {
         // A request carrying the account's header must never follow a
         // redirect to somewhere else. A signed URL may be redirected, but
         // not from HTTPS down to public plain HTTP.
-        let redirects: URLSessionTaskDelegate = sheets.headers.isEmpty
-            ? PlainHTTPRedirectGuard.SessionDelegate.shared
-            : SheetRedirectGuard()
+        let carriesHeaders = !sheets.headers.isEmpty
         let limit = Self.maximumSheetBytes
-        let epoch = memoryEpoch
+        let epoch = dataEpoch
         let task = Task { @MainActor [weak self] () -> Data? in
-            let fetched = await Self.fetch(request, session: session, delegate: redirects, limit: limit)
+            let fetched = await Self.fetch(request, session: session, limit: limit) { from, to in
+                !carriesHeaders && PlainHTTPRedirectGuard.allows(from: from, to: to)
+            }
             guard let self, !Task.isCancelled else { return nil }
             self.downloads[sheet] = nil
             if let fetched {
-                if epoch == self.memoryEpoch { self.remember(fetched, for: sheet) }
+                if epoch == self.dataEpoch { self.remember(fetched, for: sheet) }
             } else {
                 self.failures[sheet] = self.now()
             }
@@ -207,34 +209,19 @@ final class ScrubPreviewSheetStore {
         return task
     }
 
-    /// Reads the body off the main actor and stops as soon as it passes
-    /// `limit`, so an oversized reply is never held whole.
+    /// Receives the body in the chunks the session delivers, on its own
+    /// queue, and cancels as soon as it passes `limit`, so an oversized
+    /// reply is never held whole.
     nonisolated private static func fetch(
         _ request: URLRequest,
         session: URLSession,
-        delegate: URLSessionTaskDelegate,
-        limit: Int
+        limit: Int,
+        allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool
     ) async -> Data? {
-        do {
-            let (stream, response) = try await session.bytes(for: request, delegate: delegate)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                  response.expectedContentLength <= Int64(limit)
-            else {
-                stream.task.cancel()
-                return nil
-            }
-            var body = [UInt8]()
-            body.reserveCapacity(response.expectedContentLength > 0 ? Int(response.expectedContentLength) : 512 * 1024)
-            for try await byte in stream {
-                body.append(byte)
-                if body.count > limit {
-                    stream.task.cancel()
-                    return nil
-                }
-            }
-            return body.isEmpty ? nil : Data(body)
-        } catch {
-            return nil
+        await withCheckedContinuation { continuation in
+            let task = session.dataTask(with: request)
+            task.delegate = SheetReceiver(limit: limit, allowsRedirect: allowsRedirect, continuation: continuation)
+            task.resume()
         }
     }
 
@@ -282,11 +269,56 @@ final class ScrubPreviewSheetStore {
     }
 }
 
-/// Refuses redirects, so one surfaces as a failed sheet.
-private final class SheetRedirectGuard: NSObject, URLSessionTaskDelegate {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest) async -> URLRequest? {
-        nil
+/// One sheet download. The session calls it on its delegate queue, one
+/// call at a time, and it answers exactly once, when the task completes.
+private final class SheetReceiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let limit: Int
+    private let allowsRedirect: @Sendable (URL?, URL?) -> Bool
+    private var continuation: CheckedContinuation<Data?, Never>?
+    private var body = Data()
+    private var refused = false
+
+    init(limit: Int, allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool, continuation: CheckedContinuation<Data?, Never>) {
+        self.limit = limit
+        self.allowsRedirect = allowsRedirect
+        self.continuation = continuation
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // A refused redirect ends the task with the redirect response.
+        completionHandler(allowsRedirect(response.url, request.url) ? request : nil)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              response.expectedContentLength <= Int64(limit)
+        else {
+            refused = true
+            completionHandler(.cancel)
+            return
+        }
+        if response.expectedContentLength > 0 {
+            body.reserveCapacity(Int(response.expectedContentLength))
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard !refused else { return }
+        body.append(data)
+        if body.count > limit {
+            refused = true
+            body = Data()
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let received = error == nil && !refused && !body.isEmpty ? body : nil
+        body = Data()
+        continuation?.resume(returning: received)
+        continuation = nil
     }
 }
