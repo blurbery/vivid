@@ -160,7 +160,11 @@ targets:
         buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_h264_bframes.mp4
         buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_one_keyframe.mp4
+        buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_h264_rotated.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/Stills/stills_h264_with_audio.mkv
         buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_hevc10_pq_opengop.mkv
         buildPhase: resources

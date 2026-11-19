@@ -9,6 +9,11 @@
 /// file or a socket. A handle holds one demuxer and, while stills are being
 /// made, one single-threaded software decoder.
 ///
+/// Only Matroska and MP4 files are read, and only H.264, HEVC, VP9, MPEG-2
+/// and AV1 video is decoded. No other decoder is ever made: opening a file
+/// reads its header, its keyframe index and its first video packet, and
+/// leaves every other stream alone.
+///
 /// Threading: a handle is not locked. Call its functions from one thread at
 /// a time. The callbacks run on the thread that made the call. Only the
 /// `aborted` callback's answer may change from another thread.
@@ -24,19 +29,37 @@ enum {
     VIVID_STILL_OK = 0,
     VIVID_STILL_ERROR_ARGUMENT = -1,
     VIVID_STILL_ERROR_MEMORY = -2,
-    /// The bytes aren't a Matroska, MP4 or MPEG-TS file that could be read.
+    /// The bytes aren't a Matroska or MP4 file that could be read.
     VIVID_STILL_ERROR_OPEN = -3,
     VIVID_STILL_ERROR_NO_VIDEO = -4,
-    /// No software decoder for the codec, or a picture size or pixel layout
-    /// outside the limits.
+    /// A codec outside the list above, a decoder that refuses the stream,
+    /// or a pixel layout that can't be turned into a picture.
     VIVID_STILL_ERROR_UNSUPPORTED = -5,
+    /// No keyframe sits at or before the time asked for.
     VIVID_STILL_ERROR_SEEK = -6,
-    /// No keyframe turned up within the packet limit.
+    /// The read callback failed. Nothing is wrong with the file as far as
+    /// is known, so the same call may work later.
     VIVID_STILL_ERROR_READ = -7,
     VIVID_STILL_ERROR_DECODE = -8,
     VIVID_STILL_ERROR_SCALE = -9,
     /// The `aborted` callback said stop. The handle is still usable.
     VIVID_STILL_ERROR_ABORTED = -10,
+    /// The time resolves to the last keyframe of a Matroska index, which
+    /// the demuxer can only reach by reading on to the end of the file.
+    /// Refused before anything is read.
+    VIVID_STILL_ERROR_LAST_CUE = -11,
+    /// The picture has more pixels than the handle allows.
+    VIVID_STILL_ERROR_TOO_LARGE = -12,
+    /// Opening needed more than `max_open_bytes`.
+    VIVID_STILL_ERROR_OPEN_TOO_COSTLY = -13,
+    /// The still needed more than `max_read_bytes`.
+    VIVID_STILL_ERROR_OVER_BYTE_LIMIT = -14,
+    /// The container has no keyframe index, so nothing can be found
+    /// without reading through the file.
+    VIVID_STILL_ERROR_NO_INDEX = -15,
+    /// The keyframe's bytes are missing or damaged: the file ends early,
+    /// or what the index points at isn't a whole keyframe.
+    VIVID_STILL_ERROR_DATA = -16,
 };
 
 /// Copies up to `size` bytes at `offset` into `buffer`. Returns how many
@@ -56,6 +79,17 @@ typedef struct VividStillCallbacks {
     /// May be null.
     VividStillAbortedCallback aborted;
 } VividStillCallbacks;
+
+typedef struct VividStillOpenOptions {
+    /// The most the open may read before it fails with
+    /// `VIVID_STILL_ERROR_OPEN_TOO_COSTLY`. Zero or less, or anything above
+    /// it, means the built-in ceiling of 64 MiB.
+    int64_t max_open_bytes;
+    /// The largest picture, as width times height, a decoder is made for.
+    /// Zero or less, or anything above it, means the built-in ceiling of
+    /// 7680 by 4320. Each side must also be between 8 and 16384.
+    int64_t max_picture_pixels;
+} VividStillOpenOptions;
 
 enum {
     VIVID_STILL_TRANSFER_UNKNOWN = 0,
@@ -86,11 +120,12 @@ enum {
     VIVID_STILL_RANGE_FULL = 2,
 };
 
-/// What the container and the first frames say about the video stream.
+/// What the container, the decoder and the first keyframe say about the
+/// video stream.
 typedef struct VividStillInfo {
     /// 0 when the container doesn't say.
     double duration_seconds;
-    /// The stream's first timestamp. Still and index times count from it.
+    /// The first video packet's time. Still and index times count from it.
     double start_seconds;
     int width;
     int height;
@@ -113,12 +148,18 @@ typedef struct VividStillInfo {
     /// Non-zero when the container's keyframe index covers the file.
     int has_index;
     int index_count;
+    /// Non-zero when the last index entry can't be made into a still
+    /// (Matroska): asking for it gives `VIVID_STILL_ERROR_LAST_CUE`.
+    int last_entry_is_unreadable;
 } VividStillInfo;
 
 typedef struct VividStillIndexEntry {
-    /// Seconds from the start of the stream. MP4 stores decode times, so
-    /// with reordered frames this can sit a few frames before the picture's
-    /// own time.
+    /// When the keyframe is shown, in seconds from the start of the
+    /// stream. Asking for a still at exactly this time gives this
+    /// keyframe. Matroska records it. MP4 records decode times, so there
+    /// it is the decode time plus the first keyframe's reorder delay:
+    /// exact for the usual closed groups of pictures, and up to a few
+    /// frames early for a keyframe with pictures shown before it.
     double time_seconds;
     int64_t byte_position;
     /// 0 when the container doesn't record it (Matroska).
@@ -145,6 +186,8 @@ typedef struct VividStillPicture {
     int layout;
     /// The picture's own time, in seconds from the start of the stream.
     double time_seconds;
+    /// Which index entry this is.
+    int index_position;
     int transfer;
     int primaries;
     /// The size of the keyframe's packet.
@@ -155,10 +198,14 @@ typedef struct VividStillPicture {
 } VividStillPicture;
 
 /// Opens a file through the callbacks, picks its video stream and reads the
-/// keyframe index. `name_hint` (may be null) is only a file name used to
-/// help recognise the format, such as "a.mkv". On success `*out_handle` is
-/// set and must be closed with `vivid_still_close`.
-int vivid_still_open(const VividStillCallbacks *callbacks, const char *name_hint, VividStill **out_handle);
+/// keyframe index. `options` may be null for the built-in limits. On
+/// success `*out_handle` is set and must be closed with
+/// `vivid_still_close`.
+///
+/// `VIVID_STILL_ERROR_READ` and `VIVID_STILL_ERROR_ABORTED` say nothing
+/// about the file and can be tried again. Every other failure is about the
+/// file itself.
+int vivid_still_open(const VividStillCallbacks *callbacks, const VividStillOpenOptions *options, VividStill **out_handle);
 
 /// Frees the handle. Null is ignored.
 void vivid_still_close(VividStill *handle);
@@ -172,16 +219,19 @@ const char *vivid_still_codec_name(const VividStill *handle);
 int vivid_still_index_count(const VividStill *handle);
 int vivid_still_index_entry(const VividStill *handle, int position, VividStillIndexEntry *out_entry);
 
+/// Which index entry a still at `seconds` would be: the last one at or
+/// before that time. -1 when there is none. Reads nothing.
+int vivid_still_index_position(const VividStill *handle, double seconds);
+
 /// Decodes the keyframe at or before `seconds` (from the start of the
 /// stream), scaled to square pixels no wider than `max_width` and never
 /// enlarged. Reads only that keyframe's packet. On success fills
 /// `out_picture`.
 ///
 /// `max_read_bytes` caps what the call may read, failing with
-/// `VIVID_STILL_ERROR_SEEK` or `VIVID_STILL_ERROR_READ` beyond it. Zero or
-/// less leaves only the built-in cap of 32 MiB. One case needs it: for the
-/// last keyframe in a Matroska index the demuxer reads on to the end of
-/// the file, looking for keyframes the index might have missed.
+/// `VIVID_STILL_ERROR_OVER_BYTE_LIMIT` beyond it. Zero or less leaves only
+/// the built-in cap of 32 MiB. Where the index records the keyframe's size
+/// (MP4), a keyframe over the cap is refused before anything is read.
 int vivid_still_decode(VividStill *handle, double seconds, int max_width, int layout, int64_t max_read_bytes,
                        VividStillPicture *out_picture);
 

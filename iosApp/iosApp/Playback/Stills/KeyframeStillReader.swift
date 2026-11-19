@@ -5,13 +5,21 @@ import VividStillC
 
 /// One keyframe in the container's index.
 struct KeyframeIndexEntry: Equatable, Sendable {
-    /// Seconds from the start of the stream. MP4 records decode times, so
-    /// with reordered frames this can be a few frames before the still's
-    /// own time.
+    /// When the keyframe is shown, in seconds from the start of the
+    /// stream. A still asked for at exactly this time is this keyframe.
+    /// Matroska records the time. MP4 records decode times, so there it is
+    /// worked out from the first keyframe's reorder delay: exact for the
+    /// usual closed groups of pictures, and up to a few frames early for a
+    /// keyframe that has pictures shown before it. The still itself always
+    /// carries its true time.
     let time: Double
     let bytePosition: Int64
     /// Nil when the container doesn't record it (Matroska).
     let size: Int?
+    /// False for the last keyframe of a Matroska index: the demuxer can
+    /// only reach it by reading on to the end of the file, so it is
+    /// refused (`KeyframeStillResult.lastCue`) and not worth asking for.
+    let isReadable: Bool
 }
 
 /// What the file says about its video, for callers deciding whether to
@@ -24,7 +32,7 @@ struct KeyframeStillInfo: Equatable, Sendable {
 
     /// Nil when the container doesn't say.
     let duration: Double?
-    /// The stream's first timestamp. Still and index times count from it.
+    /// The first video packet's time. Still and index times count from it.
     let startTime: Double
     let codedWidth: Int
     let codedHeight: Int
@@ -60,7 +68,9 @@ struct KeyframeStill: @unchecked Sendable {
     let image: CGImage
     /// The keyframe's own time, in seconds from the start of the stream.
     let time: Double
-    /// What the demuxer read for this still, and in how many reads.
+    /// Which entry of the reader's `index` this is.
+    let indexPosition: Int
+    /// What was read for this still, and in how many reads.
     let bytesRead: Int
     let readCount: Int
     /// The size of the keyframe itself.
@@ -68,6 +78,34 @@ struct KeyframeStill: @unchecked Sendable {
     /// 1 unless the keyframe alone didn't give a picture.
     let packetsDecoded: Int
     let elapsed: TimeInterval
+}
+
+/// What became of a request for a still.
+enum KeyframeStillResult: Sendable {
+    case still(KeyframeStill)
+    /// A newer request took its place while it waited. Nothing was read.
+    case superseded
+    /// `cancelCurrent()` or `shutdown()` stopped it.
+    case cancelled
+    /// A read failed, or the file couldn't be opened just now and the
+    /// reader is waiting before it tries again. Worth asking later.
+    case transientFailure
+    /// This file, or this time in it, can't give a still: not a file that
+    /// can be read, a codec that isn't decoded, no keyframe index, no
+    /// keyframe at or before the time, or a damaged keyframe.
+    case notPossible
+    /// The time falls in the last keyframe of a Matroska index, which is
+    /// never read (see `KeyframeIndexEntry.isReadable`).
+    case lastCue
+    /// Over one of the reader's limits: the picture has more pixels than
+    /// allowed, the keyframe is larger than a still may read, or opening
+    /// the file would read too much.
+    case overLimit
+
+    var still: KeyframeStill? {
+        if case let .still(still) = self { return still }
+        return nil
+    }
 }
 
 /// Makes stills from a file's keyframes: one small read and one frame
@@ -78,16 +116,34 @@ struct KeyframeStill: @unchecked Sendable {
 /// dispatch queue, so the priority is the app's choice and a blocking read
 /// never ties up a shared pool.
 final class KeyframeStillReader: Sendable {
+    /// The most that is read before a file is given up as too costly to
+    /// open, and before a still is given up.
+    static let defaultOpenByteLimit = 8 * 1024 * 1024
+    static let defaultStillByteLimit = 6 * 1024 * 1024
+    /// The largest picture decoded, by area: 3840 by 2160.
+    static let defaultPicturePixelLimit = 3840 * 2160
+    /// After a failed open the file isn't tried again for this long, and
+    /// for the longer time once it has failed three times running.
+    static let openRetryDelay: TimeInterval = 5
+    static let openRetryDelayAfterRepeats: TimeInterval = 30
+
     private let worker: Worker
 
     /// - Parameters:
-    ///   - nameHint: a bare file name such as `film.mkv`, used only
-    ///     to help recognise the container. Never a whole address.
     ///   - stillByteLimit: the most one still may read before it is given
-    ///     up. A keyframe is far smaller, but the last keyframe in a
-    ///     Matroska index makes the demuxer read to the end of the file.
-    init(source: StillByteSource, nameHint: String? = nil, stillByteLimit: Int = 6 * 1024 * 1024) {
-        worker = Worker(source: source, nameHint: nameHint, stillByteLimit: stillByteLimit)
+    ///     up.
+    ///   - openByteLimit: the most opening the file may read. The shim
+    ///     never goes past 64 MiB whatever is asked.
+    ///   - picturePixelLimit: the largest picture, as width times height,
+    ///     this device should decode. The shim never goes past 7680 by
+    ///     4320.
+    ///   - uptime: the clock the wait after a failed open is measured on.
+    init(source: StillByteSource, stillByteLimit: Int = KeyframeStillReader.defaultStillByteLimit,
+         openByteLimit: Int = KeyframeStillReader.defaultOpenByteLimit,
+         picturePixelLimit: Int = KeyframeStillReader.defaultPicturePixelLimit,
+         uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        worker = Worker(source: source, stillByteLimit: stillByteLimit, openByteLimit: openByteLimit,
+                        picturePixelLimit: picturePixelLimit, uptime: uptime)
     }
 
     deinit {
@@ -99,21 +155,50 @@ final class KeyframeStillReader: Sendable {
     /// The container's keyframes in time order. Empty until the file has
     /// been opened, and for containers without an index.
     var index: [KeyframeIndexEntry] { worker.published.index }
+    /// True while a request waits behind the job that is running.
+    var hasWaitingRequest: Bool { worker.hasWaitingRequest }
 
-    /// Opens the file if it isn't open. Nil when it can't be read.
+    /// Opens the file if it isn't open. Nil when it can't be read, or
+    /// can't be read just now.
     func prepare() async -> KeyframeStillInfo? {
         await worker.prepare()
     }
 
-    /// The keyframe at or before `seconds`, no wider than `maxWidth`. Only
-    /// one request waits at a time: a newer one replaces it, and the older
-    /// caller gets nil.
-    func still(at seconds: Double, maxWidth: Int, urgent: Bool = false) async -> KeyframeStill? {
+    /// Which entry of `index` a still at `seconds` would be: the last one
+    /// at or before that time. Nil before the file is open and when there
+    /// is none. Reads nothing, so a scheduler can check `isReadable` and
+    /// what it already holds before asking.
+    func indexPosition(at seconds: Double) -> Int? {
+        guard seconds.isFinite else { return nil }
+        let index = worker.published.index
+        let target = max(seconds, 0)
+        var low = 0, high = index.count
+        while low < high {
+            let middle = (low + high) / 2
+            if index[middle].time <= target {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        return low > 0 ? low - 1 : nil
+    }
+
+    /// The keyframe at or before `seconds`, no wider than `maxWidth`, or
+    /// why there is none. Only one request waits at a time: a newer one
+    /// replaces it, and the older caller gets `.superseded`.
+    func result(at seconds: Double, maxWidth: Int, urgent: Bool = false) async -> KeyframeStillResult {
         await worker.still(at: seconds, maxWidth: maxWidth, urgent: urgent)
     }
 
-    /// Stops the job that is running now, which then returns nil. A job
-    /// that is waiting still runs.
+    /// `result(at:maxWidth:urgent:)` for callers that don't need the
+    /// reason: the still, or nil.
+    func still(at seconds: Double, maxWidth: Int, urgent: Bool = false) async -> KeyframeStill? {
+        await result(at: seconds, maxWidth: maxWidth, urgent: urgent).still
+    }
+
+    /// Stops the job that is running now, which then ends as `.cancelled`.
+    /// A job that is waiting still runs.
     func cancelCurrent() {
         worker.cancelCurrent()
     }
@@ -125,7 +210,7 @@ final class KeyframeStillReader: Sendable {
     }
 
     /// Stops everything and closes the file. Stills asked for afterwards
-    /// return nil.
+    /// are `.cancelled`.
     func shutdown() async {
         await worker.shutdown()
     }
@@ -178,12 +263,21 @@ private final class Worker: @unchecked Sendable {
         let seconds: Double
         let maxWidth: Int
         let urgent: Bool
-        let continuation: CheckedContinuation<KeyframeStill?, Never>
+        let continuation: CheckedContinuation<KeyframeStillResult, Never>
+    }
+
+    /// How an attempt to have the file open ended.
+    private enum Opening {
+        case open(KeyframeStillInfo)
+        /// Not open, and why a still can't be had.
+        case closed(KeyframeStillResult)
     }
 
     private let link: CallbackLink
-    private let nameHint: String?
     private let stillByteLimit: Int
+    private let openByteLimit: Int
+    private let picturePixelLimit: Int
+    private let uptime: @Sendable () -> TimeInterval
 
     /// Guards everything down to `raisedPriority`.
     private let state = NSCondition()
@@ -205,18 +299,29 @@ private final class Worker: @unchecked Sendable {
     /// Only touched on the reader's thread.
     private var handle: OpaquePointer?
     private var info: KeyframeStillInfo?
-    /// Set when the file turned out not to be readable, so it isn't opened
-    /// again for every still.
-    private var cannotOpen = false
+    /// Set when the file itself turned out not to be usable, so it isn't
+    /// opened again for every still.
+    private var refusal: KeyframeStillResult?
+    /// Opens that failed for no fault of the file's, one after another,
+    /// and the time before which it isn't tried again.
+    private var failedOpens = 0
+    private var noOpenBefore: TimeInterval = 0
 
-    init(source: StillByteSource, nameHint: String?, stillByteLimit: Int) {
+    init(source: StillByteSource, stillByteLimit: Int, openByteLimit: Int, picturePixelLimit: Int,
+         uptime: @escaping @Sendable () -> TimeInterval) {
         link = CallbackLink(source: source)
-        self.nameHint = nameHint
         self.stillByteLimit = stillByteLimit
+        self.openByteLimit = openByteLimit
+        self.picturePixelLimit = picturePixelLimit
+        self.uptime = uptime
     }
 
     var published: Published {
         state.withLock { shared }
+    }
+
+    var hasWaitingRequest: Bool {
+        state.withLock { waiting != nil }
     }
 
     // MARK: - Requests
@@ -236,13 +341,13 @@ private final class Worker: @unchecked Sendable {
         }
     }
 
-    func still(at seconds: Double, maxWidth: Int, urgent: Bool) async -> KeyframeStill? {
-        guard seconds.isFinite, maxWidth > 0 else { return nil }
+    func still(at seconds: Double, maxWidth: Int, urgent: Bool) async -> KeyframeStillResult {
+        guard seconds.isFinite, maxWidth > 0 else { return .notPossible }
         return await withCheckedContinuation { continuation in
             state.lock()
             if isShuttingDown || hasShutDown {
                 state.unlock()
-                continuation.resume(returning: nil)
+                continuation.resume(returning: .cancelled)
                 return
             }
             let replaced = waiting
@@ -251,7 +356,7 @@ private final class Worker: @unchecked Sendable {
             matchPriority()
             state.signal()
             state.unlock()
-            replaced?.continuation.resume(returning: nil)
+            replaced?.continuation.resume(returning: .superseded)
         }
     }
 
@@ -345,18 +450,20 @@ private final class Worker: @unchecked Sendable {
                 opening = []
                 beginJob(urgent: false)
                 state.unlock()
-                let info = openIfNeeded()
+                let opened = openIfNeeded()
                 state.lock()
                 endJob()
+                var info: KeyframeStillInfo?
+                if case let .open(read) = opened { info = read }
                 waiters.forEach { $0.resume(returning: info) }
             } else if let job = waiting {
                 waiting = nil
                 beginJob(urgent: job.urgent)
                 state.unlock()
-                let still = makeStill(job)
+                let result = makeStill(job)
                 state.lock()
                 endJob()
-                job.continuation.resume(returning: still)
+                job.continuation.resume(returning: result)
             } else if wantsDecoderClosed {
                 wantsDecoderClosed = false
                 state.unlock()
@@ -373,7 +480,7 @@ private final class Worker: @unchecked Sendable {
         matchPriority()
         state.unlock()
 
-        stale?.continuation.resume(returning: nil)
+        stale?.continuation.resume(returning: .cancelled)
         openers.forEach { $0.resume(returning: nil) }
         if let handle { vivid_still_close(handle) }
         handle = nil
@@ -406,30 +513,29 @@ private final class Worker: @unchecked Sendable {
         matchPriority()
     }
 
-    private func openIfNeeded() -> KeyframeStillInfo? {
-        if let info { return info }
-        guard !cannotOpen else { return nil }
+    private func openIfNeeded() -> Opening {
+        if let info { return .open(info) }
+        if let refusal { return .closed(refusal) }
+        // A server that just said no, or didn't answer, isn't asked again
+        // straight away.
+        guard uptime() >= noOpenBefore else { return .closed(.transientFailure) }
+
         link.bytes = 0
         link.reads = 0
         var callbacks = VividStillCallbacks(context: Unmanaged.passUnretained(link).toOpaque(), read: readCallback,
                                             size: sizeCallback, aborted: abortedCallback)
+        var options = VividStillOpenOptions(max_open_bytes: Int64(max(openByteLimit, 1)),
+                                            max_picture_pixels: Int64(max(picturePixelLimit, 1)))
         var opened: OpaquePointer?
-        let code = if let nameHint {
-            nameHint.withCString { vivid_still_open(&callbacks, $0, &opened) }
-        } else {
-            vivid_still_open(&callbacks, nil, &opened)
-        }
+        let code = vivid_still_open(&callbacks, &options, &opened)
         guard code == VIVID_STILL_OK, let opened else {
-            // A cancelled open can be tried again. Anything else can't get
-            // better.
-            if code != VIVID_STILL_ERROR_ABORTED { cannotOpen = true }
-            return nil
+            return .closed(openFailed(code))
         }
         var raw = VividStillInfo()
         guard vivid_still_get_info(opened, &raw) == VIVID_STILL_OK else {
             vivid_still_close(opened)
-            cannotOpen = true
-            return nil
+            refusal = .notPossible
+            return .closed(.notPossible)
         }
         let count = Int(vivid_still_index_count(opened))
         var entries: [KeyframeIndexEntry] = []
@@ -437,31 +543,80 @@ private final class Worker: @unchecked Sendable {
         for position in 0..<count {
             var entry = VividStillIndexEntry()
             guard vivid_still_index_entry(opened, Int32(position), &entry) == VIVID_STILL_OK else { break }
+            let isLast = position == count - 1
             entries.append(KeyframeIndexEntry(time: entry.time_seconds, bytePosition: entry.byte_position,
-                                              size: entry.size > 0 ? Int(entry.size) : nil))
+                                              size: entry.size > 0 ? Int(entry.size) : nil,
+                                              isReadable: !(isLast && raw.last_entry_is_unreadable != 0)))
         }
         let read = Self.info(from: raw, codecName: String(cString: vivid_still_codec_name(opened)), bytesRead: link.bytes)
         handle = opened
         info = read
+        failedOpens = 0
+        noOpenBefore = 0
         state.withLock { shared = Published(info: read, index: entries) }
-        return read
+        return .open(read)
     }
 
-    private func makeStill(_ job: StillJob) -> KeyframeStill? {
+    /// Decides what a failed open means for the stills to come.
+    private func openFailed(_ code: Int32) -> KeyframeStillResult {
+        switch code {
+        case Int32(VIVID_STILL_ERROR_ABORTED):
+            // A cancelled open says nothing. The next request tries again.
+            return .cancelled
+        case Int32(VIVID_STILL_ERROR_READ) where !link.source.isPermanentlyUnusable,
+             Int32(VIVID_STILL_ERROR_MEMORY):
+            // The source failed, not the file. Try again, but not at once,
+            // and less eagerly if it keeps failing.
+            failedOpens += 1
+            let wait = failedOpens >= 3 ? KeyframeStillReader.openRetryDelayAfterRepeats : KeyframeStillReader.openRetryDelay
+            noOpenBefore = uptime() + wait
+            return .transientFailure
+        default:
+            // The file itself was refused, or the source turned itself off
+            // for good. Neither gets better.
+            let reason: KeyframeStillResult = code == VIVID_STILL_ERROR_READ ? .notPossible : Self.result(for: code)
+            refusal = reason
+            return reason
+        }
+    }
+
+    private func makeStill(_ job: StillJob) -> KeyframeStillResult {
         let started = ProcessInfo.processInfo.systemUptime
-        guard let info = openIfNeeded(), let handle, info.canProduceStills else { return nil }
+        let info: KeyframeStillInfo
+        switch openIfNeeded() {
+        case let .open(read): info = read
+        case let .closed(reason): return reason
+        }
+        guard let handle, info.canProduceStills else { return .notPossible }
         link.bytes = 0
         link.reads = 0
         var picture = VividStillPicture()
         defer { vivid_still_picture_free(&picture) }
         let width = Int32(clamping: job.maxWidth)
-        guard vivid_still_decode(handle, job.seconds, width, Int32(VIVID_STILL_LAYOUT_AUTO), Int64(stillByteLimit), &picture) == VIVID_STILL_OK,
-              let image = Self.image(from: picture, rotation: info.rotationDegrees)
-        else { return nil }
+        let code = vivid_still_decode(handle, job.seconds, width, Int32(VIVID_STILL_LAYOUT_AUTO), Int64(stillByteLimit), &picture)
+        guard code == VIVID_STILL_OK else {
+            // A source that has turned itself off won't read again.
+            if code == VIVID_STILL_ERROR_READ, link.source.isPermanentlyUnusable { return .notPossible }
+            return Self.result(for: code)
+        }
+        guard let image = Self.image(from: picture, rotation: info.rotationDegrees) else { return .notPossible }
         link.source.noteKeyframeSize(Int(picture.packet_bytes))
-        return KeyframeStill(image: image, time: picture.time_seconds, bytesRead: link.bytes, readCount: link.reads,
-                             keyframeBytes: Int(picture.packet_bytes), packetsDecoded: Int(picture.packets_decoded),
-                             elapsed: ProcessInfo.processInfo.systemUptime - started)
+        return .still(KeyframeStill(image: image, time: picture.time_seconds, indexPosition: Int(picture.index_position),
+                                    bytesRead: link.bytes, readCount: link.reads, keyframeBytes: Int(picture.packet_bytes),
+                                    packetsDecoded: Int(picture.packets_decoded),
+                                    elapsed: ProcessInfo.processInfo.systemUptime - started))
+    }
+
+    /// What a failure from the shim means to a caller.
+    private static func result(for code: Int32) -> KeyframeStillResult {
+        switch code {
+        case Int32(VIVID_STILL_ERROR_ABORTED): .cancelled
+        case Int32(VIVID_STILL_ERROR_READ), Int32(VIVID_STILL_ERROR_MEMORY): .transientFailure
+        case Int32(VIVID_STILL_ERROR_LAST_CUE): .lastCue
+        case Int32(VIVID_STILL_ERROR_TOO_LARGE), Int32(VIVID_STILL_ERROR_OPEN_TOO_COSTLY),
+             Int32(VIVID_STILL_ERROR_OVER_BYTE_LIMIT): .overLimit
+        default: .notPossible
+        }
     }
 
     // MARK: - Conversions

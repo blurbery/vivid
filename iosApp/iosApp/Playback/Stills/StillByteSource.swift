@@ -19,17 +19,23 @@ protocol StillByteSource: AnyObject, Sendable {
     /// A keyframe of this size was just read, so later reads can fetch
     /// enough for one in a single request.
     func noteKeyframeSize(_ bytes: Int)
+    /// True once the source has turned itself off for good, so a failed
+    /// read is not worth trying again.
+    var isPermanentlyUnusable: Bool { get }
 }
 
 extension StillByteSource {
     func noteKeyframeSize(_ bytes: Int) {}
+    var isPermanentlyUnusable: Bool { false }
 }
 
 enum StillByteSourceError: Error, Equatable {
     case cancelled
-    /// The server didn't honour a byte range, so the source turned itself
-    /// off for good.
+    /// The server doesn't serve the byte ranges it is asked for, so the
+    /// source turned itself off for good.
     case disabled
+    /// This read didn't work: the server said no, was busy or didn't
+    /// answer. A later read may.
     case failed
     case invalidRequest
 }
@@ -39,6 +45,12 @@ enum StillByteSourceError: Error, Equatable {
 /// The demuxer asks for many small pieces, so each request fetches a block
 /// and recent blocks are kept. A block starts where the read starts: a
 /// keyframe read begins at the keyframe and wants what follows it.
+///
+/// Only a server that can't be trusted with ranges turns the source off
+/// for good: one that answers 200 with the whole file, or 206 with a range
+/// other than the one asked for. Any other answer (401, 403, 404, 429,
+/// 5xx, a redirect that isn't followed), a timeout or a dropped connection
+/// fails that one read and leaves the source usable.
 final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
     struct Counters: Equatable, Sendable {
         var requests = 0
@@ -62,6 +74,9 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
     /// Most recently used last.
     private var blocks: [(offset: Int64, bytes: Data)] = []
     private var totalSize: Int64?
+    /// Where a server that doesn't give the file's length was found to
+    /// have nothing more: reads from here on are the end of the file.
+    private var knownEnd: Int64?
     private var largestKeyframe = 0
     private var isCancelled = false
     private var isDisabled = false
@@ -81,8 +96,9 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
 
     var size: Int64? { lock.withLock { totalSize } }
     var counters: Counters { lock.withLock { counted } }
-    /// True once a reply showed the server doesn't serve byte ranges.
-    var hasBeenDisabled: Bool { lock.withLock { isDisabled } }
+    /// True once a reply showed the server doesn't serve the byte ranges
+    /// it is asked for.
+    var isPermanentlyUnusable: Bool { lock.withLock { isDisabled } }
 
     /// How much one request asks for: twice the largest keyframe seen plus
     /// a margin, in 64 KiB steps, between 256 KiB and 1 MiB.
@@ -116,12 +132,13 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
 
     func read(into buffer: UnsafeMutableRawBufferPointer, offset: Int64) throws -> Int {
         guard offset >= 0, let base = buffer.baseAddress, buffer.count > 0 else { throw StillByteSourceError.invalidRequest }
-        let known = try lock.withLock { () -> Int64? in
+        let (known, end) = try lock.withLock { () -> (Int64?, Int64?) in
             if isDisabled { throw StillByteSourceError.disabled }
             if isCancelled { throw StillByteSourceError.cancelled }
-            return totalSize
+            return (totalSize, knownEnd)
         }
         if let known, offset >= known { return 0 }
+        if let end, offset >= end { return 0 }
         if let copied = copyFromBlocks(to: base, count: buffer.count, offset: offset) { return copied }
 
         var length = Int64(blockBytes)
@@ -159,10 +176,26 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
                 throw StillByteSourceError.cancelled
             case .failed:
                 throw isCancelled ? StillByteSourceError.cancelled : StillByteSourceError.failed
-            case .refused:
+            case .unusable:
                 isDisabled = true
                 blocks = []
                 throw StillByteSourceError.disabled
+            case let .pastEnd(total):
+                // Nothing at this offset. With the length given, that is
+                // the end of the file if the offset is at or past it. With
+                // none, this offset is as far as the file can go.
+                if let total {
+                    if let totalSize, totalSize != total {
+                        isDisabled = true
+                        blocks = []
+                        throw StillByteSourceError.disabled
+                    }
+                    guard offset >= total else { throw StillByteSourceError.failed }
+                    totalSize = total
+                } else {
+                    knownEnd = min(knownEnd ?? offset, offset)
+                }
+                return 0
             case let .received(bytes, total):
                 if let total {
                     // A file that changes length under the reader can't be
@@ -218,8 +251,13 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
 private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     enum Outcome {
         case received(Data, total: Int64?)
-        /// Not a proper range reply: the source turns itself off.
-        case refused
+        /// The whole file instead of a range, or a range other than the
+        /// one asked for: the source turns itself off.
+        case unusable
+        /// 416: there is nothing at this offset. Carries the file's length
+        /// when the reply gave it.
+        case pastEnd(total: Int64?)
+        /// Anything else that isn't the bytes. Worth another try later.
         case failed
         case cancelled
     }
@@ -232,7 +270,8 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
     private var outcome: Outcome?
     private var body = Data()
     private var total: Int64?
-    private var isRefused = false
+    /// How many bytes the reply said it carries.
+    private var expected = 0
 
     init(start: Int64, limit: Int, allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool) {
         self.start = start
@@ -250,6 +289,8 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
         if isFirst { done.signal() }
     }
 
+    private var isFinished: Bool { lock.withLock { outcome != nil } }
+
     func wait(seconds: TimeInterval) -> Outcome {
         _ = done.wait(timeout: .now() + seconds)
         return lock.withLock {
@@ -261,49 +302,65 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        // A refused redirect ends the task with the redirect reply, which
-        // isn't a range reply, so the source turns itself off.
+        // A refused redirect ends the task with the redirect reply itself,
+        // which fails this read like any other reply that isn't the bytes.
         completionHandler(allowsRedirect(response.url, request.url) ? request : nil)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        // 200 means the server ignored the range and is sending the whole
-        // file, which must never be downloaded for a preview.
-        guard let http = response as? HTTPURLResponse, http.statusCode == 206,
-              let range = Self.contentRange(http.value(forHTTPHeaderField: "Content-Range")),
-              range.first == start, range.last - range.first < Int64(limit)
-        else {
-            isRefused = true
+        guard let http = response as? HTTPURLResponse else {
             completionHandler(.cancel)
-            finish(.refused)
+            finish(.failed)
             return
         }
-        total = range.total
-        body.reserveCapacity(Int(range.last - range.first + 1))
-        completionHandler(.allow)
+        switch http.statusCode {
+        case 206:
+            // The range must be the one asked for: it starts where the
+            // read starts and is no longer than the block.
+            guard let range = Self.contentRange(http.value(forHTTPHeaderField: "Content-Range")),
+                  range.first == start, range.last - range.first < Int64(limit)
+            else {
+                completionHandler(.cancel)
+                finish(.unusable)
+                return
+            }
+            total = range.total
+            expected = Int(range.last - range.first + 1)
+            body.reserveCapacity(expected)
+            completionHandler(.allow)
+        case 200:
+            // The server ignored the range and is sending the whole file,
+            // which must never be downloaded for a preview.
+            completionHandler(.cancel)
+            finish(.unusable)
+        case 416:
+            completionHandler(.cancel)
+            finish(.pastEnd(total: Self.unsatisfiedTotal(http.value(forHTTPHeaderField: "Content-Range"))))
+        default:
+            completionHandler(.cancel)
+            finish(.failed)
+        }
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard !isRefused else { return }
+        guard !isFinished else { return }
         body.append(data)
-        if body.count > limit {
-            isRefused = true
+        if body.count > expected {
+            // More than the reply said it carries: not the range it claims.
             body = Data()
             dataTask.cancel()
-            finish(.refused)
+            finish(.unusable)
         }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if isRefused {
-            finish(.refused)
-        } else if error != nil || body.isEmpty {
-            // A redirect that was refused completes without an error and
-            // without a body reaching here: its reply was never a 206.
-            finish(error == nil && (task.response as? HTTPURLResponse)?.statusCode != 206 ? .refused : .failed)
-        } else {
+        // A reply that ends short of what it promised is a dropped
+        // connection, whether or not the session calls it an error.
+        if error == nil, expected > 0, body.count == expected {
             finish(.received(body, total: total))
+        } else {
+            finish(.failed)
         }
         body = Data()
     }
@@ -320,6 +377,16 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
         if parts[1] == "*" { return (first, last, nil) }
         guard let total = Int64(parts[1]), total > last else { return nil }
         return (first, last, total)
+    }
+
+    /// Reads the length out of a 416 reply's `bytes */total`.
+    static func unsatisfiedTotal(_ value: String?) -> Int64? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard trimmed.lowercased().hasPrefix("bytes ") else { return nil }
+        let parts = trimmed.dropFirst(6).trimmingCharacters(in: .whitespaces).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0] == "*", let total = Int64(parts[1]), total >= 0 else { return nil }
+        return total
     }
 }
 
