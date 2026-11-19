@@ -626,6 +626,7 @@ The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDeta
 
 blurbery checked these layouts in the iPhone Duo simulator (iOS 27.1, Xcode 27.1), folding and turning it with Device Hub, including the half-folded player and Search.
 No physical iPhone Duo has been tested.
+The Next Up sizes on both screens and its half-folded layout were checked in the simulator with a placeholder video, not with real playback reaching Next Up.
 Edge swipe back, the player's motion-based rotation on the inner screen, real hinge angles and the PiP and AirPlay buttons in the half-folded deck, which the simulator can't show working, still need a device.
 Moving down for widgets was checked on the inner screen in landscape by making the band 40 points longer in a test build; adding a real widget hasn't been tried yet.
 
