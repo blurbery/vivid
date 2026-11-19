@@ -184,6 +184,7 @@ private struct TVEpisodeRailCard: View {
                 }
             }
             .frame(width: cardWidth, alignment: .leading)
+            .overlay { TVTitleFocusRing() }
         }
         .buttonStyle(.card)
         .focused(focus, equals: episode.contentId)

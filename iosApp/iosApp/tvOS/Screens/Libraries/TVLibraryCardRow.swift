@@ -404,6 +404,7 @@ private struct LibraryCardButtonStyle: ButtonStyle {
 
         var body: some View {
             label
+                .overlay { TVFocusRing(cornerRadius: 12, cornerStyle: .circular) }
                 .modifier(LibraryCardWobble(active: isArranging, rocksLeftFirst: rocksLeftFirst))
                 .scaleEffect(scale)
                 .shadow(color: .black.opacity(isFocused ? 0.5 : 0), radius: isFocused ? 26 : 0, y: isFocused ? 16 : 0)

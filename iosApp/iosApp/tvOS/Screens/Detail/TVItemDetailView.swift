@@ -45,6 +45,9 @@ struct TVItemDetailView: View {
 
     var body: some View {
         content
+            // Episodes, cast and trailers ring in the colour the page was
+            // opened in.
+            .tvTitleFocusRing()
             .environment(\.seasonWatchedAction, { [viewModel] id, played in
                 await viewModel.setSeasonWatched(contentId: id, played: played)
             })

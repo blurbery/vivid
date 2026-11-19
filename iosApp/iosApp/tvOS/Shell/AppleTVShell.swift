@@ -161,6 +161,8 @@ struct TVMainTabView: View {
         }
         .onChange(of: router.path.isEmpty, initial: true) {
             TVAdaptiveAmbience.shared.isOnRootPage = router.path.isEmpty
+            // Back on a root page: no More Like This poster to open from.
+            if router.path.isEmpty { TVAdaptiveAmbience.shared.carry(artwork: nil) }
         }
         .onChange(of: router.path.isEmpty) { pathEmptinessChanged() }
         .onChange(of: router.path.count) { old, new in

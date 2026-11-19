@@ -28,6 +28,9 @@ final class TVAdaptiveAmbience {
 
     /// The colour on show, or nil for the base theme.
     private(set) var tint: Color?
+    /// `tint` as the focused card's ring draws it, or nil for the base
+    /// theme's white ring. Only the focused card's `TVFocusRing` reads it.
+    private(set) var ringTint: Color?
 
     /// Set by the backdrop from Theme Mode. Off, focus reports return at once.
     @ObservationIgnored var isActive = false
@@ -45,9 +48,17 @@ final class TVAdaptiveAmbience {
     @ObservationIgnored private var requested: String?
     @ObservationIgnored private var pending: Task<Void, Never>?
     @ObservationIgnored private var tints: [String: Color] = [:]
+    /// Ring colours by artwork, for pages the backdrop isn't behind: one
+    /// look-up per artwork, shared while it runs and kept when it finds
+    /// nothing, so a card that takes focus again never repeats the work.
+    @ObservationIgnored private var ringLookups: [String: Task<Color?, Never>] = [:]
+    @ObservationIgnored private var ringColours: [String: Color] = [:]
+    /// The poster focus rests on on a page the backdrop isn't behind (More
+    /// Like This), so a page opened from it opens in its colour.
+    @ObservationIgnored private var carriedArtwork: String?
 
     /// How long focus rests on a card before its colour is used.
-    private static let settle: Duration = .milliseconds(200)
+    static let settle: Duration = .milliseconds(200)
     private static let rememberedLimit = 400
 
     private init() {
@@ -65,6 +76,7 @@ final class TVAdaptiveAmbience {
     /// browsing page is showing, so the other modes do no work on a focus
     /// move.
     func focused(artwork: @autoclosure () -> String?, source: Source = .card) {
+        carriedArtwork = nil
         guard isActive, isOnRootPage || isOnBrowsingPage else { return }
         guard let raw = artwork(), !raw.isEmpty else {
             // A card with no artwork: don't let the card before it land late.
@@ -99,9 +111,7 @@ final class TVAdaptiveAmbience {
             // Spotlight tints are saved under the slide's own address.
             url = URL(string: raw)
         case .card:
-            // As the card resolved it to draw it.
-            let base = MediaServerProvider.active == .silo ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
-            url = SiloAPICompatibility.artworkURL(raw, relativeTo: base)
+            url = Self.cardURL(raw)
         }
         guard let url else { return }
         requested = raw
@@ -113,8 +123,64 @@ final class TVAdaptiveAmbience {
             guard !Task.isCancelled, self.isActive, self.requested == raw else { return }
             // Nothing to show; let the card try again next time it's focused.
             guard let colour else { self.requested = nil; return }
-            if self.tint != colour { self.tint = colour }
+            if self.tint != colour {
+                self.tint = colour
+                self.ringTint = TVFocusRing.colour(for: colour)
+            }
         }
+    }
+
+    /// A card's artwork address, as the card resolved it to draw it.
+    private static func cardURL(_ raw: String) -> URL? {
+        let base = MediaServerProvider.active == .silo ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        return SiloAPICompatibility.artworkURL(raw, relativeTo: base)
+    }
+
+    /// The focus ring's colour for a card's own artwork, for pages the
+    /// backdrop isn't behind (a detail page). Nil, for a white ring, unless
+    /// Theme Mode is Adaptive. It shares the backdrop's look-up and memory
+    /// and changes nothing observed.
+    func ringColour(forCardArtwork raw: String?) async -> Color? {
+        guard isActive, let raw, !raw.isEmpty else { return nil }
+        if let known = ringColours[raw] { return known }
+        if let running = ringLookups[raw] { return await running.value }
+        guard let url = Self.cardURL(raw) else { return nil }
+        if ringLookups.count >= Self.rememberedLimit {
+            ringLookups.removeAll(keepingCapacity: true)
+            ringColours.removeAll(keepingCapacity: true)
+        }
+        let lookup = Task { [weak self] () -> Color? in
+            guard let self, let tint = await self.colour(for: url, source: .card) else { return nil }
+            let ring = TVFocusRing.colour(for: tint)
+            // Unless a reset dropped this look-up while it ran.
+            if self.ringLookups[raw] != nil { self.ringColours[raw] = ring }
+            return ring
+        }
+        ringLookups[raw] = lookup
+        return await lookup.value
+    }
+
+    /// A poster on a page with its own backdrop took focus.
+    func carry(artwork raw: String?) {
+        carriedArtwork = raw
+    }
+
+    /// The ring colour a detail page opens in: the poster focus was on if
+    /// the page before had its own backdrop, otherwise the colour the
+    /// backdrop is showing, once any look-up for the card just pressed has
+    /// landed. Nil, for white, unless Theme Mode is Adaptive.
+    func openingRingColour() async -> Color? {
+        guard isActive else { return nil }
+        if let carriedArtwork { return await ringColour(forCardArtwork: carriedArtwork) }
+        await pending?.value
+        return ringTint
+    }
+
+    /// That colour when it's already known: one dictionary read, so it is
+    /// safe on a focus move.
+    func rememberedRingColour(forCardArtwork raw: String?) -> Color? {
+        guard isActive, let raw else { return nil }
+        return ringColours[raw]
     }
 
     /// Back to the base theme, for Theme Mode changes and when the tab shell
@@ -125,6 +191,10 @@ final class TVAdaptiveAmbience {
         pending = nil
         requested = nil
         if tint != nil { tint = nil }
+        if ringTint != nil { ringTint = nil }
+        ringLookups.removeAll()
+        ringColours.removeAll()
+        carriedArtwork = nil
     }
 
     private func colour(for url: URL, source: Source) async -> Color? {
@@ -148,10 +218,11 @@ final class TVAdaptiveAmbience {
 /// A browsing page pushed over the root pages (a library, a collection, or
 /// a studio or network): Theme Mode Adaptive carries on from the page it
 /// was opened from, and this page's posters drive the colour while it is
-/// on show.
+/// on show. Its posters draw the focus ring.
 private struct TVAdaptivePage: ViewModifier {
     func body(content: Content) -> some View {
         content
+            .environment(\.tvPosterFocusRing, .backdrop)
             .background { TVAdaptiveBackdrop(opensInCurrentColour: true) }
             .onAppear { TVAdaptiveAmbience.shared.browsingPage(isShowing: true) }
             .onDisappear { TVAdaptiveAmbience.shared.browsingPage(isShowing: false) }

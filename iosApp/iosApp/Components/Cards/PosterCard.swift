@@ -33,6 +33,8 @@ struct MediaCard: View {
     let userState: MediaItemUserState?
     let titleFont: Font
     let usesHomeCaption: Bool
+    /// Apple TV only: the card draws the focus ring.
+    let showsFocusRing: Bool
     let action: () -> Void
     let playAction: (() -> Void)?
     let focusedItemId: FocusState<String?>.Binding?
@@ -71,6 +73,7 @@ struct MediaCard: View {
         overlayData: OverlayData? = nil,
         titleFont: Font = .vividSubheadline,
         usesHomeCaption: Bool = false,
+        showsFocusRing: Bool = false,
         action: @escaping () -> Void,
         playAction: (() -> Void)? = nil,
         focusedItemId: FocusState<String?>.Binding? = nil,
@@ -89,6 +92,7 @@ struct MediaCard: View {
         self.userState = userState
         self.titleFont = titleFont
         self.usesHomeCaption = usesHomeCaption
+        self.showsFocusRing = showsFocusRing
         self.action = action
         self.playAction = playAction
         self.focusedItemId = focusedItemId
@@ -313,6 +317,7 @@ struct MediaCard: View {
         focusBound(
             Button(action: action) {
                 artwork(size, pillPadding: 10)
+                    .overlay { if showsFocusRing { TVFocusRing() } }
             }
             .buttonStyle(.card)
         )

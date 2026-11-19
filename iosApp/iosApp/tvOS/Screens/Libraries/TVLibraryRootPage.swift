@@ -205,6 +205,8 @@ extension TVMainTabView {
                     onNearEnd: { _ in Task { await loadPage(reset: false) } },
                     fixedColumnCount: VividTheme.Skyline.posterGridColumns
                 )
+                // A root page, so the Adaptive backdrop is behind it.
+                .environment(\.tvPosterFocusRing, .backdrop)
                 .padding(.horizontal, 80)
                 .padding(.bottom, 48)
             }

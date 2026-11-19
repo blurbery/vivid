@@ -127,7 +127,7 @@ private struct TVCastPersonCard: View {
         // the name.
         VStack(spacing: VividTheme.Skyline.posterCaptionGap) {
             Button(action: action) {
-                photo
+                photo.overlay { TVTitleFocusRing() }
             }
             .buttonStyle(.card)
             .focused(focus, equals: focusKey)
@@ -216,7 +216,7 @@ private struct TVTrailerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button(action: action) {
-                thumbnail
+                thumbnail.overlay { TVTitleFocusRing(cornerRadius: 18) }
             }
             .buttonStyle(.card)
             .buttonBorderShape(.roundedRectangle(radius: 18))

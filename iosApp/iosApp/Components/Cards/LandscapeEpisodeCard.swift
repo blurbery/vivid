@@ -15,6 +15,8 @@ struct EpisodeThumbCard: View {
     let onSetWatched: ((Bool) async -> Bool)?
     let usesRuntimeStatus: Bool
     let usesSeriesBackdrop: Bool
+    /// Home rows draw the focus ring.
+    let showsFocusRing: Bool
 
     @State private var watchedOverride: Bool?
     @FocusState private var isStandaloneFocused: Bool
@@ -35,7 +37,8 @@ struct EpisodeThumbCard: View {
         onSetWatched: ((Bool) async -> Bool)? = nil,
         initialIsFavorite: Bool = false,
         usesRuntimeStatus: Bool = false,
-        usesSeriesBackdrop: Bool = false
+        usesSeriesBackdrop: Bool = false,
+        showsFocusRing: Bool = false
     ) {
         self.item = item
         self.showProgress = showProgress
@@ -48,6 +51,7 @@ struct EpisodeThumbCard: View {
         self.onSetWatched = onSetWatched
         self.usesRuntimeStatus = usesRuntimeStatus
         self.usesSeriesBackdrop = usesSeriesBackdrop
+        self.showsFocusRing = showsFocusRing
     }
 
     // MARK: Values
@@ -164,6 +168,7 @@ struct EpisodeThumbCard: View {
             Button(action: action) {
                 artwork(size)
                     .overlay(alignment: .bottom) { progressOverlay(size) }
+                    .overlay { if showsFocusRing { TVFocusRing() } }
             }
             .buttonStyle(.card)
         )

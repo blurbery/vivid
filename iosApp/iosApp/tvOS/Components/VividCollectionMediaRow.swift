@@ -143,7 +143,8 @@ struct VividCollectionMediaRow: View, Equatable {
                 usesRuntimeStatus: MediaRuntimeStatusOverlay.applies(
                     toType: item.type, inContinueWatching: section.isContinueWatchingSection
                 ),
-                usesSeriesBackdrop: usesSeriesBackdrops
+                usesSeriesBackdrop: usesSeriesBackdrops,
+                showsFocusRing: true
             )
         } else {
             MediaCard(
@@ -154,6 +155,7 @@ struct VividCollectionMediaRow: View, Equatable {
                 subtitle: EpisodeCardCaption.line(for: item),
                 userState: item.userState,
                 overlayData: OverlayData.from(item),
+                showsFocusRing: true,
                 action: { onSelect(item.contentId) },
                 playAction: play,
                 focusedItemId: focus,

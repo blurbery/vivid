@@ -763,7 +763,7 @@ private struct TVSeriesShelfCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button(action: onPlay) {
-                still
+                still.overlay { TVTitleFocusRing() }
             }
             .buttonStyle(.card)
             .focused(focus, equals: episode.contentId)

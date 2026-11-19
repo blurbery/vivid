@@ -416,6 +416,7 @@ private struct CollectionPosterCard: View {
                 poster(size)
                     .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
+                    .overlay { TVFocusRing() }
             }
             .buttonStyle(.card)
             .focused($isFocused)
