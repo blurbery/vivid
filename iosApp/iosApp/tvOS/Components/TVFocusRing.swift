@@ -187,9 +187,10 @@ extension EnvironmentValues {
     }
 }
 
-/// A detail page keeps the ring colour it was opened in: the Adaptive
-/// colour of the card or Spotlight slide that opened it, or of the More
-/// Like This poster on the page before. It is taken once, as the page
+/// A detail page keeps the ring colour it was opened in: the colour the
+/// Adaptive backdrop was showing (the opening card's or Spotlight slide's,
+/// when that card reports focus), or the colour of the More Like This or
+/// collection rail poster focus was on. It is taken once, as the page
 /// opens, and stays while other pages are pushed over it. Only the page's
 /// `TVTitleFocusRing`s read it, so setting it re-evaluates nothing else.
 private struct TVTitleFocusRingSource: ViewModifier {
