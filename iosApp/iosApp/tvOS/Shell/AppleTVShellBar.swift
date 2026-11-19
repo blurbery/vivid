@@ -683,6 +683,12 @@ extension TVMainTabView {
             /// Menu in that same outage goes to tvOS.
             private var isUnrecovered = false
             private var outageWatch: Task<Void, Never>?
+            private var focusObserver: NSObjectProtocol?
+
+            deinit {
+                outageWatch?.cancel()
+                if let focusObserver { NotificationCenter.default.removeObserver(focusObserver) }
+            }
 
             /// Menu presses only; no touches, so clickpad touches stay with
             /// the focused button.
@@ -703,23 +709,38 @@ extension TVMainTabView {
             }
 
             /// Once the recovery has had time to land, marks the press as
-            /// having failed if nothing has focus, then clears the mark as
-            /// soon as focus is back or after ten seconds, so it never
-            /// outlives the outage it belongs to. A later press restarts it.
+            /// having failed if nothing has focus. Focus arriving anywhere,
+            /// at any moment, ends the watch and clears the mark, as does
+            /// ten seconds, so the mark never outlives the outage it
+            /// belongs to. A later press restarts it.
             private func watchOutage(in window: UIWindow?) {
-                outageWatch?.cancel()
-                isUnrecovered = false
+                endOutageWatch()
+                // Posted for every focus move, so the watch can't miss
+                // focus coming back and going again between two checks.
+                focusObserver = NotificationCenter.default.addObserver(
+                    forName: UIFocusSystem.didUpdateNotification, object: nil, queue: .main
+                ) { [weak self] note in
+                    let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext
+                    guard context?.nextFocusedItem != nil else { return }
+                    MainActor.assumeIsolated { self?.endOutageWatch() }
+                }
                 outageWatch = Task { @MainActor [weak self, weak window] in
                     try? await Task.sleep(for: .milliseconds(800))
-                    guard !Task.isCancelled, let self, !Self.hasFocus(in: window) else { return }
+                    guard !Task.isCancelled, let self else { return }
+                    guard !Self.hasFocus(in: window) else { return self.endOutageWatch() }
                     self.isUnrecovered = true
-                    for _ in 0..<20 {
-                        try? await Task.sleep(for: .milliseconds(500))
-                        guard !Task.isCancelled else { return }
-                        if Self.hasFocus(in: window) { break }
-                    }
-                    self.isUnrecovered = false
+                    try? await Task.sleep(for: .seconds(10))
+                    guard !Task.isCancelled else { return }
+                    self.endOutageWatch()
                 }
+            }
+
+            private func endOutageWatch() {
+                outageWatch?.cancel()
+                outageWatch = nil
+                isUnrecovered = false
+                if let focusObserver { NotificationCenter.default.removeObserver(focusObserver) }
+                focusObserver = nil
             }
 
             private static func hasFocus(in window: UIWindow?) -> Bool {

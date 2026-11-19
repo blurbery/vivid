@@ -384,7 +384,7 @@ Menu pressed while the focus engine holds nothing can't reach any page's `onExit
 That could happen for a moment after an option menu closed or a page went.
 The shell catches that press on its window, only while nothing has focus and no player is on screen, and asks the focus engine to pick an item again.
 If nothing has focus 0.3 seconds later it runs the focus watchdog's repair, or only asks the focus engine again while a cover, sheet or alert is presented.
-If nothing has focus 0.8 seconds after a caught press, Menu goes to tvOS until focus is back or ten seconds pass, so Menu can always leave the app; a press inside that 0.8 seconds is caught again.
+If nothing has focus 0.8 seconds after a caught press, Menu goes to tvOS until focus next arrives anywhere or ten seconds pass, so Menu can always leave the app; a press inside that 0.8 seconds is caught again.
 
 The server address page leaves Menu to the navigation stack: Back pops the page, which cancels a connection in progress.
 While it connects, Cancel sits beside Connect.
