@@ -151,6 +151,22 @@ Click the image to open it, then click a sponsor to visit their profile.
   <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/become%20a%20sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Become a sponsor on GitHub"></a>
 </p>
 
+## Code review
+
+<p align="center">
+  <a href="https://coderabbit.link/blurbery">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/images/coderabbit-logo-white.svg">
+      <img src="docs/images/coderabbit-logo-orange.svg" width="320" alt="CodeRabbit">
+    </picture>
+  </a>
+</p>
+
+A massive thank you to [CodeRabbit](https://coderabbit.link/blurbery) for supporting Vivid.
+CodeRabbit reviews Vivid's pull requests line by line, catches bugs before they reach the app and checks them against Vivid's own rules.
+The CodeRabbit team kindly gave Vivid extra review credits, which makes a real difference on days when I open several pull requests.
+It's been a genuinely useful second set of eyes, and it's free for open-source projects, so if you maintain one it's well worth a look.
+
 ## Licence
 
 Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION).
