@@ -59,8 +59,9 @@ final class TVAdaptiveAmbience {
     @ObservationIgnored private var carriedArtwork: String?
     /// Goes up with each change to what is carried.
     @ObservationIgnored private var carryChanges = 0
-    /// Goes up on a reset, so a look-up begun for another profile, server
-    /// or Theme Mode can't store its colour afterwards.
+    /// Goes up whenever the look-ups are dropped (a reset, or the memory
+    /// filling), so one begun before can't store its colour or remove a
+    /// newer look-up's entry afterwards.
     @ObservationIgnored private var ringGeneration = 0
 
     /// How long focus rests on a card before its colour is used.
@@ -154,6 +155,9 @@ final class TVAdaptiveAmbience {
         if ringLookups.count >= Self.rememberedLimit {
             ringLookups.removeAll(keepingCapacity: true)
             ringColours.removeAll(keepingCapacity: true)
+            // Look-ups still running were dropped too: they mustn't touch
+            // the entries of any that start again for the same artwork.
+            ringGeneration += 1
         }
         let generation = ringGeneration
         let lookup = Task { [weak self] () -> Color? in
