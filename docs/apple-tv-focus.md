@@ -131,9 +131,20 @@ The rows have been seen on the Apple TV simulator, but moving focus through them
 The one exception is a cold launch: Search opens while the startup hand-off still disables the content, so when the content is enabled the shell asks the focus engine to re-resolve once (the same request the focus watchdog makes), which lands on the search field.
 
 Media cards across Home, Search, Library, library pages and detail pages use SwiftUI’s native `.card` button style, including collection posters, episodes, trailers and cast.
-The system owns their focus lift, shadow and animation; cards add no custom focus scale, shadow or animated artwork border.
-The library cards in Library's row and in its arrange grid are the exception: they draw their own focus, growing and lifting on a shadow with no system card platter, so nothing shows around a card while it rocks in the grid.
+The system owns their focus lift, shadow and animation; cards add no custom focus scale or shadow, and the only border is the focus ring described below.
+The library cards in Library's row and in its arrange grid are the exception: they draw their own focus, growing and lifting on a shadow with no system card platter, so only the focus ring shows around a card while it rocks in the grid.
 A picked-up card grows a little more.
+Some cards also draw a 4-point focus ring inside their button label, so it moves with the lift: every card in Home's rows (Continue Watching and Next Up included), Home's Collections row and the Collections grid, the Studios & Networks tiles, Library's library cards, the posters on the Library tab's own grid and on a library, collection, studio or network page, and on detail pages the episode cards, cast photos, trailers, More Like This and a movie's collection rail.
+On a native card the ring has the system card's 16-point continuous corners, since the `.card` style clips its label to them and would shave a ring drawn at the artwork's 12 points.
+Trailer cards set an 18-point border shape, so their ring uses 18; library cards have no system platter, so theirs keeps the artwork's corners.
+The ring is white on the base theme, and while Theme Mode Adaptive shows a colour it takes that colour's hue at full brightness with the saturation held back, so it stands off the dark backdrop of the same hue.
+A detail page has its own backdrop, so with Adaptive on its episode cards, cast photos and trailers keep the ring colour the page was opened in: the colour the Adaptive backdrop was showing, taken once as the page opens.
+That is the colour of the card or Spotlight slide that opened it when that card reports focus; a page opened from Search, Calendar, a person's page or another detail page's episode, cast or trailer card takes the colour the backdrop last showed.
+Each More Like This or collection rail poster takes its own colour, once focus has rested on it as the backdrop requires, and a page opened from one opens in that poster's colour.
+That hand-over ends a second after focus leaves the poster.
+A poster's look-up is shared while it runs and its colour remembered, up to 400 posters before the memory is cleared; one that finds nothing is tried again the next time focus rests on the poster.
+`TVFocusRing` reads the button's focus from the environment and builds its stroke only while focused, so a focus move re-evaluates two small views and only the focused card observes the Adaptive ring colour or looks one up.
+Search, Calendar, a person's page and the Spotlight draw no ring.
 Resume progress is inside the artwork button so it moves with the native effect.
 Trailer and cast captions sit outside the native card button; its effect follows only the thumbnail or portrait poster.
 The Cast & Crew rail's group dividers are plain views with no focus target, so directional movement goes straight from one poster to the next and the first person in the first group stays the rail's default focus.

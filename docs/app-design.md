@@ -81,6 +81,7 @@ The spotlight's space is 960 points tall, 60 points in from every edge of the sc
 Its native focus targets use a fixed decorative gradient outline, without focus enlargement, parallax or a blurred colour glow.
 Ordinary media cards retain native `.card` focus.
 The library cards in Library's row draw their own focus instead, growing and lifting on a shadow.
+Most Apple TV cards also draw a focus ring: white on the base theme, and in the focused artwork's colour while Theme Mode is Adaptive (see [Apple TV Focus](apple-tv-focus.md)).
 Server artwork uses subject-aware cropping; Spotlight makes no TMDb requests.
 Root pages share the selected static theme canvas, except Home's first screen with Theme Mode on Spotlight Only and a spotlight on Home, and every root page with Theme Mode on Adaptive (which also covers the library, collection and studio or network pages pushed over them), and a tab bar that hangs from the top edge like a notch, with Search and Profile dividers, without a separate corner logo.
 

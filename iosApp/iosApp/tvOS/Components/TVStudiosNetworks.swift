@@ -60,6 +60,7 @@ struct TVStudiosNetworksRow: View {
                                 router.navigate(to: .studioNetwork(brandId: id))
                             } label: {
                                 TVStudioNetworkTile(id: id, width: tileWidth)
+                                    .overlay { TVFocusRing() }
                             }
                             .buttonStyle(.card)
                             .focused($focusedTile, equals: id)

@@ -374,9 +374,9 @@ private final class LibraryCollageStore {
 }
 
 /// A library card's own focus look: it grows and lifts on a shadow, with
-/// no system platter behind it, so nothing shows around a card while it
-/// rocks. A picked-up card grows a little more, like an app being moved on
-/// the Apple TV Home Screen.
+/// no system platter behind it, so only its focus ring shows around a card
+/// while it rocks. A picked-up card grows a little more, like an app being
+/// moved on the Apple TV Home Screen.
 private struct LibraryCardButtonStyle: ButtonStyle {
     let isArranging: Bool
     let isPickedUp: Bool
@@ -404,6 +404,7 @@ private struct LibraryCardButtonStyle: ButtonStyle {
 
         var body: some View {
             label
+                .overlay { TVFocusRing(cornerRadius: 12, cornerStyle: .circular) }
                 .modifier(LibraryCardWobble(active: isArranging, rocksLeftFirst: rocksLeftFirst))
                 .scaleEffect(scale)
                 .shadow(color: .black.opacity(isFocused ? 0.5 : 0), radius: isFocused ? 26 : 0, y: isFocused ? 16 : 0)

@@ -141,6 +141,7 @@ struct TVMediaCard: View {
                 }
             }
             .frame(width: size.width, height: size.height)
+            .overlay { TVPageFocusRing(artwork: posterUrl) }
         }
         .buttonStyle(.card)
         .focused($isFocused)

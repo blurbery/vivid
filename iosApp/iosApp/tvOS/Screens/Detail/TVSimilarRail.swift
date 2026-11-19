@@ -123,6 +123,9 @@ struct TVPosterRail: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         .focusSection()
+        // A detail page has its own backdrop, so each poster's ring takes
+        // its own colour.
+        .environment(\.tvPosterFocusRing, .ownArtwork)
         .defaultFocus($focusedId, items.first?.contentId, priority: .userInitiated)
         .onChange(of: focusedId) { _, newValue in
             onFocusChange?(newValue != nil)

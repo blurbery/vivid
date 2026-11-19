@@ -107,6 +107,7 @@ struct TVHomeCollectionsRow: View {
             posterUrl: entry.collection.posterUrl ?? "",
             thumbhash: entry.collection.posterThumbhash,
             subtitle: entry.collection.itemCount.map { String(localized: "\($0) titles") },
+            showsFocusRing: true,
             action: { open(entry) },
             focusedItemId: $focusedCard,
             contentId: entry.id,
