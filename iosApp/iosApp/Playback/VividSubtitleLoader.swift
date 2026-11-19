@@ -278,3 +278,10 @@ final class FrameExtractor {
         generator.cancelAllCGImageGeneration()
     }
 }
+
+/// The scrub preview provider reaches the reader through this seam.
+extension FrameExtractor: ScrubStillSource {
+    func canProduceStills() async -> Bool {
+        (try? await asset.load(.isPlayable)) == true
+    }
+}

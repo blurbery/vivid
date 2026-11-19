@@ -820,6 +820,7 @@ class PlayerViewModel {
             self.scrubPreviewImage = preview?.image
             self.scrubPreviewImageSourceTime = preview?.sourceTime
         }
+        scrubPreviewProvider.stillPlayer = keyframeStillPlayer
         vividPlaybackController.onEvent = { [weak self] event in
             self?.handleVividEvent(event)
         }

@@ -9,6 +9,11 @@ import Foundation
 /// target moves. Where the server has none, iPhone and iPad fall back to
 /// reading a frame from the stream, and Apple TV shows no still.
 ///
+/// A third source sits behind a hidden switch that is off unless set:
+/// ``KeyframeStillService`` makes stills from the file's own keyframes for
+/// a load with no sheets and no working frame reader. With the switch off
+/// none of it is created.
+///
 /// The controls scrub in source-media time. Sheets are indexed on that axis,
 /// but the engine's frame reader works on the loaded transport's own clock.
 /// Doing the conversion here, behind session and request counters, stops a
@@ -35,7 +40,7 @@ final class VividScrubPreviewProvider {
     private struct Job {
         let sourceTime: Double
         let transportTime: Double
-        let reader: FrameExtractor
+        let reader: any ScrubStillSource
         let session: UInt64
         let ticket: UInt64
     }
@@ -54,9 +59,9 @@ final class VividScrubPreviewProvider {
 
     private let engine: VividEngine
     private let makeStore: @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore
-    private let makeReader: @MainActor (VividLoadSpec) -> FrameExtractor?
+    private let makeReader: @MainActor (VividLoadSpec) -> (any ScrubStillSource)?
     private var load: VividLoadSpec?
-    private var reader: FrameExtractor?
+    private var reader: (any ScrubStillSource)?
     /// Moves on with every load and every session end.
     private var session: UInt64 = 0
     /// Moves on with every request, so only the newest one may publish.
@@ -96,16 +101,44 @@ final class VividScrubPreviewProvider {
     /// before the scrub starts.
     private var warmSourceTime: Double?
 
+    /// The player as the keyframe still service sees it. Nil, as in most
+    /// tests, means the service is never made.
+    var stillPlayer: KeyframeStillService.Player?
+    private let stills: KeyframeStillService.Environment
+    /// Whether this platform has a frame reader to try before keyframe
+    /// stills. Where it has, the service waits until the reader has shown
+    /// it can't read the load.
+    private let expectsFrameReader: Bool
+    /// The keyframe still service for this load, once it has started
+    /// playing and every gate allows one.
+    private var stillService: KeyframeStillService?
+    private var stillShutdowns: [UUID: Task<Void, Never>] = [:]
+    /// The frame reader said it can't take stills from this load.
+    private var readerIsUnusable = false
+    /// A scrub found no frame reader for this load.
+    private var readerIsMissing = false
+    /// The load can never have keyframe stills, so none is tried again.
+    private var stillsAreRuledOut = false
+    private var stillCarry: KeyframeStillService.Carry?
+
     init(
         engine: VividEngine,
         makeStore: @escaping @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore = { ScrubPreviewSheetStore(sheets: $0) },
-        makeReader: (@MainActor (VividLoadSpec) -> FrameExtractor?)? = nil
+        makeReader: (@MainActor (VividLoadSpec) -> (any ScrubStillSource)?)? = nil,
+        stills: KeyframeStillService.Environment = .init(),
+        expectsFrameReader: Bool? = nil
     ) {
         self.engine = engine
         self.makeStore = makeStore
         self.makeReader = makeReader ?? { spec in
             engine.makeFrameExtractor(url: spec.sourceURL, httpHeaders: spec.options.httpHeaders)
         }
+        self.stills = stills
+        #if os(iOS)
+        self.expectsFrameReader = expectsFrameReader ?? true
+        #else
+        self.expectsFrameReader = expectsFrameReader ?? false
+        #endif
     }
 
     /// Readies previews for a load that has opened, without asking the
@@ -151,6 +184,9 @@ final class VividScrubPreviewProvider {
         if sheetLoad == nil, let pending = scrubSourceTime {
             request(atSourceTime: pending)
         }
+        // Only now, after the first frame. With the switch off this makes
+        // nothing.
+        startStillService()
     }
 
     /// Opens one scrub and clears the last still.
@@ -158,6 +194,7 @@ final class VividScrubPreviewProvider {
         guard load != nil else { return }
         onPreview?(nil)
         shownTile = nil
+        stillService?.clearTarget()
         refreshSheetsIfNeeded()
         request(atSourceTime: sourceTime)
     }
@@ -197,6 +234,8 @@ final class VividScrubPreviewProvider {
         store?.setScrubbing(false)
         supersedePending()
         retireReader()
+        // The still service keeps its reader for the load.
+        stillService?.endScrub()
     }
 
     /// Detaches the load straight away and starts shutting its reader down.
@@ -221,9 +260,13 @@ final class VividScrubPreviewProvider {
         sheetFetch = nil
         warmSourceTime = nil
         if !keepingSheets { dropStore() }
+        retireStillService()
+        readerIsUnusable = false
+        readerIsMissing = false
+        stillsAreRuledOut = false
         // Read after `endInteraction()`, so the reader it just retired is
         // waited for too.
-        let shutdowns = Array(readerShutdowns.values)
+        let shutdowns = Array(readerShutdowns.values) + Array(stillShutdowns.values)
         let runningWorker = worker
         if shutdowns.isEmpty, runningWorker == nil { return nil }
         return Task {
@@ -246,6 +289,7 @@ final class VividScrubPreviewProvider {
             self.sheetLoad = nil
             guard let sheets, sheets.key == source.key, !sheets.isExpiring() else {
                 self.sheetLoadFailedAt = Date()
+                self.startStillService()
                 // A scrub that was waiting on the list goes to the frame
                 // reader instead, where there is one.
                 if self.store == nil, let pending = self.scrubSourceTime {
@@ -254,6 +298,9 @@ final class VividScrubPreviewProvider {
                 return
             }
             self.sheetLoadFailedAt = nil
+            // Sheets win: a keyframe service started while there were none
+            // goes.
+            self.retireStillService()
             self.dropStore()
             self.store = self.makeStore(sheets)
             self.storeIsLive = true
@@ -400,16 +447,25 @@ final class VividScrubPreviewProvider {
             supersedePending()
             return
         }
+        if startStillService() {
+            requestFromStills(atSourceTime: sourceTime)
+            return
+        }
         guard case let .local(transportTime) = spec.timeline.seekDisposition(forSourceTime: sourceTime) else {
             supersedePending()
             return
         }
-        if reader == nil {
+        if reader == nil, !readerIsUnusable {
             reader = makeReader(spec)
         }
         // Apple TV has no frame reader, so it starts no worker either.
         guard let reader else {
-            supersedePending()
+            readerIsMissing = true
+            if startStillService() {
+                requestFromStills(atSourceTime: sourceTime)
+            } else {
+                supersedePending()
+            }
             return
         }
         ticket &+= 1
@@ -432,6 +488,7 @@ final class VividScrubPreviewProvider {
         shownTile = nil
         staleStillClear?.cancel()
         staleStillClear = nil
+        stillService?.clearTarget()
         onPreview?(nil)
     }
 
@@ -455,6 +512,17 @@ final class VividScrubPreviewProvider {
 
             let still = await job.reader.thumbnail(at: job.transportTime, maxWidth: Self.stillWidth)
 
+            if still == nil, job.session == session, stillPlayer != nil, stills.isEnabled(),
+               !(await job.reader.canProduceStills()), job.session == session {
+                // AVFoundation can't read this file at all. The keyframe
+                // service takes the load from here, where it may.
+                readerIsUnusable = true
+                retireReader()
+                if startStillService(), let pending = scrubSourceTime {
+                    request(atSourceTime: pending)
+                }
+                continue
+            }
             guard job.session == session, job.ticket == ticket, let still else { continue }
             shownTile = nil
             onPreview?(Preview(image: still, sourceTime: job.sourceTime))
@@ -468,6 +536,74 @@ final class VividScrubPreviewProvider {
         readerShutdowns[key] = Task { @MainActor [weak self] in
             await retiring.shutdown()
             self?.readerShutdowns[key] = nil
+        }
+    }
+
+    // MARK: - Keyframe stills
+
+    /// True when this load has a keyframe still service, making one if it
+    /// has none yet and every gate allows it: the hidden switch, no server
+    /// sheets, no frame reader that works, and the service's own (see
+    /// `KeyframeStillService.gate`). Never before the load's first frame.
+    @discardableResult
+    private func startStillService() -> Bool {
+        if let stillService {
+            if !stillService.isFinished { return true }
+            // It ended itself: the app went to the background, or the file
+            // turned out to be one it can't read.
+            retireStillService()
+        }
+        guard hasStarted, !stillsAreRuledOut, let spec = load, let stillPlayer,
+              !expectsFrameReader || readerIsUnusable || readerIsMissing
+        else { return false }
+        let hasSheets = storeIsLive || sheetLoad != nil || (sheetSource != nil && sheetLoadFailedAt == nil)
+        stillService = KeyframeStillService.makeIfEligible(
+            for: spec, hasServerSheets: hasSheets, player: stillPlayer, environment: stills, carried: stillCarry)
+        return stillService != nil
+    }
+
+    /// Hands the target to the keyframe service. What it already holds
+    /// answers in this call; a still read for it lands later, behind the
+    /// same counters as the frame reader's.
+    private func requestFromStills(atSourceTime sourceTime: Double) {
+        guard let stillService else { return }
+        ticket &+= 1
+        queued = nil
+        staleStillClear?.cancel()
+        staleStillClear = nil
+        if shownTile != nil {
+            // A sheet's still mustn't outlive the sheet that failed.
+            shownTile = nil
+            stillService.clearTarget()
+            onPreview?(nil)
+        }
+        let expectedSession = session, expectedTicket = ticket
+        let answer = stillService.request(atSourceTime: sourceTime) { [weak self] image, target in
+            guard let self, self.session == expectedSession, self.ticket == expectedTicket else { return }
+            self.onPreview?(image.map { Preview(image: $0, sourceTime: target) })
+        }
+        switch answer {
+        case let .still(image): onPreview?(Preview(image: image, sourceTime: sourceTime))
+        case .cleared: onPreview?(nil)
+        case .unchanged: break
+        }
+    }
+
+    #if DEBUG
+    /// Tests only.
+    var debugStillService: KeyframeStillService? { stillService }
+    #endif
+
+    private func retireStillService() {
+        guard let retiring = stillService else { return }
+        stillService = nil
+        stillCarry = retiring.carry
+        if retiring.isRuledOut { stillsAreRuledOut = true }
+        guard let shutdown = retiring.shutdown() else { return }
+        let key = UUID()
+        stillShutdowns[key] = Task { @MainActor [weak self] in
+            await shutdown.value
+            self?.stillShutdowns[key] = nil
         }
     }
 }

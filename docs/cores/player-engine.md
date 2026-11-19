@@ -36,6 +36,7 @@ Scrub previews use the server's preview sheets first, on every platform; see [Tr
 Without them, native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read.
 Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available.
 Apple TV scrubbing does not start frame extraction.
+A keyframe still reader that calls Lucid Engine's FFmpeg directly, outside the player's libmpv context, is built into the app but does nothing unless a hidden debug default is set; see the same section for its gates.
 
 ## Player bridge
 

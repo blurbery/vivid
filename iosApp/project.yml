@@ -156,6 +156,8 @@ targets:
       # Keyframe stills: the C shim over the shipped FFmpeg, the byte
       # sources and the tone mapper, with their generated fixtures.
       - path: Tests/KeyframeStillReaderTests.swift
+      # The keyframe still service: gates, cache, read-ahead and teardown.
+      - path: Tests/KeyframeStillServiceTests.swift
       - path: Tests/Fixtures/Stills/stills_h264_bframes.mkv
         buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_h264_bframes.mp4
