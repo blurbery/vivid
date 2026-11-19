@@ -128,6 +128,11 @@ extension PlayerViewModel {
         } else {
             vividPlaybackController.pause()
         }
+        // The first frame can land while the load is still finishing, before
+        // previews were readied, and that milestone only fires once.
+        if startedVividLoadEpoch == loadEpoch {
+            scrubPreviewProvider.playbackStarted()
+        }
     }
 
     /// Where this playback's seek-bar preview sheets come from, if its server

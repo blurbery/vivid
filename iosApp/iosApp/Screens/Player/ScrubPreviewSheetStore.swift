@@ -43,6 +43,9 @@ final class ScrubPreviewSheetStore {
     /// The newest decode. The next waits for it, so two sheets never decode
     /// together even when two loads of the same file overlap.
     private var lastDecode: Task<Void, Never>?
+    /// Tests only: runs just before a sheet is decoded, once the decode
+    /// before it has finished.
+    var willDecode: (@MainActor (Int) async -> Void)?
 
     private var observers: [NSObjectProtocol] = []
 
@@ -126,6 +129,7 @@ final class ScrubPreviewSheetStore {
             // one after it can't start while the one before still runs.
             await previous?.value
             guard let bytes, !Task.isCancelled else { return nil }
+            await self.willDecode?(sheet)
             let side = Self.maximumSheetSide
             let pixels = Self.maximumSheetPixels
             return await Task.detached(priority: .userInitiated) {

@@ -143,6 +143,8 @@ final class VividScrubPreviewProvider {
         hasStarted = true
         if storeIsLive {
             warmStore()
+            // A scrub that began before the first frame.
+            if let pending = scrubSourceTime { request(atSourceTime: pending) }
         } else if let sheetSource, sheetLoad == nil {
             loadSheets(from: sheetSource)
         }
@@ -260,7 +262,7 @@ final class VividScrubPreviewProvider {
     /// sheets never arrived asks again, twice at most, in case the first
     /// request only failed in passing.
     private func refreshSheetsIfNeeded() {
-        guard sheetLoad == nil, let sheetSource else { return }
+        guard hasStarted, sheetLoad == nil, let sheetSource else { return }
         if let sheetLoadFailedAt, Date().timeIntervalSince(sheetLoadFailedAt) < 30 { return }
         if storeIsLive, let store {
             guard store.sheets.isExpiring() else { return }
@@ -278,7 +280,9 @@ final class VividScrubPreviewProvider {
 
     /// True when the sheets own this target, even if its still isn't in yet.
     private func requestFromSheets(atSourceTime sourceTime: Double) -> Bool {
-        guard storeIsLive, let store,
+        // Until the first frame is up a scrub gets nothing from the sheets,
+        // so even an early scrub can't put requests in startup's way.
+        guard hasStarted, storeIsLive, let store,
               let tile = store.sheets.tile(atSourceTime: sourceTime),
               !store.hasFailed(tile.sheet)
         else { return false }
