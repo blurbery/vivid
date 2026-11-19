@@ -40,9 +40,13 @@ final class ScrubPreviewSheetStore {
     /// work that was already running then doesn't put its result back.
     private var decodedEpoch = 0
     private var dataEpoch = 0
-    /// The newest decode. The next waits for it, so two sheets never decode
-    /// together even when two loads of the same file overlap.
-    private var lastDecode: Task<Void, Never>?
+    /// One sheet decodes at a time. A sheet that's ready while another is
+    /// decoding waits here, in order, so two never decode together even
+    /// when two loads of the same file overlap.
+    private var isDecoding = false
+    private var decodeWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Tests only: how many sheets are waiting for their turn to decode.
+    var decodeWaiterCount: Int { decodeWaiters.count }
     /// Tests only: runs just before a sheet is decoded, once the decode
     /// before it has finished.
     var willDecode: (@MainActor (Int) async -> Void)?
@@ -121,14 +125,11 @@ final class ScrubPreviewSheetStore {
         guard !isShutDown, sheets.sheetURLs.indices.contains(sheet), !hasFailed(sheet) else { return nil }
         if let running = decodes[sheet] { return await running.value }
         let epoch = decodedEpoch
-        let previous = lastDecode
         let task = Task { @MainActor [weak self] () -> CGImage? in
-            guard let self else { return nil }
-            let bytes = await self.bytes(sheet)
-            // Waited for even when this sheet has nothing to decode, so the
-            // one after it can't start while the one before still runs.
-            await previous?.value
-            guard let bytes, !Task.isCancelled else { return nil }
+            guard let self, let bytes = await self.bytes(sheet) else { return nil }
+            await self.enterDecode()
+            defer { self.leaveDecode() }
+            guard !self.isShutDown, !Task.isCancelled else { return nil }
             await self.willDecode?(sheet)
             let side = Self.maximumSheetSide
             let pixels = Self.maximumSheetPixels
@@ -137,7 +138,6 @@ final class ScrubPreviewSheetStore {
             }.value
         }
         decodes[sheet] = task
-        lastDecode = Task { _ = await task.value }
         let image = await task.value
         decodes[sheet] = nil
         if let image {
@@ -148,6 +148,24 @@ final class ScrubPreviewSheetStore {
             markFailed(sheet)
         }
         return image
+    }
+
+    /// Takes the decode turn, waiting in line if a sheet is decoding.
+    private func enterDecode() async {
+        if !isDecoding {
+            isDecoding = true
+            return
+        }
+        await withCheckedContinuation { decodeWaiters.append($0) }
+    }
+
+    /// Hands the turn to the sheet that has waited longest, if any.
+    private func leaveDecode() {
+        if decodeWaiters.isEmpty {
+            isDecoding = false
+        } else {
+            decodeWaiters.removeFirst().resume()
+        }
     }
 
     /// Starts downloading a sheet's JPEG without decoding it, so reaching it
@@ -168,7 +186,10 @@ final class ScrubPreviewSheetStore {
         decodes.values.forEach { $0.cancel() }
         downloads = [:]
         decodes = [:]
-        lastDecode = nil
+        // Everyone in line is let through; they see the shutdown and stop.
+        let waiting = decodeWaiters
+        decodeWaiters = []
+        waiting.forEach { $0.resume() }
         decoded = []
         data = []
         session.invalidateAndCancel()

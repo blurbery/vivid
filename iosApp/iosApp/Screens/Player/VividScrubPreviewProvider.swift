@@ -143,10 +143,13 @@ final class VividScrubPreviewProvider {
         hasStarted = true
         if storeIsLive {
             warmStore()
-            // A scrub that began before the first frame.
-            if let pending = scrubSourceTime { request(atSourceTime: pending) }
         } else if let sheetSource, sheetLoad == nil {
             loadSheets(from: sheetSource)
+        }
+        // A scrub that began before the first frame. With a sheet list on
+        // its way, the list answers it when it lands.
+        if sheetLoad == nil, let pending = scrubSourceTime {
+            request(atSourceTime: pending)
         }
     }
 
@@ -243,6 +246,11 @@ final class VividScrubPreviewProvider {
             self.sheetLoad = nil
             guard let sheets, sheets.key == source.key, !sheets.isExpiring() else {
                 self.sheetLoadFailedAt = Date()
+                // A scrub that was waiting on the list goes to the frame
+                // reader instead, where there is one.
+                if self.store == nil, let pending = self.scrubSourceTime {
+                    self.request(atSourceTime: pending)
+                }
                 return
             }
             self.sheetLoadFailedAt = nil
@@ -280,8 +288,9 @@ final class VividScrubPreviewProvider {
 
     /// True when the sheets own this target, even if its still isn't in yet.
     private func requestFromSheets(atSourceTime sourceTime: Double) -> Bool {
-        // Until the first frame is up a scrub gets nothing from the sheets,
-        // so even an early scrub can't put requests in startup's way.
+        // Until the first frame is up a scrub gets nothing, from the sheets
+        // here or from the frame reader, so even an early scrub can't put
+        // requests in startup's way.
         guard hasStarted, storeIsLive, let store,
               let tile = store.sheets.tile(atSourceTime: sourceTime),
               !store.hasFailed(tile.sheet)
@@ -385,6 +394,12 @@ final class VividScrubPreviewProvider {
 
     private func requestFromReader(atSourceTime sourceTime: Double) {
         guard let spec = load else { return }
+        // The reader opens the stream a second time, so it waits for the
+        // first frame like the sheets do.
+        guard hasStarted else {
+            supersedePending()
+            return
+        }
         guard case let .local(transportTime) = spec.timeline.seekDisposition(forSourceTime: sourceTime) else {
             supersedePending()
             return

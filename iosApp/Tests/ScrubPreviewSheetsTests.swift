@@ -262,8 +262,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         let image = await store.image(0)
         XCTAssertNil(image)
         XCTAssertTrue(store.hasFailed(0))
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertTrue(SheetStub.wasStopped())
+        try await waitUntil { SheetStub.wasStopped() }
         XCTAssertLessThan(SheetStub.chunksSent(), 10)
     }
 
@@ -274,7 +273,8 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         let image = await store.image(0)
         XCTAssertNil(image)
         XCTAssertTrue(store.hasFailed(0))
-        XCTAssertTrue(SheetStub.wasStopped())
+        // The session tells the stub to stop a moment after the refusal.
+        try await waitUntil { SheetStub.wasStopped() }
         XCTAssertLessThan(SheetStub.chunksSent(), 4)
     }
 
@@ -286,35 +286,50 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
         let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
         store.setScrubbing(true)
-        // Sheet 0's decode is held open by the test. If sheet 2's decode
-        // starts while it is, the chain was broken by sheet 1 failing.
-        var decoding: Set<Int> = []
-        var overlapped = false
+        // The test holds sheet 0's decode open, then waits until sheet 2 is
+        // parked in the decode line behind it. That can only be seen if the
+        // store really made sheet 2 wait, so nothing here depends on timing.
+        var started: [Int] = []
         var releaseSheetZero: CheckedContinuation<Void, Never>?
         store.willDecode = { sheet in
-            if sheet == 2, decoding.contains(0) { overlapped = true }
-            decoding.insert(sheet)
+            started.append(sheet)
             if sheet == 0 {
                 await withCheckedContinuation { releaseSheetZero = $0 }
-                decoding.remove(0)
             }
         }
         async let slow = store.image(0)
         try await waitUntil { releaseSheetZero != nil }
-        async let failed = store.image(1)
-        try await waitUntil { store.hasFailed(1) }
+        let failed = await store.image(1)
+        XCTAssertNil(failed)
         async let next = store.image(2)
-        try await waitUntil { SheetStub.requests().contains { $0.url?.lastPathComponent == "2.jpg" } }
-        // Sheet 2's JPEG is in hand; it only has the chain to wait for.
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertFalse(overlapped, "sheet 2 started decoding while sheet 0 was still decoding")
-        XCTAssertFalse(decoding.contains(2))
+        try await waitUntil { store.decodeWaiterCount == 1 }
+        XCTAssertEqual(started, [0], "sheet 2 is waiting its turn, not decoding")
         releaseSheetZero?.resume()
-        let results = await [slow, failed, next]
+        let results = await [slow, next]
         XCTAssertNotNil(results[0])
-        XCTAssertNil(results[1])
-        XCTAssertNotNil(results[2])
-        XCTAssertFalse(overlapped)
+        XCTAssertNotNil(results[1])
+        XCTAssertEqual(started, [0, 2])
+        XCTAssertEqual(store.decodeWaiterCount, 0)
+    }
+
+    func testShuttingDownLetsWaitingDecodesGo() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in (200, jpeg) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        var releaseSheetZero: CheckedContinuation<Void, Never>?
+        store.willDecode = { sheet in
+            if sheet == 0 { await withCheckedContinuation { releaseSheetZero = $0 } }
+        }
+        async let slow = store.image(0)
+        try await waitUntil { releaseSheetZero != nil }
+        async let parked = store.image(1)
+        try await waitUntil { store.decodeWaiterCount == 1 }
+        store.shutdown()
+        let afterShutdown = await parked
+        XCTAssertNil(afterShutdown)
+        releaseSheetZero?.resume()
+        _ = await slow
     }
 
     func testAnOversizedSheetIsRefused() async throws {
@@ -446,7 +461,16 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
         SheetStub.configure { _ in (200, jpeg) }
         let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
-        let (provider, _) = try makeProvider()
+        var readersMade = 0
+        let controller = try VividPlaybackController()
+        let provider = VividScrubPreviewProvider(
+            engine: controller.engine,
+            makeStore: { ScrubPreviewSheetStore(sheets: $0, session: Self.stubSession()) },
+            makeReader: { _ in
+                readersMade += 1
+                return nil
+            }
+        )
         var loads = 0
         let source = VividScrubPreviewProvider.SheetSource(key: sheets.key) {
             loads += 1
@@ -462,6 +486,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         XCTAssertEqual(loads, 0, "the sheet list waits for the first frame")
         XCTAssertEqual(SheetStub.requests().count, 0)
         XCTAssertNil(latest)
+        XCTAssertEqual(readersMade, 0, "and the frame reader isn't opened either")
 
         // Once it's up, the scrub still in progress gets its still.
         provider.playbackStarted()
@@ -482,6 +507,37 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         XCTAssertNil(latest, "the kept sheet isn't used before the first frame either")
         provider.playbackStarted()
         XCTAssertEqual(latest?.sourceTime, 25, "and answers the waiting scrub at once after it")
+        await provider.endSession()?.value
+    }
+
+    func testWithoutSheetsTheFrameReaderAlsoWaitsForTheFirstFrame() async throws {
+        var readersMade = 0
+        let controller = try VividPlaybackController()
+        let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in
+            readersMade += 1
+            return nil
+        })
+        provider.activate(try Self.spec())
+        provider.begin(atSourceTime: 15)
+        provider.request(atSourceTime: 25)
+        XCTAssertEqual(readersMade, 0)
+        provider.playbackStarted()
+        XCTAssertEqual(readersMade, 1, "the scrub in progress is picked up once the first frame is up")
+        await provider.endSession()?.value
+    }
+
+    func testAScrubWaitingOnASheetListThatNeverComesGoesToTheFrameReader() async throws {
+        var readersMade = 0
+        let controller = try VividPlaybackController()
+        let provider = VividScrubPreviewProvider(engine: controller.engine, makeReader: { _ in
+            readersMade += 1
+            return nil
+        })
+        provider.activate(try Self.spec(), sheets: .init(key: "none") { nil })
+        provider.begin(atSourceTime: 15)
+        provider.playbackStarted()
+        XCTAssertEqual(readersMade, 0, "the list is asked first")
+        try await waitUntil { readersMade == 1 }
         await provider.endSession()?.value
     }
 

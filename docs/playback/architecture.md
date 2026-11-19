@@ -274,8 +274,8 @@ Silo lists them at `GET /api/v2/watch/{id}/trickplay`, asked for when a file wit
 Emby and downloads have none.
 [ScrubPreviewSheets](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) maps a source-media time to a sheet and a cell, and [ScrubPreviewSheetStore](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheetStore.swift) downloads and decodes sheets off the main thread.
 A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
-One sheet is decoded at a time, and the newest target decides which comes next; the JPEGs of the sheets either side download in the background, two requests at a time at most.
-The store keeps two sheets decoded while scrubbing and one between scrubs, plus the JPEGs of up to twelve; nothing is asked of the server until the load's first frame is up, even if a scrub starts first, then the sheet list and the sheet around the playhead are fetched, and the sheets either side of the target while scrubbing.
+One sheet is decoded at a time, others waiting their turn in order, and the newest target decides which is asked for next; the JPEGs of the sheets either side download in the background, two requests at a time at most.
+The store keeps two sheets decoded while scrubbing and one between scrubs, plus the JPEGs of up to twelve; nothing is asked of the server for previews until the load's first frame is up, even if a scrub starts first (the iPhone and iPad frame reader waits too), then the sheet list and the sheet around the playhead are fetched, and the sheets either side of the target while scrubbing.
 A memory warning drops them all, and going to the background drops the decoded ones; a decode already running then, and after a memory warning a download too, doesn't put its result back.
 A sheet's download stops as soon as it passes 16 MB.
 A target inside the still already showing publishes nothing, and a still left from another sheet is cleared if the next sheet takes longer than a quarter of a second.
@@ -289,7 +289,8 @@ Apple TV has no frame reader, so without server sheets scrubbing shows the timel
 Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged.
 
 On iPhone and iPad the still fills the existing preview bubble.
-Without server sheets, or for a sheet that failed, they fall back to the bounded request owner and the platform engine frame extractor.
+Without server sheets, or for a sheet or sheet list that failed, they fall back to the bounded request owner and the platform engine frame extractor.
+That reader opens the stream a second time, so it also waits for the load's first frame: a scrub that starts earlier shows the target time only, and gets its still once the first frame is up.
 Late images from an old source or gesture must not paint over a new selection.
 
 Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication.
