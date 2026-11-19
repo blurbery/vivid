@@ -49,13 +49,19 @@ final class TVAdaptiveAmbience {
     @ObservationIgnored private var pending: Task<Void, Never>?
     @ObservationIgnored private var tints: [String: Color] = [:]
     /// Ring colours by artwork, for pages the backdrop isn't behind: one
-    /// look-up per artwork, shared while it runs and kept when it finds
-    /// nothing, so a card that takes focus again never repeats the work.
+    /// look-up per artwork, shared while it runs and its colour kept, so a
+    /// card that takes focus again doesn't repeat the work. A look-up that
+    /// finds nothing is dropped, so the card tries again next time.
     @ObservationIgnored private var ringLookups: [String: Task<Color?, Never>] = [:]
     @ObservationIgnored private var ringColours: [String: Color] = [:]
     /// The poster focus rests on on a page the backdrop isn't behind (More
     /// Like This), so a page opened from it opens in its colour.
     @ObservationIgnored private var carriedArtwork: String?
+    /// Goes up with each change to what is carried.
+    @ObservationIgnored private var carryChanges = 0
+    /// Goes up on a reset, so a look-up begun for another profile, server
+    /// or Theme Mode can't store its colour afterwards.
+    @ObservationIgnored private var ringGeneration = 0
 
     /// How long focus rests on a card before its colour is used.
     static let settle: Duration = .milliseconds(200)
@@ -76,7 +82,7 @@ final class TVAdaptiveAmbience {
     /// browsing page is showing, so the other modes do no work on a focus
     /// move.
     func focused(artwork: @autoclosure () -> String?, source: Source = .card) {
-        carriedArtwork = nil
+        carry(artwork: nil)
         guard isActive, isOnRootPage || isOnBrowsingPage else { return }
         guard let raw = artwork(), !raw.isEmpty else {
             // A card with no artwork: don't let the card before it land late.
@@ -149,11 +155,19 @@ final class TVAdaptiveAmbience {
             ringLookups.removeAll(keepingCapacity: true)
             ringColours.removeAll(keepingCapacity: true)
         }
+        let generation = ringGeneration
         let lookup = Task { [weak self] () -> Color? in
-            guard let self, let tint = await self.colour(for: url, source: .card) else { return nil }
+            guard let self else { return nil }
+            let tint = await self.colour(for: url, source: .card)
+            // A reset while it ran: the result belongs to what came before.
+            guard generation == self.ringGeneration else { return tint.map(TVFocusRing.colour(for:)) }
+            guard let tint else {
+                // Nothing found, perhaps only for now: let the card try again.
+                self.ringLookups[raw] = nil
+                return nil
+            }
             let ring = TVFocusRing.colour(for: tint)
-            // Unless a reset dropped this look-up while it ran.
-            if self.ringLookups[raw] != nil { self.ringColours[raw] = ring }
+            self.ringColours[raw] = ring
             return ring
         }
         ringLookups[raw] = lookup
@@ -163,6 +177,20 @@ final class TVAdaptiveAmbience {
     /// A poster on a page with its own backdrop took focus.
     func carry(artwork raw: String?) {
         carriedArtwork = raw
+        carryChanges += 1
+    }
+
+    /// Focus left that poster. The carry lasts a moment longer, so the page
+    /// its press opens still finds it, then goes, so a page opened later
+    /// from somewhere else on this page doesn't take its colour.
+    func endCarry(artwork raw: String?) {
+        guard carriedArtwork == raw, raw != nil else { return }
+        let change = carryChanges
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, self.carryChanges == change else { return }
+            self.carry(artwork: nil)
+        }
     }
 
     /// The ring colour a detail page opens in: the poster focus was on if
@@ -194,7 +222,8 @@ final class TVAdaptiveAmbience {
         if ringTint != nil { ringTint = nil }
         ringLookups.removeAll()
         ringColours.removeAll()
-        carriedArtwork = nil
+        ringGeneration += 1
+        carry(artwork: nil)
     }
 
     private func colour(for url: URL, source: Source) async -> Color? {

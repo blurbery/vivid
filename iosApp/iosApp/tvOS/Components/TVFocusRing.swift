@@ -120,6 +120,9 @@ struct TVFocusRing: View {
                     guard !Task.isCancelled, own != found else { return }
                     own = found
                 }
+                .onDisappear {
+                    if case let .artwork(raw) = source { TVAdaptiveAmbience.shared.endCarry(artwork: raw) }
+                }
         }
     }
 }
