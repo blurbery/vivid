@@ -49,6 +49,8 @@ final class VividScrubPreviewProvider {
     /// How long a drag has to pause on a target before the reader decodes it.
     private static let settleDelay: Duration = .milliseconds(80)
     private static let stillWidth = 480
+    /// How long a still from another sheet may outstay a slow sheet.
+    private static let staleStillGrace: Duration = .milliseconds(250)
 
     private let engine: VividEngine
     private let makeStore: @MainActor (ScrubPreviewSheets) -> ScrubPreviewSheetStore
@@ -71,6 +73,17 @@ final class VividScrubPreviewProvider {
     private var sheetSource: SheetSource?
     private var sheetLoad: Task<Void, Never>?
     private var sheetTarget: SheetTarget?
+    /// The one sheet being fetched, so a fast drag never decodes several at
+    /// once. The newest target is picked up when it lands.
+    private var sheetFetch: UUID?
+    /// The still on screen, so a target inside the same still publishes
+    /// nothing new.
+    private var shownTile: Int?
+    /// Clears a still left over from another sheet when the new sheet is
+    /// slow to arrive.
+    private var staleStillClear: Task<Void, Never>?
+    /// How many times this load has asked for its sheets.
+    private var sheetLoadAttempts = 0
     /// The scrub's current target, for sheets that arrive part-way through.
     private var scrubSourceTime: Double?
     /// When the last request for sheets came back with none.
@@ -97,6 +110,7 @@ final class VividScrubPreviewProvider {
         load = spec
         sheetSource = sheets
         sheetLoadFailedAt = nil
+        sheetLoadAttempts = 0
         warmSourceTime = startSourceTime
         guard let sheets else {
             dropStore()
@@ -115,7 +129,8 @@ final class VividScrubPreviewProvider {
     func begin(atSourceTime sourceTime: Double) {
         guard load != nil else { return }
         onPreview?(nil)
-        refreshExpiringSheets()
+        shownTile = nil
+        refreshSheetsIfNeeded()
         request(atSourceTime: sourceTime)
     }
 
@@ -151,6 +166,7 @@ final class VividScrubPreviewProvider {
 
     func endInteraction() {
         scrubSourceTime = nil
+        store?.releaseAllButNewestDecoded()
         supersedePending()
         retireReader()
     }
@@ -188,6 +204,7 @@ final class VividScrubPreviewProvider {
 
     private func loadSheets(from source: SheetSource) {
         sheetLoad?.cancel()
+        sheetLoadAttempts += 1
         let expected = session
         sheetLoad = Task { @MainActor [weak self] in
             let sheets = await source.load()
@@ -210,10 +227,17 @@ final class VividScrubPreviewProvider {
     }
 
     /// Signed sheet URLs stop working. Past that point the sheets already in
-    /// memory keep serving while a fresh set is asked for.
-    private func refreshExpiringSheets() {
-        guard storeIsLive, let store, store.sheets.isExpiring(), sheetLoad == nil, let sheetSource else { return }
+    /// memory keep serving while a fresh set is asked for. A load whose
+    /// sheets never arrived asks again, twice at most, in case the first
+    /// request only failed in passing.
+    private func refreshSheetsIfNeeded() {
+        guard sheetLoad == nil, let sheetSource else { return }
         if let sheetLoadFailedAt, Date().timeIntervalSince(sheetLoadFailedAt) < 30 { return }
+        if storeIsLive, let store {
+            guard store.sheets.isExpiring() else { return }
+        } else {
+            guard sheetLoadAttempts < 3 else { return }
+        }
         loadSheets(from: sheetSource)
     }
 
@@ -234,13 +258,16 @@ final class VividScrubPreviewProvider {
         queued = nil
         if let sheet = store.cached(tile.sheet) {
             sheetTarget = nil
-            if let still = store.sheets.crop(tile, from: sheet) {
-                onPreview?(Preview(image: still, sourceTime: sourceTime))
+            guard publish(tile, from: sheet, in: store, sourceTime: sourceTime) else {
+                store.markFailed(tile.sheet)
+                return false
             }
         } else {
-            let alreadyWaiting = sheetTarget?.tile.sheet == tile.sheet
             sheetTarget = SheetTarget(sourceTime: sourceTime, tile: tile)
-            if !alreadyWaiting { fetchSheet(tile.sheet, from: store) }
+            // The wanted sheet's download starts ahead of its neighbours'.
+            store.prefetch(tile.sheet)
+            if sheetFetch == nil { fetchSheet(tile.sheet, from: store) }
+            clearStaleStillIfSlow()
         }
         // The sheets either side, so crossing into one costs no request.
         store.prefetch(tile.sheet - 1)
@@ -248,20 +275,64 @@ final class VividScrubPreviewProvider {
         return true
     }
 
+    /// Publishes the tile's still unless it's the one already showing. False
+    /// when the sheet can't be cropped on its grid.
+    private func publish(
+        _ tile: ScrubPreviewSheets.Tile,
+        from sheet: CGImage,
+        in store: ScrubPreviewSheetStore,
+        sourceTime: Double
+    ) -> Bool {
+        staleStillClear?.cancel()
+        staleStillClear = nil
+        if shownTile == tile.index { return true }
+        guard let still = store.sheets.crop(tile, from: sheet) else { return false }
+        shownTile = tile.index
+        onPreview?(Preview(image: still, sourceTime: sourceTime))
+        return true
+    }
+
+    /// A still from the sheet just left stays up while the next sheet
+    /// decodes, which is too brief to notice. On a slow connection it would
+    /// sit there while the time moves on, so it's cleared after a moment.
+    private func clearStaleStillIfSlow() {
+        guard shownTile != nil, staleStillClear == nil else { return }
+        staleStillClear = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.staleStillGrace)
+            guard let self, !Task.isCancelled else { return }
+            self.staleStillClear = nil
+            guard self.sheetTarget != nil, self.shownTile != nil else { return }
+            self.shownTile = nil
+            self.onPreview?(nil)
+        }
+    }
+
+    /// One sheet at a time. When it lands, the newest target decides what
+    /// happens next: publish from it, or fetch the sheet the drag has since
+    /// moved to.
     private func fetchSheet(_ sheet: Int, from store: ScrubPreviewSheetStore) {
+        let fetch = UUID()
+        sheetFetch = fetch
         let expected = session
         Task { @MainActor [weak self] in
             let image = await store.image(sheet)
-            guard let self, self.session == expected, self.store === store,
-                  let target = self.sheetTarget, target.tile.sheet == sheet
+            guard let self, self.sheetFetch == fetch else { return }
+            self.sheetFetch = nil
+            guard self.session == expected, self.store === store, self.storeIsLive,
+                  let target = self.sheetTarget
             else { return }
-            self.sheetTarget = nil
-            if let image, let still = store.sheets.crop(target.tile, from: image) {
-                self.onPreview?(Preview(image: still, sourceTime: target.sourceTime))
-            } else {
-                // The sheet is marked as failed, so this goes to the reader.
+            if target.tile.sheet != sheet {
+                // The drag moved on while this one was on its way.
                 self.request(atSourceTime: target.sourceTime)
+                return
             }
+            self.sheetTarget = nil
+            if let image, self.publish(target.tile, from: image, in: store, sourceTime: target.sourceTime) {
+                return
+            }
+            // Marked as failed, so this target goes to the frame reader.
+            store.markFailed(sheet)
+            self.request(atSourceTime: target.sourceTime)
         }
     }
 
@@ -270,6 +341,10 @@ final class VividScrubPreviewProvider {
         store = nil
         storeIsLive = false
         sheetTarget = nil
+        sheetFetch = nil
+        shownTile = nil
+        staleStillClear?.cancel()
+        staleStillClear = nil
     }
 
     // MARK: - Frame reader
@@ -305,6 +380,9 @@ final class VividScrubPreviewProvider {
         ticket &+= 1
         queued = nil
         sheetTarget = nil
+        shownTile = nil
+        staleStillClear?.cancel()
+        staleStillClear = nil
         onPreview?(nil)
     }
 
@@ -329,6 +407,7 @@ final class VividScrubPreviewProvider {
             let still = await job.reader.thumbnail(at: job.transportTime, maxWidth: Self.stillWidth)
 
             guard job.session == session, job.ticket == ticket, let still else { continue }
+            shownTile = nil
             onPreview?(Preview(image: still, sourceTime: job.sourceTime))
         }
     }

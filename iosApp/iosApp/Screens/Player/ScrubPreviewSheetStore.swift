@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import UIKit
 
 /// Downloads and decodes one file's preview sheets, and keeps what a scrub
 /// is likely to need next.
@@ -19,6 +20,8 @@ final class ScrubPreviewSheetStore {
     /// The longest side a sheet may decode to. Jellyfin's default sheet is
     /// 3200 by 1800.
     private static let maximumSheetSide = 8192
+    /// And the most pixels: about 96 MB decoded.
+    private static let maximumSheetPixels = 24_000_000
     /// How long a sheet that failed is left alone before another try.
     private static let retryDelay: TimeInterval = 30
 
@@ -32,10 +35,36 @@ final class ScrubPreviewSheetStore {
     private var failures: [Int: Date] = [:]
     private var isShutDown = false
 
+    private var memoryWarning: NSObjectProtocol?
+
     init(sheets: ScrubPreviewSheets, session: URLSession? = nil, now: @escaping () -> Date = Date.init) {
         self.sheets = sheets
         self.session = session ?? Self.makeSession()
         self.now = now
+        memoryWarning = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.releaseMemory() }
+        }
+    }
+
+    /// Drops everything decoded and downloaded; it's fetched again on demand.
+    func releaseMemory() {
+        decoded = []
+        data = []
+    }
+
+    /// Between scrubs only the sheet last used stays decoded, so the next
+    /// scrub near it still answers at once.
+    func releaseAllButNewestDecoded() {
+        if decoded.count > 1 { decoded.removeFirst(decoded.count - 1) }
+    }
+
+    /// Leaves a sheet alone for the retry delay, and forgets its bytes.
+    func markFailed(_ sheet: Int) {
+        failures[sheet] = now()
+        decoded.removeAll { $0.sheet == sheet }
+        data.removeAll { $0.sheet == sheet }
     }
 
     /// The decoded sheet, if it's already in memory.
@@ -63,9 +92,10 @@ final class ScrubPreviewSheetStore {
         if let running = decodes[sheet] { return await running.value }
         let task = Task { @MainActor [weak self] () -> CGImage? in
             guard let self, let bytes = await self.bytes(sheet) else { return nil }
-            let limit = Self.maximumSheetSide
+            let side = Self.maximumSheetSide
+            let pixels = Self.maximumSheetPixels
             return await Task.detached(priority: .userInitiated) {
-                Self.decode(bytes, maximumSide: limit)
+                Self.decode(bytes, maximumSide: side, maximumPixels: pixels)
             }.value
         }
         decodes[sheet] = task
@@ -73,8 +103,8 @@ final class ScrubPreviewSheetStore {
         decodes[sheet] = nil
         if let image {
             remember(image, for: sheet)
-        } else {
-            failures[sheet] = now()
+        } else if !isShutDown {
+            markFailed(sheet)
         }
         return image
     }
@@ -83,7 +113,7 @@ final class ScrubPreviewSheetStore {
     /// later costs a decode and no request.
     func prefetch(_ sheet: Int) {
         guard !isShutDown, sheets.sheetURLs.indices.contains(sheet), !hasFailed(sheet),
-              cached(sheet) == nil, !data.contains(where: { $0.sheet == sheet })
+              !decoded.contains(where: { $0.sheet == sheet }), !data.contains(where: { $0.sheet == sheet })
         else { return }
         _ = download(sheet)
     }
@@ -91,6 +121,8 @@ final class ScrubPreviewSheetStore {
     /// Stops every request and drops everything held.
     func shutdown() {
         isShutDown = true
+        if let memoryWarning { NotificationCenter.default.removeObserver(memoryWarning) }
+        memoryWarning = nil
         downloads.values.forEach { $0.cancel() }
         decodes.values.forEach { $0.cancel() }
         downloads = [:]
@@ -169,12 +201,13 @@ final class ScrubPreviewSheetStore {
 
     /// Decodes the whole sheet now, off the main actor, so cropping it later
     /// is free. Nil for anything that isn't an image of a sane size.
-    nonisolated private static func decode(_ bytes: Data, maximumSide: Int) -> CGImage? {
+    nonisolated private static func decode(_ bytes: Data, maximumSide: Int, maximumPixels: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              (1...maximumSide).contains(width), (1...maximumSide).contains(height)
+              (1...maximumSide).contains(width), (1...maximumSide).contains(height),
+              width * height <= maximumPixels
         else { return nil }
         return CGImageSourceCreateImageAtIndex(
             source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)

@@ -1,6 +1,10 @@
 import UIKit
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 @MainActor
 final class ScrubPreviewSheetsTests: XCTestCase {
@@ -235,8 +239,19 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         XCTAssertEqual(Self.level(of: second.image), Self.level(forCell: 7), accuracy: 12)
         XCTAssertEqual(SheetStub.requests().count, 1)
 
+        // Moving inside the same still publishes nothing new.
+        let published = previews.count
+        provider.request(atSourceTime: 74)
+        provider.request(atSourceTime: 79.5)
+        XCTAssertEqual(previews.count, published)
+
         provider.endInteraction()
         XCTAssertNil(try XCTUnwrap(previews.last), "ending the scrub clears the still")
+
+        // The next scrub shows the same still again from the decoded sheet.
+        provider.begin(atSourceTime: 74)
+        XCTAssertEqual((previews.last ?? nil)?.sourceTime, 74)
+        XCTAssertEqual(SheetStub.requests().count, 1)
         await provider.endSession()?.value
     }
 
@@ -306,6 +321,41 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         provider.activate(try Self.spec(), sheets: .init(key: other.key) { other })
         provider.begin(atSourceTime: 25)
         try await waitUntil { latest?.sourceTime == 25 && SheetStub.requests().count == 2 }
+        await provider.endSession()?.value
+    }
+
+    func testAFastDragFetchesOneSheetAtATimeAndEndsOnTheNewestTarget() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in (200, jpeg) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 64, columns: 4, rows: 2))
+        let (provider, _) = try makeProvider()
+        var latest: VividScrubPreviewProvider.Preview?
+        provider.onPreview = { latest = $0 }
+        provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
+        provider.begin(atSourceTime: 5)
+        for target in stride(from: 85.0, through: 565, by: 80) {
+            provider.request(atSourceTime: target)
+        }
+        try await waitUntil { latest?.sourceTime == 565 }
+        XCTAssertEqual(Self.level(of: try XCTUnwrap(latest).image), Self.level(forCell: 0), accuracy: 12)
+        await provider.endSession()?.value
+    }
+
+    func testAFailedSheetGivesNoStillAndDoesNotStopTheNextOne() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { request in
+            request.url?.lastPathComponent == "0.jpg" ? (500, Data()) : (200, jpeg)
+        }
+        let sheets = try XCTUnwrap(Self.sheets(count: 16, columns: 4, rows: 2))
+        let (provider, _) = try makeProvider()
+        var latest: VividScrubPreviewProvider.Preview?
+        provider.onPreview = { latest = $0 }
+        provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
+        provider.begin(atSourceTime: 5)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertNil(latest?.sourceTime == 5 ? latest : nil, "no sheet still for the failed sheet")
+        provider.request(atSourceTime: 95)
+        try await waitUntil { latest?.sourceTime == 95 }
         await provider.endSession()?.value
     }
 

@@ -99,6 +99,10 @@ struct TVPlayerScrubber: View {
     /// start can carry the state from before their pause.
     @Binding var resumesAfterSelection: Bool
 
+    /// True while the preview still is on screen, so the controls can clear
+    /// what it would cover.
+    var isShowingStill: Binding<Bool> = .constant(false)
+
     /// Losing focus cancels a scrub in flight rather than committing it. The
     /// controls set this before opening a menu, so the blur can't seek.
     var cancelsScrubOnBlur: Bool = false
@@ -128,8 +132,10 @@ struct TVPlayerScrubber: View {
         static let stillSize = CGSize(width: 320, height: 180)
         static let stillCorner: CGFloat = 14
         static let stillGap: CGFloat = 12
-        /// Clear of the speed chip while a hold seek runs.
+        /// Clear of the speed chip, for a still that reaches it during a
+        /// hold seek.
         static let stillGapAboveChip: CGFloat = 54
+        static let chipReach: CGFloat = 110
         static let stillEdgeOpacity = 0.18
         /// The window observers only need a point to exist.
         static let observerSide: CGFloat = 1
@@ -259,13 +265,16 @@ struct TVPlayerScrubber: View {
             }
             .frame(height: Metrics.rowHeight, alignment: .center)
             .overlay(alignment: .topLeading) {
-                if viewModel.isTimelineScrubbing, let still = viewModel.scrubPreviewImage {
+                if let still = shownStill {
                     previewStill(still, span: span)
-                        .transition(.opacity)
                 }
             }
         }
         .frame(height: Metrics.rowHeight)
+        .onChange(of: shownStill != nil) { _, showing in
+            isShowingStill.wrappedValue = showing
+        }
+        .onDisappear { isShowingStill.wrappedValue = false }
         .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
         // Progress isn't animated on purpose: animating it turned every tick,
         // and every hand-off from preview to playhead, into a visible slide.
@@ -303,6 +312,13 @@ struct TVPlayerScrubber: View {
             .offset(x: span * CGFloat(playedShare) - width / 2)
     }
 
+    /// The still to draw, once the target has moved. Selecting the timeline
+    /// only pauses, and a copy of the frame already on screen says nothing.
+    private var shownStill: CGImage? {
+        guard viewModel.isTimelineScrubbing, selectionMoved || isHoldSeeking else { return nil }
+        return viewModel.scrubPreviewImage
+    }
+
     /// The still for the scrub target, centred over the puck and kept inside
     /// the line's ends. There's none until the server's preview sheet is in,
     /// and never one for a server without previews.
@@ -310,17 +326,24 @@ struct TVPlayerScrubber: View {
         let size = Metrics.stillSize
         let corner = RoundedRectangle(cornerRadius: Metrics.stillCorner, style: .continuous)
         let centred = span * CGFloat(playedShare) - size.width / 2
-        let gap = isHoldSeeking ? Metrics.stillGapAboveChip : Metrics.stillGap
+        let leading = min(max(centred, 0), max(span - size.width, 0))
+        let reachesChip = isHoldSeeking && leading + size.width > span - Metrics.chipReach
+        let gap = reachesChip ? Metrics.stillGapAboveChip : Metrics.stillGap
         return Image(decorative: image, scale: 1)
             .resizable()
+            .interpolation(.high)
             .aspectRatio(contentMode: .fill)
             .frame(width: size.width, height: size.height)
             .clipShape(corner)
             .overlay {
                 corner.stroke(.white.opacity(Metrics.stillEdgeOpacity), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.55), radius: 18, y: 7)
-            .offset(x: min(max(centred, 0), max(span - size.width, 0)), y: -(size.height + gap))
+            // The shadow comes from a plain shape behind the picture, so a
+            // new still doesn't make it render again.
+            .background {
+                corner.fill(.black).shadow(color: .black.opacity(0.55), radius: 18, y: 7)
+            }
+            .offset(x: leading, y: -(size.height + gap))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

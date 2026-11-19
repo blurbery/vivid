@@ -49,6 +49,7 @@ struct HoldSeekIndicator: View {
         let corner = RoundedRectangle(cornerRadius: Metrics.frameCorner, style: .continuous)
         return Image(decorative: image, scale: 1)
             .resizable()
+            .interpolation(.high)
             .aspectRatio(contentMode: .fill)
             .frame(width: Metrics.frameSize.width, height: Metrics.frameSize.height)
             .clipShape(corner)
