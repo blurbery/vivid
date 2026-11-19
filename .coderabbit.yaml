@@ -1,13 +1,14 @@
 # CodeRabbit review settings for Vivid.
 # Schema: https://coderabbit.ai/integrations/schema.v2.json
 #
-# Vivid is public and uses CodeRabbit's open-source plan, with extra review
-# credits CodeRabbit added in November 2026. CodeRabbit reviews each ready PR
-# when it is opened or marked ready, then reviews every later push, including
-# docs PRs, and skips drafts, bot PRs and large generated or vendored files.
-# Comment `@coderabbitai review` to ask for a review by hand, and
-# `@coderabbitai rate limit` to see when the next review is free if a PR hits
-# the limit, because a rate-limited PR is not reviewed later on its own.
+# Vivid is public, so it uses CodeRabbit's free open-source plan. That plan's
+# PR review limit depends on the repository's star count, and Vivid gets one
+# review an hour. Every review, including one asked for in a comment, uses it,
+# and a PR that is rate limited is not reviewed later on its own. So CodeRabbit
+# reviews each ready PR once, automatically, including docs PRs, and skips
+# drafts, bot PRs and large generated or vendored files. Batch fixes into one push and comment
+# `@coderabbitai review` when you want it to look again, and comment
+# `@coderabbitai rate limit` to see when the next review is free.
 #
 # CodeRabbit only comments. It never edits PR descriptions, pushes commits,
 # approves or requests changes, so PR checks and commit attribution stay as
@@ -54,9 +55,10 @@ reviews:
     drafts: false
     base_branches:
       - main
-    # Every push to a ready PR is reviewed too, so fixes are checked against
-    # the earlier findings without anyone having to ask.
-    auto_incremental_review: true
+    # Only the first review is automatic. Follow-up pushes are reviewed when
+    # someone comments `@coderabbitai review`, so fix-up pushes don't use the
+    # hour's review or crowd out a newly opened PR.
+    auto_incremental_review: false
     # Docs PRs are reviewed too: the Docs job checks links, paths, em dashes
     # and that mapped docs change with their code, not whether the text is
     # right. Keywords match anywhere in the title, ignoring case, so they are

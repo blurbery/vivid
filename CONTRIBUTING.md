@@ -120,9 +120,9 @@ Check its comments against the source like any other review; they are not an app
 CodeRabbit also reviews non-draft pull requests into `main`, including pull requests from forks, with the settings in `.coderabbit.yaml`.
 It skips titles containing `[WIP]`, `WIP:` or `[skip review]`, and Dependabot's pull requests, so add `[skip review]` to a title you want it to skip.
 It reviews documentation pull requests too, checking each claim against the code, and on every pull request it looks through the README, `CONTRIBUTING.md`, `AGENTS.md`, `docs/` and the privacy texts for anything the change has left out of date, including files the pull request doesn't touch.
-It reviews each pull request when it is opened or marked ready, then reviews every later push, so your fixes are checked against its earlier findings.
-Comment `@coderabbitai review` to ask for a review by hand.
-A pull request that hits the review limit is not reviewed later on its own, so comment `@coderabbitai rate limit` to see when the next review is free and ask again then.
+It reviews each pull request once, when it is opened or marked ready, because its free open-source plan gives Vivid one review an hour.
+It does not review later pushes on its own: batch your fixes into one push, then comment `@coderabbitai review` to ask for another look.
+A pull request that hits the limit is not reviewed later on its own either, so comment `@coderabbitai rate limit` to see when the next review is free and ask again then.
 It only comments: it does not edit the description, push commits or approve.
 Treat its findings the same way, and reply to `@coderabbitai` in a comment if you want it to explain a finding.
 
