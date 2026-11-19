@@ -85,7 +85,7 @@ enum KeyframeStillResult: Sendable {
     case still(KeyframeStill)
     /// A newer request took its place while it waited. Nothing was read.
     case superseded
-    /// `cancelCurrent()` or `shutdown()` stopped it.
+    /// `cancelCurrent()`, `cancel()` or `shutdown()` stopped it.
     case cancelled
     /// A read failed, or the file couldn't be opened just now and the
     /// reader is waiting before it tries again. Worth asking later.
@@ -201,6 +201,15 @@ final class KeyframeStillReader: Sendable {
     /// A job that is waiting still runs.
     func cancelCurrent() {
         worker.cancelCurrent()
+    }
+
+    /// Stops the job that is running and drops the one that is waiting.
+    /// Both end as `.cancelled`, and an open that was running ends as nil.
+    /// It returns at once: the abort flag is set and the source's read is
+    /// failed here, on the caller's thread, not when the reader's thread
+    /// next gets a turn. The reader stays usable.
+    func cancel() {
+        worker.cancelAll()
     }
 
     /// Frees the decoder once the reader is idle. The file and its index
@@ -366,6 +375,19 @@ private final class Worker: @unchecked Sendable {
             link.isAborted.withLock { $0 = true }
             link.source.cancel()
         }
+    }
+
+    func cancelAll() {
+        state.lock()
+        let dropped = waiting
+        waiting = nil
+        if isRunningJob {
+            link.isAborted.withLock { $0 = true }
+            link.source.cancel()
+        }
+        matchPriority()
+        state.unlock()
+        dropped?.continuation.resume(returning: .cancelled)
     }
 
     func closeDecoder() {

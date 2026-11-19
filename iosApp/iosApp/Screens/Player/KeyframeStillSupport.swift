@@ -13,16 +13,32 @@ protocol KeyframeStillReading: AnyObject, Sendable {
     func prepare() async -> KeyframeStillInfo?
     func result(at seconds: Double, maxWidth: Int, urgent: Bool) async -> KeyframeStillResult
     func closeDecoder()
+    /// Stops whatever the reader is doing, without waiting for it: the read
+    /// that is running and the one waiting both end as `.cancelled`, and an
+    /// open that is running ends as nil. The reader stays usable. Safe from
+    /// any thread, and never blocks on a read.
+    func cancel()
     func shutdown() async
 }
 
 extension KeyframeStillReader: KeyframeStillReading {}
+
+/// Where the provider gets the service's view of the player, asked for
+/// only once the hidden switch is known to be on.
+@MainActor
+protocol KeyframeStillPlayerSource: AnyObject {
+    var keyframeStillPlayer: KeyframeStillService.Player { get }
+}
 
 /// A reader opened for one load, with the length of the file it reads.
 struct KeyframeStillSource: Sendable {
     let reader: any KeyframeStillReading
     /// Nil until the length is known.
     let fileSize: @Sendable () -> Int64?
+    /// Every byte the source has fetched so far, which for a server is more
+    /// than the reader was handed: a request brings a whole block. Nil for
+    /// a source where the two are the same, such as a file on the device.
+    var receivedBytes: (@Sendable () -> Int)?
 }
 
 /// The request headers the byte source sends. The service copies the
@@ -75,11 +91,20 @@ extension KeyframeStillService {
     /// argument `-vivid.debug.keyframeStills YES`.
     static let switchKey = "vivid.debug.keyframeStills"
 
+    static func isSwitchedOn() -> Bool {
+        UserDefaults.standard.bool(forKey: switchKey)
+    }
+
     /// What the service reads from the player. It never writes any of it.
     struct PlayerState: Equatable {
         /// Why playback isn't settled just now.
         enum Unsettled: String {
-            case buffering, loading, seeking, replanning, recovering, changingQuality, ended
+            case buffering, loading, seeking, replanning, recovering, changingQuality, failed, ended
+
+            /// False only for seeking, which a scrub itself reports: the
+            /// viewer's own reads go on through it. Everything else stops
+            /// every read, the viewer's included.
+            var stopsViewerReads: Bool { self != .seeking }
         }
 
         /// The playhead, in source-media time.
@@ -98,6 +123,65 @@ extension KeyframeStillService {
         var avSyncGapMilliseconds: Double?
     }
 
+    /// What the view model publishes, as plain values, so turning it into
+    /// a `PlayerState` is a pure function that tests can call.
+    struct PlayerSnapshot: Equatable {
+        var sourceTime: Double = 0
+        var isPlaying = false
+        var hasError = false
+        var hasReachedEnd = false
+        var isReplanning = false
+        var isRecovering = false
+        var isChangingQuality = false
+        var isSeeking = false
+        var isLoading = false
+        var isBuffering = false
+        var bufferedAheadSeconds: Double?
+        var isAppActive = true
+        var isAirPlayHandOff = false
+        /// Only ever true on iPhone and iPad: Apple TV has no Picture in
+        /// Picture of its own to read.
+        var isPictureInPicture = false
+        /// The engine's name for the decoder in use. Nil until it says.
+        var videoDecoder: String?
+        var droppedFrames: Int?
+        var avSyncGapMilliseconds: Double?
+    }
+
+    /// The player's published state as the service reads it. When several
+    /// things are going on at once the gravest is the one reported.
+    nonisolated static func playerState(from snapshot: PlayerSnapshot) -> PlayerState {
+        var unsettled: PlayerState.Unsettled?
+        if snapshot.hasError {
+            unsettled = .failed
+        } else if snapshot.hasReachedEnd {
+            unsettled = .ended
+        } else if snapshot.isReplanning {
+            unsettled = .replanning
+        } else if snapshot.isRecovering {
+            unsettled = .recovering
+        } else if snapshot.isChangingQuality {
+            unsettled = .changingQuality
+        } else if snapshot.isSeeking {
+            unsettled = .seeking
+        } else if snapshot.isLoading {
+            unsettled = .loading
+        } else if snapshot.isBuffering {
+            unsettled = .buffering
+        }
+        return PlayerState(
+            sourceTime: snapshot.sourceTime,
+            isPlaying: snapshot.isPlaying,
+            unsettled: unsettled,
+            bufferedAheadSeconds: snapshot.bufferedAheadSeconds,
+            isAppActive: snapshot.isAppActive,
+            isHandedOff: snapshot.isAirPlayHandOff || snapshot.isPictureInPicture,
+            // Anything other than VideoToolbox is decoding on the processor.
+            decodesInSoftware: snapshot.videoDecoder.map { !$0.lowercased().contains("videotoolbox") },
+            droppedFrames: snapshot.droppedFrames,
+            avSyncGapMilliseconds: snapshot.avSyncGapMilliseconds)
+    }
+
     /// The service's view of the player, asked afresh every time.
     struct Player {
         /// Nil when the load the service was made for is no longer the one
@@ -111,7 +195,7 @@ extension KeyframeStillService {
     /// Everything the service takes from outside, so tests can stand in for
     /// each part.
     struct Environment {
-        var isEnabled: @MainActor () -> Bool = { UserDefaults.standard.bool(forKey: KeyframeStillService.switchKey) }
+        var isEnabled: @MainActor () -> Bool = { KeyframeStillService.isSwitchedOn() }
         var machineIdentifier = AppleDecodeCapabilities.machineIdentifier
         var uptime: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
         /// Runs off the main actor. Nil when the address can't be read.
@@ -119,6 +203,9 @@ extension KeyframeStillService {
         var makeNetworkWatch: @MainActor () -> KeyframeStillNetworkWatch = { KeyframeStillPathWatch() }
         /// False in tests, which call `tick()` themselves.
         var startsTicker = true
+        /// The wait before a fast-moving target's wide window is looked at
+        /// again. Tests stand in their own.
+        var sleep: @Sendable (TimeInterval) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
         var notifications = NotificationCenter.default
         /// Tests read the measurement lines here. Nil writes them to the
         /// unified log.
@@ -132,13 +219,13 @@ extension KeyframeStillService {
 
     /// How a service came to its end.
     enum End: String {
-        case loadEnded, switchedOff, background, cannotOpen, cannotProduceStills, noKeyframeIndex, refused
+        case loadEnded, switchedOff, cannotOpen, cannotProduceStills, noKeyframeIndex, badIndex, refused
 
         /// True when asking again for the same load could never help.
         var rulesOutTheLoad: Bool {
             switch self {
-            case .loadEnded, .background: false
-            case .switchedOff, .cannotOpen, .cannotProduceStills, .noKeyframeIndex, .refused: true
+            case .loadEnded: false
+            case .switchedOff, .cannotOpen, .cannotProduceStills, .noKeyframeIndex, .badIndex, .refused: true
             }
         }
     }
@@ -148,6 +235,8 @@ extension KeyframeStillService {
     struct Carry: Equatable {
         let key: String
         let readAheadBytes: Int
+        /// The part of it spent near the playhead.
+        var nearBytes = 0
     }
 
     enum Tuning {
@@ -161,7 +250,11 @@ extension KeyframeStillService {
         static let decodedLimit = 6
         /// Playback this steady before a reader may exist.
         static let steadyPlaySeconds: TimeInterval = 5
-        static let healthyBufferSeconds: Double = 20
+        /// Read-ahead starts once the player has this much buffered ahead,
+        /// and stops when it falls below `lowBufferSeconds`. The gap keeps
+        /// a buffer hovering at one figure from starting and stopping it.
+        static let healthyBufferSeconds: Double = 30
+        static let lowBufferSeconds: Double = 20
         /// One preview interval: how far before the target a still may be.
         static let window: Double = 10
         /// While the target moves fast the window grows to what it covers
@@ -171,10 +264,29 @@ extension KeyframeStillService {
         /// A rate of change older than this says nothing about now.
         static let rateHoldSeconds: TimeInterval = 0.5
         static let nearSpanSeconds: Double = 120
+        /// Near the playhead one keyframe is read ahead for each stretch
+        /// this long, not every keyframe.
+        static let nearSlotSeconds: Double = 10
+        /// The most of the budget the stills near the playhead may take,
+        /// as a divisor, so the ladder across the title is always reached.
+        static let nearBudgetDivisor = 2
+        /// No file is longer than this. An index or a duration that says
+        /// otherwise is damaged, and the file gets no stills.
+        static let longestFileSeconds: Double = 24 * 60 * 60
+        static let indexEntryLimit = 400_000
+        /// The most entries any one walk back through the index takes.
+        static let walkLimit = 64
+        static let encodedCountLimit = 2_048
         /// The sparse ladder across the title: every five minutes, then the
         /// points halfway between.
         static let ladder: [(step: Double, offset: Double)] = [(300, 0), (300, 150)]
         static let ladderPauseSeconds: TimeInterval = 2
+        /// The most points of one rung that are ever looked at: more than
+        /// a day of them.
+        static let ladderStepLimit = 300
+        /// How long the ladder is left alone once every point on it has
+        /// been read or can't be.
+        static let ladderRestSeconds: TimeInterval = 30
         static let remoteBudgetFraction: Int64 = 100
         static let remoteBudgetLimit: Int64 = 60 * 1024 * 1024
         static let localBudgetFraction: Int64 = 50
@@ -183,6 +295,8 @@ extension KeyframeStillService {
         static let firstBackOffSeconds: TimeInterval = 5
         static let longestBackOffSeconds: TimeInterval = 60
         static let tickSeconds: TimeInterval = 1
+        /// How often the gates are looked at while a read is out.
+        static let busyTickSeconds: TimeInterval = 0.25
         static let appleTVHD = "AppleTV5,3"
     }
 
@@ -203,23 +317,11 @@ extension KeyframeStillService {
 
     /// True for the three ways a file is played exactly as it is stored: a
     /// download, Emby or Jellyfin direct play, and Silo's `original_http`.
-    /// HLS, transcodes and server remuxes are something else's bytes.
+    /// HLS, transcodes and server remuxes are something else's bytes. The
+    /// load spec says which it is from what the app itself asked for (see
+    /// `VividLoadSpec.playsStoredFile`).
     static func isOriginalFile(_ spec: VividLoadSpec) -> Bool {
-        isOriginalFile(url: spec.sourceURL, delivery: spec.delivery, planID: spec.planID,
-                       nativeRemoteHLS: spec.options.nativeRemoteHLS)
-    }
-
-    static func isOriginalFile(url: URL, delivery: String, planID: String, nativeRemoteHLS: Bool) -> Bool {
-        if url.isFileURL { return true }
-        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-              delivery == PlaybackProtocolV3.PlanDelivery.originalHTTP,
-              !nativeRemoteHLS
-        else { return false }
-        // Emby and Jellyfin streams all load as `legacy-direct`. Only the
-        // one that asks for the stored file says `Static=true`.
-        guard planID == "legacy-direct" else { return true }
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        return items.contains { $0.name.lowercased() == "static" && $0.value?.lowercased() == "true" }
+        spec.playsStoredFile
     }
 
     /// True for an address on the viewer's own network: a private or
@@ -267,15 +369,30 @@ extension KeyframeStillService {
         return low > 0 ? low - 1 : nil
     }
 
+    /// The index as the service may use it, or nil for one that can't be
+    /// trusted: too many entries, or a time that isn't a number, runs
+    /// backwards or lies past the longest file there could be. One pass,
+    /// made off the main actor when the file opens, so that nothing later
+    /// has to walk the index or trust a time in it.
+    nonisolated static func usableIndex(_ entries: [KeyframeIndexEntry], duration: Double?) -> [KeyframeIndexEntry]? {
+        if let duration, !(duration.isFinite && duration >= 0 && duration <= Tuning.longestFileSeconds) { return nil }
+        guard entries.count <= Tuning.indexEntryLimit else { return nil }
+        var last = 0.0
+        for entry in entries {
+            guard entry.time.isFinite, entry.time >= last, entry.time <= Tuning.longestFileSeconds else { return nil }
+            last = entry.time
+        }
+        return entries
+    }
+
     nonisolated static let openSource: @Sendable (URL, KeyframeStillHeaders) -> KeyframeStillSource? = { url, headers in
-        let source: StillByteSource
         if url.isFileURL {
             guard let file = FileStillByteSource(url: url) else { return nil }
-            source = file
-        } else {
-            source = HTTPStillByteSource(url: url, headers: { headers.current })
+            return KeyframeStillSource(reader: KeyframeStillReader(source: file), fileSize: { file.size })
         }
-        return KeyframeStillSource(reader: KeyframeStillReader(source: source), fileSize: { source.size })
+        let server = HTTPStillByteSource(url: url, headers: { headers.current })
+        return KeyframeStillSource(reader: KeyframeStillReader(source: server), fileSize: { server.size },
+                                   receivedBytes: { server.counters.bytes })
     }
 
     // MARK: - Held stills

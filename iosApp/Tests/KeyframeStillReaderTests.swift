@@ -422,6 +422,35 @@ final class KeyframeStillReaderTests: XCTestCase {
         await reader.shutdown()
     }
 
+    func testCancelStopsTheRunningStillAndTheOneWaitingAndLeavesTheReaderUsable() async throws {
+        let source = try Self.source(Self.matroska)
+        let reader = KeyframeStillReader(source: source)
+        _ = try await Self.unwrap(await reader.prepare())
+
+        source.holdNextRead()
+        async let running = reader.result(at: 0.5, maxWidth: 320)
+        await source.waitUntilHeld()
+        let waiting = Task { await reader.result(at: 2.5, maxWidth: 320, urgent: true) }
+        while !reader.hasWaitingRequest { await Task.yield() }
+        // One call, which returns without waiting for the reader's thread:
+        // the read that was held only ends because the cancel reached it.
+        reader.cancel()
+        XCTAssertFalse(reader.hasWaitingRequest, "the waiting one is dropped in the call itself")
+        let dropped = await waiting.value
+        XCTAssertEqual(dropped.name, "cancelled")
+        let aborted = await running
+        XCTAssertEqual(aborted.name, "cancelled")
+
+        // The reader was not shut down: the next still works.
+        let next = try await Self.unwrap(await reader.still(at: 4.5, maxWidth: 320))
+        XCTAssertEqual(next.time, 4, accuracy: 0.05)
+        // With nothing running, a cancel does nothing to the next still.
+        reader.cancel()
+        let later = await reader.still(at: 0.5, maxWidth: 320)
+        XCTAssertNotNil(later)
+        await reader.shutdown()
+    }
+
     func testShutdownStopsARunningStillAndRefusesNewOnes() async throws {
         let source = try Self.source(Self.matroska)
         let reader = KeyframeStillReader(source: source)

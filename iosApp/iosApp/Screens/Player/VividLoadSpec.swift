@@ -262,6 +262,25 @@ struct VividLoadSpec {
     let vividStartPosition: Double
     private(set) var options: LoadOptions
     let audioSourceStreamIndex: Int32?
+    /// True when the load plays a file exactly as it is stored: a download,
+    /// Emby or Jellyfin direct play, or Silo's `original_http`. The app's
+    /// own record of what it asked for. Nothing here reaches the engine.
+    let playsStoredFile: Bool
+
+    /// Whether a load plays the stored file. For an Emby or Jellyfin stream
+    /// both things the app did must agree: it didn't ask for a transcode
+    /// (those are always HLS here), and the address it built asks for the
+    /// stored file with `Static=true`.
+    static func playsStoredFile(url: URL, delivery: String, isLegacyDirect: Bool, nativeRemoteHLS: Bool) -> Bool {
+        if url.isFileURL { return true }
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              delivery == PlaybackProtocolV3.PlanDelivery.originalHTTP,
+              !nativeRemoteHLS
+        else { return false }
+        guard isLegacyDirect else { return true }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        return items.contains { $0.name.lowercased() == "static" && $0.value?.lowercased() == "true" }
+    }
 
     mutating func updateHTTPHeaders(_ headers: [String: String]) {
         options.httpHeaders = headers
@@ -287,6 +306,7 @@ struct VividLoadSpec {
         sessionID = "offline"
         delivery = PlaybackProtocolV3.PlanDelivery.originalHTTP
         sourceURL = offlineURL
+        playsStoredFile = true
         timeline = PlaybackTimelineMapper(directStartSeconds: startPosition)
         vividStartPosition = timeline.vividStartPosition
         self.audioSourceStreamIndex = audioSourceStreamIndex
@@ -328,6 +348,8 @@ struct VividLoadSpec {
         sessionID = "legacy-direct"
         delivery = PlaybackProtocolV3.PlanDelivery.originalHTTP
         sourceURL = directURL
+        playsStoredFile = Self.playsStoredFile(url: directURL, delivery: PlaybackProtocolV3.PlanDelivery.originalHTTP,
+                                               isLegacyDirect: true, nativeRemoteHLS: nativeHLS)
         timeline = PlaybackTimelineMapper(directStartSeconds: startPosition)
         vividStartPosition = timeline.vividStartPosition
         audioSourceStreamIndex = nativeAudioStreamIndex
@@ -401,6 +423,8 @@ struct VividLoadSpec {
             PlaybackProtocolV3.PlanDelivery.remuxHLS,
             PlaybackProtocolV3.PlanDelivery.transcodeHLS,
         ].contains(plan.delivery)
+        playsStoredFile = Self.playsStoredFile(url: sourceURL, delivery: plan.delivery, isLegacyDirect: false,
+                                               nativeRemoteHLS: isServerHLS)
         options = LoadOptions(
             httpHeaders: requestHeaders ?? plan.stream.headers,
             matchContentEnabled: matchContentEnabled,
