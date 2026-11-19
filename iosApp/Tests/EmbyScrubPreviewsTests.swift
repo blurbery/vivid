@@ -448,6 +448,46 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         XCTAssertEqual(RangeStub.requests().count, 2)
     }
 
+    func testADroppedRequestIsNoFailureEvenWhenTheStillIsAskedForAgainBeforeItSettles() async throws {
+        // Forty stills ten seconds apart, so five runs don't overlap.
+        let file = try Self.previewFile(seconds: (0..<40).map { UInt32($0 * 10) })
+        let gate = DispatchSemaphore(value: 0)
+        RangeStub.configure { request in
+            Self.hold(gate)
+            return RangeStub.ranged(file, request)
+        }
+        let store = ScrubPreviewSheetStore(sheets: try XCTUnwrap(Self.sheets(of: file)), session: RangeStub.session())
+        defer { store.shutdown() }
+        // The pause between the drop and still 10's decode hearing of it:
+        // still 10 is asked for again right there, starting a new request.
+        store.didDropRange = { [weak store] members in
+            if members.contains(10) { store?.prefetch(10) }
+        }
+
+        let warmUp = Task { await store.image(0) }
+        try await waitUntil { RangeStub.requests().count == 1 }
+        let dropped = Task { await store.image(10) }
+        try await waitUntil { store.rangeWaiterCount == 1 }
+        // Three more runs: the third to join the line drops still 10's.
+        store.prefetch(20)
+        store.prefetch(30)
+        store.prefetch(38)
+        let image = await dropped.value
+        XCTAssertNil(image)
+        XCTAssertFalse(store.hasFailed(10), "the old request was dropped, not failed")
+        // Still 10's run, then the oldest left when still 10 was asked again.
+        try await waitUntil { store.droppedRangeRequests == 2 }
+
+        // The warm-up, still 10's new run and the two runs still waiting.
+        for _ in 0..<4 { gate.signal() }
+        let first = await warmUp.value
+        XCTAssertNotNil(first)
+        try await waitUntil { RangeStub.answered() == 4 }
+        let again = try await still(10, from: store)
+        XCTAssertEqual(Self.level(of: again), Self.level(forStill: 10), accuracy: 6)
+        XCTAssertEqual(RangeStub.requests().count, 4, "still 10 came from the request made in the pause")
+    }
+
     // MARK: - Provider
 
     func testNothingIsAskedOfEmbyUntilPlaybackHasStarted() async throws {
@@ -781,12 +821,16 @@ private final class RangeStub: URLProtocol {
     private static var handler: ((URLRequest) -> Reply)?
     private static var recorded: [URLRequest] = []
     private static var finished = 0
+    /// Moves on with every `configure`, so a reply held over from an
+    /// earlier test never counts towards the next one.
+    private static var generation = 0
 
     static func configure(_ handler: @escaping (URLRequest) -> Reply) {
         lock.lock(); defer { lock.unlock() }
         Self.handler = handler
         recorded = []
         finished = 0
+        generation += 1
     }
 
     /// Serves `file` as a server would: the part asked for, or all of it
@@ -831,6 +875,7 @@ private final class RangeStub: URLProtocol {
         Self.lock.lock()
         Self.recorded.append(request)
         let handler = Self.handler
+        let generation = Self.generation
         Self.lock.unlock()
         guard let handler, let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
@@ -849,7 +894,7 @@ private final class RangeStub: URLProtocol {
             client?.urlProtocol(self, didLoad: reply.body)
             client?.urlProtocolDidFinishLoading(self)
             Self.lock.lock()
-            Self.finished += 1
+            if generation == Self.generation { Self.finished += 1 }
             Self.lock.unlock()
         }
     }

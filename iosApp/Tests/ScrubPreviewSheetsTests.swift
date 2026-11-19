@@ -413,6 +413,8 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         let (provider, _) = try makeProvider()
         var stills = 0
         provider.onPreview = { if $0 != nil { stills += 1 } }
+        var finished: [Int] = []
+        provider.didFinishSheetFetch = { finished.append($0) }
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
         provider.playbackStarted()
         provider.begin(atSourceTime: 15)
@@ -420,11 +422,11 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         try await waitUntil { SheetStub.requests().count == 1 }
         await provider.endSession()?.value
         gate.signal()
-        try await waitUntil { SheetStub.answered() == 1 }
-        for _ in 0..<100 { await Task.yield() }
+        // The provider has handled whatever the fetch came back with.
+        try await waitUntil { finished == [0] }
         XCTAssertEqual(stills, 0)
+        try await waitUntil { SheetStub.answered() == 1 }
         provider.request(atSourceTime: 20)
-        for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(stills, 0, "nothing is asked for without a load")
         XCTAssertEqual(SheetStub.requests().count, 1)
     }
@@ -625,6 +627,12 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         )
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
+        // Target fetches as the provider starts them, before the store
+        // sees them; neighbour prefetches go straight to the store.
+        var fetches: [Int] = []
+        var finishedFetches = 0
+        provider.willFetchSheet = { fetches.append($0) }
+        provider.didFinishSheetFetch = { _ in finishedFetches += 1 }
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
         provider.playbackStarted()
         provider.begin(atSourceTime: 5)
@@ -633,12 +641,16 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         for target in stride(from: 85.0, through: 565, by: 80) {
             provider.request(atSourceTime: target)
         }
+        XCTAssertEqual(fetches, [0], "no target fetch starts while one is running")
         XCTAssertEqual(decoded, [0])
         releaseFirst?.resume()
         releaseFirst = nil
         try await waitUntil { latest?.sourceTime == 565 }
+        // Every fetch started has been handled, so none is still on its way.
+        try await waitUntil { finishedFetches == fetches.count }
         XCTAssertEqual(Self.level(of: try XCTUnwrap(latest).image), Self.level(forCell: 0), accuracy: 12)
-        XCTAssertEqual(decoded, [0, 7], "no sheet the drag only passed through was fetched for it")
+        XCTAssertEqual(fetches, [0, 7], "no sheet the drag only passed through was fetched for it")
+        XCTAssertEqual(decoded, [0, 7])
         await provider.endSession()?.value
     }
 
@@ -796,6 +808,9 @@ private final class SheetStub: URLProtocol {
     private static var sent = 0
     private static var stopped = false
     private static var finished = 0
+    /// Moves on with every `configure`, so a reply held over from an
+    /// earlier test never counts towards the next one.
+    private static var generation = 0
     private let stopLock = NSLock()
     private var isStopped = false
 
@@ -809,6 +824,7 @@ private final class SheetStub: URLProtocol {
         sent = 0
         stopped = false
         finished = 0
+        generation += 1
     }
 
     static func chunksSent() -> Int {
@@ -841,6 +857,7 @@ private final class SheetStub: URLProtocol {
         let body = Self.handler
         let plan = Self.chunkPlan
         let declared = Self.declaredLength
+        let generation = Self.generation
         Self.lock.unlock()
         guard let body, let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
@@ -849,11 +866,11 @@ private final class SheetStub: URLProtocol {
         // Each request is answered on its own thread, so a reply a test
         // holds back can't hold up the others.
         Thread.detachNewThread { [self] in
-            respond(body(request), url: url, plan: plan, declared: declared)
+            respond(body(request), url: url, plan: plan, declared: declared, generation: generation)
         }
     }
 
-    private func respond(_ reply: Reply, url: URL, plan: (count: Int, size: Int)?, declared: Int?) {
+    private func respond(_ reply: Reply, url: URL, plan: (count: Int, size: Int)?, declared: Int?, generation: Int) {
         let (status, data) = reply
         var headers = ["Content-Type": "image/jpeg"]
         if let declared { headers["Content-Length"] = String(declared) }
@@ -863,7 +880,7 @@ private final class SheetStub: URLProtocol {
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
             Self.lock.lock()
-            Self.finished += 1
+            if generation == Self.generation { Self.finished += 1 }
             Self.lock.unlock()
             return
         }
