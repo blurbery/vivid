@@ -620,6 +620,7 @@ The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDeta
 - **Settings:** beside the side status bar the overview shows the profiles as a glass bar of avatars in the strip under the X, with the same taps as the profile cards.
   The Profiles section then holds just a Profiles row when there's more than one profile, which opens Settings > Profiles to switch, sign in or rearrange them; with one profile the section is hidden.
 - **Half folded:** folded like a laptop with the inner screen in portrait, Search focuses its field so the keyboard opens on the lower half (not while a detail page, the player or a pushed page covers it), and the player moves the video above the crease with a control deck below it (see the [playback guide](playback/README.md#iphone-and-ipad-controls)).
+  Next Up keeps the video filling the top half there, with its panel below the crease, rather than shrinking it into a mini player.
   This reads the hinge and the crease with iOS 27.1 APIs, which only build with the iOS 27.1 SDK; CI builds with Xcode 26 and leaves the half-fold behaviour out.
 - **Launch:** the starting logo is centred on the whole screen rather than beside the strip.
 
