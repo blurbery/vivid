@@ -703,9 +703,10 @@ extension TVMainTabView {
 
             @objc func pressed(_ recogniser: UITapGestureRecognizer) {
                 guard recogniser.state == .ended else { return }
+                // Before the recovery runs, so the watch sees focus land even
+                // when the recovery brings it back at once.
+                if onlyWithoutFocus { watchOutage(in: recogniser.view as? UIWindow) }
                 onPress()
-                guard onlyWithoutFocus else { return }
-                watchOutage(in: recogniser.view as? UIWindow)
             }
 
             /// Once the recovery has had time to land, marks the press as
