@@ -932,9 +932,13 @@ final class KeyframeStillServiceTests: XCTestCase {
         let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
         rig.playSteadily(service)
         try await waitUntil { rig.opens.value == 1 }
-        for _ in 0..<4 where reader.asked.isEmpty {
+        // `settle()` would wait for the held read itself once it starts,
+        // so each step gives the service a moment instead.
+        for _ in 0..<8 where reader.asked.isEmpty {
             rig.advance(service, seconds: 2, playing: false)
-            await service.settle()
+            for _ in 0..<100 where reader.asked.isEmpty {
+                try await Task.sleep(for: .milliseconds(2))
+            }
         }
         try await waitUntil { reader.heldTimes.count == 1 }
         rig.centre.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
@@ -1469,9 +1473,13 @@ final class KeyframeStillServiceTests: XCTestCase {
         let service = try XCTUnwrap(rig.makeService(try Self.directSpec()))
         rig.playSteadily(service)
         try await waitUntil { rig.opens.value == 1 }
-        for _ in 0..<4 where reader.asked.isEmpty {
+        // `settle()` would wait for the held read itself once it starts,
+        // so each step gives the service a moment instead.
+        for _ in 0..<8 where reader.asked.isEmpty {
             rig.advance(service, seconds: 2, playing: false)
-            await service.settle()
+            for _ in 0..<100 where reader.asked.isEmpty {
+                try await Task.sleep(for: .milliseconds(2))
+            }
         }
         try await waitUntil { reader.asked.count == 1 }
         reader.addFetched(250_000)
