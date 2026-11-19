@@ -67,6 +67,10 @@ final class SongIdentificationModel {
     static let seekTolerance = 3.0
 
     private(set) var phase: Phase = .idle
+    /// Moves on when the load starts or ends. The player's own markers for
+    /// that aren't observed, so `blockingReason` reads this to redraw a
+    /// panel waiting for playback to start.
+    private(set) var loadRevision = 0
     private(set) var saveState: SaveState = .idle
 
     /// Asked when identification starts and between its steps. It reads
@@ -116,7 +120,13 @@ final class SongIdentificationModel {
     /// Why the panel shouldn't offer identification at all for this load.
     /// Passing reasons only show once the viewer asks (`.refused`).
     var blockingReason: Unavailability? {
-        lastingUnavailability()
+        _ = loadRevision
+        return lastingUnavailability()
+    }
+
+    /// The load has started playing.
+    func loadDidStart() {
+        loadRevision &+= 1
     }
 
     /// Starts identifying the song at the playhead. Does nothing while an
@@ -202,6 +212,7 @@ final class SongIdentificationModel {
 
     /// Forgets everything: the item playing changed or the player closed.
     func reset() {
+        loadRevision &+= 1
         attempt += 1
         task?.cancel()
         task = nil

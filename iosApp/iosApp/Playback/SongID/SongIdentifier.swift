@@ -186,9 +186,11 @@ struct SongIdentifier: Sendable {
             do {
                 clip = try await reader.clip(from: next, duration: wanted)
             } catch let error as SongClipError {
-                // Sound already in hand has had its chance; what failed is
-                // only the read for more of it.
-                if !mix.isEmpty { break }
+                // Running out of file after the first step leaves the answer
+                // to the sound already asked about. Any other failure means
+                // the longer clip was never asked about, so "no song found"
+                // would be wrong advice: report the failure, whichever step.
+                if !mix.isEmpty, error == .noSound { break }
                 return finish(.failed(Self.failure(for: error)), reader: reader, steps: steps, started: started)
             } catch {
                 return finish(.failed(.unreadable), reader: reader, steps: steps, started: started)

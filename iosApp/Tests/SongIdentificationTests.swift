@@ -1,5 +1,7 @@
 import AVFoundation
 import Foundation
+import Observation
+import os
 import ShazamKit
 import VividAudioClipC
 import XCTest
@@ -199,6 +201,22 @@ final class SongIdentificationTests: XCTestCase {
         XCTAssertEqual(asked.count, 1, "stereo asks once a step, and the sliver isn't asked about")
     }
 
+    func testALaterReadFailingIsntReportedAsNoSong() async throws {
+        // The first step can't match at 9 seconds. The connection then
+        // drops before the second, so the longer clip is never asked about.
+        let file = try XCTUnwrap(FileStillByteSource(url: try Self.fixtureURL(Self.melody)))
+        let source = BreakableSource(file)
+        let reader = SongClipReader(source: source, streamIndex: nil)
+        let catalog = RecordingCatalog(try await Self.catalog(Self.melodyReference, title: "Test melody"))
+        let outcome = await SongIdentifier(catalog: catalog).identify(reader: reader, at: 9, mayReadMore: {
+            source.breakNow()
+            return true
+        })
+        XCTAssertEqual(outcome, .failed(.unreachable))
+        let durations = await catalog.durations
+        XCTAssertEqual(durations.count, 1)
+    }
+
     func testAnUnreadableFileIsReportedBeforeShazamIsAsked() async throws {
         let catalog = StubCatalog(answers: [])
         let (reader, path) = try Self.notMediaReader()
@@ -246,6 +264,15 @@ final class SongIdentificationTests: XCTestCase {
         model.reset()
         XCTAssertEqual(model.phase, .idle)
         XCTAssertEqual(model.saveState, .idle)
+    }
+
+    @MainActor
+    func testThePanelRedrawsWhenPlaybackStarts() {
+        let model = SongIdentificationModel()
+        var changed = false
+        withObservationTracking { _ = model.blockingReason } onChange: { changed = true }
+        model.loadDidStart()
+        XCTAssertTrue(changed, "the player's own start marker isn't observed, so the model's revision has to be")
     }
 
     @MainActor
@@ -372,6 +399,30 @@ final class SongIdentificationTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
     }
+}
+
+/// A file whose reads start failing, as a dropped connection's do, once
+/// told to.
+private final class BreakableSource: StillByteSource, @unchecked Sendable {
+    private let file: FileStillByteSource
+    private let broken = OSAllocatedUnfairLock(initialState: false)
+
+    init(_ file: FileStillByteSource) {
+        self.file = file
+    }
+
+    func breakNow() {
+        broken.withLock { $0 = true }
+    }
+
+    func read(into buffer: UnsafeMutableRawBufferPointer, offset: Int64) throws -> Int {
+        if broken.withLock({ $0 }) { throw StillByteSourceError.failed }
+        return try file.read(into: buffer, offset: offset)
+    }
+
+    var size: Int64? { file.size }
+    func cancel() { file.cancel() }
+    func resume() { file.resume() }
 }
 
 private final class DataBox {

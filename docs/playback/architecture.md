@@ -376,7 +376,7 @@ The playhead is mapped through the plan's timeline onto the loaded transport's c
 [SongClipReader](../../iosApp/iosApp/Playback/SongID/SongClipReader.swift) calls the FFmpeg already shipped in Lucid Engine through the app's own C shim (`iosApp/CShims/VividAudioClipC/`), separately from the player's libmpv context, on its own utility-priority queue.
 It reads through the keyframe stills' byte sources: ranged requests for a file on the server, and the file itself for a download.
 Like the stills shim it only opens Matroska and MP4, never opens another file or address, and only decodes common film and music codecs in software on one thread: AAC, AC-3, E-AC-3, TrueHD, DTS, FLAC, Opus, Vorbis, MP3, MP2, ALAC and PCM.
-Each clip comes back as 48 kHz mono in two mixes: every channel, and the same without the centre and low-frequency channels.
+Each clip comes back as 48 kHz mono: a full mix of every channel except the low-frequency one, plus a music mix that also leaves out the centre channel, when the sound has a centre channel with others beside it.
 Films keep their dialogue in the centre channel, so the second mix gives Shazam the music without most of the talking over it.
 The player's own audio output isn't touched, so passthrough to a receiver makes no difference.
 
@@ -385,6 +385,7 @@ The first step is six seconds from four seconds before the playhead; when that f
 At each step the mix without the centre channel is asked first, then the full mix, and the first match wins.
 Sound is interleaved with the picture in the file, so a clip reads about as much as the same length of playback: about 8 MB a step for a 10 Mbps file, and around 60 MB for an 80 Mbps 4K remux.
 Opening the file may read at most 16 MB, and each step at most 128 MB, or identification stops with a message saying the file's sound can't be read.
+A read that fails at a later step, for that or a lost connection, ends with that failure too rather than "No song found", since the longer clip was never asked about; only running out of file there leaves the first step's answer standing.
 The player comes first: a streamed file isn't read while the player is buffering or has less than 10 seconds buffered ahead (less near the end, where the buffer can only hold what is left), and the same check runs before the second step, which is skipped if it fails.
 A download is always read.
 An attempt that hasn't finished after 45 seconds gives up and says so, and a second step that only finds a sliver at the end of the file isn't asked about again.
