@@ -184,9 +184,56 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
             XCTAssertLessThanOrEqual(frames.panel.maxX, size.width)
             XCTAssertFalse(frames.panel.intersects(frames.preview))
             XCTAssertGreaterThan(frames.preview.height, 30)
-            XCTAssertLessThanOrEqual(frames.preview.width, 300)
+            if size.width >= 1000 {
+                // iPad: the preview grows with the screen.
+                XCTAssertGreaterThan(frames.preview.width, 600)
+            } else {
+                // iPhone keeps its fixed size.
+                XCTAssertLessThanOrEqual(frames.preview.width, 260)
+            }
             XCTAssertGreaterThanOrEqual(frames.preview.minX, frames.panel.minX)
             XCTAssertFalse(frames.extrasAppeared, "iOS must not mount an On Deck shelf")
+        }
+    }
+
+    func testNextUpPreviewGrowsOnIPadAndDuoButKeepsTheIPhoneSize() {
+        typealias Sizing = NextUpPreviewSizing
+        func width(_ w: CGFloat, _ h: CGFloat, duo: Bool = false) -> CGFloat {
+            Sizing.previewSize(in: CGSize(width: w, height: h), panelHeight: 210, compact: w > h, scalesWithScreen: duo).width
+        }
+        // iPhone, and an iPad window under 500 points on its shorter side.
+        XCTAssertEqual(width(353, 732), 260)
+        XCTAssertEqual(width(804, 366), 220)
+        XCTAssertEqual(width(460, 700), 260)
+        // 11-inch iPad: 70% of the width in landscape, all of it in portrait.
+        XCTAssertEqual(width(1140, 728), 1140 * 0.7, accuracy: 0.5)
+        XCTAssertEqual(width(780, 1072), 780, accuracy: 0.5)
+        // The Duo's cover screen scales too.
+        XCTAssertEqual(width(342, 570, duo: true), 342, accuracy: 0.5)
+    }
+
+    func testNextUpPreviewNeverOverlapsThePanel() {
+        let sizes: [CGSize] = [
+            CGSize(width: 353, height: 732), CGSize(width: 804, height: 366), CGSize(width: 460, height: 700),
+            CGSize(width: 704, height: 1025), CGSize(width: 1093, height: 636), CGSize(width: 1140, height: 728),
+            CGSize(width: 780, height: 1072), CGSize(width: 992, height: 1312), CGSize(width: 1336, height: 940),
+            CGSize(width: 342, height: 570), CGSize(width: 629, height: 843), CGSize(width: 827, height: 577),
+        ]
+        for size in sizes {
+            for duo in [false, true] {
+                for panelHeight in stride(from: CGFloat(150), through: 420, by: 10)
+                    where panelHeight + NextUpPreviewSizing.gap <= size.height {
+                    let preview = NextUpPreviewSizing.previewSize(
+                        in: size, panelHeight: panelHeight, compact: size.width > size.height, scalesWithScreen: duo)
+                    let previewFrame = CGRect(x: size.width - preview.width, y: 0, width: preview.width, height: preview.height)
+                    let panelFrame = CGRect(x: 0, y: size.height - panelHeight,
+                                            width: NextUpPreviewSizing.panelWidth(in: size), height: panelHeight)
+                    let label = "\(size) duo \(duo) panel \(panelHeight)"
+                    XCTAssertFalse(previewFrame.intersects(panelFrame), label)
+                    XCTAssertTrue(CGRect(origin: .zero, size: size).contains(previewFrame), label)
+                    XCTAssertEqual(preview.width * 9 / 16, preview.height, accuracy: 0.01, label)
+                }
+            }
         }
     }
 

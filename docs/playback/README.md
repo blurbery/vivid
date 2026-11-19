@@ -104,9 +104,11 @@ Physical brightness, system-volume synchronisation, output-route changes, VoiceO
 
 Player unlock uses the phone’s physical orientation when a reliable sensor reading is available.
 Mobile Next Up places the continuing preview at the top right and episode information and actions at the bottom left.
+Half folded on the iPhone Duo the video keeps filling the top half instead, with the information and actions below the crease.
 Play Now is a glass capsule matching the Apple TV detail pages' Play pill, with the autoplay countdown and a round X that closes the player beside it.
 Tapping the preview returns to the episode full screen, replaying the last ten seconds if it had ended, or closes the player when there is no playback left to return to.
 Preview sizing reserves room for the actions.
+On iPhone the preview keeps a fixed size, while on iPad and the iPhone Duo it grows with the screen; [Playback architecture](architecture.md#mobile-presentation) has the sizes.
 
 ## Quality controls
 

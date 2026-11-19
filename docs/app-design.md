@@ -325,6 +325,7 @@ On iPhone, closing landscape playback restores portrait browsing without rotatin
 On the iPhone Duo, closing the player only re-checks the supported orientations, so the inner screen keeps the video's orientation, and half folded the player uses its own control deck without Rotate and Lock; see [iPhone Duo](#iphone-duo).
 
 Next Up uses a top-right preview and bottom-left episode information and actions.
+On iPad and the iPhone Duo the preview grows with the screen, and half folded on the Duo the video keeps the top half, with the panel below the crease; see [iPhone Duo](#iphone-duo).
 Play Now is the Apple TV detail pages' glass Play pill on every device (the 280-point pill itself on Apple TV, the same tinted glass capsule with its bright rim on iPhone and iPad) with the countdown beside it, followed by a round glass X that closes the player.
 There are no Keep Watching or Back buttons: tapping the preview returns to the episode full screen, or closes the player when there is no playback left to return to (an autoplay failure can end it).
 The series logo (the movie's logo for a movie) takes the place of the name, falling back to the name as text when there's no logo or it hasn't loaded; on Apple TV an episode keeps its heading above the logo (Up Next, or Playing Next once the episode has ended) and its details below, while iPhone and iPad have no heading and show the episode line under the logo.
