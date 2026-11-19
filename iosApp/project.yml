@@ -23,6 +23,9 @@ targets:
           - "**/*.xcworkspace"
           - "Info.plist"
 
+      - path: CShims/VividStillC/VividStillC.c
+        # Plain includes: the packaged FFmpeg module maps don't build.
+        compilerFlags: ["-fno-modules"]
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -36,6 +39,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTV
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
         # AVKit supplies UIWindow.avDisplayManager as an Objective-C category.
         # Keep the framework loaded even when no AVKit class is instantiated.
         OTHER_LDFLAGS: "$(inherited) -Wl,-needed_framework,AVKit"

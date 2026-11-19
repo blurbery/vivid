@@ -1,0 +1,4 @@
+module VividStillC {
+    header "VividStillC.h"
+    export *
+}
