@@ -271,7 +271,7 @@ Native ASS and embedded rendering keep their authored styles.
 
 Scrub previews come from the server's own seek-bar preview sheets where it has them: JPEG sheets holding a grid of small stills taken at a fixed interval, usually 10 seconds.
 Silo lists them at `GET /api/v2/watch/{id}/trickplay`, asked for when a file with video plays through a Protocol V3 plan unless its version says `trickplay_available` is `false`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
-Emby and downloads have none.
+Emby keeps its stills in one container file instead, described after the sheets below, and downloads have none.
 [ScrubPreviewSheets](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) maps a source-media time to a sheet and a cell, and [ScrubPreviewSheetStore](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheetStore.swift) downloads and decodes sheets off the main thread.
 A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
 One sheet is decoded at a time, others waiting their turn in order, and the newest target decides which is asked for next; the JPEGs of the sheets either side download in the background, two requests at a time at most.
@@ -282,6 +282,17 @@ A target inside the still already showing publishes nothing, and a still left fr
 A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a replan, quality change or reloading seek of the same file keeps the sheets it has.
 Skip presses show the target time only and ask for no still.
 Sheets are indexed by source time, so a target the loaded transport can't reach still has a still.
+
+Emby's stills live in one BIF file per video: a 64-byte header, an index of timestamps and byte offsets, then one JPEG per still.
+[EmbyScrubPreviews](../../iosApp/iosApp/Screens/Player/EmbyScrubPreviews.swift) builds only the file's address (`GET /Videos/{id}/index.bif?Width=320`) at prepare, and after the first frame reads the header and index with one `Range` request for the first 64 KiB, or a second when the index is longer.
+The same model, store and provider then serve it as sheets of a single cell: still `i` is "sheet" `i`, found by a binary search of the stills' own start times (the last one starting at or before the target, the first for a target before them all), so nothing assumes an even interval.
+The store fetches stills by `Range`, a run of up to eight neighbours and 512 KiB per request (two before the wanted still, five after), one request at a time with the newest waiting run next; at most three wait, and an older one is dropped without counting as a failure.
+It holds up to 8 MiB of still JPEGs, keeps 24 stills decoded while scrubbing and four between scrubs, and decodes the stills either side of the target ahead once they are downloaded.
+A reply that isn't the range asked for fails the run for 30 seconds, like a sheet.
+A server that ignores `Range` and sends the whole file has it kept and sliced when it's 16 MB or less; a memory warning or going to the background drops it, and it's downloaded once more when next needed.
+A 404 for the file means the item has no previews, and that load doesn't ask again.
+These requests carry the Emby account's headers and never follow a redirect.
+The BIF path is covered by tests on files made in the tests; see the [Emby core](../cores/emby.md#playback-and-settings) for what was checked against a server.
 
 Apple TV shows the still above the playhead once a timeline selection or hold has moved the target, and in the hold-to-seek panel.
 While it is up, the title, shortcut circles and skip prompts it would cover are hidden.

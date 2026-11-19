@@ -241,7 +241,11 @@ final class EmbyPlayback {
             nativeHLS: !direct, transcodeSubtitles: transcodeSubtitles,
             nativeQualityOptions: playable["SupportsTranscoding"] as? Bool == true
                 ? ApplePlaybackQuality.settingsOptions
-                : [ApplePlaybackQuality.auto, ApplePlaybackQuality.original])
+                : [ApplePlaybackQuality.auto, ApplePlaybackQuality.original],
+            // Only described here. The file is read after the first frame.
+            scrubPreviewContainer: EmbyScrubPreviews.source(
+                item: metadata.raw, itemID: detail.contentId, sourceID: sourceID,
+                serverURL: connection.serverURL, headers: connection.headers))
         return (prepared, playback)
     }
 

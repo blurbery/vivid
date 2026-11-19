@@ -6,7 +6,8 @@ import Foundation
 /// There are two sources. The server's own preview sheets
 /// (``ScrubPreviewSheets``) come first, on iPhone, iPad and Apple TV: a still
 /// is a crop of a sheet already in memory, so it's published the moment the
-/// target moves. Where the server has none, iPhone and iPad fall back to
+/// target moves. Emby's stills, one JPEG each inside a container file, come
+/// through the same store as sheets of a single cell. Where the server has none, iPhone and iPad fall back to
 /// reading a frame from the stream, and Apple TV shows no still.
 ///
 /// A third source sits behind a hidden switch that is off unless set:

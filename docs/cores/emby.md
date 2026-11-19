@@ -117,7 +117,17 @@ Items without a server-provided year have no year caption.
 ## Playback and settings
 
 `EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Lucid Engine.
-Vivid doesn't use Emby's seek preview thumbnails: iPhone and iPad read scrub previews from the stream where AVFoundation can, and Apple TV shows the target time only.
+Scrub previews on iPhone, iPad and Apple TV come from Emby's own seek preview thumbnails where the server has made them for the video.
+Emby keeps a video's stills in one BIF file per width and serves it to a signed-in user from `GET /Videos/{id}/index.bif?Width=`; Vivid asks for width 320, Emby's default.
+`EmbyPlayback` only builds the address when it prepares playback, and nothing is asked of the server until the load's first frame is up.
+Then [EmbyScrubPreviews](../../iosApp/iosApp/Screens/Player/EmbyScrubPreviews.swift) reads the file's header and index with one `Range` request for its first 64 KiB (a second only when the index is longer, past about 8,000 stills), and stills are fetched by `Range` as a scrub needs them; see [Tracks, subtitles and previews](../playback/architecture.md#tracks-subtitles-and-previews).
+Every request carries the account's request headers and never follows a redirect.
+A 404 means the item has no previews and isn't asked again for that load.
+A server or proxy that ignores `Range` sends the whole file, which Vivid keeps and slices when it's 16 MB or less and otherwise gives up on.
+The route names an item, not a media source, so when an item has several versions only the item's own file (media source `mediasource_{item id}`) gets Emby's stills.
+Without Emby's stills, iPhone and iPad read scrub previews from the stream where AVFoundation can, and Apple TV shows the target time only.
+The route, its required `Width` parameter, its item-only addressing and its sign-in requirement were checked against the API description an Emby 4.10 server publishes.
+The test server had no generated preview files, so the BIF layout Vivid reads (taken from the published format description), the available widths, `Range` support on this route and the `mediasource_{item id}` naming have not been verified against a live server; they are covered by tests on files made in the tests only.
 Its device profile comes from the shared [decode capabilities](../../iosApp/iosApp/Shared/AppleDecodeCapabilities.swift) and is named `Vivid` in the request, the same as Jellyfin's. On Apple TV 4K, iPhone and iPad it offers direct play of H.264, HEVC, AV1, MPEG-2 and VP9 with no device resolution limit, and Lucid Engine chooses hardware or software decoding when the file loads.
 On Apple TV HD and the simulators the request has an overall 1920×1080 ceiling and only offers the codecs VideoToolbox decodes in hardware (H.264 on Apple TV HD's A8, which has no hardware HEVC decoder) plus three software decoders, each kept within the limits Vivid's test files cover: AV1 (Main profile, up to 10-bit) and VP9 (Profile 0, 8-bit) up to 1080p at 30 fps and 3 Mbps, and MPEG-2 (Main profile, 8-bit) up to 720×480 at 31 fps and 7 Mbps.
 H.264 is limited to 8-bit at up to 60 fps.

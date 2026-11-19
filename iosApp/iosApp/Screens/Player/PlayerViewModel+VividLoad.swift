@@ -137,8 +137,9 @@ extension PlayerViewModel {
 
     /// Where this playback's seek-bar preview sheets come from, if its server
     /// can have any. Jellyfin's arrive with the item; Silo's are one optional
-    /// request, skipped when the server already said the file has none.
-    /// Downloads and Emby have none.
+    /// request, skipped when the server already said the file has none;
+    /// Emby's are a container file whose index is read on demand.
+    /// Downloads have none.
     private func scrubPreviewSheetSource(
         prepared: PreparedPlayback,
         streamRequest: StreamRequest
@@ -146,6 +147,10 @@ extension PlayerViewModel {
         guard !streamRequest.url.isFileURL, prepared.selectedVersion.codecVideo != nil else { return nil }
         if let sheets = prepared.scrubPreviewSheets {
             return .init(key: sheets.key) { sheets }
+        }
+        if let container = prepared.scrubPreviewContainer {
+            let loader = EmbyScrubPreviews.Loader(container)
+            return .init(key: container.key) { await loader.load() }
         }
         guard prepared.protocolV3 != nil, prepared.selectedVersion.trickplayAvailable != false else { return nil }
         let contentID = prepared.watchDetail.contentId
