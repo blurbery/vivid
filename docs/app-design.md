@@ -325,6 +325,7 @@ On iPhone, closing landscape playback restores portrait browsing without rotatin
 On the iPhone Duo, closing the player only re-checks the supported orientations, so the inner screen keeps the video's orientation, and half folded the player uses its own control deck without Rotate and Lock; see [iPhone Duo](#iphone-duo).
 
 Next Up uses a top-right preview and bottom-left episode information and actions.
+On iPad and the iPhone Duo the preview grows with the screen, and half folded on the Duo the video keeps the top half, with the panel below the crease; see [iPhone Duo](#iphone-duo).
 Play Now is the Apple TV detail pages' glass Play pill on every device (the 280-point pill itself on Apple TV, the same tinted glass capsule with its bright rim on iPhone and iPad) with the countdown beside it, followed by a round glass X that closes the player.
 There are no Keep Watching or Back buttons: tapping the preview returns to the episode full screen, or closes the player when there is no playback left to return to (an autoplay failure can end it).
 The series logo (the movie's logo for a movie) takes the place of the name, falling back to the name as text when there's no logo or it hasn't loaded; on Apple TV an episode keeps its heading above the logo (Up Next, or Playing Next once the episode has ended) and its details below, while iPhone and iPad have no heading and show the episode line under the logo.
@@ -620,11 +621,13 @@ The exception is detail pages: `PhoneDuo.usesDuoDetailDesign` and the `onDuoDeta
 - **Settings:** beside the side status bar the overview shows the profiles as a glass bar of avatars in the strip under the X, with the same taps as the profile cards.
   The Profiles section then holds just a Profiles row when there's more than one profile, which opens Settings > Profiles to switch, sign in or rearrange them; with one profile the section is hidden.
 - **Half folded:** folded like a laptop with the inner screen in portrait, Search focuses its field so the keyboard opens on the lower half (not while a detail page, the player or a pushed page covers it), and the player moves the video above the crease with a control deck below it (see the [playback guide](playback/README.md#iphone-and-ipad-controls)).
+  Next Up keeps the video filling the top half there, with its panel below the crease, rather than shrinking it into a mini player.
   This reads the hinge and the crease with iOS 27.1 APIs, which only build with the iOS 27.1 SDK; CI builds with Xcode 26 and leaves the half-fold behaviour out.
 - **Launch:** the starting logo is centred on the whole screen rather than beside the strip.
 
 blurbery checked these layouts in the iPhone Duo simulator (iOS 27.1, Xcode 27.1), folding and turning it with Device Hub, including the half-folded player and Search.
 No physical iPhone Duo has been tested.
+The Next Up sizes on both screens and its half-folded layout were checked in the simulator with a placeholder video, not with real playback reaching Next Up.
 Edge swipe back, the player's motion-based rotation on the inner screen, real hinge angles and the PiP and AirPlay buttons in the half-folded deck, which the simulator can't show working, still need a device.
 Moving down for widgets was checked on the inner screen in landscape by making the band 40 points longer in a test build; adding a real widget hasn't been tried yet.
 

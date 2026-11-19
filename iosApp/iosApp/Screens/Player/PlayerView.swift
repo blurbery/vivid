@@ -178,7 +178,11 @@ struct PlayerView: View {
                 .onTapGesture(perform: revealControlsBeforeLoad)
                 #endif
             if showsNextUpScreen {
+                #if os(iOS)
+                PlayerNextUpScreen(viewModel: player, onClose: closePlayer, tabletop: duoTabletop)
+                #else
                 PlayerNextUpScreen(viewModel: player, onClose: closePlayer)
+                #endif
             }
         }
     }
@@ -892,6 +896,10 @@ struct PlayerNextUpScreen: View {
     private var player: PlayerViewModel { viewModel }
     /// Leaves the player.
     let onClose: () -> Void
+    #if os(iOS)
+    /// The iPhone Duo half folded, when the video keeps the top half.
+    var tabletop: DuoTabletop? = nil
+    #endif
 
     #if os(tvOS)
     private enum Focus: Hashable {
@@ -954,14 +962,18 @@ struct PlayerNextUpScreen: View {
                 #if os(tvOS)
                 tvLayout(in: proxy.size)
                 #else
-                PlayerNextUpMobileLayout {
-                    previewSlot
-                } panel: { compact in
-                    mobileNextUpPanel(compact: compact)
-                        .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(actions: $0) }
-                } extras: {
+                if let tabletop {
+                    tabletopLayout(tabletop, in: proxy)
+                } else {
+                    PlayerNextUpMobileLayout {
+                        previewSlot()
+                    } panel: { compact in
+                        mobileNextUpPanel(compact: compact)
+                            .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(actions: $0) }
+                    } extras: {
+                    }
+                    .padding(.top, MobilePlayerRotationControls.topClearance)
                 }
-                .padding(.top, MobilePlayerRotationControls.topClearance)
                 #endif
             }
             // The artwork is decoration and mustn't grow this ZStack's ideal
@@ -988,8 +1000,9 @@ struct PlayerNextUpScreen: View {
     /// The transparent slot the shrunken player surface is drawn into. It's
     /// a button, so the mini player itself is Keep Watching. The surface is
     /// drawn above it without taking touches or focus, so it reports its
-    /// focus with its bounds and the surface draws the ring.
-    private var previewSlot: some View {
+    /// focus with its bounds and the surface draws the ring. `fillsFrame`
+    /// makes it fill the space it's given instead of a 16:9 box.
+    private func previewSlot(fillsFrame: Bool = false) -> some View {
         Button {
             // With nothing left to go back to (an autoplay failure can
             // dispose the old playback), the player closes instead.
@@ -997,7 +1010,11 @@ struct PlayerNextUpScreen: View {
                 onClose()
             }
         } label: {
-            Color.clear.aspectRatio(16 / 9, contentMode: .fit)
+            if fillsFrame {
+                Color.clear
+            } else {
+                Color.clear.aspectRatio(16 / 9, contentMode: .fit)
+            }
         }
         .buttonStyle(NextUpPreviewButtonStyle())
         .disabled(player.isNextUpTransitioning)
@@ -1130,6 +1147,27 @@ struct PlayerNextUpScreen: View {
         .multilineTextAlignment(.leading)
     }
 
+    /// Half folded on the iPhone Duo, the video keeps filling the top half
+    /// (drawn there by `PlayerSurfaceLayout`), which is Keep Watching, and the
+    /// episode panel sits below the crease.
+    private func tabletopLayout(_ tabletop: DuoTabletop, in proxy: GeometryProxy) -> some View {
+        let top = proxy.frame(in: .global).minY
+        return ZStack(alignment: .topLeading) {
+            // The video starts at the top of the screen, above this view's
+            // safe area, so Keep Watching does too.
+            previewSlot(fillsFrame: true)
+                .frame(width: proxy.size.width, height: max(0, tabletop.crease.minY))
+                .offset(y: -top)
+            mobileNextUpPanel()
+                .anchorPreference(key: PlayerPreviewBoundsKey.self, value: .bounds) { .init(actions: $0) }
+                .frame(maxWidth: 360, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.top, max(0, tabletop.crease.maxY - top) + 16)
+        }
+    }
+
     /// The series or movie logo, or its name when there's no logo.
     @ViewBuilder
     private func mobileTitleLogo(compact: Bool) -> some View {
@@ -1233,7 +1271,7 @@ struct PlayerNextUpScreen: View {
                     }
                     .frame(maxWidth: 750, alignment: .leading)
                     Spacer(minLength: 0)
-                    previewSlot.frame(width: 960, height: 540)
+                    previewSlot().frame(width: 960, height: 540)
                 }
                 Spacer(minLength: 40)
                 tvActions

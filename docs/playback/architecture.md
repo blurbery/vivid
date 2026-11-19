@@ -160,6 +160,11 @@ Their tap targets are 80-point squares that meet edge to edge around the 44-poin
 Visible controls remain mounted during seeking and buffering; each transport tap restarts a five-second auto-hide timer, and tapping the surrounding picture dismisses them.
 Open menus and sheets suspend auto-hide. iOS Skip Intro and Skip Credits use the same translucent Liquid Glass as other player buttons and retain a fixed gap above the measured bottom control stack when controls hide.
 The mobile Next Up layout preserves the player surface.
+On iPhone the Next Up preview keeps a fixed size of up to 220 points wide in landscape and 260 in portrait.
+So does a small iPad Split View or Stage Manager window, when the Next Up area is under 500 points on its shorter side.
+That area is what's left of the window after 20-point side margins, the space kept clear for the rotation buttons at the top and the vertical padding, so a landscape window needs to be roughly 600 points tall for the preview to grow.
+On iPad (when that area is at least 500 points on its shorter side) and on both iPhone Duo screens it grows with the screen instead, to the largest 16:9 size that clears the action panel, beside or above it, up to 70% of the width in landscape and the full width in portrait.
+Half folded on the iPhone Duo, Next Up doesn't shrink the video: it keeps filling the top half, as it does while playing, and a tap there goes back to the episode, with the panel below the crease.
 Playback failures and retry actions use the shared dark glass design on mobile and Apple TV.
 See [App Design](../app-design.md#iphone-and-ipad-layout) for navigation and verification.
 

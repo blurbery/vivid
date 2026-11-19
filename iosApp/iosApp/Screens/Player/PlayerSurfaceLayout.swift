@@ -41,9 +41,12 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                         CGRect(x: 0, y: 0, width: proxy.size.width, height: min($0, proxy.size.height))
                     } ?? CGRect(origin: .zero, size: proxy.size)
                     let showsPreview = isPreview && !isTransitioning
-                    let frame = showsPreview ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
-                    let viewport = showsPreview ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
-                    let showsFocusRing = showsPreview && geometry.isFocused
+                    // Half folded, Next Up keeps the video filling the top
+                    // half, so it doesn't shrink into a mini player there.
+                    let showsMiniPlayer = showsPreview && topRegionHeight == nil
+                    let frame = showsMiniPlayer ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
+                    let viewport = showsMiniPlayer ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
+                    let showsFocusRing = showsMiniPlayer && geometry.isFocused
                     // The mini player's shadow, cast by a plain shape under the
                     // video. A shadow on the video itself has to be worked
                     // out again for every frame the video presents.
@@ -57,18 +60,18 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                                 .frame(width: viewport.width, height: viewport.height)
                                 .position(x: viewport.midX, y: viewport.midY)
                         }
-                        .opacity(showsPreview ? 1 : 0)
-                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsPreview)
+                        .opacity(showsMiniPlayer ? 1 : 0)
+                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsMiniPlayer)
                     // One structural identity in both modes. Only geometry changes;
                     // expansion must not load, seek, bind a second host, or resume.
                     surface()
                         .frame(width: frame.width, height: frame.height)
-                        .clipShape(RoundedRectangle(cornerRadius: showsPreview ? 8 : 0))
+                        .clipShape(RoundedRectangle(cornerRadius: showsMiniPlayer ? 8 : 0))
                         .overlay {
                             // The hairline around the mini player, or the
                             // white ring while the remote has it focused.
-                            RoundedRectangle(cornerRadius: showsPreview ? 8 : 0)
-                                .stroke(.white.opacity(showsFocusRing ? 1 : (showsPreview ? 0.3 : 0)),
+                            RoundedRectangle(cornerRadius: showsMiniPlayer ? 8 : 0)
+                                .stroke(.white.opacity(showsFocusRing ? 1 : (showsMiniPlayer ? 0.3 : 0)),
                                         lineWidth: showsFocusRing ? 5 : 1.5)
                                 .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: showsFocusRing)
                         }
@@ -80,7 +83,7 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                                 .frame(width: viewport.width, height: viewport.height)
                                 .position(x: viewport.midX, y: viewport.midY)
                         }
-                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsPreview)
+                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsMiniPlayer)
                         .overlay { Color.black.opacity(isTransitioning ? 1 : 0) }
                         .animation(nil, value: isTransitioning)
                 }
@@ -93,7 +96,8 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
 
 #if os(iOS)
 /// The Next Up layout on iPhone and iPad: the preview top right and the
-/// episode panel bottom left, in one stack that survives rotation. `extras`
+/// episode panel bottom left, in one stack that survives rotation. On iPad
+/// and the iPhone Duo the preview grows with the screen. `extras`
 /// is never mounted, because iPhone and iPad show no On Deck shelf.
 struct PlayerNextUpMobileLayout<Preview: View, Panel: View, Extras: View>: View {
     @ViewBuilder let preview: () -> Preview
@@ -126,18 +130,65 @@ struct PlayerNextUpStackLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard subviews.count == 2 else { return }
-        let panelWidth = min(bounds.width, 360)
+        let panelWidth = NextUpPreviewSizing.panelWidth(in: bounds.size)
         let panelSize = subviews[1].sizeThatFits(.init(width: panelWidth, height: nil))
-        let availableHeight = max(0, bounds.height - panelSize.height - 16)
-        let sideWidth = max(0, bounds.width - panelWidth - 16)
-        let previewWidth = compact && sideWidth >= 80
-            ? min(220, sideWidth, bounds.height * 16 / 9)
-            : min(compact ? 220 : 260, bounds.width, availableHeight * 16 / 9)
-        let previewHeight = previewWidth * 9 / 16
+        let previewSize = NextUpPreviewSizing.previewSize(
+            in: bounds.size,
+            panelHeight: panelSize.height,
+            compact: compact,
+            scalesWithScreen: PhoneDuo.isDuo
+        )
         subviews[0].place(at: CGPoint(x: bounds.maxX, y: bounds.minY), anchor: .topTrailing,
-                          proposal: .init(width: previewWidth, height: previewHeight))
+                          proposal: .init(previewSize))
         subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.maxY), anchor: .bottomLeading,
                           proposal: .init(width: panelWidth, height: panelSize.height))
+    }
+}
+
+/// How big the Next Up preview is beside the action panel on iPhone and
+/// iPad. The preview sits top right and the panel bottom left, so the
+/// preview clears the panel when it's no wider than the space beside the
+/// panel or no taller than the space above it.
+enum NextUpPreviewSizing {
+    static let maxPanelWidth: CGFloat = 360
+    /// The space kept between the preview and the panel.
+    static let gap: CGFloat = 16
+    /// A layout whose shorter side is at least this long is an iPad screen
+    /// (or a big iPad window), where the preview scales with the screen
+    /// instead of keeping the iPhone's fixed size. The iPhone Duo scales on
+    /// both of its screens.
+    static let largeScreenSide: CGFloat = 500
+    /// The most of the width the preview takes on a large screen in
+    /// landscape. In portrait it can take the full width.
+    static let largeScreenLandscapeWidthShare: CGFloat = 0.7
+
+    static func panelWidth(in size: CGSize) -> CGFloat {
+        min(size.width, maxPanelWidth)
+    }
+
+    static func previewSize(
+        in size: CGSize,
+        panelHeight: CGFloat,
+        compact: Bool,
+        scalesWithScreen: Bool
+    ) -> CGSize {
+        let availableHeight = max(0, size.height - panelHeight - gap)
+        let sideWidth = max(0, size.width - panelWidth(in: size) - gap)
+        let width: CGFloat
+        if scalesWithScreen || min(size.width, size.height) >= largeScreenSide {
+            // The biggest preview that clears the panel, either beside it or
+            // above it, up to most of the width in landscape and all of it
+            // in portrait.
+            let besidePanel = min(sideWidth, size.height * 16 / 9)
+            let abovePanel = min(size.width, availableHeight * 16 / 9)
+            let widthShare = compact ? largeScreenLandscapeWidthShare : 1
+            width = min(max(besidePanel, abovePanel), size.width * widthShare)
+        } else {
+            width = compact && sideWidth >= 80
+                ? min(220, sideWidth, size.height * 16 / 9)
+                : min(compact ? 220 : 260, size.width, availableHeight * 16 / 9)
+        }
+        return CGSize(width: width, height: width * 9 / 16)
     }
 }
 #endif
