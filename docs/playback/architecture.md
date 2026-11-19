@@ -311,7 +311,6 @@ A third source is stills Vivid makes itself from the playing file's own keyframe
 It is on by default.
 There is no setting for it; the hidden default `vivid.debug.keyframeStills` set to false (for example the launch argument `-vivid.debug.keyframeStills NO`) turns it off, and then no reader, network monitor, timer or request is created.
 The default is read once for each load, when its first frame is up, and every path into the keyframe code returns on that one answer.
-blurbery tried it on an Apple TV 4K (3rd generation) against a Silo server on 19 November 2026 and was happy with how quickly the stills appeared; no timings, data use or dropped-frame counts were recorded.
 [KeyframeStillService](../../iosApp/iosApp/Screens/Player/KeyframeStillService.swift) serves a load only when all of these hold: the server has no preview sheets for it, the platform's frame extractor is absent or has said it can't read the file, the load is a download, Emby or Jellyfin direct play or Silo's `original_http` delivery, it has video, the device isn't an Apple TV HD, and neither an AirPlay hand-off nor Picture in Picture has the picture.
 HLS, transcodes and server remuxes never qualify.
 The load spec records which it is from what the app itself asked for (`VividLoadSpec.playsStoredFile`): for Emby and Jellyfin the app must both have asked for direct play, not a transcode, and have built an address that asks for the stored file with `Static=true`.
