@@ -385,7 +385,7 @@ The first step is six seconds from four seconds before the playhead; when that f
 At each step the mix without the centre channel is asked first, then the full mix, and the first match wins.
 Sound is interleaved with the picture in the file, so a clip reads about as much as the same length of playback: about 8 MB a step for a 10 Mbps file, and around 60 MB for an 80 Mbps 4K remux.
 Opening the file may pass at most 16 MB to FFmpeg, and each step at most 128 MB, or identification stops with a message saying the file's sound can't be read.
-These limits count what FFmpeg is given; a request to the server fetches up to one 1 MB block ahead, so a step can download up to 1 MB more than it counts.
+These limits count the bytes given to FFmpeg, not what is downloaded: each request to the server fetches a whole block of up to 1 MB, so when FFmpeg jumps around the file (to its index, or to the point a step starts) a download can be a few MB more than the count.
 A read that fails at a later step, for that or a lost connection, ends with that failure too rather than "No song found", since the longer clip was never asked about; only running out of file there leaves the first step's answer standing.
 The player comes first: a streamed file isn't read while the player is buffering or has less than 10 seconds buffered ahead (less near the end, where the buffer can only hold what is left), and the same check runs before the second step, which is skipped if it fails.
 A download is always read.
