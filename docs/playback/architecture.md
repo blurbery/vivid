@@ -332,6 +332,9 @@ A read or an open that is already running is stopped at once, not left to finish
 Between scrubs it reads ahead only while playback is settled (not seeking either), the app is active and the network path is neither expensive (mobile data) nor constrained, starting once the player reports at least 30 seconds buffered ahead and stopping when that falls below 20: first one keyframe for each 10 seconds within two minutes either side of the playhead, nearest first, then one every five minutes across the title and the points halfway between, at most one every two seconds.
 Read-ahead stops at a byte budget for the title: 1% of the file up to 60 MB, or 2% for a local file or a server at a private or link-local address.
 The budget counts the bytes the byte source actually fetched, which over HTTP is at least a 256 KiB block for each uncached read, not the smaller number handed to the demuxer, and the stills near the playhead may take at most half of it, so the points across the title are always reached.
+Each read is checked against its expected cost before it starts, so a keyframe is never left half fetched; one read can go past the limit by what it fetched beyond that estimate, and nothing more is read ahead after it.
+Budgets are kept per file, keyed by its address without the query except `MediaSourceId`, so two versions of one title don't share a budget.
+Times are put on the player's axis by taking off how far the first video packet sits after the start of the container.
 The service ends with the load and on any new load.
 When the app goes to the background its reader is shut down and its stills, timer and network monitor go, but the service keeps the steady playback it has counted and the budget it has spent, and opens a new reader when next needed after the app returns.
 A memory warning drops its stills and closes the decoder.
