@@ -87,12 +87,15 @@ final class KeyframeStillPathWatch: KeyframeStillNetworkWatch, @unchecked Sendab
 }
 
 extension KeyframeStillService {
-    /// The hidden switch. Off unless set, for example with the launch
-    /// argument `-vivid.debug.keyframeStills YES`.
+    /// The hidden switch. On unless it's set to false, for example with the
+    /// launch argument `-vivid.debug.keyframeStills NO`, which turns the
+    /// keyframe stills off to rule them out when chasing a problem.
     static let switchKey = "vivid.debug.keyframeStills"
 
     static func isSwitchedOn() -> Bool {
-        UserDefaults.standard.bool(forKey: switchKey)
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: switchKey) != nil else { return true }
+        return defaults.bool(forKey: switchKey)
     }
 
     /// What the service reads from the player. It never writes any of it.

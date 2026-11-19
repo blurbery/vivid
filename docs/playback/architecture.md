@@ -296,8 +296,7 @@ The BIF path is covered by tests on files made in the tests; see the [Emby core]
 
 Apple TV shows the still above the playhead once a timeline selection or hold has moved the target, and in the hold-to-seek panel.
 While it is up, the title, shortcut circles and skip prompts it would cover are hidden.
-Apple TV has no frame reader, so without server sheets scrubbing shows the timeline and target time only and starts no reader, decoder or request worker.
-That holds while the keyframe still switch described below is off, which is how the app ships.
+Apple TV has no AVFoundation frame reader, so without server sheets its stills come from the keyframe reader described below, and where that can't serve the load scrubbing shows the timeline and target time only.
 Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged.
 
 On iPhone and iPad the still fills the existing preview bubble.
@@ -306,11 +305,12 @@ The provider reaches that extractor through the small [ScrubStillSource](../../i
 That reader opens the stream a second time, so it also waits for the load's first frame: a scrub that starts earlier shows the target time only, and gets its still once the first frame is up.
 Late images from an old source or gesture must not paint over a new selection.
 
-A third source, stills made from the playing file's own keyframes, is in the code but off.
-It does nothing unless the hidden debug default `vivid.debug.keyframeStills` is true (for example the launch argument `-vivid.debug.keyframeStills YES`); there is no setting for it, and with the default unset no reader, network monitor, timer or request is created and scrubbing behaves as described above.
+A third source is stills Vivid makes itself from the playing file's own keyframes, used only when the server has no preview sheets for the load, so server sheets always take priority.
+It is on by default.
+There is no setting for it; the hidden default `vivid.debug.keyframeStills` set to false (for example the launch argument `-vivid.debug.keyframeStills NO`) turns it off, and then no reader, network monitor, timer or request is created.
 The default is read once for each load, when its first frame is up, and every path into the keyframe code returns on that one answer.
-It has not been measured on devices, which is why it is off.
-With the switch on, [KeyframeStillService](../../iosApp/iosApp/Screens/Player/KeyframeStillService.swift) serves a load only when all of these hold: the server has no preview sheets for it, the platform's frame extractor is absent or has said it can't read the file, the load is a download, Emby or Jellyfin direct play or Silo's `original_http` delivery, it has video, the device isn't an Apple TV HD, and neither an AirPlay hand-off nor Picture in Picture has the picture.
+blurbery tried it on an Apple TV 4K (3rd generation) against a Silo server on 19 November 2026 and was happy with how quickly the stills appeared; no timings, data use or dropped-frame counts were recorded.
+[KeyframeStillService](../../iosApp/iosApp/Screens/Player/KeyframeStillService.swift) serves a load only when all of these hold: the server has no preview sheets for it, the platform's frame extractor is absent or has said it can't read the file, the load is a download, Emby or Jellyfin direct play or Silo's `original_http` delivery, it has video, the device isn't an Apple TV HD, and neither an AirPlay hand-off nor Picture in Picture has the picture.
 HLS, transcodes and server remuxes never qualify.
 The load spec records which it is from what the app itself asked for (`VividLoadSpec.playsStoredFile`): for Emby and Jellyfin the app must both have asked for direct play, not a transcode, and have built an address that asks for the stored file with `Static=true`.
 Once the file is open, Dolby Vision with no HDR10, HLG or SDR base picture (profile 5) and a file with no keyframe index end the service for that load.

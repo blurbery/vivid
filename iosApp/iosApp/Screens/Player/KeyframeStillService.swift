@@ -5,8 +5,8 @@ import UIKit
 /// Scrub stills made from the playing file's own keyframes, for a load the
 /// server has no preview sheets for.
 ///
-/// It is off unless the hidden switch (`switchKey`) is on, and then only
-/// for a file played exactly as stored. The main actor does the
+/// It is on unless the hidden switch (`switchKey`) turns it off, and only
+/// ever for a file played exactly as stored. The main actor does the
 /// bookkeeping here; every read and decode happens on the reader's own
 /// thread, and pictures are packed and unpacked on background tasks.
 ///

@@ -125,7 +125,7 @@ Every request carries the account's request headers and never follows a redirect
 A 404 means the item has no previews and isn't asked again for that load.
 A server or proxy that ignores `Range` sends the whole file, which Vivid keeps and slices when it's 16 MB or less and otherwise gives up on.
 The route names an item, not a media source, so when an item has several versions only the item's own file (media source `mediasource_{item id}`) gets Emby's stills.
-Without Emby's stills, iPhone and iPad read scrub previews from the stream where AVFoundation can, and Apple TV shows the target time only.
+Without Emby's stills, iPhone and iPad read scrub previews from the stream where AVFoundation can, and Vivid otherwise makes stills from the file's own keyframes on direct play (see [Tracks, subtitles and previews](../playback/architecture.md#tracks-subtitles-and-previews)).
 The route, its required `Width` parameter, its item-only addressing and its sign-in requirement were checked against the API description an Emby 4.10 server publishes.
 The test server had no generated preview files, so the BIF layout Vivid reads (taken from the published format description), the available widths, `Range` support on this route and the `mediasource_{item id}` naming have not been verified against a live server; they are covered by tests on files made in the tests only.
 Its device profile comes from the shared [decode capabilities](../../iosApp/iosApp/Shared/AppleDecodeCapabilities.swift) and is named `Vivid` in the request, the same as Jellyfin's. On Apple TV 4K, iPhone and iPad it offers direct play of H.264, HEVC, AV1, MPEG-2 and VP9 with no device resolution limit, and Lucid Engine chooses hardware or software decoding when the file loads.

@@ -35,8 +35,8 @@ The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordi
 Scrub previews use the server's preview sheets first, on every platform; see [Tracks, subtitles and previews](../playback/architecture.md#tracks-subtitles-and-previews).
 Without them, native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read.
 Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available.
-Apple TV scrubbing does not start frame extraction.
-A keyframe still reader that calls Lucid Engine's FFmpeg directly, outside the player's libmpv context, is built into the app but does nothing unless a hidden debug default is set; see the same section for its gates.
+Apple TV has no AVAsset frame extraction; its stills without server sheets come from the keyframe reader.
+A keyframe still reader that calls Lucid Engine's FFmpeg directly, outside the player's libmpv context, makes the stills where the server has no preview sheets, on iPhone, iPad and Apple TV; see the same section for its gates.
 
 ## Player bridge
 

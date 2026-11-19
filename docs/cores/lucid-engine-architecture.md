@@ -84,7 +84,7 @@ flowchart TB
 
 The player screen and its view model never call libmpv.
 One part of the app outside the bridge calls the package's FFmpeg libraries directly: the keyframe still reader in [`iosApp/iosApp/Playback/Stills/`](../../iosApp/iosApp/Playback/Stills), through the C shim in `iosApp/CShims/VividStillC/`.
-It uses libavformat, libavcodec and libswscale with its own demuxer and a single-threaded software decoder, shares no context, option or thread with the player, and stays idle unless the hidden `vivid.debug.keyframeStills` default is true (see [Tracks, subtitles and previews](../playback/architecture.md#tracks-subtitles-and-previews)).
+It uses libavformat, libavcodec and libswscale with its own demuxer and a single-threaded software decoder, shares no context, option or thread with the player, and runs only for loads the server has no preview sheets for (see [Tracks, subtitles and previews](../playback/architecture.md#tracks-subtitles-and-previews)).
 They own product state (controls, queues, resume and Next Up, progress reporting and server sessions) and reach the engine through one controller.
 All of them run on the main actor.
 
