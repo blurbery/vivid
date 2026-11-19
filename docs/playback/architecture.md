@@ -152,7 +152,7 @@ It does not attach the native refresh control, whose active inset can clip the p
 It follows the pull distance back to zero without changing the refresh action or scaling the title and controls.
 
 Mobile controls remain Vivid-owned.
-Quality, Audio, Subtitles and Chapters use scrollable anchored popovers.
+Quality, Audio, Subtitles, Song and Chapters use scrollable anchored popovers.
 An open popover pins the controls; their presentation host remains mounted during buffering and quality reloads so taps, scrolling and sheets retain a live owner.
 Rotate, Lock, PiP and AirPlay each keep a round glass button.
 The transport buttons sit at the centre of the player.
@@ -360,6 +360,41 @@ Any other property or event first carries the pending values with it, keeping mp
 When the main thread is idle, every update is still delivered.
 The A/V sync gap only feeds the statistics overlay, so it is published at most four times a second and always settles on the latest value.
 The player view reads the playback position only inside the views that display it, and the skip buttons follow a stored marker window that changes only when playback crosses a range edge.
+
+## Song identification
+
+The player can say what song is playing, using Apple's ShazamKit and Shazam's catalogue.
+On Apple TV it is the Song tab of the panel that Down opens, and on iPhone and iPad a round music-note button beside Subtitles opens it as a popover and starts listening straight away.
+Nothing is read or sent until the viewer asks, and there is no setting.
+No microphone is used: Vivid reads the sound from the file itself, so it works on Apple TV, through headphones and with the sound turned down.
+
+[SongIdentificationModel](../../iosApp/iosApp/Playback/SongID/SongIdentificationModel.swift) is owned by the player's view model and reset whenever the load ends.
+It only offers identification when the load plays the stored file (a download, Emby or Jellyfin direct play, or Silo's `original_http`), the same rule as the keyframe stills; a server transcode or HLS stream isn't the file Vivid would read, so the panel says so instead.
+An external audio track is refused the same way, and the tab or button is hidden for audio-only loads and files with no sound.
+The playhead is mapped through the plan's timeline onto the loaded transport's clock, and the audio track playing is read by its FFmpeg stream index, so the clip is the sound the viewer is hearing.
+
+[SongClipReader](../../iosApp/iosApp/Playback/SongID/SongClipReader.swift) calls the FFmpeg already shipped in Lucid Engine through the app's own C shim (`iosApp/CShims/VividAudioClipC/`), separately from the player's libmpv context, on its own utility-priority queue.
+It reads through the keyframe stills' byte sources: ranged requests for a file on the server, and the file itself for a download.
+Like the stills shim it only opens Matroska and MP4, never opens another file or address, and only decodes common film and music codecs in software on one thread: AAC, AC-3, E-AC-3, TrueHD, DTS, FLAC, Opus, Vorbis, MP3, MP2, ALAC and PCM.
+Each clip comes back as 48 kHz mono in two mixes: every channel, and the same without the centre and low-frequency channels.
+Films keep their dialogue in the centre channel, so the second mix gives Shazam the music without most of the talking over it.
+The player's own audio output isn't touched, so passthrough to a receiver makes no difference.
+
+[SongIdentifier](../../iosApp/iosApp/Playback/SongID/SongIdentifier.swift) reads in steps, so an easy match costs one short read.
+The first step is six seconds from four seconds before the playhead; when that finds nothing, the clip is lengthened to the catalogue's longest query, at most 12 seconds, carrying on from where it ended instead of seeking again.
+At each step the mix without the centre channel is asked first, then the full mix, and the first match wins.
+Sound is interleaved with the picture in the file, so a clip reads about as much as the same length of playback: about 8 MB a step for a 10 Mbps file, and around 60 MB for an 80 Mbps 4K remux.
+Opening the file may read at most 16 MB, and each step at most 128 MB, or identification stops with a message saying the file's sound can't be read.
+The player comes first: a streamed file isn't read while the player is buffering or has less than 10 seconds buffered ahead (less near the end, where the buffer can only hold what is left), and the same check runs before the second step, which is skipped if it fails.
+A download is always read.
+An attempt that hasn't finished after 45 seconds gives up and says so, and a second step that only finds a sliver at the end of the file isn't asked about again.
+Only a ShazamKit signature leaves the device, never the sound, and the unified log (category `SongID`) records only the outcome, steps, bytes read, time taken and ShazamKit's error code, with no titles, addresses or tokens.
+
+Save to Shazam adds the song to the viewer's synced Shazam library with `SHLibrary`, available on iOS 17 and tvOS 17 and later.
+Apple's library only takes songs with a Shazam ID, so the button only appears for those.
+On iPhone and iPad, Apple Music opens the song's Apple Music page when Shazam gives one.
+Matching against Shazam's catalogue needs the ShazamKit app service turned on for the app's identifier in the Apple Developer account; without it every match fails and the panel says Shazam couldn't be reached.
+`SongIdentificationTests` check the shim, the two mixes, track choice, timing, limits and the steps against custom ShazamKit catalogues made from the generated files in `iosApp/Tests/Fixtures/SongClips`, so the tests never reach Shazam.
 
 ## IntroDB marker timing
 

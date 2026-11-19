@@ -46,6 +46,9 @@ Skip and countdown Cancel use a native focusable view that consumes Select once 
 Their glass labels are passive; there is no second SwiftUI Button gesture waiting for release.
 Arrows and Menu continue through the native responder chain.
 
+The player panel's Song tab keeps one button in the same place through every state (Identify song, Stop, then Save to Shazam or Try again), changing only its label and action, so focus stays put when a result arrives.
+When the item can't be identified the buttons go, and focus moves to the Song tab pill so Menu still has a handler to reach.
+
 Next Up has four focus targets: Play Now, the round X, the auto-play toggle and the mini player.
 The mini player sits above and to the right of the actions, outside the focus engine's straight-line search, so the action row sends Up to it and it sends Down or Left back to the row.
 With a next episode, the row also sends Down to the auto-play toggle and the toggle sends Up back to the row.

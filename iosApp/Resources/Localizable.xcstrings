@@ -10487,7 +10487,7 @@
       }
     },
     "App privacy information · Updated 18 November 2026" : {
-      "extractionState" : "manual",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -10552,6 +10552,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "App 隐私信息 · 更新于 2026 年 10 月 19 日"
+          }
+        }
+      }
+    },
+    "App privacy information · Updated 20 November 2026" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzinformationen der App · Aktualisiert am 20. November 2026"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Información de privacidad de la app · Actualizada el 20 de noviembre de 2026"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidentialité de l’app · Mise à jour le 20 novembre 2026"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appのプライバシー情報 · 2026年11月20日更新"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 隐私信息 · 更新于 2026 年 11 月 20 日"
           }
         }
       }
@@ -10838,6 +10873,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "外观会为此 Apple TV 上的这个个人资料存储在 Vivid 中。"
+          }
+        }
+      }
+    },
+    "Apple Music" : {
+      "comment" : "Player button: opens the song found in Apple Music",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Music"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Music"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Music"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Music"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Music"
           }
         }
       }
@@ -12229,6 +12300,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可在播放器中使用"
+          }
+        }
+      }
+    },
+    "Available once playback starts." : {
+      "comment" : "Player song identification: waiting for playback to start",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verfügbar, sobald die Wiedergabe beginnt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible cuando empiece la reproducción."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible dès le début de la lecture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生が始まると利用できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始播放后即可使用。"
           }
         }
       }
@@ -19620,6 +19727,42 @@
         }
       }
     },
+    "Couldn't reach Shazam. Check your connection and try again." : {
+      "comment" : "Player song identification: Shazam couldn't be reached",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido conectar con Shazam. Comprueba la conexión y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de joindre Shazam. Vérifiez votre connexion et réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazamに接続できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 Shazam。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
     "Couldn't reach the server — try again" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -19760,6 +19903,42 @@
         }
       }
     },
+    "Couldn't read this file's sound just now. Try again." : {
+      "comment" : "Player song identification: the file's sound couldn't be fetched",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Ton dieser Datei konnte gerade nicht gelesen werden. Versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido leer el sonido de este archivo. Vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire le son de ce fichier pour le moment. Réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルの音声を今は読み込めませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂时无法读取此文件的声音。请重试。"
+          }
+        }
+      }
+    },
     "Couldn't remove the saved connection." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19826,6 +20005,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法存储已完成的下载"
+          }
+        }
+      }
+    },
+    "Couldn't save. Try again" : {
+      "comment" : "Player button: adding the song to the Shazam library failed; press to try again",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichern fehlgeschlagen. Erneut versuchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar. Reintentar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec de l’enregistrement. Réessayer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存できませんでした。もう一度試す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存。重试"
           }
         }
       }
@@ -31190,6 +31405,78 @@
         }
       }
     },
+    "Identify song" : {
+      "comment" : "Player button: starts identifying the song playing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Song erkennen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identificar canción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifier le morceau"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "曲を識別"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别歌曲"
+          }
+        }
+      }
+    },
+    "Identifying took too long. Try again." : {
+      "comment" : "Player song identification: identifying the song timed out",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Erkennung hat zu lange gedauert. Versuche es erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La identificación ha tardado demasiado. Vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’identification a pris trop de temps. Réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "識別に時間がかかりすぎました。もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别耗时过长。请重试。"
+          }
+        }
+      }
+    },
     "If buffering: up to %@." : {
       "comment" : "Quality option detail: the bitrate it drops to while buffering",
       "extractionState" : "manual",
@@ -33616,6 +33903,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上限"
+          }
+        }
+      }
+    },
+    "Listening…" : {
+      "comment" : "Player song identification: identifying the song playing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hört zu …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escuchando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écoute…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聴き取り中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在聆听…"
           }
         }
       }
@@ -40356,6 +40679,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此 Apple TV 上未存储任何服务器。"
+          }
+        }
+      }
+    },
+    "No song found" : {
+      "comment" : "Player song identification: Shazam found no song",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Song gefunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró ninguna canción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun morceau trouvé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "曲が見つかりません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到歌曲"
           }
         }
       }
@@ -52761,6 +53120,42 @@
         }
       }
     },
+    "Save to Shazam" : {
+      "comment" : "Player button: adds the song found to the viewer's Shazam library",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Shazam sichern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar en Shazam"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer dans Shazam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazamに保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存到 Shazam"
+          }
+        }
+      }
+    },
     "Save updated credentials for this server account." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -53072,6 +53467,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已存储的服务器"
+          }
+        }
+      }
+    },
+    "Saved to Shazam" : {
+      "comment" : "Player song identification: the song is in the Shazam library",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Shazam gesichert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardada en Shazam"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistré dans Shazam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazamに保存済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存到 Shazam"
+          }
+        }
+      }
+    },
+    "Saving…" : {
+      "comment" : "Player song identification: adding the song to the Shazam library",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gesichert …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在保存…"
           }
         }
       }
@@ -57003,6 +57470,78 @@
         }
       }
     },
+    "Shazam" : {
+      "comment" : "Player song identification: heading over the Shazam buttons",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam"
+          }
+        }
+      }
+    },
+    "Shazam didn't recognise the music. Try again when it's clearer, or louder than the dialogue." : {
+      "comment" : "Player song identification: why no song was found",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam hat die Musik nicht erkannt. Versuche es erneut, wenn sie deutlicher oder lauter als die Dialoge ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam no ha reconocido la música. Vuelve a intentarlo cuando se oiga más clara o más alta que los diálogos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam n’a pas reconnu la musique. Réessayez quand elle est plus nette, ou plus forte que les dialogues."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazamは音楽を認識できませんでした。音楽がはっきりしているときや、会話より大きいときにもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shazam 未能识别这段音乐。请在音乐更清晰或比对白更响亮时重试。"
+          }
+        }
+      }
+    },
     "Shortest" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -59515,6 +60054,150 @@
         }
       }
     },
+    "Song" : {
+      "comment" : "Player HUD tab: identifies the song playing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Song"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morceau"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "曲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌曲"
+          }
+        }
+      }
+    },
+    "Song identification doesn't work with an external audio track." : {
+      "comment" : "Player song identification: unavailable with an external audio track",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Songerkennung funktioniert nicht mit einer externen Tonspur."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La identificación de canciones no funciona con una pista de audio externa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’identification de morceaux ne fonctionne pas avec une piste audio externe."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部オーディオトラックでは曲の識別を利用できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别歌曲不适用于外部音轨。"
+          }
+        }
+      }
+    },
+    "Song identification needs the original file. This stream is being converted by your server." : {
+      "comment" : "Player song identification: unavailable while the server converts the stream",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Songerkennung benötigt die Originaldatei. Dieser Stream wird von deinem Server umgewandelt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La identificación de canciones necesita el archivo original. Tu servidor está convirtiendo esta emisión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’identification de morceaux nécessite le fichier d’origine. Ce flux est converti par votre serveur."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "曲の識別には元のファイルが必要です。このストリームはサーバで変換されています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别歌曲需要原始文件。此串流正在由你的服务器转换。"
+          }
+        }
+      }
+    },
+    "Song identification will be available once playback has settled." : {
+      "comment" : "Player song identification: unavailable while a streamed file buffers",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Songerkennung ist verfügbar, sobald die Wiedergabe stabil läuft."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La identificación de canciones estará disponible cuando la reproducción se estabilice."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’identification de morceaux sera disponible une fois la lecture stabilisée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生が安定すると曲の識別を利用できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放稳定后即可识别歌曲。"
+          }
+        }
+      }
+    },
     "Sort" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -60767,6 +61450,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "仍在播放或意外关闭"
+          }
+        }
+      }
+    },
+    "Stop" : {
+      "comment" : "Player button: stops identifying the song playing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
           }
         }
       }
@@ -66523,6 +67242,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前没有可清除的已观看下载项。"
+          }
+        }
+      }
+    },
+    "There's no sound at this point in the file." : {
+      "comment" : "Player song identification: the file has no sound here",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An dieser Stelle der Datei gibt es keinen Ton."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay sonido en este punto del archivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il n’y a pas de son à cet endroit du fichier."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルのこの位置には音声がありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件的此处没有声音。"
           }
         }
       }
@@ -72929,6 +73684,42 @@
         }
       }
     },
+    "Vivid can't read the sound in this file for song identification." : {
+      "comment" : "Player song identification: the file's sound format isn't supported",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid kann den Ton dieser Datei nicht für die Songerkennung lesen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid no puede leer el sonido de este archivo para identificar canciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid ne peut pas lire le son de ce fichier pour identifier un morceau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vividはこのファイルの音声を曲の識別用に読み込めません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 无法读取此文件的声音来识别歌曲。"
+          }
+        }
+      }
+    },
     "Vivid connects once you approve it on Simkl." : {
       "extractionState" : "manual"
     },
@@ -73359,6 +74150,42 @@
     },
     "Vivid is still working on this profile. You can go back once it’s finished." : {
       "extractionState" : "manual"
+    },
+    "Vivid listens to a few seconds of this scene and asks Shazam what's playing." : {
+      "comment" : "Player song identification: what Identify song does",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid hört sich ein paar Sekunden dieser Szene an und fragt Shazam, was gerade läuft."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid escucha unos segundos de esta escena y pregunta a Shazam qué está sonando."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid écoute quelques secondes de cette scène et demande à Shazam ce qui passe."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vividがこのシーンの数秒間を聴き取り、流れている曲をShazamに問い合わせます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 会聆听这一场景中的几秒钟，并询问 Shazam 正在播放什么。"
+          }
+        }
+      }
     },
     "Vivid tries secure HTTPS automatically." : {
       "extractionState" : "manual",

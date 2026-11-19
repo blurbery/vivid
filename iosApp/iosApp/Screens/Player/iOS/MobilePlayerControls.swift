@@ -8,8 +8,8 @@ import SwiftUI
 ///   rotation buttons, which `PlayerView` overlays separately.
 /// - Centre: skip back 10 seconds, play or pause, skip forward 10 seconds.
 /// - Sides: brightness on the left, system volume on the right.
-/// - Bottom: the round Quality, Audio, Subtitles and Chapters buttons, the
-///   scrubber and the time row.
+/// - Bottom: the round Quality, Audio, Subtitles, Song and Chapters buttons,
+///   the scrubber and the time row.
 ///
 /// Half folded on the iPhone Duo, the same controls become a deck that fills
 /// the lower half and stays up (`MobilePlayerControls+Deck.swift`). The
@@ -41,7 +41,7 @@ struct MobilePlayerControls: View {
     @State private var brightness = MobilePlayerBrightness()
     @State private var systemVolume = MobilePlayerSystemVolume()
 
-    enum PlayerPopover { case quality, audio, subtitles, chapters }
+    enum PlayerPopover { case quality, audio, subtitles, song, chapters }
 
     var body: some View {
         ZStack {

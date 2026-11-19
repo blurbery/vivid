@@ -26,6 +26,8 @@ targets:
       - path: CShims/VividStillC/VividStillC.c
         # Plain includes: the packaged FFmpeg module maps don't build.
         compilerFlags: ["-fno-modules"]
+      - path: CShims/VividAudioClipC/VividAudioClipC.c
+        compilerFlags: ["-fno-modules"]
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -39,7 +41,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTV
-        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC $(SRCROOT)/CShims/VividAudioClipC"
         # AVKit supplies UIWindow.avDisplayManager as an Objective-C category.
         # Keep the framework loaded even when no AVKit class is instantiated.
         OTHER_LDFLAGS: "$(inherited) -Wl,-needed_framework,AVKit"
@@ -173,6 +175,22 @@ targets:
         buildPhase: resources
       - path: Tests/Fixtures/Stills/stills_hevc10_pq_opengop.mkv
         buildPhase: resources
+      # Song identification: the clip reader over the shipped FFmpeg, the
+      # steps asked of a catalogue and the player's model, with their
+      # generated fixtures.
+      - path: Tests/SongIdentificationTests.swift
+      - path: Tests/Fixtures/SongClips/songclip_aac_stereo.mp4
+        buildPhase: resources
+      - path: Tests/Fixtures/SongClips/songclip_ac3_51_centre.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/SongClips/songclip_flac_two_tracks.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/SongClips/songclip_melody.mkv
+        buildPhase: resources
+      - path: Tests/Fixtures/SongClips/songclip_melody_reference.m4a
+        buildPhase: resources
+      - path: Tests/Fixtures/SongClips/songclip_other_reference.m4a
+        buildPhase: resources
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:
@@ -183,9 +201,9 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTVTests
-        # The app imports its C shim module, so `@testable import` has to
-        # find that module too.
-        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
+        # The app imports its C shim modules, so `@testable import` has to
+        # find those modules too.
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC $(SRCROOT)/CShims/VividAudioClipC"
         PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.tvtest.PerformanceTests
         CODE_SIGN_ENTITLEMENTS: ""
         GENERATE_INFOPLIST_FILE: "YES"

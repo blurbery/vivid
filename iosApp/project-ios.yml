@@ -22,6 +22,8 @@ targets:
       - path: CShims/VividStillC/VividStillC.c
         # Plain includes: the packaged FFmpeg module maps don't build.
         compilerFlags: ["-fno-modules"]
+      - path: CShims/VividAudioClipC/VividAudioClipC.c
+        compilerFlags: ["-fno-modules"]
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -35,7 +37,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Vivid
-        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC $(SRCROOT)/CShims/VividAudioClipC"
         INFOPLIST_FILE: iosApp/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
@@ -105,6 +107,7 @@ targets:
           - "Fixtures/PlaybackV3"
           - "Fixtures/PlaybackV3/**"
           - "Fixtures/Stills/README.md"
+          - "Fixtures/SongClips/README.md"
       # The vendored settings contract. SettingsConformanceTests reads both
       # files out of the test bundle at runtime and fails hard when either is
       # missing, so the build phase is stated rather than left to XcodeGen's
@@ -113,6 +116,10 @@ targets:
       # How the keyframe still fixtures were made. Nothing reads it at
       # runtime, so it stays out of the bundle.
       - path: Tests/Fixtures/Stills/README.md
+        buildPhase: none
+      # How the song identification fixtures were made. Out of the bundle
+      # for the same reason.
+      - path: Tests/Fixtures/SongClips/README.md
         buildPhase: none
       - path: Tests/Fixtures/SettingsContract/conformance.json
         buildPhase: resources
@@ -154,9 +161,9 @@ targets:
     settings:
       base:
         PRODUCT_NAME: VividTests
-        # The app imports its C shim module, so `@testable import` has to
-        # find that module too.
-        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC"
+        # The app imports its C shim modules, so `@testable import` has to
+        # find those modules too.
+        SWIFT_INCLUDE_PATHS: "$(inherited) $(SRCROOT)/CShims/VividStillC $(SRCROOT)/CShims/VividAudioClipC"
         PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.iostest.SettingsTests
         CODE_SIGN_ENTITLEMENTS: ""
         GENERATE_INFOPLIST_FILE: "YES"

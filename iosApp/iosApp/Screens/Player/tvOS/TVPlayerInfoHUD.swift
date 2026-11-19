@@ -2,8 +2,8 @@
 import SwiftUI
 
 /// The Apple TV player HUD: a floating panel at the top of the picture with
-/// a row of pill tabs (Info, Stats, Video, then Audio and Chapters when the
-/// stream has them) above the selected pane. There's no dimming, so playback
+/// a row of pill tabs (Info, Stats, Video, then Audio, Song and Chapters when
+/// the stream has them) above the selected pane. There's no dimming, so playback
 /// stays visible. The Subtitles shortcut opens a subtitle-only menu instead.
 ///
 /// Focus model (see docs/apple-tv-focus.md): every interactive row is a real
@@ -28,7 +28,7 @@ struct TVPlayerInfoHUD: View {
     let onDismiss: () -> Void
 
     enum Tab: Hashable, CaseIterable {
-        case info, stats, video, audio, subtitles, chapters
+        case info, stats, video, audio, song, subtitles, chapters
 
         var title: String {
             switch self {
@@ -36,6 +36,7 @@ struct TVPlayerInfoHUD: View {
             case .stats:     return String(localized: "Stats", comment: "Player HUD tab")
             case .video:     return String(localized: "Video", comment: "Player HUD tab")
             case .audio:     return String(localized: "Audio", comment: "Player HUD tab")
+            case .song:      return String(localized: "Song", comment: "Player HUD tab: identifies the song playing")
             case .subtitles: return String(localized: "Subtitles", comment: "Player HUD tab")
             case .chapters:  return String(localized: "Chapters", comment: "Player HUD tab")
             }
@@ -43,11 +44,19 @@ struct TVPlayerInfoHUD: View {
     }
 
     /// Subtitles have their own shortcut, so the options HUD shows the other
-    /// tabs. Audio and Chapters only appear when the session has them.
+    /// tabs. Audio and Chapters only appear when the session has them, and
+    /// Song only when there is sound to identify.
+    ///
+    /// Song goes by the tracks and the load, not the model's
+    /// `unavailability`: that reads the playhead, so reading it here would
+    /// redraw the whole HUD on every playback tick. The Song pane reads it.
     private var availableTabs: [Tab] {
         if subtitleOnly { return [.subtitles] }
         var tabs: [Tab] = [.info, .stats, .video]
-        if !viewModel.audioTracks.isEmpty { tabs.append(.audio) }
+        if !viewModel.audioTracks.isEmpty {
+            tabs.append(.audio)
+            if !viewModel.isAudioOnlyVividLoad { tabs.append(.song) }
+        }
         if !viewModel.chapters.isEmpty { tabs.append(.chapters) }
         return tabs
     }
@@ -138,6 +147,11 @@ struct TVPlayerInfoHUD: View {
                 )
             case .video:     VideoPane(viewModel: viewModel)
             case .audio:     AudioPane(viewModel: viewModel)
+            case .song:
+                SongPane(
+                    model: viewModel.songIdentification,
+                    onMoveToTabs: focusActiveTab
+                )
             case .subtitles: SubtitlesPane(viewModel: viewModel)
             case .chapters:  ChaptersPane(viewModel: viewModel, onSelect: onDismiss)
             }
@@ -182,8 +196,9 @@ struct TVPlayerInfoHUD: View {
         focusedTab = first
     }
 
-    /// Up at the top of the Info or Stats pane. Button panes don't need this:
-    /// the tab row's `defaultFocus` routes native Up movement.
+    /// Up at the top of the Info or Stats pane, or the Song pane losing its
+    /// focused row. Other button panes don't need this: the tab row's
+    /// `defaultFocus` routes native Up movement.
     private func focusActiveTab() {
         guard availableTabs.contains(activeTab) else {
             focusedTab = availableTabs.first

@@ -311,7 +311,7 @@ The wobble honours Reduce Motion.
 
 ### Mobile player
 
-Quality, Audio, Subtitles and Chapters each have a separate round glass button above the playback bar and open scrollable anchored popovers.
+Quality, Audio, Subtitles, Song and Chapters each have a separate round glass button above the playback bar and open scrollable anchored popovers.
 An open popover pins the controls, and the mobile presentation host stays mounted during buffering and quality reloads.
 Quality changes use the existing position-preserving reload path.
 Chapters and subtitles come from the media; chapter ticks are absent from the timeline.
