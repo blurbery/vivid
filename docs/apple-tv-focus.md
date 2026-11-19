@@ -378,7 +378,13 @@ Menu always does something visible on Settings editor pages.
 In Studios & Networks it leaves arrange mode first; while Show on Home still needs more brands it presents a `tvSystemAlert` saying how many more to choose instead of leaving, since iPhone and iPad hide Back in that state.
 In a saved-account editor, Menu pressed while a sign-in, sign-out or deletion is still running shows a line asking to wait, with the editor's other status text, instead of leaving: that work holds the account switch and can't be stopped partway.
 The line clears when the work finishes and Menu leaves as normal again.
-These pages keep their own `onExitCommand`; root-level Menu handling in the shell is unchanged.
+These pages keep their own `onExitCommand`.
+
+Menu pressed while the focus engine holds nothing can't reach any page's `onExitCommand`, so tvOS would take it and send the app to the Home Screen.
+That could happen for a moment after an option menu closed or a page went.
+The shell catches that press on its window, only while nothing has focus and no player is on screen, and asks the focus engine to pick an item again.
+If nothing has focus 0.3 seconds later it runs the focus watchdog's repair, or only asks the focus engine again while a cover, sheet or alert is presented.
+If nothing has focus 0.8 seconds after a caught press, Menu goes to tvOS until focus next arrives anywhere or ten seconds pass, so Menu can always leave the app; a press inside that 0.8 seconds is caught again.
 
 The server address page leaves Menu to the navigation stack: Back pops the page, which cancels a connection in progress.
 While it connects, Cancel sits beside Connect.

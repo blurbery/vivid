@@ -645,8 +645,15 @@ extension TVMainTabView {
 
     /// Catches the remote's Menu press on the bar's window while the bar can
     /// use it; otherwise the press passes through.
-    private struct MenuPressBridge: UIViewRepresentable {
+    ///
+    /// With `onlyWithoutFocus` it catches the press only while the focus
+    /// engine holds nothing. No view's `onExitCommand` can see a press then,
+    /// so tvOS would take it and send the app to the Home Screen.
+    struct MenuPressBridge: UIViewRepresentable {
         let isActive: Bool
+        var onlyWithoutFocus = false
+        /// Asked as a press arrives; true leaves the press alone.
+        var isBlocked: () -> Bool = { false }
         let onPress: () -> Void
 
         func makeUIView(context: Context) -> InstallerView {
@@ -655,6 +662,8 @@ extension TVMainTabView {
 
         func updateUIView(_ view: InstallerView, context: Context) {
             context.coordinator.isActive = isActive
+            context.coordinator.onlyWithoutFocus = onlyWithoutFocus
+            context.coordinator.isBlocked = isBlocked
             context.coordinator.onPress = onPress
         }
 
@@ -666,7 +675,20 @@ extension TVMainTabView {
 
         final class Coordinator: NSObject, UIGestureRecognizerDelegate {
             var isActive = false
+            var onlyWithoutFocus = false
+            var isBlocked: () -> Bool = { false }
             var onPress: () -> Void = {}
+            /// True from when a press caught with nothing focused has failed
+            /// to bring focus back until focus is next seen, so the next
+            /// Menu in that same outage goes to tvOS.
+            private var isUnrecovered = false
+            private var outageWatch: Task<Void, Never>?
+            private var focusObserver: NSObjectProtocol?
+
+            deinit {
+                outageWatch?.cancel()
+                if let focusObserver { NotificationCenter.default.removeObserver(focusObserver) }
+            }
 
             /// Menu presses only; no touches, so clickpad touches stay with
             /// the focused button.
@@ -681,11 +703,63 @@ extension TVMainTabView {
 
             @objc func pressed(_ recogniser: UITapGestureRecognizer) {
                 guard recogniser.state == .ended else { return }
+                // Before the recovery runs, so the watch sees focus land even
+                // when the recovery brings it back at once.
+                if onlyWithoutFocus { watchOutage(in: recogniser.view as? UIWindow) }
                 onPress()
             }
 
+            /// Once the recovery has had time to land, marks the press as
+            /// having failed if nothing has focus. Focus arriving anywhere,
+            /// at any moment, ends the watch and clears the mark, as does
+            /// ten seconds, so the mark never outlives the outage it
+            /// belongs to. A later press restarts it.
+            private func watchOutage(in window: UIWindow?) {
+                endOutageWatch()
+                // Posted for every focus move, so the watch can't miss
+                // focus coming back and going again between two checks.
+                focusObserver = NotificationCenter.default.addObserver(
+                    forName: UIFocusSystem.didUpdateNotification, object: nil, queue: .main
+                ) { [weak self] note in
+                    let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext
+                    guard context?.nextFocusedItem != nil else { return }
+                    MainActor.assumeIsolated { self?.endOutageWatch() }
+                }
+                outageWatch = Task { @MainActor [weak self, weak window] in
+                    try? await Task.sleep(for: .milliseconds(800))
+                    guard !Task.isCancelled, let self else { return }
+                    guard !Self.hasFocus(in: window) else { return self.endOutageWatch() }
+                    self.isUnrecovered = true
+                    try? await Task.sleep(for: .seconds(10))
+                    guard !Task.isCancelled else { return }
+                    self.endOutageWatch()
+                }
+            }
+
+            private func endOutageWatch() {
+                outageWatch?.cancel()
+                outageWatch = nil
+                isUnrecovered = false
+                if let focusObserver { NotificationCenter.default.removeObserver(focusObserver) }
+                focusObserver = nil
+            }
+
+            private static func hasFocus(in window: UIWindow?) -> Bool {
+                guard let window else { return false }
+                return UIFocusSystem.focusSystem(for: window)?.focusedItem != nil
+            }
+
             func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-                isActive
+                guard isActive, !isBlocked() else { return false }
+                let hasFocus = Self.hasFocus(in: gestureRecognizer.view as? UIWindow)
+                // The bar's own bridge only acts while something has focus,
+                // so the two never both take a press.
+                guard onlyWithoutFocus else { return hasFocus }
+                guard !hasFocus else { return false }
+                // A press after one that didn't bring focus back goes to tvOS,
+                // so Menu can always leave the app. Reads only: UIKit may
+                // ask more than once for a press.
+                return !isUnrecovered
             }
         }
 
