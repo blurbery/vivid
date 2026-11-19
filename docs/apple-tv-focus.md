@@ -380,6 +380,11 @@ In a saved-account editor, Menu pressed while a sign-in, sign-out or deletion is
 The line clears when the work finishes and Menu leaves as normal again.
 These pages keep their own `onExitCommand`; root-level Menu handling in the shell is unchanged.
 
+Menu pressed while the focus engine holds nothing can't reach any page's `onExitCommand`, so tvOS would take it and send the app to the Home Screen.
+That could happen for a moment after an option menu closed or a page went.
+The shell catches that press on its window, only while nothing has focus and no player is up, and asks the focus engine to pick an item again, falling back to the focus watchdog's repair.
+If a caught press doesn't bring focus back, the next Menu within ten seconds goes to tvOS, so Menu can always leave the app.
+
 The server address page leaves Menu to the navigation stack: Back pops the page, which cancels a connection in progress.
 While it connects, Cancel sits beside Connect.
 When Cancel goes, because the search was cancelled or finished, focus is set back to Connect, the one programmatic move this guide allows (the focused item disappeared).

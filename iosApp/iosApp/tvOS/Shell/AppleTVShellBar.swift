@@ -645,8 +645,13 @@ extension TVMainTabView {
 
     /// Catches the remote's Menu press on the bar's window while the bar can
     /// use it; otherwise the press passes through.
-    private struct MenuPressBridge: UIViewRepresentable {
+    ///
+    /// With `onlyWithoutFocus` it catches the press only while the focus
+    /// engine holds nothing. No view's `onExitCommand` can see a press then,
+    /// so tvOS would take it and send the app to the Home Screen.
+    struct MenuPressBridge: UIViewRepresentable {
         let isActive: Bool
+        var onlyWithoutFocus = false
         let onPress: () -> Void
 
         func makeUIView(context: Context) -> InstallerView {
@@ -655,6 +660,7 @@ extension TVMainTabView {
 
         func updateUIView(_ view: InstallerView, context: Context) {
             context.coordinator.isActive = isActive
+            context.coordinator.onlyWithoutFocus = onlyWithoutFocus
             context.coordinator.onPress = onPress
         }
 
@@ -666,7 +672,11 @@ extension TVMainTabView {
 
         final class Coordinator: NSObject, UIGestureRecognizerDelegate {
             var isActive = false
+            var onlyWithoutFocus = false
             var onPress: () -> Void = {}
+            /// Set when a press caught with nothing focused didn't bring
+            /// focus back, so the next one soon after goes to tvOS.
+            private var unrecoveredAt: ContinuousClock.Instant?
 
             /// Menu presses only; no touches, so clickpad touches stay with
             /// the focused button.
@@ -682,10 +692,31 @@ extension TVMainTabView {
             @objc func pressed(_ recogniser: UITapGestureRecognizer) {
                 guard recogniser.state == .ended else { return }
                 onPress()
+                guard onlyWithoutFocus else { return }
+                // Once the recovery has had time to land.
+                let window = recogniser.view as? UIWindow
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self, weak window] in
+                    self?.unrecoveredAt = Self.hasFocus(in: window) ? nil : .now
+                }
+            }
+
+            private static func hasFocus(in window: UIWindow?) -> Bool {
+                guard let window else { return false }
+                return UIFocusSystem.focusSystem(for: window)?.focusedItem != nil
             }
 
             func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-                isActive
+                guard isActive else { return false }
+                let hasFocus = Self.hasFocus(in: gestureRecognizer.view as? UIWindow)
+                // The bar's own bridge only acts while something has focus,
+                // so the two never both take a press.
+                guard onlyWithoutFocus else { return hasFocus }
+                guard !hasFocus else { return false }
+                // The press after one that didn't bring focus back goes to
+                // tvOS, so Menu can always leave the app. Reads only: UIKit
+                // may ask more than once for a press.
+                if let unrecoveredAt, ContinuousClock.now - unrecoveredAt < .seconds(10) { return false }
+                return true
             }
         }
 

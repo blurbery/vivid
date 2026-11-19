@@ -145,6 +145,17 @@ struct TVMainTabView: View {
             isActive: scenePhase == .active && router.presentedPlayer == nil,
             onRepair: repairFocus
         ))
+        // Menu pressed while nothing has focus (a moment after a menu closes
+        // or a page goes) brings focus back instead of leaving the app.
+        .background(
+            MenuPressBridge(
+                isActive: scenePhase == .active && router.presentedPlayer == nil,
+                onlyWithoutFocus: true,
+                onPress: recoverFocusOnMenu
+            )
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+        )
         // Another profile or server starts on the base theme, even if it
         // changed while the player was up.
         .onChange(of: currentAuthority) { TVAdaptiveAmbience.shared.reset() }
@@ -500,6 +511,29 @@ struct TVMainTabView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) { router.showSearchReplacingStack() }
+    }
+
+    /// Menu arrived with nothing focused, so no page could handle it.
+    private func recoverFocusOnMenu() {
+        DiagTrace.breadcrumb(
+            .essential, level: .warning, category: .focus, tag: "FocusRepair",
+            message: "menu pressed with no focused item",
+            attrs: ["target": .string("focusSystem"), "action": .string("menuRecover")]
+        )
+        FocusWatchdog.reResolveFocus()
+        // Give a page change in progress time to land focus itself, so the
+        // repair doesn't override where it was heading.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard let window = FocusWatchdog.activeKeyWindow(),
+                  UIFocusSystem.focusSystem(for: window)?.focusedItem == nil else { return }
+            // Under a cover, sheet or alert the shell's own landing place
+            // is out of reach: only ask again.
+            if window.rootViewController?.presentedViewController != nil {
+                FocusWatchdog.reResolveFocus()
+            } else {
+                repairFocus()
+            }
+        }
     }
 
     private func repairFocus() {
