@@ -73,9 +73,14 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         XCTAssertEqual(parsed { Self.setWord(&$0, at: 92, to: 5000) }, .invalid, "an end past the file")
         XCTAssertEqual(parsed { Self.setWord(&$0, at: 72, to: 0) }, .invalid, "a timestamp that doesn't move on")
         XCTAssertEqual(parsed { Self.setWord(&$0, at: 80, to: 0xFFFF_FFFF) }, .invalid, "the end marker too early")
-        XCTAssertEqual(
-            parsed { Self.setWord(&$0, at: 92, to: UInt32(ScrubPreviewSheets.Container.maximumStillBytes) + 200) },
-            .invalid, "a still too big to be a preview")
+        // A still one byte over the limit, inside a file long enough to hold
+        // it, so only the size check can refuse it.
+        let limit = ScrubPreviewSheets.Container.maximumStillBytes
+        let largest = Self.bif(stills: [Data([1, 1]), Data(count: limit)], timestamps: [0, 1])
+        XCTAssertNotEqual(BIFIndex.parse(largest, totalLength: nil, isWholeFile: true), .invalid, "a still at the limit")
+        let oversized = Self.bif(stills: [Data([1, 1]), Data(count: limit + 1)], timestamps: [0, 1])
+        XCTAssertEqual(BIFIndex.parse(oversized, totalLength: nil, isWholeFile: true), .invalid,
+                       "a still too big to be a preview")
         // With the length known from the server, an end past it is refused
         // before any still is asked for.
         XCTAssertEqual(BIFIndex.parse(good.prefix(96), totalLength: 100, isWholeFile: false), .invalid)
@@ -216,6 +221,30 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         XCTAssertNotNil(third)
     }
 
+    func testALoadThatEndsDuringTheFirstReplyStopsItAndAsksNoMore() async throws {
+        // 9,000 stills: a load that carried on would need a second request.
+        let count = 9000
+        let file = Self.bif(stills: Array(repeating: Data([7]), count: count), timestamps: (0..<count).map(UInt32.init))
+        let gate = DispatchSemaphore(value: 0)
+        RangeStub.configure { request in
+            Self.hold(gate)
+            return RangeStub.ranged(file, request)
+        }
+        let loader = EmbyScrubPreviews.Loader(Self.source(), session: RangeStub.session())
+        let load = Task { await loader.load() }
+        try await waitUntil { RangeStub.requests().count == 1 }
+        // The reply is still held, so only cancelling the request ends it.
+        load.cancel()
+        let sheets = await load.value
+        XCTAssertNil(sheets)
+        XCTAssertEqual(RangeStub.answered(), 0, "the request stopped before its reply came")
+        XCTAssertEqual(RangeStub.requests().count, 1, "an abandoned load asks for nothing more")
+        // Lets the held reply go and waits for it, so it can't count
+        // towards the next test.
+        gate.signal()
+        try await waitUntil { RangeStub.answered() == 1 }
+    }
+
     func testAnythingThatIsNotAPreviewFileGivesNoStills() async throws {
         RangeStub.serve(Data(repeating: 0x20, count: 4000))
         let loader = EmbyScrubPreviews.Loader(Self.source(), session: RangeStub.session())
@@ -333,7 +362,7 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         let file = try Self.previewFile(seconds: (0..<24).map { UInt32($0 * 10) })
         let gate = DispatchSemaphore(value: 0)
         RangeStub.configure { request in
-            gate.wait()
+            Self.hold(gate)
             return RangeStub.ranged(file, request)
         }
         let sheets = try XCTUnwrap(Self.sheets(of: file))
@@ -362,6 +391,61 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         let last = await store.image(8)
         XCTAssertNotNil(last)
         XCTAssertEqual(RangeStub.requests().count, 3)
+    }
+
+    func testAContentRangeMustNameExactlyTheBytesSent() async throws {
+        let unknownTotal = ScrubPreviewFetch.contentRange("bytes 10-19/*")
+        XCTAssertEqual(unknownTotal?.start, 10)
+        XCTAssertEqual(unknownTotal?.end, 19)
+        XCTAssertNil(unknownTotal?.total)
+        XCTAssertEqual(ScrubPreviewFetch.contentRange("bytes 0-99/100")?.total, 100)
+        XCTAssertNil(ScrubPreviewFetch.contentRange("bytes 20-10/100"), "an end before the start")
+        XCTAssertNil(ScrubPreviewFetch.contentRange("bytes 0-99/50"), "a range past the length")
+        XCTAssertNil(ScrubPreviewFetch.contentRange("bytes 5/100"))
+
+        // The right bytes from the right place, under a header that names
+        // only some of them.
+        let file = try Self.previewFile()
+        RangeStub.configure { request in
+            var reply = RangeStub.ranged(file, request)
+            let asked = request.value(forHTTPHeaderField: "Range") ?? ""
+            let lower = asked.dropFirst(6).split(separator: "-").first.flatMap { Int($0) } ?? 0
+            reply.headers["Content-Range"] = "bytes \(lower)-\(lower + 9)/\(file.count)"
+            return reply
+        }
+        let store = ScrubPreviewSheetStore(sheets: try XCTUnwrap(Self.sheets(of: file)), session: RangeStub.session())
+        defer { store.shutdown() }
+        let image = await store.image(4)
+        XCTAssertNil(image)
+        XCTAssertTrue(store.hasFailed(4))
+    }
+
+    func testGoingToTheBackgroundDropsAWholeFileStillOnItsWay() async throws {
+        let file = try Self.previewFile()
+        let gate = DispatchSemaphore(value: 0)
+        RangeStub.configure { _ in
+            Self.hold(gate)
+            return .init(status: 200, body: file)
+        }
+        let store = ScrubPreviewSheetStore(sheets: try XCTUnwrap(Self.sheets(of: file)), session: RangeStub.session())
+        defer { store.shutdown() }
+
+        async let first = store.image(0)
+        try await waitUntil { RangeStub.requests().count == 1 }
+        store.enteredBackground()
+        gate.signal()
+        let image = await first
+        XCTAssertNotNil(image, "the still asked for still arrives")
+
+        // Its run's stills were kept as small JPEGs; one outside that run
+        // needs the file again, because the whole file wasn't kept.
+        let neighbour = await store.image(5)
+        XCTAssertNotNil(neighbour)
+        XCTAssertEqual(RangeStub.requests().count, 1)
+        gate.signal()
+        let further = try await still(11, from: store)
+        XCTAssertEqual(Self.level(of: further), Self.level(forStill: 11), accuracy: 6)
+        XCTAssertEqual(RangeStub.requests().count, 2)
     }
 
     // MARK: - Provider
@@ -443,7 +527,7 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         let gate = DispatchSemaphore(value: 0)
         RangeStub.configure { request in
             // The index goes straight out; stills wait for the test.
-            if request.value(forHTTPHeaderField: "Range") != "bytes=0-65535" { gate.wait() }
+            if request.value(forHTTPHeaderField: "Range") != "bytes=0-65535" { Self.hold(gate) }
             return RangeStub.ranged(file, request)
         }
         let (provider, _) = try makeProvider()
@@ -465,6 +549,54 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         for _ in 0..<100 { await Task.yield() }
         XCTAssertEqual(stills, 0)
         XCTAssertEqual(RangeStub.requests().count, 2)
+        await provider.endSession()?.value
+    }
+
+    func testATargetWhoseRequestWasDroppedFromTheLineIsAskedForAgain() async throws {
+        // Forty stills ten seconds apart, so five runs don't overlap.
+        let file = try Self.previewFile(seconds: (0..<40).map { UInt32($0 * 10) })
+        let gate = DispatchSemaphore(value: 0)
+        RangeStub.configure { request in
+            // The index goes straight out; stills wait for the test.
+            if request.value(forHTTPHeaderField: "Range") != "bytes=0-65535" { Self.hold(gate) }
+            return RangeStub.ranged(file, request)
+        }
+        let controller = try VividPlaybackController()
+        var made: ScrubPreviewSheetStore?
+        let provider = VividScrubPreviewProvider(
+            engine: controller.engine,
+            makeStore: { sheets in
+                let store = ScrubPreviewSheetStore(sheets: sheets, session: RangeStub.session())
+                made = store
+                return store
+            },
+            makeReader: { _ in nil }
+        )
+        var previews: [VividScrubPreviewProvider.Preview?] = []
+        provider.onPreview = { previews.append($0) }
+        provider.activate(try Self.spec(), sheets: Self.sheetSource(), startSourceTime: 0)
+        provider.playbackStarted()
+        // The warm-up run around still 0 takes the request turn and holds it.
+        try await waitUntil { RangeStub.requests().count == 2 }
+        let store = try XCTUnwrap(made)
+
+        // Still 10, then three targets far from it: the third of those to
+        // join the line drops still 10's run. The drag comes back to still
+        // 10 before that dropped run has answered.
+        provider.begin(atSourceTime: 100)
+        provider.request(atSourceTime: 200)
+        provider.request(atSourceTime: 300)
+        provider.request(atSourceTime: 380)
+        provider.request(atSourceTime: 100)
+        // Still 10 is asked for again, which drops the oldest run waiting.
+        try await waitUntil { store.droppedRangeRequests == 2 }
+        XCTAssertFalse(store.hasFailed(10), "a dropped request is no failure")
+
+        for _ in 0..<4 { gate.signal() }
+        try await waitUntil { (previews.last ?? nil)?.sourceTime == 100 }
+        XCTAssertEqual(Self.level(of: try XCTUnwrap(previews.last ?? nil).image), Self.level(forStill: 10), accuracy: 6)
+        // The index, the warm-up, still 10 again and the two runs left.
+        try await waitUntil { RangeStub.answered() == 5 }
         await provider.endSession()?.value
     }
 
@@ -512,12 +644,23 @@ final class EmbyScrubPreviewsTests: XCTestCase {
         return try XCTUnwrap(image, file: file, line: line)
     }
 
+    /// Throws once the wait runs out, so nothing after it runs on a state
+    /// that never came.
     private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
         for _ in 0..<300 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("timed out", file: file, line: line)
+        throw TimedOut()
+    }
+
+    private struct TimedOut: Error {}
+
+    /// Holds a stub reply until the test lets it go, or for ten seconds at
+    /// most, so a test that stops early never leaves a reply blocked.
+    nonisolated private static func hold(_ gate: DispatchSemaphore) {
+        _ = gate.wait(timeout: .now() + 10)
     }
 
     private static func spec() throws -> VividLoadSpec {
@@ -610,14 +753,18 @@ final class EmbyScrubPreviewsTests: XCTestCase {
     /// The grey level at the middle of an image, 0 to 255.
     private static func level(of image: CGImage) -> Double {
         var pixel = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return -1 }
-        context.interpolationQuality = .none
-        let width = CGFloat(image.width), height = CGFloat(image.height)
-        context.draw(image, in: CGRect(x: -width / 2, y: -height / 2, width: width, height: height))
-        return Double(pixel[0])
+        // The context draws into the buffer, so it's made, drawn into and
+        // read inside the one scope where the buffer's address holds.
+        return pixel.withUnsafeMutableBytes { buffer -> Double in
+            guard let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                          bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return -1 }
+            context.interpolationQuality = .none
+            let width = CGFloat(image.width), height = CGFloat(image.height)
+            context.draw(image, in: CGRect(x: -width / 2, y: -height / 2, width: width, height: height))
+            return Double(buffer[0])
+        }
     }
 }
 

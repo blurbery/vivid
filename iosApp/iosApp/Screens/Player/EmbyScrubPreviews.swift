@@ -134,7 +134,7 @@ enum EmbyScrubPreviews {
         }
 
         func load() async -> ScrubPreviewSheets? {
-            guard !isAbsent else { return nil }
+            guard !isAbsent, !Task.isCancelled else { return nil }
             let first = await fetch(length: EmbyScrubPreviews.firstRangeLength)
             if first.status == 404 {
                 isAbsent = true
@@ -147,6 +147,8 @@ enum EmbyScrubPreviews {
             guard first.status == 206, first.rangeStart == 0 else { return nil }
             let outcome = BIFIndex.parse(body, totalLength: first.totalLength, isWholeFile: false)
             guard case let .needs(length) = outcome else { return sheets(outcome, whole: nil) }
+            // A load that ended while the first reply came in asks no more.
+            guard !Task.isCancelled else { return nil }
             let second = await fetch(length: length)
             guard second.status == 206, second.rangeStart == 0, let longer = second.body else { return nil }
             return sheets(BIFIndex.parse(longer, totalLength: second.totalLength, isWholeFile: false), whole: nil)
