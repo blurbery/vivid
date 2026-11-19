@@ -116,6 +116,8 @@ targets:
       - path: Tests/TVDetailScrollMaterialMaskTests.swift
       - path: Tests/TVCatalogGridIndexTests.swift
       - path: Tests/TVLibraryGridRefreshTests.swift
+      # Server preview sheets drive the Apple TV scrub still too.
+      - path: Tests/ScrubPreviewSheetsTests.swift
       # Vivid's player bridge, tested on Apple TV as well as iOS.
       - path: Tests/VividPlayerConversionTests.swift
       - path: Tests/VividPlayerCoreTests.swift

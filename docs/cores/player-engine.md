@@ -32,9 +32,10 @@ Consecutive episodes retain the existing display-criteria reuse.
 Apple TV testing confirmed the earlier switch; other display routes and extended episode chaining remain unverified.
 
 The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences.
-Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read.
+Scrub previews use the server's preview sheets first, on every platform; see [Tracks, subtitles and previews](../playback/architecture.md#tracks-subtitles-and-previews).
+Without them, native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read.
 Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available.
-Apple TV scrubbing does not start thumbnail extraction.
+Apple TV scrubbing does not start frame extraction.
 
 ## Player bridge
 

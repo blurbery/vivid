@@ -12,6 +12,9 @@ struct JellyfinAdapter {
     static let browseFields = "Overview,Genres,Studios,ProviderIds,DateCreated,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
     static let homeFields = browseFields + ",MediaSources,MediaStreams"
     static let fields = "Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
+    /// The item the player opens also asks for its seek-bar preview sheets
+    /// (Jellyfin 10.9 and later; older servers ignore the name).
+    static let playbackFields = fields + ",Trickplay"
 
     // MARK: - Values
 
@@ -392,8 +395,8 @@ struct JellyfinAdapter {
 
     // MARK: - Fetching
 
-    func rawItem(_ id: String) async throws -> [String: Any] {
-        try await connection.object("GET", "/Items/\(JellyfinConnection.id(id))", query: ["Fields": Self.fields, "EnableUserData": "true"])
+    func rawItem(_ id: String, fields: String = JellyfinAdapter.fields) async throws -> [String: Any] {
+        try await connection.object("GET", "/Items/\(JellyfinConnection.id(id))", query: ["Fields": fields, "EnableUserData": "true"])
     }
 
     /// A page of items as a catalogue response. Without a `path` it searches

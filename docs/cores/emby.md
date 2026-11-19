@@ -117,6 +117,7 @@ Items without a server-provided year have no year caption.
 ## Playback and settings
 
 `EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Lucid Engine.
+Vivid doesn't use Emby's seek preview thumbnails: iPhone and iPad read scrub previews from the stream where AVFoundation can, and Apple TV shows the target time only.
 Its device profile comes from the shared [decode capabilities](../../iosApp/iosApp/Shared/AppleDecodeCapabilities.swift) and is named `Vivid` in the request, the same as Jellyfin's. On Apple TV 4K, iPhone and iPad it offers direct play of H.264, HEVC, AV1, MPEG-2 and VP9 with no device resolution limit, and Lucid Engine chooses hardware or software decoding when the file loads.
 On Apple TV HD and the simulators the request has an overall 1920×1080 ceiling and only offers the codecs VideoToolbox decodes in hardware (H.264 on Apple TV HD's A8, which has no hardware HEVC decoder) plus three software decoders, each kept within the limits Vivid's test files cover: AV1 (Main profile, up to 10-bit) and VP9 (Profile 0, 8-bit) up to 1080p at 30 fps and 3 Mbps, and MPEG-2 (Main profile, 8-bit) up to 720×480 at 31 fps and 7 Mbps.
 H.264 is limited to 8-bit at up to 60 fps.

@@ -123,6 +123,14 @@ struct TVPlayerScrubber: View {
         /// transport.
         static let rowHeight: CGFloat = 56
         static let chipLift: CGFloat = -34
+        /// The server's preview still, shown above the puck while the
+        /// timeline is being scrubbed.
+        static let stillSize = CGSize(width: 320, height: 180)
+        static let stillCorner: CGFloat = 14
+        static let stillGap: CGFloat = 12
+        /// Clear of the speed chip while a hold seek runs.
+        static let stillGapAboveChip: CGFloat = 54
+        static let stillEdgeOpacity = 0.18
         /// The window observers only need a point to exist.
         static let observerSide: CGFloat = 1
         static let loadedOpacity = 0.28
@@ -250,6 +258,12 @@ struct TVPlayerScrubber: View {
                 }
             }
             .frame(height: Metrics.rowHeight, alignment: .center)
+            .overlay(alignment: .topLeading) {
+                if viewModel.isTimelineScrubbing, let still = viewModel.scrubPreviewImage {
+                    previewStill(still, span: span)
+                        .transition(.opacity)
+                }
+            }
         }
         .frame(height: Metrics.rowHeight)
         .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
@@ -287,6 +301,28 @@ struct TVPlayerScrubber: View {
             .overlay(Ellipse().stroke(Color.white.opacity(isSelecting ? 0.55 : 0), lineWidth: 1))
             .shadow(color: .black.opacity(0.48), radius: 8, y: 3)
             .offset(x: span * CGFloat(playedShare) - width / 2)
+    }
+
+    /// The still for the scrub target, centred over the puck and kept inside
+    /// the line's ends. There's none until the server's preview sheet is in,
+    /// and never one for a server without previews.
+    private func previewStill(_ image: CGImage, span: CGFloat) -> some View {
+        let size = Metrics.stillSize
+        let corner = RoundedRectangle(cornerRadius: Metrics.stillCorner, style: .continuous)
+        let centred = span * CGFloat(playedShare) - size.width / 2
+        let gap = isHoldSeeking ? Metrics.stillGapAboveChip : Metrics.stillGap
+        return Image(decorative: image, scale: 1)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: size.width, height: size.height)
+            .clipShape(corner)
+            .overlay {
+                corner.stroke(.white.opacity(Metrics.stillEdgeOpacity), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.55), radius: 18, y: 7)
+            .offset(x: min(max(centred, 0), max(span - size.width, 0)), y: -(size.height + gap))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private var holdSpeedChip: some View {

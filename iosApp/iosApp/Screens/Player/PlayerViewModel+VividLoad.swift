@@ -51,7 +51,7 @@ extension PlayerViewModel {
         isBuffering = false
         isLoadingSubtitles = false
         bufferingProgress = nil
-        scrubPreviewProvider.endSession()
+        scrubPreviewProvider.endSession(keepingSheets: true)
         #if os(tvOS)
         vividPlaybackController.engine.preferLosslessAudio = settings.preferLosslessAudio
         #endif
@@ -104,7 +104,11 @@ extension PlayerViewModel {
         // Startup finished on this epoch, so the decode route is settled and
         // deferred track picks may drive the engine.
         establishedVividLoadEpoch = loadEpoch
-        scrubPreviewProvider.activate(spec)
+        scrubPreviewProvider.activate(
+            spec,
+            sheets: scrubPreviewSheetSource(prepared: prepared, streamRequest: streamRequest),
+            startSourceTime: resumeSourcePosition ?? prepared.session.position
+        )
         #if os(iOS) || os(tvOS)
         mountSessionSubtitleFiles(prepared: prepared, streamRequest: streamRequest)
         #endif
@@ -123,6 +127,26 @@ extension PlayerViewModel {
             vividPlaybackController.play()
         } else {
             vividPlaybackController.pause()
+        }
+    }
+
+    /// Where this playback's seek-bar preview sheets come from, if its server
+    /// can have any. Jellyfin's arrive with the item; Silo's are one optional
+    /// request, skipped when the server already said the file has none.
+    /// Downloads and Emby have none.
+    private func scrubPreviewSheetSource(
+        prepared: PreparedPlayback,
+        streamRequest: StreamRequest
+    ) -> VividScrubPreviewProvider.SheetSource? {
+        guard !streamRequest.url.isFileURL, prepared.selectedVersion.codecVideo != nil else { return nil }
+        if let sheets = prepared.scrubPreviewSheets {
+            return .init(key: sheets.key) { sheets }
+        }
+        guard prepared.protocolV3 != nil, prepared.selectedVersion.trickplayAvailable != false else { return nil }
+        let contentID = prepared.watchDetail.contentId
+        let fileID = prepared.selectedVersion.fileId
+        return .init(key: SiloScrubPreviews.key(contentID: contentID, fileID: fileID)) {
+            await SiloScrubPreviews.load(contentID: contentID, fileID: fileID)
         }
     }
 

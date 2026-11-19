@@ -269,11 +269,21 @@ The overlay receives updates only when its active cues or selected track change;
 The loader keeps SubRip and WebVTT bold, italic, underline, strike-through and `<font color>` tags as styled runs and `{\anN}` as the cue's alignment, dropping other tags, and the overlay stacks overlapping cues as libass does, with the latest furthest from the edge.
 Native ASS and embedded rendering keep their authored styles.
 
-Apple TV scrubbing shows the timeline and target time without a thumbnail overlay.
-Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker.
-Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
+Scrub previews come from the server's own seek-bar preview sheets where it has them: JPEG sheets holding a grid of small stills taken at a fixed interval, usually 10 seconds.
+Silo lists them at `GET /api/v2/watch/{id}/trickplay` for a file whose version says `trickplay_available`, and Jellyfin 10.9 and later in the playing item's `Trickplay` member.
+Emby and downloads have none.
+[ScrubPreviewSheets](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheets.swift) maps a source-media time to a sheet and a cell, and [ScrubPreviewSheetStore](../../iosApp/iosApp/Screens/Player/ScrubPreviewSheetStore.swift) downloads and decodes sheets off the main thread.
+A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
+The store keeps two sheets decoded and the JPEGs of up to twelve; the sheet around the playhead is downloaded when the load opens, and the sheets either side of the target while scrubbing.
+A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a reload of the same file keeps the sheets it has.
+Sheets are indexed by source time, so a target the loaded transport can't reach still has a still.
 
-iOS scrub previews use the existing bounded request owner and platform engine frame extractor.
+Apple TV shows the still above the playhead while the timeline is selected or held, and in the hold-to-seek panel.
+Apple TV has no frame reader, so without server sheets scrubbing shows the timeline and target time only and starts no reader, decoder or request worker.
+Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged.
+
+On iPhone and iPad the still fills the existing preview bubble.
+Without server sheets, or for a sheet that failed, they fall back to the bounded request owner and the platform engine frame extractor.
 Late images from an old source or gesture must not paint over a new selection.
 
 Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication.

@@ -17,6 +17,9 @@ struct PreparedPlayback {
     /// Emby and Jellyfin transcodes only: bitmap subtitle burn-in.
     let transcodeSubtitles: ServerTranscodeSubtitles?
     let nativeQualityOptions: [ApplePlaybackQualityOption]?
+    /// Jellyfin only: the file's seek-bar preview sheets, when the server
+    /// has them. Silo's are asked for once the load has opened.
+    let scrubPreviewSheets: ScrubPreviewSheets?
 
     init(
         watchDetail: WatchDetail,
@@ -28,7 +31,8 @@ struct PreparedPlayback {
         nativeAudioStreamIndex: Int32? = nil,
         nativeHLS: Bool = false,
         transcodeSubtitles: ServerTranscodeSubtitles? = nil,
-        nativeQualityOptions: [ApplePlaybackQualityOption]? = nil
+        nativeQualityOptions: [ApplePlaybackQualityOption]? = nil,
+        scrubPreviewSheets: ScrubPreviewSheets? = nil
     ) {
         self.watchDetail = watchDetail
         self.selectedVersion = selectedVersion
@@ -40,6 +44,7 @@ struct PreparedPlayback {
         self.nativeHLS = nativeHLS
         self.transcodeSubtitles = transcodeSubtitles
         self.nativeQualityOptions = nativeQualityOptions
+        self.scrubPreviewSheets = scrubPreviewSheets
     }
 
     /// "Series • S2E3 • Episode" for an episode with a series title and a
