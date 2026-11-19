@@ -300,6 +300,9 @@ extension PlayerViewModel {
         guard startedVividLoadEpoch != epoch else { return }
         startedVividLoadEpoch = epoch
         hasStartedPlayback = true
+        // Preview sheets are asked for only now, so they never share the
+        // connection or the main thread with startup.
+        scrubPreviewProvider.playbackStarted()
         handleFileLoaded()
         if isNextUpTransitioning {
             isNextUpTransitioning = false

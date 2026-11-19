@@ -84,6 +84,8 @@ final class VividScrubPreviewProvider {
     /// Clears a still left over from another sheet when the new sheet is
     /// slow to arrive.
     private var staleStillClear: Task<Void, Never>?
+    /// Whether this load has shown its first frame.
+    private var hasStarted = false
     /// How many times this load has asked for its sheets.
     private var sheetLoadAttempts = 0
     /// The scrub's current target, for sheets that arrive part-way through.
@@ -106,7 +108,8 @@ final class VividScrubPreviewProvider {
         }
     }
 
-    /// Starts previews for a load that has opened. `sheets` is nil for a
+    /// Readies previews for a load that has opened, without asking the
+    /// server for anything yet (see `playbackStarted()`). `sheets` is nil for a
     /// source with no server previews, such as a download. The frame reader
     /// is given the load's URL and headers directly, so an authenticated Silo
     /// transport is read with the inputs `VividLoadSpec` already checked.
@@ -118,16 +121,30 @@ final class VividScrubPreviewProvider {
         sheetLoadFailedAt = nil
         sheetLoadAttempts = 0
         warmSourceTime = startSourceTime
+        hasStarted = false
         guard let sheets else {
             dropStore()
             return
         }
+        // Nothing goes on the network here: this runs before the first
+        // frame, and startup keeps the connection and the main thread to
+        // itself. `playbackStarted()` does the asking.
         if let store, store.sheets.key == sheets.key, !store.sheets.isExpiring() {
             storeIsLive = true
-            warmStore()
         } else {
             dropStore()
-            loadSheets(from: sheets)
+        }
+    }
+
+    /// The load's first frame is up, so the sheet list and the sheet around
+    /// the playhead can be fetched without getting in startup's way.
+    func playbackStarted() {
+        guard load != nil, !hasStarted else { return }
+        hasStarted = true
+        if storeIsLive {
+            warmStore()
+        } else if let sheetSource, sheetLoad == nil {
+            loadSheets(from: sheetSource)
         }
     }
 
@@ -191,6 +208,7 @@ final class VividScrubPreviewProvider {
         sheetLoad?.cancel()
         sheetLoad = nil
         storeIsLive = false
+        hasStarted = false
         // A fetch still running belongs to the load that just ended. It's
         // disowned here, so the next load's first target starts its own
         // (the store shares the download) instead of waiting on one that

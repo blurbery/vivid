@@ -280,13 +280,22 @@ final class ScrubPreviewSheetsTests: XCTestCase {
 
     func testAFailedSheetDoesNotLetTheNextDecodeOvertakeARunningOne() async throws {
         let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        // Sheet 0 is held at the server until sheet 2 has been asked for,
+        // and then takes a little longer, so the order doesn't depend on
+        // how fast anything runs: without the chain, sheet 2 always decodes
+        // while sheet 0 is still on its way.
+        let sheetTwoRequested = DispatchSemaphore(value: 0)
         SheetStub.configure { request in
             switch request.url?.lastPathComponent {
             case "0.jpg":
-                Thread.sleep(forTimeInterval: 0.2)
+                sheetTwoRequested.wait()
+                Thread.sleep(forTimeInterval: 0.15)
                 return (200, jpeg)
-            case "1.jpg": return (500, Data())
-            default: return (200, jpeg)
+            case "1.jpg":
+                return (500, Data())
+            default:
+                sheetTwoRequested.signal()
+                return (200, jpeg)
             }
         }
         let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
@@ -294,9 +303,10 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         store.setScrubbing(true)
         var order: [Int] = []
         async let slow: Void = { _ = await store.image(0); order.append(0) }()
-        try await Task.sleep(for: .milliseconds(20))
+        try await waitUntil { SheetStub.requests().contains { $0.url?.lastPathComponent == "0.jpg" } }
         async let failed: Void = { _ = await store.image(1); order.append(1) }()
-        try await Task.sleep(for: .milliseconds(20))
+        // Sheet 1 has failed before sheet 2 is even asked for.
+        try await waitUntil { store.hasFailed(1) }
         async let next: Void = { _ = await store.image(2); order.append(2) }()
         _ = await (slow, failed, next)
         XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: 0)), try XCTUnwrap(order.firstIndex(of: 2)),
@@ -323,6 +333,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         provider.onPreview = { previews.append($0) }
 
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets }, startSourceTime: 0)
+        provider.playbackStarted()
         provider.begin(atSourceTime: 15)
         try await waitUntil { previews.contains { $0 != nil } }
         let first = try XCTUnwrap(previews.last ?? nil)
@@ -361,6 +372,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         var stills = 0
         provider.onPreview = { if $0 != nil { stills += 1 } }
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
+        provider.playbackStarted()
         provider.begin(atSourceTime: 15)
         await provider.endSession()?.value
         try await Task.sleep(for: .milliseconds(300))
@@ -382,6 +394,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
             await withCheckedContinuation { release = $0 }
             return sheets
         })
+        provider.playbackStarted()
         try await waitUntil { release != nil }
         provider.begin(atSourceTime: 5)
         provider.request(atSourceTime: 45)
@@ -404,11 +417,13 @@ final class ScrubPreviewSheetsTests: XCTestCase {
             return sheets
         }
         provider.activate(try Self.spec(), sheets: source)
+        provider.playbackStarted()
         provider.begin(atSourceTime: 15)
         try await waitUntil { latest != nil }
 
         provider.endSession(keepingSheets: true)
         provider.activate(try Self.spec(), sheets: source)
+        provider.playbackStarted()
         provider.begin(atSourceTime: 25)
         XCTAssertEqual(latest?.sourceTime, 25, "the kept sheet answers at once")
         XCTAssertEqual(loads, 1)
@@ -417,8 +432,39 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         // A different file starts again.
         let other = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2, key: "other"))
         provider.activate(try Self.spec(), sheets: .init(key: other.key) { other })
+        provider.playbackStarted()
         provider.begin(atSourceTime: 25)
         try await waitUntil { latest?.sourceTime == 25 && SheetStub.requests().count == 2 }
+        await provider.endSession()?.value
+    }
+
+    func testNothingIsAskedForUntilPlaybackHasStarted() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in (200, jpeg) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
+        let (provider, _) = try makeProvider()
+        var loads = 0
+        let source = VividScrubPreviewProvider.SheetSource(key: sheets.key) {
+            loads += 1
+            return sheets
+        }
+        provider.activate(try Self.spec(), sheets: source, startSourceTime: 15)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(loads, 0, "the sheet list waits for the first frame")
+        XCTAssertEqual(SheetStub.requests().count, 0)
+
+        provider.playbackStarted()
+        try await waitUntil { SheetStub.requests().count == 1 }
+        XCTAssertEqual(loads, 1)
+
+        // A reload of the same file keeps its sheets but still waits for
+        // its own first frame before touching the network again.
+        provider.endSession(keepingSheets: true)
+        SheetStub.configure { _ in (200, jpeg) }
+        provider.activate(try Self.spec(), sheets: source, startSourceTime: 75)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(loads, 1)
+        XCTAssertEqual(SheetStub.requests().count, 0)
         await provider.endSession()?.value
     }
 
@@ -430,6 +476,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
+        provider.playbackStarted()
         provider.begin(atSourceTime: 5)
         for target in stride(from: 85.0, through: 565, by: 80) {
             provider.request(atSourceTime: target)
@@ -449,6 +496,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         var latest: VividScrubPreviewProvider.Preview?
         provider.onPreview = { latest = $0 }
         provider.activate(try Self.spec(), sheets: .init(key: sheets.key) { sheets })
+        provider.playbackStarted()
         provider.begin(atSourceTime: 5)
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertNil(latest?.sourceTime == 5 ? latest : nil, "no sheet still for the failed sheet")
@@ -469,6 +517,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         provider.onPreview = { latest = $0 }
         let source = VividScrubPreviewProvider.SheetSource(key: sheets.key) { sheets }
         provider.activate(try Self.spec(), sheets: source)
+        provider.playbackStarted()
         provider.begin(atSourceTime: 15)
         try await Task.sleep(for: .milliseconds(50))
 
@@ -476,6 +525,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         // a scrub starts and holds on one target.
         provider.endSession(keepingSheets: true)
         provider.activate(try Self.spec(), sheets: source)
+        provider.playbackStarted()
         provider.begin(atSourceTime: 35)
         try await waitUntil { latest?.sourceTime == 35 }
         XCTAssertEqual(SheetStub.requests().count, 1, "the running download is shared")
@@ -614,7 +664,15 @@ private final class SheetStub: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        let (status, data) = body(request)
+        // Each request is answered on its own thread, so a reply a test
+        // holds back can't hold up the others.
+        Thread.detachNewThread { [self] in
+            respond(body(request), url: url, plan: plan, declared: declared)
+        }
+    }
+
+    private func respond(_ reply: Reply, url: URL, plan: (count: Int, size: Int)?, declared: Int?) {
+        let (status, data) = reply
         var headers = ["Content-Type": "image/jpeg"]
         if let declared { headers["Content-Length"] = String(declared) }
         let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
