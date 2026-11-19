@@ -108,7 +108,7 @@ A selected quality's resolution combines with the 1080p ceiling, and the lower o
 If the account has `EnableVideoPlaybackTranscoding` turned off, or Jellyfin returns no transcoding URL, that title won't play on Apple TV HD.
 These limits are covered by request tests only; they haven't been checked on Apple TV HD hardware or against a live Jellyfin server.
 Vivid retains its shared controls, engine, subtitle inventory and next-episode behaviour.
-The item the player opens asks for `Trickplay` in `Fields`, and when Jellyfin (10.9 and later, with trickplay images generated) returns sheets for the playing media source, scrub previews are cropped from `/Videos/{id}/Trickplay/{width}/{sheet}.jpg`, fetched with the account's request header and without following redirects.
+The item the player opens asks for `Trickplay` in `Fields`, and when Jellyfin (10.9 and later, with trickplay images generated) returns sheets for the playing media source, scrub previews are cropped from `/Videos/{id}/Trickplay/{width}/{sheet}.jpg`, where `{id}` is the playing media source's own ID (an alternate version is an item of its own), fetched with the account's request header and without following redirects.
 The narrowest set at least 480 pixels wide is used, otherwise the widest.
 Trickplay sheets have not been verified against a live Jellyfin server.
 The player also offers text subtitle files Jellyfin keeps beside the media, and its text streams while transcoding, fetched with the account's request headers and without following redirects.

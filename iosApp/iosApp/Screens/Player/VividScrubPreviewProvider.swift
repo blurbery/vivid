@@ -172,7 +172,7 @@ final class VividScrubPreviewProvider {
 
     func endInteraction() {
         scrubSourceTime = nil
-        store?.releaseAllButNewestDecoded()
+        store?.setScrubbing(false)
         supersedePending()
         retireReader()
     }
@@ -267,6 +267,7 @@ final class VividScrubPreviewProvider {
         // Whatever the reader had queued or decoding is now out of date.
         ticket &+= 1
         queued = nil
+        store.setScrubbing(true)
         if let sheet = store.cached(tile.sheet) {
             sheetTarget = nil
             guard publish(tile, from: sheet, in: store, sourceTime: sourceTime) else {

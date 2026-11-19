@@ -107,7 +107,7 @@ extension PlayerViewModel {
         scrubPreviewProvider.activate(
             spec,
             sheets: scrubPreviewSheetSource(prepared: prepared, streamRequest: streamRequest),
-            startSourceTime: resumeSourcePosition ?? prepared.session.position
+            startSourceTime: resumeSourcePosition ?? movieTime(for: prepared.session)
         )
         #if os(iOS) || os(tvOS)
         mountSessionSubtitleFiles(prepared: prepared, streamRequest: streamRequest)

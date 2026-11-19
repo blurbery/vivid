@@ -276,7 +276,8 @@ Emby and downloads have none.
 A still is a crop of a decoded sheet, so once its sheet is in memory it is published in the same call that moved the target, with nothing read from the stream.
 One sheet is decoded at a time, and the newest target decides which comes next; the JPEGs of the sheets either side download in the background, two requests at a time at most.
 The store keeps two sheets decoded while scrubbing and one between scrubs, plus the JPEGs of up to twelve; the sheet around the playhead is downloaded when the load opens, and the sheets either side of the target while scrubbing.
-A memory warning drops them all, and going to the background drops the decoded ones.
+A memory warning drops them all, and going to the background drops the decoded ones; a download or decode already running then doesn't put its result back.
+A sheet's download stops as soon as it passes 16 MB.
 A target inside the still already showing publishes nothing, and a still left from another sheet is cleared if the next sheet takes longer than a quarter of a second.
 A sheet that fails is left alone for 30 seconds, signed Silo URLs are asked for again once they are about to expire, and a replan, quality change or reloading seek of the same file keeps the sheets it has.
 Skip presses show the target time only and ask for no still.

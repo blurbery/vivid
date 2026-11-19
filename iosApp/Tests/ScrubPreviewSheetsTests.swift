@@ -125,7 +125,8 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         XCTAssertEqual(sheets.rows, 5)
         XCTAssertEqual(sheets.sheetURLs.count, 10)
         XCTAssertEqual(sheets.sheetURLs[3].absoluteString,
-                       "https://jelly.example.com/base/Videos/abc123/Trickplay/640/3.jpg?mediaSourceId=0F8FAD5BD9CB469FA16570867728950E")
+                       "https://jelly.example.com/base/Videos/0F8FAD5BD9CB469FA16570867728950E/Trickplay/640/3.jpg?mediaSourceId=0F8FAD5BD9CB469FA16570867728950E",
+                       "the sheets belong to the playing version's own item")
         XCTAssertEqual(sheets.headers["Authorization"], "MediaBrowser Token=\"t\"")
         XCTAssertNil(sheets.expiresAt)
     }
@@ -143,7 +144,9 @@ final class ScrubPreviewSheetsTests: XCTestCase {
         }
         none([:])
         none(only320, sourceID: "another")
-        none(only320, itemID: "a/b")
+        // Neither the source's ID nor the item's can go in a path.
+        none(["Trickplay": ["s/c": ["320": ["TileWidth": 10, "TileHeight": 10, "ThumbnailCount": 101, "Interval": 10_000]]]],
+             itemID: "a/b", sourceID: "s/c")
         none(["Trickplay": ["src": ["320": ["TileWidth": 0, "TileHeight": 10, "ThumbnailCount": 5, "Interval": 10_000]]]])
         none(["Trickplay": ["src": ["wide": ["TileWidth": 10, "TileHeight": 10, "ThumbnailCount": 5, "Interval": 10_000]]]])
         none(["Trickplay": ["src": [:] as [String: Any]]])
@@ -193,6 +196,7 @@ final class ScrubPreviewSheetsTests: XCTestCase {
             let image = await store.image(sheet)
             XCTAssertNotNil(image)
         }
+        store.setScrubbing(true)
         XCTAssertNil(store.cached(0), "the oldest decoded sheet is dropped")
         XCTAssertNotNil(store.cached(2))
         XCTAssertNotNil(store.cached(3))
@@ -210,6 +214,47 @@ final class ScrubPreviewSheetsTests: XCTestCase {
 
     func testSomethingThatIsNotAnImageFailsTheSheet() async throws {
         SheetStub.configure { _ in (200, Data("<html>sign in</html>".utf8)) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        let image = await store.image(0)
+        XCTAssertNil(image)
+        XCTAssertTrue(store.hasFailed(0))
+    }
+
+    func testBetweenScrubsOneSheetStaysDecodedEvenIfAnotherLandsLate() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in (200, jpeg) }
+        let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        store.setScrubbing(true)
+        _ = await store.image(0)
+        async let late = store.image(1)
+        store.setScrubbing(false)
+        _ = await late
+        XCTAssertNil(store.cached(0))
+        XCTAssertNotNil(store.cached(1))
+    }
+
+    func testMemoryGivenBackStaysGivenBackWhenWorkLandsLate() async throws {
+        let jpeg = try XCTUnwrap(Self.sheetJPEG(columns: 4, rows: 2, cell: 20))
+        SheetStub.configure { _ in
+            Thread.sleep(forTimeInterval: 0.15)
+            return (200, jpeg)
+        }
+        let sheets = try XCTUnwrap(Self.sheets(count: 32, columns: 4, rows: 2))
+        let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
+        async let running = store.image(0)
+        try await Task.sleep(for: .milliseconds(40))
+        store.releaseMemory()
+        let image = await running
+        XCTAssertNotNil(image, "the caller still gets its sheet")
+        XCTAssertNil(store.cached(0))
+        _ = await store.image(0)
+        XCTAssertEqual(SheetStub.requests().count, 2, "and its JPEG wasn't kept either")
+    }
+
+    func testAnOversizedSheetIsRefused() async throws {
+        SheetStub.configure { _ in (200, Data(count: 17 * 1024 * 1024)) }
         let sheets = try XCTUnwrap(Self.sheets(count: 8, columns: 4, rows: 2))
         let store = ScrubPreviewSheetStore(sheets: sheets, session: Self.stubSession())
         let image = await store.image(0)

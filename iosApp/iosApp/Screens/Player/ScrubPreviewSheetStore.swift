@@ -14,7 +14,7 @@ import UIKit
 final class ScrubPreviewSheetStore {
     let sheets: ScrubPreviewSheets
 
-    private static let decodedLimit = 2
+    private static let scrubbingDecodedLimit = 2
     private static let dataLimit = 12
     private static let maximumSheetBytes = 16 * 1024 * 1024
     /// The longest side a sheet may decode to. Jellyfin's default sheet is
@@ -34,6 +34,14 @@ final class ScrubPreviewSheetStore {
     private var decodes: [Int: Task<CGImage?, Never>] = [:]
     private var failures: [Int: Date] = [:]
     private var isShutDown = false
+    /// How many sheets stay decoded: two while a scrub runs, one between.
+    private var decodedLimit = ScrubPreviewSheetStore.scrubbingDecodedLimit
+    /// Moves on whenever memory is given back, so work that was already
+    /// running then doesn't put its result back.
+    private var memoryEpoch = 0
+    /// The newest decode. The next waits for it, so two sheets never decode
+    /// together even when two loads of the same file overlap.
+    private var lastDecode: Task<Void, Never>?
 
     private var observers: [NSObjectProtocol] = []
 
@@ -48,21 +56,33 @@ final class ScrubPreviewSheetStore {
             },
             // In the background only the small JPEGs are worth holding.
             centre.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.decoded = [] }
+                MainActor.assumeIsolated { self?.releaseDecoded() }
             },
         ]
     }
 
     /// Drops everything decoded and downloaded; it's fetched again on demand.
     func releaseMemory() {
+        memoryEpoch &+= 1
         decoded = []
         data = []
     }
 
-    /// Between scrubs only the sheet last used stays decoded, so the next
-    /// scrub near it still answers at once.
-    func releaseAllButNewestDecoded() {
-        if decoded.count > 1 { decoded.removeFirst(decoded.count - 1) }
+    private func releaseDecoded() {
+        memoryEpoch &+= 1
+        decoded = []
+    }
+
+    /// While a scrub runs two sheets stay decoded. Between scrubs only the
+    /// one last used does, so the next scrub near it still answers at once;
+    /// a sheet that lands after the scrub ended is held to the same limit.
+    func setScrubbing(_ scrubbing: Bool) {
+        decodedLimit = scrubbing ? Self.scrubbingDecodedLimit : 1
+        trimDecoded()
+    }
+
+    private func trimDecoded() {
+        if decoded.count > decodedLimit { decoded.removeFirst(decoded.count - decodedLimit) }
     }
 
     /// Leaves a sheet alone for the retry delay, and forgets its bytes.
@@ -95,8 +115,12 @@ final class ScrubPreviewSheetStore {
         if let image = cached(sheet) { return image }
         guard !isShutDown, sheets.sheetURLs.indices.contains(sheet), !hasFailed(sheet) else { return nil }
         if let running = decodes[sheet] { return await running.value }
+        let epoch = memoryEpoch
+        let previous = lastDecode
         let task = Task { @MainActor [weak self] () -> CGImage? in
             guard let self, let bytes = await self.bytes(sheet) else { return nil }
+            await previous?.value
+            guard !Task.isCancelled else { return nil }
             let side = Self.maximumSheetSide
             let pixels = Self.maximumSheetPixels
             return await Task.detached(priority: .userInitiated) {
@@ -104,10 +128,13 @@ final class ScrubPreviewSheetStore {
             }.value
         }
         decodes[sheet] = task
+        lastDecode = Task { _ = await task.value }
         let image = await task.value
         decodes[sheet] = nil
         if let image {
-            remember(image, for: sheet)
+            // Memory given back while this decoded stays given back; the
+            // caller still gets its still.
+            if epoch == memoryEpoch { remember(image, for: sheet) }
         } else if !isShutDown {
             markFailed(sheet)
         }
@@ -132,6 +159,7 @@ final class ScrubPreviewSheetStore {
         decodes.values.forEach { $0.cancel() }
         downloads = [:]
         decodes = [:]
+        lastDecode = nil
         decoded = []
         data = []
         session.invalidateAndCancel()
@@ -163,23 +191,13 @@ final class ScrubPreviewSheetStore {
             ? PlainHTTPRedirectGuard.SessionDelegate.shared
             : SheetRedirectGuard()
         let limit = Self.maximumSheetBytes
+        let epoch = memoryEpoch
         let task = Task { @MainActor [weak self] () -> Data? in
-            let fetched: Data? = await {
-                do {
-                    let (bytes, response) = try await session.data(
-                        for: request, delegate: redirects)
-                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                          !bytes.isEmpty, bytes.count <= limit
-                    else { return nil }
-                    return bytes
-                } catch {
-                    return nil
-                }
-            }()
+            let fetched = await Self.fetch(request, session: session, delegate: redirects, limit: limit)
             guard let self, !Task.isCancelled else { return nil }
             self.downloads[sheet] = nil
             if let fetched {
-                self.remember(fetched, for: sheet)
+                if epoch == self.memoryEpoch { self.remember(fetched, for: sheet) }
             } else {
                 self.failures[sheet] = self.now()
             }
@@ -189,13 +207,42 @@ final class ScrubPreviewSheetStore {
         return task
     }
 
+    /// Reads the body off the main actor and stops as soon as it passes
+    /// `limit`, so an oversized reply is never held whole.
+    nonisolated private static func fetch(
+        _ request: URLRequest,
+        session: URLSession,
+        delegate: URLSessionTaskDelegate,
+        limit: Int
+    ) async -> Data? {
+        do {
+            let (stream, response) = try await session.bytes(for: request, delegate: delegate)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  response.expectedContentLength <= Int64(limit)
+            else {
+                stream.task.cancel()
+                return nil
+            }
+            var body = [UInt8]()
+            body.reserveCapacity(response.expectedContentLength > 0 ? Int(response.expectedContentLength) : 512 * 1024)
+            for try await byte in stream {
+                body.append(byte)
+                if body.count > limit {
+                    stream.task.cancel()
+                    return nil
+                }
+            }
+            return body.isEmpty ? nil : Data(body)
+        } catch {
+            return nil
+        }
+    }
+
     private func remember(_ image: CGImage, for sheet: Int) {
         guard !isShutDown else { return }
         decoded.removeAll { $0.sheet == sheet }
         decoded.append((sheet, image))
-        if decoded.count > Self.decodedLimit {
-            decoded.removeFirst(decoded.count - Self.decodedLimit)
-        }
+        trimDecoded()
     }
 
     private func remember(_ bytes: Data, for sheet: Int) {

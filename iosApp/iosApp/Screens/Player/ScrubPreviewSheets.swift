@@ -177,7 +177,7 @@ enum SiloScrubPreviews {
 /// Jellyfin's trickplay sheets, read from the item's `Trickplay` member:
 /// media source ID, then width, then the grid. `TileWidth` and `TileHeight`
 /// count cells, not pixels. Sheets are fetched from
-/// `/Videos/{item}/Trickplay/{width}/{sheet}.jpg` with the session's header.
+/// `/Videos/{source}/Trickplay/{width}/{sheet}.jpg` with the session's header.
 enum JellyfinScrubPreviews {
     /// The width a preview is drawn at on the largest screen, in pixels.
     /// The narrowest set at least this wide is used, else the widest.
@@ -207,7 +207,10 @@ enum JellyfinScrubPreviews {
               (1...ScrubPreviewSheets.maximumGridSide).contains(columns),
               (1...ScrubPreviewSheets.maximumGridSide).contains(rows),
               (1...ScrubPreviewSheets.maximumThumbnailCount).contains(count),
-              let pathID = try? JellyfinConnection.id(itemID)
+              // An alternate version is an item of its own, with the source's
+              // ID, and its sheets belong to that item. Jellyfin 10.9 looks
+              // the path's item up and ignores `mediaSourceId`.
+              let pathID = (try? JellyfinConnection.id(sourceID)) ?? (try? JellyfinConnection.id(itemID))
         else { return nil }
         let perSheet = columns * rows
         let sheetCount = (count + perSheet - 1) / perSheet
