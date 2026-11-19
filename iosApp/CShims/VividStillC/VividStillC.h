@@ -127,6 +127,10 @@ typedef struct VividStillInfo {
     double duration_seconds;
     /// The first video packet's time. Still and index times count from it.
     double start_seconds;
+    /// How long after the container's start the first video packet comes,
+    /// for a player whose clock counts from the container's start. 0 when
+    /// the video starts first or the container doesn't say.
+    double video_start_offset_seconds;
     int width;
     int height;
     /// Pixel shape, 1:1 when unknown.
@@ -202,9 +206,10 @@ typedef struct VividStillPicture {
 /// success `*out_handle` is set and must be closed with
 /// `vivid_still_close`.
 ///
-/// `VIVID_STILL_ERROR_READ` and `VIVID_STILL_ERROR_ABORTED` say nothing
-/// about the file and can be tried again. Every other failure is about the
-/// file itself.
+/// `VIVID_STILL_ERROR_READ`, `VIVID_STILL_ERROR_ABORTED` and
+/// `VIVID_STILL_ERROR_MEMORY` say nothing about the file and can be tried
+/// again. `VIVID_STILL_ERROR_ARGUMENT` is a mistake by the caller. Every
+/// other failure is about the file itself.
 int vivid_still_open(const VividStillCallbacks *callbacks, const VividStillOpenOptions *options, VividStill **out_handle);
 
 /// Frees the handle. Null is ignored.
@@ -239,8 +244,9 @@ int vivid_still_decode(VividStill *handle, double seconds, int max_width, int la
 void vivid_still_picture_free(VividStillPicture *picture);
 
 /// Frees the decoder and scaler, keeping the demuxer and index. The next
-/// `vivid_still_decode` makes them again.
-void vivid_still_close_decoder(VividStill *handle);
+/// `vivid_still_decode` makes them again. Returns 1 when there was a
+/// decoder to free, otherwise 0.
+int vivid_still_close_decoder(VividStill *handle);
 
 #ifdef __cplusplus
 }

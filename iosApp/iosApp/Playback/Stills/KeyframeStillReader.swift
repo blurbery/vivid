@@ -56,6 +56,10 @@ struct KeyframeStillInfo: Equatable, Sendable {
     let keyframeCount: Int
     /// Bytes read to open the file and its index.
     let bytesReadToOpen: Int
+    /// How long after the container's start the video starts. A player
+    /// clock that counts from the container's start is this far ahead of
+    /// still and index times.
+    var videoStartOffset: Double = 0
 
     /// False for Dolby Vision with no HDR10, HLG or SDR base picture: its
     /// colours can't be shown without the metadata, so no still is made.
@@ -218,6 +222,11 @@ final class KeyframeStillReader: Sendable {
         worker.closeDecoder()
     }
 
+    /// How many times a decoder has actually been freed while idle.
+    var decodersReleased: Int {
+        worker.decodersReleased
+    }
+
     /// Stops everything and closes the file. Stills asked for afterwards
     /// are `.cancelled`.
     func shutdown() async {
@@ -296,6 +305,7 @@ private final class Worker: @unchecked Sendable {
     private var opening: [CheckedContinuation<KeyframeStillInfo?, Never>] = []
     private var closing: [CheckedContinuation<Void, Never>] = []
     private var wantsDecoderClosed = false
+    private var releasedDecoders = 0
     private var isShuttingDown = false
     private var hasShutDown = false
     private var isRunningJob = false
@@ -327,6 +337,10 @@ private final class Worker: @unchecked Sendable {
 
     var published: Published {
         state.withLock { shared }
+    }
+
+    var decodersReleased: Int {
+        state.withLock { releasedDecoders }
     }
 
     var hasWaitingRequest: Bool {
@@ -474,23 +488,30 @@ private final class Worker: @unchecked Sendable {
                 state.unlock()
                 let opened = openIfNeeded()
                 state.lock()
+                // A cancel that came in after the work was done still wins:
+                // the caller has already counted this open as stopped. What
+                // was read stays, so the next open returns at once.
+                let wasCancelled = link.isAborted.withLock { $0 }
                 endJob()
                 var info: KeyframeStillInfo?
-                if case let .open(read) = opened { info = read }
+                if !wasCancelled, case let .open(read) = opened { info = read }
                 waiters.forEach { $0.resume(returning: info) }
             } else if let job = waiting {
                 waiting = nil
                 beginJob(urgent: job.urgent)
                 state.unlock()
-                let result = makeStill(job)
+                var result = makeStill(job)
                 state.lock()
+                // Likewise a still finished after its cancel isn't handed on.
+                if result.still != nil, link.isAborted.withLock({ $0 }) { result = .cancelled }
                 endJob()
                 job.continuation.resume(returning: result)
             } else if wantsDecoderClosed {
                 wantsDecoderClosed = false
                 state.unlock()
-                if let handle { vivid_still_close_decoder(handle) }
+                let freed = handle.map { vivid_still_close_decoder($0) != 0 } ?? false
                 state.lock()
+                if freed { releasedDecoders += 1 }
             } else {
                 state.wait()
             }
@@ -682,7 +703,7 @@ private final class Worker: @unchecked Sendable {
             dolbyVisionProfile: raw.dolby_vision_profile > 0 ? Int(raw.dolby_vision_profile) : nil,
             dolbyVisionCompatibility: Int(raw.dolby_vision_compatibility),
             hasKeyframeIndex: raw.has_index != 0, keyframeCount: Int(raw.index_count),
-            bytesReadToOpen: bytesRead)
+            bytesReadToOpen: bytesRead, videoStartOffset: raw.video_start_offset_seconds)
     }
 
     private static func image(from picture: VividStillPicture, rotation: Int) -> CGImage? {

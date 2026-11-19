@@ -86,8 +86,11 @@ enum StillToneMapper {
     static func map(rgba16 source: UnsafeRawBufferPointer, width: Int, height: Int, bytesPerRow: Int,
                     transfer: Transfer, primaries: Primaries) -> [UInt8]? {
         guard width > 0, height > 0, width <= 8192, height <= 8192, bytesPerRow >= width * 8,
-              let base = source.baseAddress, source.count >= bytesPerRow * (height - 1) + width * 8
+              let base = source.baseAddress
         else { return nil }
+        // Worked so that no stride, however large, can overflow the sum.
+        let (rows, overflowed) = bytesPerRow.multipliedReportingOverflow(by: height - 1)
+        guard !overflowed, rows <= source.count - width * 8 else { return nil }
         var output = [UInt8](repeating: 255, count: width * height * 4)
         let m = matrix(for: primaries)
         let last = tableSize - 1

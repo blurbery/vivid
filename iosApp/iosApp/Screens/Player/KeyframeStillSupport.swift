@@ -165,12 +165,14 @@ extension KeyframeStillService {
             unsettled = .recovering
         } else if snapshot.isChangingQuality {
             unsettled = .changingQuality
-        } else if snapshot.isSeeking {
-            unsettled = .seeking
         } else if snapshot.isLoading {
             unsettled = .loading
         } else if snapshot.isBuffering {
             unsettled = .buffering
+        } else if snapshot.isSeeking {
+            // Last: seeking lets the viewer's reads go on, so it must never
+            // hide loading or buffering behind it.
+            unsettled = .seeking
         }
         return PlayerState(
             sourceTime: snapshot.sourceTime,
@@ -348,10 +350,13 @@ extension KeyframeStillService {
         return ["fe8", "fe9", "fea", "feb", "fc", "fd"].contains { host.hasPrefix($0) }
     }
 
-    /// Names a file across loads without its query, where tokens live.
+    /// Names a file across loads without the rest of its query, where
+    /// tokens and session IDs live. `MediaSourceId` stays: Emby and
+    /// Jellyfin serve every version of a title from the same path.
     static func carryKey(for url: URL) -> String {
         var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        parts?.query = nil
+        let version = parts?.queryItems?.filter { $0.name.caseInsensitiveCompare("MediaSourceId") == .orderedSame } ?? []
+        parts?.queryItems = version.isEmpty ? nil : version
         parts?.fragment = nil
         return parts?.string ?? url.path
     }

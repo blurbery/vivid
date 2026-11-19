@@ -155,9 +155,14 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
         // Headers carry the account's credentials, and a redirect would
         // take them to wherever the server points.
         let followsRedirects = fields.isEmpty
-        let receiver = RangeReceiver(start: offset, limit: Int(length)) { from, to in
+        // Bytes are counted as they arrive, so a read that breaks off part
+        // way is still paid for.
+        let receiver = RangeReceiver(start: offset, limit: Int(length), arrived: { [weak self] count in
+            guard let self else { return }
+            lock.withLock { self.counted.bytes += count }
+        }, allowsRedirect: { from, to in
             followsRedirects && PlainHTTPRedirectGuard.allows(from: from, to: to)
-        }
+        })
         let task = session.dataTask(with: request)
         task.delegate = receiver
         try lock.withLock {
@@ -193,6 +198,9 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
                     guard offset >= total else { throw StillByteSourceError.failed }
                     totalSize = total
                 } else {
+                    // Inside a file whose length is known this is a
+                    // passing fault, not the end.
+                    guard totalSize == nil else { throw StillByteSourceError.failed }
                     knownEnd = min(knownEnd ?? offset, offset)
                 }
                 return 0
@@ -207,7 +215,6 @@ final class HTTPStillByteSource: StillByteSource, @unchecked Sendable {
                     }
                     totalSize = total
                 }
-                counted.bytes += bytes.count
                 blocks.append((offset, bytes))
                 if blocks.count > Self.cachedBlockLimit { blocks.removeFirst(blocks.count - Self.cachedBlockLimit) }
                 let count = min(buffer.count, bytes.count)
@@ -264,6 +271,7 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
 
     private let start: Int64
     private let limit: Int
+    private let arrived: @Sendable (Int) -> Void
     private let allowsRedirect: @Sendable (URL?, URL?) -> Bool
     private let done = DispatchSemaphore(value: 0)
     private let lock = NSLock()
@@ -273,9 +281,11 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
     /// How many bytes the reply said it carries.
     private var expected = 0
 
-    init(start: Int64, limit: Int, allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool) {
+    init(start: Int64, limit: Int, arrived: @escaping @Sendable (Int) -> Void,
+         allowsRedirect: @escaping @Sendable (URL?, URL?) -> Bool) {
         self.start = start
         self.limit = limit
+        self.arrived = arrived
         self.allowsRedirect = allowsRedirect
     }
 
@@ -344,6 +354,8 @@ private final class RangeReceiver: NSObject, URLSessionDataDelegate, @unchecked 
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        // Fetched is fetched, whatever happens to the read.
+        arrived(data.count)
         guard !isFinished else { return }
         body.append(data)
         if body.count > expected {

@@ -382,7 +382,9 @@ static int collect_index(VividStill *still) {
         if ((entry->flags & AVINDEX_KEYFRAME) && !(entry->flags & AVINDEX_DISCARD_FRAME)) keyframes++;
     }
     if (keyframes == 0) return VIVID_STILL_OK;
-    if (keyframes > MAX_INDEX_KEPT) keyframes = MAX_INDEX_KEPT;
+    // One past the limit is kept, so an index that is too long reaches the
+    // caller as one, not as a shorter index that could pass for the file's.
+    if (keyframes > MAX_INDEX_KEPT) keyframes = MAX_INDEX_KEPT + 1;
 
     IndexPoint *points = calloc((size_t)keyframes, sizeof(IndexPoint));
     if (points == NULL) return VIVID_STILL_ERROR_MEMORY;
@@ -455,6 +457,10 @@ static void fill_info(VividStill *still, const PictureFacts *facts) {
         info->duration_seconds = (double)still->format->duration / (double)AV_TIME_BASE;
     }
     info->start_seconds = (double)still->start * still->seconds_per_tick;
+    if (still->format->start_time != AV_NOPTS_VALUE) {
+        double offset = info->start_seconds - (double)still->format->start_time / (double)AV_TIME_BASE;
+        if (isfinite(offset) && offset > 0) info->video_start_offset_seconds = offset;
+    }
     info->width = facts->width;
     info->height = facts->height;
 
@@ -869,9 +875,11 @@ fail:
     return result;
 }
 
-void vivid_still_close_decoder(VividStill *handle) {
-    if (handle == NULL) return;
+int vivid_still_close_decoder(VividStill *handle) {
+    if (handle == NULL) return 0;
+    int had_decoder = handle->decoder != NULL;
     release_decoder(handle);
+    return had_decoder;
 }
 
 void vivid_still_close(VividStill *handle) {
@@ -920,23 +928,14 @@ int vivid_still_index_entry(const VividStill *handle, int position, VividStillIn
 int vivid_still_index_position(const VividStill *handle, double seconds) {
     if (handle == NULL || !isfinite(seconds) || handle->index_count == 0) return -1;
     if (seconds < 0) seconds = 0;
-    // Floating point throughout: the start is the file's and the time is
-    // the caller's, and their sum needn't fit a timestamp.
-    double ticks = (double)handle->start + seconds / handle->seconds_per_tick;
-    int64_t target;
-    if (ticks >= 9.0e18) {
-        target = INT64_MAX;
-    } else if (ticks <= -9.0e18) {
-        target = INT64_MIN;
-    } else {
-        target = llround(ticks);
-    }
-    // The last entry shown at or before the target.
+    // The last entry shown at or before the time, compared in the same
+    // seconds `vivid_still_index_entry` gives out. Rounding the time to a
+    // tick instead could pick a keyframe shown just after it.
     int low = 0;
     int high = handle->index_count;
     while (low < high) {
         int middle = low + (high - low) / 2;
-        if (handle->index[middle].shown <= target) {
+        if (seconds_between(handle, handle->index[middle].shown, handle->start) <= seconds) {
             low = middle + 1;
         } else {
             high = middle;

@@ -25,10 +25,11 @@ import UIKit
 ///
 /// Times: the scrub bar and the playhead are in source-media time. The
 /// loaded transport's clock is that time less the plan's timeline offset
-/// (`PlaybackTimelineMapper`), and counts from the start of the file. The
-/// reader's times count from the file's first video picture, so for the
-/// files read here a transport time is a reader time, and the reader's
-/// `startTime` must not be taken off again.
+/// (`PlaybackTimelineMapper`), and counts from the container's start. The
+/// reader's times count from the file's first video picture, so a
+/// transport time less the reader's `videoStartOffset` is a reader time.
+/// That offset is 0 unless another stream starts before the video. The
+/// reader's `startTime` must not be taken off again.
 @MainActor
 final class KeyframeStillService {
     /// What a scrub target gets in the call that set it.
@@ -93,6 +94,9 @@ final class KeyframeStillService {
     /// earlier reader finds it has nothing to report to.
     private var readerEpoch = 0
     private var isOpening = false
+    /// The source being made off the main actor, so that letting the
+    /// reader go also waits for the one that hasn't arrived yet.
+    private var pendingOpen: Task<KeyframeStillSource?, Never>?
     /// The part of opening that the reader itself does, and can be told to
     /// stop.
     private var isPreparing = false
@@ -228,7 +232,14 @@ final class KeyframeStillService {
     }
 
     /// What read-ahead has spent, for the next load of the same file.
-    var carry: Carry { Carry(key: carryKey, readAheadBytes: readAheadBytes, nearBytes: nearBytes) }
+    /// Bytes fetched since the last read was settled count too, as long as
+    /// no viewer read is out to share them: read before `shutdown()`, the
+    /// carry must not miss a read ahead still running.
+    var carry: Carry {
+        var unsettled = 0
+        if viewerAsked == nil, let total = source?.receivedBytes?() { unsettled = max(0, total - lastReceived) }
+        return Carry(key: carryKey, readAheadBytes: readAheadBytes + unsettled, nearBytes: nearBytes)
+    }
 
     /// The frame reader can't read this load after all, so the service
     /// takes it. Steady play counted while standing by still counts.
@@ -464,6 +475,10 @@ final class KeyframeStillService {
         decoderMayBeOpen = false
         info = nil
         index = []
+        if let opening = pendingOpen {
+            pendingOpen = nil
+            closings.append(Task.detached(priority: .utility) { await opening.value?.reader.shutdown() })
+        }
         guard let reader = source?.reader else { return }
         source = nil
         reader.cancel()
@@ -660,21 +675,28 @@ final class KeyframeStillService {
         headers.current = fields
         isOpening = true
         let url = sourceURL, box = headers, open = environment.open, epoch = readerEpoch
+        // Made off the main actor: a file is opened here, or a session
+        // built.
+        let opening = Task.detached(priority: .utility) { open(url, box) }
+        pendingOpen = opening
         track { [weak self] in
-            // Made off the main actor: a file is opened here, or a session
-            // built.
-            let opened = await Task.detached(priority: .utility) { open(url, box) }.value
+            let opened = await opening.value
             guard let self, !self.isFinished, self.readerEpoch == epoch else {
-                await opened?.reader.shutdown()
+                // A service that is still here handed this source to
+                // `closeReader()`, which shuts it down and waits for it.
+                if self == nil { await opened?.reader.shutdown() }
                 return
             }
+            self.pendingOpen = nil
             self.isOpening = false
             guard let opened else {
                 self.finish(.cannotOpen)
                 return
             }
             self.source = opened
-            self.prepare(opened.reader)
+            // The gates may have closed while the source was made, so the
+            // file is read only if `pump()` still allows it.
+            self.pump()
         }
     }
 
@@ -742,6 +764,11 @@ final class KeyframeStillService {
         }
         self.info = info
         index = entries
+        // A target set before the file was open was put on the reader's
+        // axis without the video's start offset.
+        if let current = target, let time = readerTime(forSourceTime: current.sourceTime) {
+            target = Target(time: time, sourceTime: current.sourceTime)
+        }
         log("open keyframes=\(entries.count) bytes=\(info.bytesReadToOpen) width=\(info.codedWidth) height=\(info.codedHeight) "
             + "transfer=\(info.transfer) dv=\(info.dolbyVisionProfile ?? 0)")
         pump()
@@ -818,15 +845,15 @@ final class KeyframeStillService {
         }
         inFlight.insert(position)
         decoderMayBeOpen = true
-        let time = index[position].time, epoch = readerEpoch
+        let time = index[position].time, epoch = readerEpoch, memory = memoryEpoch
         quickenTicker()
         track { [weak self] in
             let result = await reader.result(at: time, maxWidth: Tuning.stillWidth, urgent: kind == .viewer)
-            self?.finished(position, kind, result, epoch: epoch)
+            self?.finished(position, kind, result, epoch: epoch, memory: memory)
         }
     }
 
-    private func finished(_ position: Int, _ kind: Kind, _ result: KeyframeStillResult, epoch: Int) {
+    private func finished(_ position: Int, _ kind: Kind, _ result: KeyframeStillResult, epoch: Int, memory: Int) {
         // The reader this was asked of has gone, and its books with it.
         guard epoch == readerEpoch, !isFinished else { return }
         inFlight.remove(position)
@@ -851,9 +878,14 @@ final class KeyframeStillService {
             } else {
                 lastViewerRead = still.indexPosition
             }
-            // Kept decoded only while someone is looking.
-            if kind == .viewer || target != nil { keepDecoded(still.indexPosition, still.image) }
-            keepEncoded(still)
+            // A read ahead started before a memory warning doesn't refill
+            // the cache the warning emptied. Its bytes are still counted.
+            // The viewer's own still is kept: it is wanted on screen now.
+            if kind == .viewer || memory == memoryEpoch {
+                // Kept decoded only while someone is looking.
+                if kind == .viewer || target != nil { keepDecoded(still.indexPosition, still.image) }
+                keepEncoded(still)
+            }
             log("still \(kind.rawValue) pos=\(still.indexPosition) bytes=\(still.bytesRead) fetched=\(cost) reads=\(still.readCount) "
                 + "keyframe=\(still.keyframeBytes) ms=\(Int((still.elapsed * 1000).rounded())) cache=miss "
                 + Self.sample(player.state()))
@@ -902,6 +934,11 @@ final class KeyframeStillService {
     /// Each call looks at a fixed number of points, each found by a binary
     /// search, however many keyframes the file has and whatever its
     /// metadata says about its length.
+    ///
+    /// The limits are checked against a read's expected cost before it
+    /// starts, not during it, so a keyframe isn't left half fetched. A read
+    /// that fetches more than expected can take the spend past a limit by
+    /// that much, and nothing more is read ahead after it.
     private func nextReadAhead(playhead: Double, now: TimeInterval) -> (position: Int, isNear: Bool)? {
         guard let time = readerTime(forSourceTime: playhead), let budget = readAheadBudget, !index.isEmpty else { return nil }
         func isWanted(_ position: Int, isNear: Bool) -> Bool {
@@ -1117,7 +1154,7 @@ final class KeyframeStillService {
         guard sourceTime.isFinite, sourceTime >= 0,
               case let .local(transportTime) = timeline.seekDisposition(forSourceTime: sourceTime)
         else { return nil }
-        return transportTime
+        return max(transportTime - (info?.videoStartOffset ?? 0), 0)
     }
 
     // MARK: - Measurements

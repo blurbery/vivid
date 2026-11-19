@@ -314,21 +314,39 @@ final class KeyframeStillReaderTests: XCTestCase {
         await reader.shutdown()
     }
 
+    /// The Matroska fixture counts in milliseconds. A time a fraction of a
+    /// tick before a keyframe must not be rounded up onto it.
+    func testATimeJustBeforeAKeyframeNeverGetsThatKeyframe() async throws {
+        let reader = KeyframeStillReader(source: try Self.source(Self.matroska))
+        _ = try await Self.unwrap(await reader.prepare())
+        let keyframe = try XCTUnwrap(reader.index.dropFirst().first?.time)
+        let before = keyframe - 0.0004
+        XCTAssertEqual(reader.indexPosition(at: before), 0)
+        let early = try await Self.unwrap(await reader.still(at: before, maxWidth: 160))
+        XCTAssertEqual(early.indexPosition, 0, "the keyframe before the time, as the index says")
+        let exact = try await Self.unwrap(await reader.still(at: keyframe, maxWidth: 160))
+        XCTAssertEqual(exact.indexPosition, 1, "a time exactly on a keyframe still gets it")
+        await reader.shutdown()
+    }
+
     func testClosingTheDecoderKeepsTheFileUsable() async throws {
         for name in [Self.matroska, Self.hevc] {
             let source = try Self.source(name)
             let reader = KeyframeStillReader(source: source)
             reader.closeDecoder()
             let first = try await Self.unwrap(await reader.still(at: 2.5, maxWidth: 320), name)
+            XCTAssertEqual(reader.decodersReleased, 0, "\(name): nothing to free before the first still")
             let startReads = source.readsOfTheFileStart()
             reader.closeDecoder()
-            reader.closeDecoder()
+            try await Self.waitFor(name) { reader.decodersReleased == 1 }
             let second = try await Self.unwrap(await reader.still(at: 2.5, maxWidth: 320), name)
             XCTAssertEqual(second.time, first.time, name)
             XCTAssertEqual(second.packetsDecoded, 1, name)
             XCTAssertEqual(try Self.pixel(of: second.image, x: 200, y: 100), try Self.pixel(of: first.image, x: 200, y: 100), name)
             XCTAssertEqual(source.readsOfTheFileStart(), startReads, "\(name): the file wasn't opened again")
             reader.closeDecoder()
+            // The second still made the decoder again, so this frees it.
+            try await Self.waitFor(name) { reader.decodersReleased == 2 }
             let third = try await Self.unwrap(await reader.still(at: 4.5, maxWidth: 320), name)
             XCTAssertEqual(third.time, 4, accuracy: 0.05, name)
             await reader.shutdown()
@@ -369,6 +387,7 @@ final class KeyframeStillReaderTests: XCTestCase {
         reader.cancelCurrent()
         let cancelled = await held
         XCTAssertEqual(cancelled.name, "cancelled")
+        XCTAssertEqual(source.heldReadsTimedOut, 0, "the cancel woke the held read")
 
         let next = try await Self.unwrap(await reader.still(at: 4.5, maxWidth: 320))
         XCTAssertEqual(next.time, 4, accuracy: 0.05)
@@ -389,6 +408,7 @@ final class KeyframeStillReaderTests: XCTestCase {
         reader.cancelCurrent()
         let cancelled = await held
         XCTAssertNil(cancelled)
+        XCTAssertEqual(source.heldReadsTimedOut, 0, "the cancel woke the held read")
         XCTAssertNil(reader.info)
         let still = try await Self.unwrap(await reader.still(at: 2.5, maxWidth: 320))
         XCTAssertEqual(still.time, 2, accuracy: 0.05)
@@ -416,6 +436,7 @@ final class KeyframeStillReaderTests: XCTestCase {
         reader.cancelCurrent()
         let aborted = await running
         XCTAssertEqual(aborted.name, "cancelled")
+        XCTAssertEqual(source.heldReadsTimedOut, 0, "the cancel woke the held read")
         let shown = try Self.unwrap((await newest.value).still)
         XCTAssertEqual(shown.time, 4, accuracy: 0.05)
         XCTAssertFalse(reader.hasWaitingRequest)
@@ -440,6 +461,7 @@ final class KeyframeStillReaderTests: XCTestCase {
         XCTAssertEqual(dropped.name, "cancelled")
         let aborted = await running
         XCTAssertEqual(aborted.name, "cancelled")
+        XCTAssertEqual(source.heldReadsTimedOut, 0, "the cancel woke the held read")
 
         // The reader was not shut down: the next still works.
         let next = try await Self.unwrap(await reader.still(at: 4.5, maxWidth: 320))
@@ -461,6 +483,7 @@ final class KeyframeStillReaderTests: XCTestCase {
         await reader.shutdown()
         let stopped = await running
         XCTAssertEqual(stopped.name, "cancelled")
+        XCTAssertEqual(source.heldReadsTimedOut, 0, "the shutdown woke the held read")
         let after = await reader.result(at: 1, maxWidth: 320)
         XCTAssertEqual(after.name, "cancelled")
         let prepared = await reader.prepare()
@@ -878,6 +901,38 @@ final class KeyframeStillReaderTests: XCTestCase {
         }
     }
 
+    /// A 416 without a length, inside a file whose length is known, is a
+    /// passing fault: it isn't remembered as the end of the file.
+    func testARangeFaultInsideAKnownLengthIsNotTheEnd() throws {
+        let file = Self.pattern(count: 1_000_000)
+        let calls = Counter()
+        RangeStub.configure { request in
+            calls.next() == 2 ? .reply(status: 416, headers: [:], body: Data())
+                : RangeStub.rangeReply(for: request, from: file, total: file.count)
+        }
+        let source = HTTPStillByteSource(url: Self.address, session: Self.stubSession())
+        XCTAssertEqual(try Self.read(source, count: 1000, offset: 0), file.prefix(1000))
+        XCTAssertEqual(source.size, 1_000_000)
+        XCTAssertThrowsError(try Self.read(source, count: 1000, offset: 600_000)) {
+            XCTAssertEqual($0 as? StillByteSourceError, .failed)
+        }
+        XCTAssertEqual(try Self.read(source, count: 1000, offset: 600_000), file.subdata(in: 600_000..<601_000),
+                       "the server is asked again and the bytes are there")
+        XCTAssertEqual(RangeStub.requests().count, 3)
+    }
+
+    /// A range that breaks off part way has still been fetched, and the
+    /// budget pays for it.
+    func testTheBytesOfARangeThatBreaksOffAreCounted() throws {
+        let file = Self.pattern(count: 600_000)
+        RangeStub.configure { _ in .reply(status: 206, headers: ["Content-Range": "bytes 0-262143/600000"], body: file.prefix(5000)) }
+        let source = HTTPStillByteSource(url: Self.address, session: Self.stubSession())
+        XCTAssertThrowsError(try Self.read(source, count: 100, offset: 0)) {
+            XCTAssertEqual($0 as? StillByteSourceError, .failed)
+        }
+        XCTAssertEqual(source.counters, .init(requests: 1, bytes: 5000))
+    }
+
     /// Some servers answer `bytes first-last/*`, without the file's length.
     /// The end of the file is then found by asking past it, which is an
     /// ordinary end of file and nothing to turn the source off over.
@@ -1032,7 +1087,9 @@ final class KeyframeStillReaderTests: XCTestCase {
         // the cancel can end the read before the server lets go.
         XCTAssertEqual(arrived.wait(timeout: .now() + 15), .success)
         source.cancel()
-        wait(for: [finished], timeout: 15)
+        // Well inside the twelve seconds a read waits for a silent server,
+        // so a cancel that only ends the read at its timeout fails here.
+        wait(for: [finished], timeout: 5)
         guard case let .failure(error)? = outcome.get() else { return XCTFail("the read should have failed") }
         XCTAssertEqual(error as? StillByteSourceError, .cancelled)
         XCTAssertFalse(source.isPermanentlyUnusable)
@@ -1135,6 +1192,10 @@ final class KeyframeStillReaderTests: XCTestCase {
             XCTAssertNil(StillToneMapper.map(rgba16: bytes, width: 4, height: 2, bytesPerRow: 24, transfer: .pq, primaries: .bt2020))
             XCTAssertNil(StillToneMapper.map(rgba16: bytes, width: 0, height: 2, bytesPerRow: 32, transfer: .pq, primaries: .bt2020))
             XCTAssertNil(StillToneMapper.map(rgba16: bytes, width: 100_000, height: 100_000, bytesPerRow: 800_000, transfer: .pq, primaries: .bt2020))
+            // A stride too large to multiply is refused, not a crash.
+            XCTAssertNil(StillToneMapper.map(rgba16: bytes, width: 1, height: 2, bytesPerRow: .max, transfer: .pq, primaries: .bt2020))
+            XCTAssertNotNil(StillToneMapper.map(rgba16: bytes, width: 1, height: 1, bytesPerRow: .max, transfer: .pq, primaries: .bt2020),
+                            "one row needs no stride")
         }
     }
 
@@ -1159,6 +1220,18 @@ final class KeyframeStillReaderTests: XCTestCase {
     // MARK: - Helpers
 
     private static let address = URL(string: "https://media.example.invalid/Videos/1/stream.mkv")!
+
+    /// Waits up to five seconds for something the reader's thread does
+    /// on its own time, and fails the test if it never happens.
+    private static func waitFor(_ label: String, _ condition: () -> Bool, file: StaticString = #filePath,
+                                line: UInt = #line) async throws {
+        for _ in 0..<2500 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        XCTFail("\(label): timed out", file: file, line: line)
+        throw CancellationError()
+    }
 
     private static func unwrap<Value>(_ value: Value?, _ message: String = "", file: StaticString = #filePath, line: UInt = #line) throws -> Value {
         try XCTUnwrap(value, message, file: file, line: line)
@@ -1327,6 +1400,7 @@ private final class MemorySource: StillByteSource, @unchecked Sendable {
     private var isCancelled = false
     private var holdsNextRead = false
     private var isHolding = false
+    private var holdsTimedOut = 0
     private var failsEveryRead = false
     private var claimsTooMuch = false
     private var isOffForGood = false
@@ -1345,6 +1419,11 @@ private final class MemorySource: StillByteSource, @unchecked Sendable {
 
     func readsOfTheFileStart() -> Int {
         state.withLock { startReads }
+    }
+
+    /// Held reads that ended at their limit instead of on a cancel.
+    var heldReadsTimedOut: Int {
+        state.withLock { holdsTimedOut }
     }
 
     /// The next read waits until `cancel()` and then fails.
@@ -1415,6 +1494,8 @@ private final class MemorySource: StillByteSource, @unchecked Sendable {
             waiters.forEach { $0.resume() }
             let limit = Date().addingTimeInterval(20)
             while !isCancelled, state.wait(until: limit) {}
+            // A hold that ran to its limit wasn't woken by a cancel.
+            if !isCancelled { holdsTimedOut += 1 }
             isHolding = false
             throw StillByteSourceError.cancelled
         }
