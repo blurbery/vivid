@@ -61,7 +61,8 @@ extension PlayerViewModel {
             sourceURL: spec.sourceURL,
             headers: spec.options.httpHeaders,
             streamIndex: playing?.sourceStreamIndex ?? playing?.id,
-            transportSeconds: transportSeconds
+            transportSeconds: transportSeconds,
+            playbackRate: isHoldFastForwarding ? max(settings.playbackSpeed, 2) : settings.playbackSpeed
         ))
     }
 }

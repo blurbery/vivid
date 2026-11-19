@@ -11,8 +11,10 @@
 ///
 /// Only Matroska and MP4 files are read, and only common film and music
 /// codecs are decoded (see `ALLOWED_DECODERS` in the source). The sound
-/// comes back as 48 kHz mono floats in two mixes: every channel, and the
-/// same without the centre channel, where films keep their dialogue.
+/// comes back as 48 kHz mono floats: a full mix of every channel except the
+/// low-frequency one, and, only when there is a centre channel with others
+/// beside it, a music mix that also leaves out the centre, where films keep
+/// their dialogue. Stereo and mono have no music mix.
 ///
 /// Threading: a handle is not locked. Call its functions from one thread at
 /// a time. The callbacks run on the thread that made the call. Only the
@@ -98,12 +100,13 @@ typedef struct VividAudioClipInfo {
 } VividAudioClipInfo;
 
 typedef struct VividAudioClipSamples {
-    /// Every channel mixed to one, at `VIVID_AUDIO_CLIP_SAMPLE_RATE`.
+    /// Every channel but the low-frequency one mixed to one, at
+    /// `VIVID_AUDIO_CLIP_SAMPLE_RATE`.
     /// Owned by the samples: give them back with
     /// `vivid_audio_clip_samples_free`.
     float *mix;
-    /// The same without the centre channel and the low-frequency channel,
-    /// or null when the stream has no centre channel.
+    /// The same without the centre channel as well. Null for stereo, mono,
+    /// and any layout without a centre channel with others beside it.
     float *music;
     /// Samples in each mix.
     int count;
@@ -138,7 +141,9 @@ const char *vivid_audio_clip_codec_name(const VividAudioClip *handle);
 /// player's clock. A call that starts where the last one ended carries on
 /// without seeking, so a clip can be lengthened a piece at a time.
 ///
-/// Fewer samples than asked for come back when the file ends first.
+/// Fewer samples than asked for come back when the file ends first, or the
+/// sound stops being one continuous run (a gap in the track, or a new
+/// channel layout); the next call then seeks.
 /// `duration_seconds` is at most 30. `max_read_bytes` caps what the call
 /// may read, failing with `VIVID_AUDIO_CLIP_ERROR_OVER_BYTE_LIMIT` beyond
 /// it. Zero or less leaves only the built-in cap of 256 MiB.

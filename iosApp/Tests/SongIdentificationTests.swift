@@ -162,6 +162,14 @@ final class SongIdentificationTests: XCTestCase {
         // then with it.
         let asked = await catalog.asked
         XCTAssertEqual(asked.count, 2)
+        // Signatures are deterministic, so the same six seconds read again
+        // tell which mix was asked about when.
+        let clip = try await Self.reader(Self.centre51).clip(from: 0, duration: 6)
+        let music = try XCTUnwrap(SongIdentifier.signature(of: try XCTUnwrap(clip.music))).dataRepresentation
+        let full = try XCTUnwrap(SongIdentifier.signature(of: clip.mix)).dataRepresentation
+        XCTAssertNotEqual(music, full)
+        let signatures = await catalog.signatures
+        XCTAssertEqual(signatures, [music, full], "the mix without the centre first, then the full mix")
     }
 
     func testShazamBeingUnreachableIsReportedAsSuch() async throws {
@@ -319,17 +327,30 @@ final class SongIdentificationTests: XCTestCase {
     }
 
     @MainActor
-    func testCancellingReturnsToIdle() async throws {
+    func testACancelledAttemptsLateMatchNeverLands() async throws {
         let url = try Self.fixtureURL(Self.melody)
-        let model = SongIdentificationModel(identifier: { SongIdentifier(catalog: StubCatalog(answers: [], delay: true)) })
+        let gate = GateCatalog()
+        let model = SongIdentificationModel(identifier: { SongIdentifier(catalog: gate) })
         model.availability = { .ready(.init(sourceURL: url, headers: [:], streamIndex: nil, transportSeconds: 9)) }
+
+        // The first attempt is cancelled while Shazam has its question.
         model.identify()
-        XCTAssertTrue(model.isListening)
+        try await Self.waitUntilAsync("the first question") { await gate.waiting == 1 }
         model.cancel()
         XCTAssertEqual(model.phase, .idle)
-        // The cancelled attempt's answer never lands.
+        // A second attempt starts and asks too.
+        model.identify()
+        try await Self.waitUntilAsync("the second question") { await gate.waiting == 2 }
+
+        // The first attempt's match arrives late: it lands nowhere.
+        await gate.answerOldest(title: "Stale")
         try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(model.phase, .listening, "the newer attempt is still listening")
+
+        await gate.answerOldest(title: "Fresh")
+        try await Self.waitUntil("the second answer") { model.phase != .listening }
+        guard case let .found(match) = model.phase else { return XCTFail("expected a match, got \(model.phase)") }
+        XCTAssertEqual(match.title, "Fresh")
     }
 
     // MARK: - Helpers
@@ -385,6 +406,18 @@ final class SongIdentificationTests: XCTestCase {
             XCTAssertEqual(error, expected, file: file, line: line)
         } catch {
             XCTFail("unexpected \(error)", file: file, line: line)
+        }
+    }
+
+    @MainActor
+    private static func waitUntilAsync(_ label: String, timeout: TimeInterval = 20, _ condition: () async -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(await condition()) {
+            guard Date() < deadline else {
+                XCTFail("\(label): timed out")
+                throw CancellationError()
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
         }
     }
 
@@ -459,6 +492,28 @@ private actor DurationLog {
     func add(_ duration: Double) { durations.append(duration) }
 }
 
+/// Holds every question until the test answers it, oldest first.
+private actor GateCatalog: SongCatalog {
+    nonisolated let minimumQueryDuration = 1.0
+    nonisolated let maximumQueryDuration = 12.0
+    private var held: [CheckedContinuation<SongCatalogAnswer, Never>] = []
+    private(set) var waiting = 0
+
+    func match(_ signature: SHSignature) async -> SongCatalogAnswer {
+        await withCheckedContinuation { continuation in
+            held.append(continuation)
+            waiting += 1
+        }
+    }
+
+    func answerOldest(title: String) {
+        guard !held.isEmpty else { return }
+        let item = SHMediaItem(properties: [.title: title])
+        held.removeFirst().resume(returning: .match(SongMatch(title: title, artist: nil, artworkURL: nil, appleMusicURL: nil,
+                                                              shazamID: nil, item: SongMediaItem(value: item))))
+    }
+}
+
 /// Answers from a list, noting each question.
 private actor StubCatalog: SongCatalog {
     nonisolated let minimumQueryDuration = 1.0
@@ -466,6 +521,7 @@ private actor StubCatalog: SongCatalog {
     private var answers: [SongCatalogAnswer]
     private let delay: Bool
     private(set) var asked: [Double] = []
+    private(set) var signatures: [Data] = []
 
     init(answers: [SongCatalogAnswer], delay: Bool = false) {
         self.answers = answers
@@ -474,6 +530,7 @@ private actor StubCatalog: SongCatalog {
 
     func match(_ signature: SHSignature) async -> SongCatalogAnswer {
         asked.append(signature.duration)
+        signatures.append(signature.dataRepresentation)
         if delay { try? await Task.sleep(nanoseconds: 2_000_000_000) }
         return answers.isEmpty ? .noMatch : answers.removeFirst()
     }

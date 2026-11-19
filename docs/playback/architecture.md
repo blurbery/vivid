@@ -384,11 +384,14 @@ The player's own audio output isn't touched, so passthrough to a receiver makes 
 The first step is six seconds from four seconds before the playhead; when that finds nothing, the clip is lengthened to the catalogue's longest query, at most 12 seconds, carrying on from where it ended instead of seeking again.
 At each step the mix without the centre channel is asked first, then the full mix, and the first match wins.
 Sound is interleaved with the picture in the file, so a clip reads about as much as the same length of playback: about 8 MB a step for a 10 Mbps file, and around 60 MB for an 80 Mbps 4K remux.
-Opening the file may read at most 16 MB, and each step at most 128 MB, or identification stops with a message saying the file's sound can't be read.
+Opening the file may pass at most 16 MB to FFmpeg, and each step at most 128 MB, or identification stops with a message saying the file's sound can't be read.
+These limits count what FFmpeg is given; a request to the server fetches up to one 1 MB block ahead, so a step can download up to 1 MB more than it counts.
 A read that fails at a later step, for that or a lost connection, ends with that failure too rather than "No song found", since the longer clip was never asked about; only running out of file there leaves the first step's answer standing.
 The player comes first: a streamed file isn't read while the player is buffering or has less than 10 seconds buffered ahead (less near the end, where the buffer can only hold what is left), and the same check runs before the second step, which is skipped if it fails.
 A download is always read.
-An attempt that hasn't finished after 45 seconds gives up and says so, and a second step that only finds a sliver at the end of the file isn't asked about again.
+An attempt that hasn't finished after 45 seconds gives up and says so, and a second step that only finds a sliver at the end of the file isn't asked about again once the first was asked about.
+A second step is also skipped after a seek or an audio track change; the playhead's expected movement allows for the playback speed and hold-to-fast-forward.
+A gap in the track's timestamps or a new channel layout ends a clip there, rather than joining sound from different points or mixed with the wrong weights.
 Only a ShazamKit signature leaves the device, never the sound, and the unified log (category `SongID`) records only the outcome, steps, bytes read, time taken and ShazamKit's error code, with no titles, addresses or tokens.
 
 Save to Shazam adds the song to the viewer's synced Shazam library with `SHLibrary`, available on iOS 17 and tvOS 17 and later.

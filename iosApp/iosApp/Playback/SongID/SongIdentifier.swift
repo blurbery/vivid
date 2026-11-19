@@ -205,16 +205,21 @@ struct SongIdentifier: Sendable {
             next = clip.startSeconds + clip.duration
             let total = Double(mix.count) / SongClip.sampleRate
             let reachedEnd = clip.duration < wanted - 0.01
-            // A sliver from the end of the file adds nothing worth a second
-            // question.
-            let addsEnough = steps == 1 || clip.duration >= Self.shortestUsefulStepSeconds
+            // A sliver from the end of the file adds nothing worth asking
+            // about again. Before anything has been asked, though, it may be
+            // what makes the clip long enough to ask at all.
+            let addsEnough = !asked || clip.duration >= Self.shortestUsefulStepSeconds
 
             if addsEnough, total >= catalog.minimumQueryDuration {
                 for samples in [music, mix].compactMap({ $0 }) {
                     if Task.isCancelled { return finish(.failed(.cancelled), reader: reader, steps: steps, started: started) }
                     guard let signature = Self.signature(of: samples) else { continue }
                     asked = true
-                    switch await catalog.match(signature) {
+                    let answer = await catalog.match(signature)
+                    // A cancelled attempt never reports an answer, even one
+                    // that arrived.
+                    if Task.isCancelled { return finish(.failed(.cancelled), reader: reader, steps: steps, started: started) }
+                    switch answer {
                     case let .match(found):
                         return finish(.found(found), reader: reader, steps: steps, started: started)
                     case .noMatch:

@@ -42,6 +42,9 @@
 // Seeks land this much before a clip's start, so a decoder that needs a
 // frame or two to settle, as AAC does, has them before the clip begins.
 #define PREROLL_SECONDS 0.5
+// A frame starting this much later than the sound held so far ends, as when
+// a track has a gap, isn't joined on as if it followed straight after.
+#define GAP_TOLERANCE_SECONDS 0.25
 // A call that starts this close to where the last one ended carries on
 // from there instead of seeking.
 #define CONTINUE_TOLERANCE_SECONDS 0.05
@@ -94,6 +97,10 @@ struct VividAudioClip {
     int can_continue;
     /// Set once the demuxer has run out and the decoder has been drained.
     int at_end;
+    /// Set when the sound stops being one continuous run: a gap in its
+    /// timestamps, or a new channel layout. The clip ends there, and the
+    /// next one seeks.
+    int at_boundary;
 };
 
 static int is_aborted(const VividAudioClip *clip) {
@@ -455,8 +462,6 @@ static int prepare_resampler(VividAudioClip *clip, const AVFrame *frame) {
     }
     if (frame->sample_rate < MIN_SOURCE_RATE || frame->sample_rate > MAX_SOURCE_RATE) return VIVID_AUDIO_CLIP_ERROR_UNSUPPORTED;
     if (av_channel_layout_check(&frame->ch_layout) == 0) return VIVID_AUDIO_CLIP_ERROR_UNSUPPORTED;
-    // Converted sound waiting to be handed out is in the old layout.
-    if (clip->pending_count > 0 && frame->ch_layout.nb_channels != clip->channels) return VIVID_AUDIO_CLIP_ERROR_UNSUPPORTED;
     int weighted = set_weights(clip, &frame->ch_layout);
     if (weighted != VIVID_AUDIO_CLIP_OK) return weighted;
 
@@ -528,6 +533,7 @@ static void forget_position(VividAudioClip *clip) {
     clip->cursor_seconds = 0;
     clip->can_continue = 0;
     clip->at_end = 0;
+    clip->at_boundary = 0;
 }
 
 /// When a frame's first sample plays, on the player's clock, or NAN when
@@ -571,6 +577,19 @@ static int take_frame(VividAudioClip *clip, const AVFrame *frame, double start) 
         double end = time + (double)frame->nb_samples / frame->sample_rate;
         if (end <= start) return VIVID_AUDIO_CLIP_OK;
     }
+    if (clip->has_cursor) {
+        // Sound already held is mixed with its own layout's weights and
+        // timed as one run, so a new layout or a jump ahead ends the clip
+        // rather than joining on to it.
+        int new_layout = clip->resampler != NULL
+            && av_channel_layout_compare(&clip->resampler_layout, &frame->ch_layout) != 0;
+        double expected = clip->cursor_seconds + (double)clip->pending_count / VIVID_AUDIO_CLIP_SAMPLE_RATE;
+        int jumped = isfinite(time) && time > expected + GAP_TOLERANCE_SECONDS;
+        if (new_layout || jumped) {
+            clip->at_boundary = 1;
+            return VIVID_AUDIO_CLIP_OK;
+        }
+    }
     int prepared = prepare_resampler(clip, frame);
     if (prepared != VIVID_AUDIO_CLIP_OK) return prepared;
     if (!clip->has_cursor) {
@@ -591,7 +610,7 @@ static int take_frame(VividAudioClip *clip, const AVFrame *frame, double start) 
 /// Decodes until at least `wanted` samples are pending or the file ends.
 static int fill_pending(VividAudioClip *clip, double start, int wanted) {
     int packets = 0;
-    while (clip->pending_count < wanted && !clip->at_end) {
+    while (clip->pending_count < wanted && !clip->at_end && !clip->at_boundary) {
         int received = avcodec_receive_frame(clip->decoder, clip->frame);
         if (received == 0) {
             // A damaged frame is skipped, not mixed in.
@@ -844,6 +863,9 @@ int vivid_audio_clip_read(VividAudioClip *clip, double start_seconds, double dur
     int64_t limit = CLIP_BYTE_LIMIT;
     if (max_read_bytes > 0 && max_read_bytes < CLIP_BYTE_LIMIT) limit = max_read_bytes;
     begin_call(clip, limit);
+    // Checked here as well as during reads, since a call that carries on
+    // can be answered from held sound without reading anything.
+    if (is_aborted(clip)) return VIVID_AUDIO_CLIP_ERROR_ABORTED;
 
     int wanted = (int)llround(duration_seconds * VIVID_AUDIO_CLIP_SAMPLE_RATE);
     if (wanted <= 0) return VIVID_AUDIO_CLIP_ERROR_ARGUMENT;
@@ -871,6 +893,9 @@ int vivid_audio_clip_read(VividAudioClip *clip, double start_seconds, double dur
     if (mix == NULL || (clip->has_centre && music == NULL)) {
         free(mix);
         free(music);
+        // Held sound may already have been trimmed to this call's start,
+        // so a retry from the last clip's end must seek.
+        forget_position(clip);
         return VIVID_AUDIO_CLIP_ERROR_MEMORY;
     }
     for (int i = 0; i < count; i++) {
@@ -892,8 +917,9 @@ int vivid_audio_clip_read(VividAudioClip *clip, double start_seconds, double dur
     out_samples->start_seconds = clip->cursor_seconds;
     drop_pending(clip, count);
     clip->next_seconds = clip->cursor_seconds;
-    // A clip cut short by the end of the file can't be carried on.
-    clip->can_continue = count == wanted;
+    // A clip cut short by the end of the file, a gap or a new layout
+    // can't be carried on.
+    clip->can_continue = count == wanted && !clip->at_boundary;
     return VIVID_AUDIO_CLIP_OK;
 }
 

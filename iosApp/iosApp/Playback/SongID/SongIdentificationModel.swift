@@ -53,6 +53,9 @@ final class SongIdentificationModel {
         let streamIndex: Int?
         /// The playhead on the player's clock.
         let transportSeconds: Double
+        /// How fast the playhead is moving: the viewer's speed, or the
+        /// hold-to-fast-forward rate while that's held.
+        var playbackRate: Double = 1
     }
 
     enum Availability {
@@ -124,9 +127,11 @@ final class SongIdentificationModel {
         return lastingUnavailability()
     }
 
-    /// The load has started playing.
+    /// The load has started playing. A press that was told to wait for
+    /// that no longer stands.
     func loadDidStart() {
         loadRevision &+= 1
+        if phase == .refused(.notReady) { phase = .idle }
     }
 
     /// Starts identifying the song at the playhead. Does nothing while an
@@ -164,9 +169,11 @@ final class SongIdentificationModel {
                 guard let self, self.attempt == current, case let .ready(now) = self.availability(),
                       now.sourceURL == request.sourceURL, now.streamIndex == request.streamIndex
                 else { return false }
+                // The playhead moves at the playback rate, not the clock's.
                 let elapsed = (ContinuousClock.now - startedAt) / .seconds(1)
+                let rate = max(request.playbackRate, now.playbackRate, 0)
                 let moved = now.transportSeconds - request.transportSeconds
-                return moved >= -Self.seekTolerance && moved <= elapsed + Self.seekTolerance
+                return moved >= -Self.seekTolerance && moved <= elapsed * rate + Self.seekTolerance
             }
         }
         task = Task { [weak self] in
