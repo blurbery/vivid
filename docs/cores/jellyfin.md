@@ -130,7 +130,8 @@ PlaybackInfo uses `AutoOpenLiveStream=false`, so cancelled or superseded negotia
 The player's Stream badge on Apple TV reads each video stream's `VideoRangeType`, `DvProfile`, `DvBlSignalCompatibilityId` and `Hdr10PlusPresentFlag` to show the Dolby Vision profile (for example DV P8.1), HDR10+, HDR10 or HLG; `DOVIInvalid` streams aren't labelled as Dolby Vision.
 Detail pages, version pickers and Continue Watching in the Apple TV Home focus info show the same label.
 Audio starts with Settings > Playback > Audio Language (or a language picked earlier in the viewing), mapped from its catalogue ordinal to the stream index sent as PlaybackInfo's `AudioStreamIndex`; the server's `DefaultAudioStreamIndex` and Vivid's old per-series audio picks aren't used, and picks aren't saved.
-`/Sessions/Playing` and `/Sessions/Playing/Progress` send the stream indexes of the audio and subtitles playing: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file.
+`/Sessions/Playing` and `/Sessions/Playing/Progress` send the stream indexes of the playing audio and of the viewer's subtitle selection: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file.
+A skip-back replay's track isn't reported: while one is showing, the report is what it would be for the selection the replay goes back to (-1 for Off).
 On a transcode, the audio (its single track can't be matched to the file's) and an embedded subtitle keep the indexes the session started with; a server subtitle file, Off and an OpenSubtitles file are still reported as they are.
 Jellyfin can remember these selections for the user's other clients, depending on its playback settings; that hasn't been checked against a live server.
 

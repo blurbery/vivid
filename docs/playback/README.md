@@ -187,7 +187,7 @@ On iPhone and iPad the detail page's pick clears when the player closes, as its 
 A track switched to in the player stays through quality changes, Silo replans, session renewals and Retry.
 A transcode that carries only the track it was asked for keeps that track through those reloads rather than falling back to the file's first.
 A downloaded file starts with the audio the same rule picks from the tracks it carries, not the track the server had chosen when it was downloaded.
-Emby and Jellyfin progress reports name the playing audio and the viewer's subtitle selection, not the ones the session started with; a skip-back replay's track isn't reported.
+Emby and Jellyfin progress reports name the playing audio and the viewer's subtitle selection, not the ones the session started with; a skip-back replay's track isn't reported, and an OpenSubtitles file is reported as no subtitles because the server doesn't have it.
 On a transcode, which carries only the audio it was asked for, the audio and any embedded subtitle stay as the session asked; a server subtitle file is still named.
 Volume Boost and Enhanced Dialogue apply to whichever track plays.
 
@@ -291,7 +291,7 @@ When the audio is already in that language, only that language's forced track pl
 A track counts as forced when the file flags it as forced, when the server marks its subtitle file as forced, or when its name says Forced.
 With Show Forced Subtitles off, a forced track is never picked automatically, even when it's the language's only track.
 Always plays the full track in the chosen language.
-Off means no subtitles, forced ones included.
+Off means no subtitles, forced ones included, except during a skip-back replay (described below).
 A Backup Language under Language is used when full subtitles would play but the title has none in your language, so an Arabic viewer with an English backup gets English subtitles on an English film without Arabic ones.
 Its full track also beats a signs-only forced track in your language.
 The backup never counts as your language for Auto's audio check: with Auto and audio already in your language, only that language's forced track plays, as before.
@@ -320,7 +320,7 @@ Skipping back again while they're showing keeps them on, up to a minute before t
 Choosing a subtitle or Off yourself ends the replay and keeps your choice.
 A replay isn't a subtitle choice: it doesn't carry to the next episode, isn't reported to Emby or Jellyfin, and a reload during it comes back with your own selection.
 It doesn't start while an Emby or Jellyfin transcode is drawing a subtitle into the video, while playing to an AirPlay receiver, when the skip itself needs the stream reloaded, or while a Silo replan or quality change is under way.
-One that starts while a stream is being prepared for an AirPlay receiver ends on the first playback time report after the receiver takes over.
+One that starts while a stream is being prepared for an AirPlay receiver ends when the hand-off to the receiver engages.
 When Emby or Jellyfin transcodes, the title's PGS, VobSub and DVB subtitles are listed too, after the text ones.
 The server draws the chosen one into the picture, so choosing or leaving one reloads playback at the same point, and Auto leaves them alone while the server is known to be only repackaging the video.
 Plain-text appearance and delay reach the native renderer and downloaded-text overlay, which draw the same appearance at the same size and place, while authored ASS and bitmap styles remain intact, and a subtitle the server draws in takes neither.

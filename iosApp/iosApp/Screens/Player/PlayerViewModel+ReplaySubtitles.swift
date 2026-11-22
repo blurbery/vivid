@@ -187,10 +187,9 @@ extension PlayerViewModel {
     /// Ends the replay once playback is back past where the skip started.
     func updateReplaySubtitles(at time: Double) {
         guard let session = replaySubtitleSession else { return }
-        // One started while a receiver stream was being prepared ends on
-        // the first time report after the hand-off engages, so Lucid
-        // doesn't take the title back with subtitles the viewer didn't
-        // choose.
+        // The hand-off engaging ends a replay itself (see
+        // `handleVividControllerEvent`). This catches one that is somehow
+        // still set when a receiver time report arrives.
         if vividPlaybackController.isAirPlayHandOffEngaged {
             endReplaySubtitles(restoringSelection: true, reason: "airplay")
             return
