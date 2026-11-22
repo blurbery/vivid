@@ -200,6 +200,8 @@ class PlayerViewModel {
     /// Whether the skip presses being gathered began while a scrub was
     /// under way, moving its preview rather than skipping from the playhead.
     @ObservationIgnored var skipBurstBeganMidScrub = false
+    /// The playhead when the skip presses being gathered began.
+    @ObservationIgnored var skipBurstOrigin: Double = 0
 
     // MARK: Quality
 

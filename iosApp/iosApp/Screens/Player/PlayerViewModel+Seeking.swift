@@ -72,6 +72,10 @@ extension PlayerViewModel {
             // A press that moves a scrub's preview isn't a skip from the
             // playhead, so it doesn't count as one for replay subtitles.
             skipBurstBeganMidScrub = isScrubbing
+            // Taken at the first press: playback moves on while the presses
+            // are gathered, which would stretch a full minute's skip past
+            // the limit.
+            skipBurstOrigin = currentTime
         }
         let base = isScrubbing ? scrubPreviewTime : currentTime
         let cap = duration > 0 ? duration : base + abs(delta)
@@ -92,7 +96,7 @@ extension PlayerViewModel {
             Self.logger.info(
                 "[CMP-SEEK] skip debounce commit target=\(self.scrubPreviewTime, privacy: .public) current=\(self.currentTime, privacy: .public)"
             )
-            let origin = self.currentTime
+            let origin = self.skipBurstOrigin
             let isSkipFromPlayhead = !self.skipBurstBeganMidScrub
             let reloadsPlayback = self.commitSeek(
                 to: self.scrubPreviewTime, source: "skipDebounce", keepsReplaySubtitles: isSkipFromPlayhead)
@@ -371,7 +375,7 @@ extension PlayerViewModel {
             Self.logger.info(
                 "[CMP-SEEK] scrub ended target=\(self.scrubPreviewTime, privacy: .public) current=\(self.currentTime, privacy: .public)"
             )
-            let origin = currentTime
+            let origin = skipBurstOrigin
             reloadsPlaybackPipeline = commitSeek(
                 to: scrubPreviewTime, source: "scrub", keepsReplaySubtitles: commitsSkip)
             if commitsSkip {

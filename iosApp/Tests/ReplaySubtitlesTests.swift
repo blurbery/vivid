@@ -279,6 +279,22 @@ final class ReplaySubtitlesTests: XCTestCase {
         await finish(model)
     }
 
+    /// Near the end the replay's end is kept short of the item's end, but
+    /// the limit is still measured from where the skip started.
+    func testTheLimitIsMeasuredFromWhereTheSkipStarted() async {
+        let model = PlayerViewModel()
+        model.duration = 600
+        model.subtitleTracks = [track(id: 5, lang: "eng")]
+        model.selectedSubtitleId = 5
+        model.replaySubtitleSession = ReplaySubtitles.Session(
+            trackID: 5, restoreTrackID: nil, originTime: 599, endTime: 598)
+
+        model.replaySubtitlesAfterSkip(from: 539, to: 538, seekReloadsPlayback: false)
+        XCTAssertNil(model.replaySubtitleSession)
+        XCTAssertNil(model.selectedSubtitleId)
+        await finish(model)
+    }
+
     /// With the setting turned off mid-replay, another skip ends it.
     func testSkippingBackWithTheSettingOffEndsTheReplay() async {
         let model = PlayerViewModel()

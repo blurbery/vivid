@@ -142,8 +142,13 @@ extension PlayerViewModel {
 
     func selectSubtitle(_ track: PlayerTrack) {
         guard isServerBurnInRow(track.trackId) || isSelectableSubtitle(track) else { return }
-        // A pick made during a replay takes over from it.
+        // A pick made during a replay takes over from it. Picking the
+        // track the replay shows leaves `selectedSubtitleId` as it is, so
+        // the server is told here that it's now the viewer's choice.
+        let adoptsReplayTrack = replaySubtitleSession?.trackID == track.trackId
+            && selectedSubtitleId == track.trackId
         endReplaySubtitles(restoringSelection: false, reason: "user_selection")
+        defer { if adoptsReplayTrack { reportPlayingTracksToServer() } }
         #if os(iOS) || os(tvOS)
         openSubtitleFiles.selectedID = openSubtitleIDs.contains(track.trackId) ? track.trackId : nil
         rememberOpenSubtitleChoice(openSubtitleFiles.selectedID)

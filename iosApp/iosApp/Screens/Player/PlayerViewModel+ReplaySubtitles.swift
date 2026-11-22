@@ -21,8 +21,19 @@ enum ReplaySubtitles {
         /// The viewer's own selection, put back when the replay ends: a
         /// forced track, or nil for Off.
         let restoreTrackID: Int64?
-        /// The source time the skip started from.
+        /// The furthest source time a skip of this replay started from.
+        /// Repeat skips are measured against it.
+        var originTime: Double
+        /// The source time the replay ends after: `originTime`, kept short
+        /// of the end of the item.
         var endTime: Double
+
+        init(trackID: Int64, restoreTrackID: Int64?, originTime: Double? = nil, endTime: Double) {
+            self.trackID = trackID
+            self.restoreTrackID = restoreTrackID
+            self.originTime = originTime ?? endTime
+            self.endTime = endTime
+        }
     }
 
     /// Whether a skip from `origin` back to `target` starts a replay.
@@ -127,13 +138,14 @@ extension PlayerViewModel {
             }
             // Skipping back again keeps the subtitles up to the furthest
             // point playback had reached, within the same limit as one skip.
-            let endTime = replayEndTime(max(session.endTime, origin))
+            let originTime = max(session.originTime, origin)
             guard settings.replaySubtitlesOnSkipBack,
-                  ReplaySubtitles.startsReplay(from: endTime, to: target) else {
+                  ReplaySubtitles.startsReplay(from: originTime, to: target) else {
                 endReplaySubtitles(restoringSelection: true, reason: "skip_limit")
                 return
             }
-            session.endTime = endTime
+            session.originTime = originTime
+            session.endTime = replayEndTime(originTime)
             replaySubtitleSession = session
             return
         }
@@ -153,7 +165,8 @@ extension PlayerViewModel {
         // this title stays remembered.
         let rememberedPick = localExternalSubtitlePick
         replaySubtitleSession = ReplaySubtitles.Session(
-            trackID: track.trackId, restoreTrackID: selectedSubtitleId, endTime: replayEndTime(origin))
+            trackID: track.trackId, restoreTrackID: selectedSubtitleId,
+            originTime: origin, endTime: replayEndTime(origin))
         selectedSubtitleId = track.trackId
         applySubtitleTrackSelection(track.trackId, reason: "replay_subtitles")
         localExternalSubtitlePick = rememberedPick
@@ -211,6 +224,11 @@ extension PlayerViewModel {
               // A Silo replan or quality change is about to replace the
               // stream, which starts again from the viewer's own selection.
               protocolV3ReplanTask == nil, !isQualitySwitching else { return nil }
+        #if os(iOS)
+        // A receiver stream is being prepared, so the hand-off is about to
+        // pause Lucid with whatever subtitle it has selected.
+        guard airPlayRequestSelections.isEmpty else { return nil }
+        #endif
 
         let engineSelection = vividPlaybackController.engine.activeSubtitleTrackIndex
         let selected: PlayerTrack?
