@@ -186,7 +186,15 @@ extension PlayerViewModel {
 
     /// Ends the replay once playback is back past where the skip started.
     func updateReplaySubtitles(at time: Double) {
-        guard let session = replaySubtitleSession, ReplaySubtitles.hasEnded(session, at: time) else { return }
+        guard let session = replaySubtitleSession else { return }
+        // One started while a receiver stream was being prepared ends as
+        // the hand-off engages, so Lucid doesn't take the title back with
+        // subtitles the viewer didn't choose.
+        if vividPlaybackController.isAirPlayHandOffEngaged {
+            endReplaySubtitles(restoringSelection: true, reason: "airplay")
+            return
+        }
+        guard ReplaySubtitles.hasEnded(session, at: time) else { return }
         endReplaySubtitles(restoringSelection: true, reason: "caught_up")
     }
 
@@ -230,11 +238,6 @@ extension PlayerViewModel {
               // A Silo replan or quality change is about to replace the
               // stream, which starts again from the viewer's own selection.
               protocolV3ReplanTask == nil, !isQualitySwitching else { return nil }
-        #if os(iOS)
-        // A receiver stream is being prepared, so the hand-off is about to
-        // pause Lucid with whatever subtitle it has selected.
-        guard airPlayRequestSelections.isEmpty else { return nil }
-        #endif
 
         let engineSelection = vividPlaybackController.engine.activeSubtitleTrackIndex
         let selected: PlayerTrack?

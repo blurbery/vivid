@@ -316,10 +316,11 @@ Scrubbing, hold-to-seek, chapters, marker skips and the lock screen and Control 
 The subtitles shown are the full track in the first of these languages the title has: the subtitle language and Backup Language from Settings → Subtitles (or the device's caption settings with Use Device Settings), the device's languages, then the language being spoken.
 Failing those, a track with no language tag is shown, and a title with none of these shows nothing.
 Only embedded tracks and server subtitle files already loaded are used: not an OpenSubtitles file, and not a Silo subtitle file that hasn't been fetched yet.
-Skipping back again while they're showing keeps them on, up to a minute before the point they would end; further back than that turns them off.
+Skipping back again while they're showing keeps them on, up to a minute before the furthest point a skip has started from; further back than that turns them off.
 Choosing a subtitle or Off yourself ends the replay and keeps your choice.
 A replay isn't a subtitle choice: it doesn't carry to the next episode, isn't reported to Emby or Jellyfin, and a reload during it comes back with your own selection.
 It doesn't start while an Emby or Jellyfin transcode is drawing a subtitle into the video, while playing to an AirPlay receiver, when the skip itself needs the stream reloaded, or while a Silo replan or quality change is under way.
+One that starts while a stream is being prepared for an AirPlay receiver ends when the receiver takes over.
 When Emby or Jellyfin transcodes, the title's PGS, VobSub and DVB subtitles are listed too, after the text ones.
 The server draws the chosen one into the picture, so choosing or leaving one reloads playback at the same point, and Auto leaves them alone while the server is known to be only repackaging the video.
 Plain-text appearance and delay reach the native renderer and downloaded-text overlay, which draw the same appearance at the same size and place, while authored ASS and bitmap styles remain intact, and a subtitle the server draws in takes neither.
