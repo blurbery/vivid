@@ -193,8 +193,9 @@ class PlayerViewModel {
     var selectedSecondarySubtitleId: Int64?
     /// The replay showing subtitles after a skip back, if one is. Its track
     /// is `selectedSubtitleId` for as long as it shows; `viewerSubtitleId`
-    /// is the selection without it. Observed, because the subtitle menus
-    /// read `viewerSubtitleId`.
+    /// is the selection without it. Observed, because the menus' Secondary
+    /// Subtitles section reads `viewerSubtitleId`; their ticks still follow
+    /// `selectedSubtitleId`, so they show the replay's track.
     var replaySubtitleSession: ReplaySubtitles.Session?
     /// Whether the skip presses being gathered began while a scrub was
     /// under way, moving its preview rather than skipping from the playhead.

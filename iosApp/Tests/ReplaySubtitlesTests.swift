@@ -205,6 +205,19 @@ final class ReplaySubtitlesTests: XCTestCase {
         await finish(model)
     }
 
+    /// The forced track a replay goes back to can't be made the second
+    /// subtitle meanwhile, or it would end up as both.
+    func testTheTrackAReplayRestoresCannotBecomeTheSecondarySubtitle() async {
+        let model = PlayerViewModel()
+        model.subtitleTracks = [track(id: 2, lang: "eng", forced: true), track(id: 5, lang: "eng")]
+        model.selectedSubtitleId = 5
+        model.replaySubtitleSession = ReplaySubtitles.Session(trackID: 5, restoreTrackID: 2, endTime: 100)
+
+        model.selectSecondarySubtitle(model.subtitleTracks[0])
+        XCTAssertNil(model.selectedSecondarySubtitleId)
+        await finish(model)
+    }
+
     /// A subtitle chosen during the replay stays when it ends.
     func testAPickMadeDuringAReplayIsKept() async {
         let model = PlayerViewModel()

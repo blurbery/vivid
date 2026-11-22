@@ -75433,7 +75433,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wenn Untertitel aus sind, blendet ein Zurückspringen um bis zu eine Minute sie ein, bis die Wiedergabe wieder an der vorherigen Stelle ist."
+            "value" : "Wenn Untertitel aus sind, werden sie beim Zurückspringen um bis zu einer Minute eingeblendet, bis die Wiedergabe wieder an der vorherigen Stelle ist."
           }
         },
         "es" : {
