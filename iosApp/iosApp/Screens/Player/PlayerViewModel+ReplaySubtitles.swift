@@ -126,6 +126,12 @@ extension PlayerViewModel {
         return selectedSubtitleId
     }
 
+    /// Whether `trackID` is the primary subtitle: the one showing, or the
+    /// one a replay puts back when it ends. Neither can be the secondary.
+    func isPrimarySubtitle(_ trackID: Int64) -> Bool {
+        trackID == selectedSubtitleId || trackID == viewerSubtitleId
+    }
+
     /// Called once a burst of skip presses has seeked. A net skip back
     /// starts a replay, or keeps the one that's showing.
     func replaySubtitlesAfterSkip(from origin: Double, to target: Double, seekReloadsPlayback: Bool) {

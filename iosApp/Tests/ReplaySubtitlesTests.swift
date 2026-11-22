@@ -213,8 +213,13 @@ final class ReplaySubtitlesTests: XCTestCase {
         model.selectedSubtitleId = 5
         model.replaySubtitleSession = ReplaySubtitles.Session(trackID: 5, restoreTrackID: 2, endTime: 100)
 
-        model.selectSecondarySubtitle(model.subtitleTracks[0])
-        XCTAssertNil(model.selectedSecondarySubtitleId)
+        XCTAssertTrue(model.isPrimarySubtitle(5))
+        XCTAssertTrue(model.isPrimarySubtitle(2))
+
+        // Without a replay only the selected track counts.
+        model.replaySubtitleSession = nil
+        XCTAssertTrue(model.isPrimarySubtitle(5))
+        XCTAssertFalse(model.isPrimarySubtitle(2))
         await finish(model)
     }
 

@@ -219,9 +219,7 @@ extension PlayerViewModel {
               !SubtitleCodecClassifier.isBitmap(track.codec),
               // It can't be the primary subtitle too. Refusing here gives an
               // immediate no-op rather than a checkmark that renders nothing.
-              track.trackId != selectedSubtitleId,
-              // Nor the track a replay puts back as the primary when it ends.
-              track.trackId != viewerSubtitleId,
+              !isPrimarySubtitle(track.trackId),
               canRenderAsSecondarySubtitle(track) else { return }
         selectedSecondarySubtitleId = track.trackId
         applySecondarySubtitleTrackSelection(track.trackId)
