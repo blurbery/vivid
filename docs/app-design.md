@@ -426,7 +426,7 @@ Auto-Skip Intros & Recaps and Auto-Skip Credits explicitly describe automatic sk
 
 The mobile Home tab bar ignores keyboard insets from the player; search and settings utility pages retain keyboard avoidance.
 
-Subtitles contains embedded-track language, backup language and behaviour preferences plus an appearance preview.
+Subtitles contains embedded-track language, backup language and behaviour preferences, the Show Subtitles on Skip Back switch, plus an appearance preview.
 The backup language is used when full subtitles would play but the title has none in the main language.
 Choosing the backup's language as the main language clears the backup.
 Device Accessibility settings can control caption selection and appearance; local overrides expose size, colour, background and position.
