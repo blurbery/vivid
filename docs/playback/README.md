@@ -187,7 +187,7 @@ On iPhone and iPad the detail page's pick clears when the player closes, as its 
 A track switched to in the player stays through quality changes, Silo replans, session renewals and Retry.
 A transcode that carries only the track it was asked for keeps that track through those reloads rather than falling back to the file's first.
 A downloaded file starts with the audio the same rule picks from the tracks it carries, not the track the server had chosen when it was downloaded.
-Emby and Jellyfin progress reports name the audio and subtitle tracks playing, not the ones the session started with.
+Emby and Jellyfin progress reports name the playing audio and the viewer's subtitle selection, not the ones the session started with; a skip-back replay's track isn't reported.
 On a transcode, which carries only the audio it was asked for, the audio and any embedded subtitle stay as the session asked; a server subtitle file is still named.
 Volume Boost and Enhanced Dialogue apply to whichever track plays.
 
