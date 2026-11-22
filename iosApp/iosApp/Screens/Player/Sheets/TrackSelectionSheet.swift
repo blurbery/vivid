@@ -76,7 +76,8 @@ struct TrackSelectionSheet: View {
                 .padding(.vertical, 8)
         }
         if viewModel.supportsSecondarySubtitles,
-           viewModel.selectedSubtitleId != nil,
+           // Not beside a replay's track, which goes again when it ends.
+           viewModel.viewerSubtitleId != nil,
            !viewModel.availableSecondarySubtitleTracks.isEmpty {
             DisclosureGroup("Secondary Subtitles") {
                 subtitleRows(isSecondary: true)

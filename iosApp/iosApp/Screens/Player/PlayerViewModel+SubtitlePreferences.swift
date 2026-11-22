@@ -116,6 +116,11 @@ extension PlayerViewModel {
     /// preference points anywhere); `disable` and `select` change state only
     /// when the selection actually differs.
     private func applyAutoSubtitle(_ pick: SubtitleAutoSelection) {
+        // The verdict is about the viewer's own selection, so a replay
+        // steps aside first.
+        if pick != .noChange {
+            endReplaySubtitles(restoringSelection: true, reason: "auto_preference")
+        }
         switch pick {
         case .noChange:
             return

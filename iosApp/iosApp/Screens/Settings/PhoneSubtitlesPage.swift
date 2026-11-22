@@ -20,6 +20,7 @@ extension SettingsView {
                                    systemImage: "captions.bubble", tint: .pink)
                     .settingsPageHeaderRow()
                 embeddedSection
+                replaySection
                 Section {
                     SubtitleAppearancePreview(appearance: model.effectiveSubtitleAppearance)
                         .listRowInsets(EdgeInsets())
@@ -85,6 +86,18 @@ extension SettingsView {
             .pickerStyle(.navigationLink)
             .foregroundStyle(Color.vividOnSurface)
             .disabled(model.followsDeviceCaptions)
+        }
+
+        private var replaySection: some View {
+            Section {
+                Toggle("Show Subtitles on Skip Back", isOn: Binding(get: { model.replaysSubtitlesOnSkipBack },
+                                                                    set: { model.replaysSubtitlesOnSkipBack = $0 }))
+                    .tint(.white)
+            } footer: {
+                Text("When subtitles are off, skipping back up to a minute shows them until playback returns to where you were.")
+                    .foregroundStyle(Color.vividSecondaryText)
+            }
+            .foregroundStyle(Color.vividOnSurface)
         }
 
         private var sourceSection: some View {

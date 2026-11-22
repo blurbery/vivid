@@ -54,6 +54,8 @@ extension PlayerViewModel {
             handleVividFailure(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: Self.prematureSourceEndMessage))
             return
         }
+        // No more time reports arrive to end a replay near the end.
+        endReplaySubtitles(restoringSelection: true, reason: "ended")
         hasReachedEndOfFile = true
 
         #if os(iOS) || os(tvOS)

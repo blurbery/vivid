@@ -87,7 +87,9 @@ extension TVPlayerInfoHUD {
                     }
 
                     if viewModel.supportsSecondarySubtitles,
-                       viewModel.selectedSubtitleId != nil,
+                       // Not beside a replay's track, which goes again when
+                       // it ends.
+                       viewModel.viewerSubtitleId != nil,
                        !viewModel.availableSecondarySubtitleTracks.isEmpty {
                         secondaryTrackRows
                     }

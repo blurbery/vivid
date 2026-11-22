@@ -68,6 +68,11 @@ extension PlayerViewModel {
     /// burst of presses becomes a single seek once they stop. Seeking on the
     /// first press and again at the end made the picture jump twice.
     private func queueSkipDebounce(delta: Double) {
+        if skipDebounceTask == nil {
+            // A press that moves a scrub's preview isn't a skip from the
+            // playhead, so it doesn't count as one for replay subtitles.
+            skipBurstBeganMidScrub = isScrubbing
+        }
         let base = isScrubbing ? scrubPreviewTime : currentTime
         let cap = duration > 0 ? duration : base + abs(delta)
         let target = max(0, min(base + delta, cap))
@@ -87,8 +92,14 @@ extension PlayerViewModel {
             Self.logger.info(
                 "[CMP-SEEK] skip debounce commit target=\(self.scrubPreviewTime, privacy: .public) current=\(self.currentTime, privacy: .public)"
             )
-            self.commitSeek(to: self.scrubPreviewTime, source: "skipDebounce")
+            let origin = self.currentTime
+            let isSkipFromPlayhead = !self.skipBurstBeganMidScrub
+            let reloadsPlayback = self.commitSeek(
+                to: self.scrubPreviewTime, source: "skipDebounce", keepsReplaySubtitles: isSkipFromPlayhead)
             self.skipDebounceTask = nil
+            if isSkipFromPlayhead {
+                self.replaySubtitlesAfterSkip(from: origin, to: self.currentTime, seekReloadsPlayback: reloadsPlayback)
+            }
         }
     }
 
@@ -201,8 +212,15 @@ extension PlayerViewModel {
     /// midpoint, or for five seconds at most. Without that the timeline
     /// jumps back between the seek and the first report after it. Back-to-
     /// back seeks work because the origin is the previous optimistic target.
+    ///
+    /// Only a skip keeps replay subtitles going. Any other seek (a scrub, a
+    /// chapter, a marker, a remote command) is the viewer moving elsewhere,
+    /// so it ends them.
     @discardableResult
-    func commitSeek(to target: Double, source: String = "unspecified") -> Bool {
+    func commitSeek(to target: Double, source: String = "unspecified", keepsReplaySubtitles: Bool = false) -> Bool {
+        if !keepsReplaySubtitles {
+            endReplaySubtitles(restoringSelection: true, reason: "seek")
+        }
         pendingUnexpectedEndEpoch = nil
         #if os(iOS)
         if vividPlaybackController.isAirPlayHandOffEngaged { airPlayChangeKind = .seek }
@@ -344,13 +362,21 @@ extension PlayerViewModel {
             return
         }
         guard isScrubbing else { return }
+        // Skip presses still being gathered are committed here when Select
+        // or a focus change ends them early. They're still a skip.
+        let commitsSkip = skipDebounceTask != nil && !skipBurstBeganMidScrub
         cancelSkipDebounce()
         let reloadsPlaybackPipeline: Bool
         if shouldSeek {
             Self.logger.info(
                 "[CMP-SEEK] scrub ended target=\(self.scrubPreviewTime, privacy: .public) current=\(self.currentTime, privacy: .public)"
             )
-            reloadsPlaybackPipeline = commitSeek(to: scrubPreviewTime, source: "scrub")
+            let origin = currentTime
+            reloadsPlaybackPipeline = commitSeek(
+                to: scrubPreviewTime, source: "scrub", keepsReplaySubtitles: commitsSkip)
+            if commitsSkip {
+                replaySubtitlesAfterSkip(from: origin, to: currentTime, seekReloadsPlayback: reloadsPlaybackPipeline)
+            }
         } else {
             // Select entered and left the timeline without moving. Leave the
             // engine paused where it is: a seek to the same place can snap to

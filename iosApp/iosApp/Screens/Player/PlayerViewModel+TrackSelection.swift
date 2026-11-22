@@ -142,6 +142,8 @@ extension PlayerViewModel {
 
     func selectSubtitle(_ track: PlayerTrack) {
         guard isServerBurnInRow(track.trackId) || isSelectableSubtitle(track) else { return }
+        // A pick made during a replay takes over from it.
+        endReplaySubtitles(restoringSelection: false, reason: "user_selection")
         #if os(iOS) || os(tvOS)
         openSubtitleFiles.selectedID = openSubtitleIDs.contains(track.trackId) ? track.trackId : nil
         rememberOpenSubtitleChoice(openSubtitleFiles.selectedID)
@@ -161,6 +163,7 @@ extension PlayerViewModel {
     }
 
     func disableSubtitles() {
+        endReplaySubtitles(restoringSelection: false, reason: "user_selection")
         #if os(iOS) || os(tvOS)
         openSubtitleFiles.selectedID = nil
         rememberOpenSubtitleChoice(nil)
@@ -352,7 +355,9 @@ extension PlayerViewModel {
     /// The playing tracks as an Emby or Jellyfin report names them.
     var playingTracksForServer: MediaServerPlayingTracks {
         let subtitle: MediaServerPlayingTracks.Subtitle?
-        if let selectedSubtitleId {
+        // A replay's track isn't the viewer's choice, so the server isn't
+        // told about it.
+        if let selectedSubtitleId = viewerSubtitleId {
             if SubtitleTrackIdSpace.isSidecar(selectedSubtitleId) {
                 subtitle = .serverStream(SubtitleTrackIdSpace.sidecarIndex(from: selectedSubtitleId))
             } else if let track = subtitleTracks.first(where: { $0.trackId == selectedSubtitleId }) {

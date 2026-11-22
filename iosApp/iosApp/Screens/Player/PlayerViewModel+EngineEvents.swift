@@ -132,6 +132,7 @@ extension PlayerViewModel {
         updateNextUpPresentation(for: movieTime)
         autoSkipIntroIfNeeded(at: movieTime)
         autoSkipCreditsIfNeeded(at: movieTime)
+        updateReplaySubtitles(at: movieTime)
         pushNowPlayingIfDue()
         refreshPlaybackStats()
     }

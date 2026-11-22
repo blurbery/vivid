@@ -309,6 +309,17 @@ On every device, Show Forced Subtitles is greyed out while Behaviour is Off.
 With Use Device Settings on, the subtitle style comes from Accessibility, including the caption font chosen there (Apple's default system caption font uses Vivid's sans-serif), and the Apple TV player's Appearance dialog keeps its style rows greyed out until Use Device Settings is turned off.
 Choosing an embedded track, a server subtitle file or Off, in the player or on the detail page before playing, applies to that viewing, including next episodes that play on, and leaves the Subtitles settings unchanged.
 An OpenSubtitles file stays with its own title.
+With Show Subtitles on Skip Back on in Settings → Subtitles (the default), skipping back up to a minute while subtitles are off shows them until two seconds after playback is back where the skip started, then turns them off again.
+It also takes over from a forced track, which goes back on afterwards.
+It applies to the skip-back controls and double-tap on iPhone and iPad and to Left on the Apple TV remote.
+Scrubbing, hold-to-seek, chapters, marker skips and the lock screen and Control Centre controls don't start a replay, and any of them ends one that's showing.
+The subtitles shown are the full track in the first of these languages the title has: the subtitle language and Backup Language from Settings → Subtitles (or the device's caption settings with Use Device Settings), the device's languages, then the language being spoken.
+Failing those, a track with no language tag is shown, and a title with none of these shows nothing.
+Only embedded tracks and server subtitle files already loaded are used: not an OpenSubtitles file, and not a Silo subtitle file that hasn't been fetched yet.
+Skipping back again while they're showing keeps them on, up to a minute before the point they would end; further back than that turns them off.
+Choosing a subtitle or Off yourself ends the replay and keeps your choice.
+A replay isn't a subtitle choice: it doesn't carry to the next episode, isn't reported to Emby or Jellyfin, and a reload during it comes back with your own selection.
+It doesn't start while an Emby or Jellyfin transcode is drawing a subtitle into the video, while playing to an AirPlay receiver, when the skip itself needs the stream reloaded, or while a Silo replan or quality change is under way.
 When Emby or Jellyfin transcodes, the title's PGS, VobSub and DVB subtitles are listed too, after the text ones.
 The server draws the chosen one into the picture, so choosing or leaving one reloads playback at the same point, and Auto leaves them alone while the server is known to be only repackaging the video.
 Plain-text appearance and delay reach the native renderer and downloaded-text overlay, which draw the same appearance at the same size and place, while authored ASS and bitmap styles remain intact, and a subtitle the server draws in takes neither.

@@ -412,7 +412,7 @@ extension PlayerViewModel {
         let resumePlaying = controller.shouldPlayWhenReady
         pendingAudioFfIndex = resolvedAudioTrackIndexForResume()
         pendingSubtitleFfIndex = resolvedSubtitleTrackIndexForResume()
-        if let subtitle = selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(subtitle) {
+        if let subtitle = viewerSubtitleId, SubtitleTrackIdSpace.isSidecar(subtitle) {
             let plan = attempt.prepared.plan
             armSidecarRestore(Self.protocolV3SidecarRestoreIntent(
                 snapshot: subtitle,
@@ -645,7 +645,7 @@ extension PlayerViewModel {
         if let trackTarget {
             restoreQueuedAudioSelection(trackTarget)
         }
-        let subtitleBeforeReplan = selectedSubtitleId
+        let subtitleBeforeReplan = viewerSubtitleId
         // The engine can republish the selection before the task starts, so
         // the request's track indices are settled now rather than inside it.
         let audioIndex = trackTarget?.selectionIndex ?? resolvedAudioTrackIndexForResume()

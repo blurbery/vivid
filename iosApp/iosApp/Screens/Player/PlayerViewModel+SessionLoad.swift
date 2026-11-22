@@ -747,6 +747,7 @@ extension PlayerViewModel {
         selectedAudioId = nil
         selectedSubtitleId = nil
         selectedSecondarySubtitleId = nil
+        replaySubtitleSession = nil
         bufferedAheadSeconds = 0
         playbackReadAheadSeconds = nil
         cancelPlaybackStatsRefresh()
@@ -820,7 +821,7 @@ extension PlayerViewModel {
 
     var hasDisabledServerSubtitlesForResume: Bool {
         Self.serverSubtitlesDisabledForResume(
-            selectedTrackID: selectedSubtitleId, hasExplicitChoice: hasExplicitSubtitleChoice,
+            selectedTrackID: viewerSubtitleId, hasExplicitChoice: hasExplicitSubtitleChoice,
             pendingEmbeddedIndex: pendingSubtitleFfIndex, pendingSidecarID: pendingSidecarSubtitleTrackId,
             pendingServerRenderedID: pendingServerRenderedSubtitleTrackId
         )
@@ -831,6 +832,8 @@ extension PlayerViewModel {
     /// nothing is known yet.
     func resolvedSubtitleTrackIndexForResume() -> Int? {
         if hasDisabledServerSubtitlesForResume { return -1 }
+        // A reload carries the viewer's own selection, not a replay's track.
+        let selectedSubtitleId = viewerSubtitleId
         if let index = Self.selectedEmbeddedSubtitleIndexForResume(
             plan: activePreparedProtocolV3?.plan, selectedTrackID: selectedSubtitleId
         ) {
@@ -873,6 +876,8 @@ extension PlayerViewModel {
     /// The sidecar subtitle a reload re-applies, if any.
     func resolvedSidecarSubtitleTrackIdForResume() -> Int64? {
         if hasDisabledServerSubtitlesForResume { return nil }
+        // As above: the viewer's own selection, not a replay's track.
+        let selectedSubtitleId = viewerSubtitleId
         // A Silo subtitle file picked on this device is never sent to Silo;
         // `loadVivid` re-applies it locally.
         if let selectedSubtitleId, lazySubtitleSidecars[selectedSubtitleId] != nil { return nil }
