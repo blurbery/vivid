@@ -650,7 +650,7 @@ Automatic audio selection uses English when the requested language is unavailabl
 A reload of the same item (quality change, session renewal, Silo replan or Retry) asks for the audio that's playing: the engine's track when its list lines up with the file's, otherwise the track the load asked for, since a transcode's single track is its ordinal 0 and not the file's first.
 A reload that carries the subtitle Auto chose keeps it Auto's choice, so switching audio afterwards still runs Auto again.
 Emby and Jellyfin progress reports send the playing audio's stream index and the stream index of the viewer's subtitle selection (a server file's stream index, an embedded stream's index when the file plays directly, or -1 for none or an OpenSubtitles file).
-The track a skip-back replay shows isn't the viewer's selection, so while one is showing the report sends the selection it goes back to (-1 for Off).
+The track a skip-back replay shows isn't the viewer's selection, so while one is showing the report sends what it would send for the selection the replay goes back to (-1 for Off), under the same rules, including the transcode rule below.
 On a transcode the audio, and an embedded subtitle, stay as the session asked for, since the engine's single audio track can't be matched to the file's. Missing automatic subtitle language matches leave subtitles off.
 The automatic subtitle choice waits until the load is established, so the engine has picked its audio track and Emby and Jellyfin subtitle files are mounted; it then holds for the item.
 Auto compares the subtitle language with the playing audio's stream tag, or, when the stream has no usable tag, with the catalogue language for that audio track.
