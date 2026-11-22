@@ -110,6 +110,11 @@ final class SettingsViewModel {
         set { settings.showForcedSubtitles = newValue }
     }
 
+    var replaysSubtitlesOnSkipBack: Bool {
+        get { settings.replaySubtitlesOnSkipBack }
+        set { settings.replaySubtitlesOnSkipBack = newValue }
+    }
+
     var audioLanguageOptions: [PlaybackLanguageOption] { PlaybackChoices.audioOptions(current: audioLanguage) }
     var subtitleLanguageOptions: [PlaybackLanguageOption] { PlaybackChoices.subtitleOptions(current: editorSubtitleLanguage) }
     var backupLanguageOptions: [PlaybackLanguageOption] { PlaybackChoices.backupOptions() }
@@ -316,6 +321,11 @@ final class TVSettingsViewModel {
     var showsForcedSubtitles: Bool {
         get { settings.showForcedSubtitles }
         set { settings.showForcedSubtitles = newValue }
+    }
+
+    var replaysSubtitlesOnSkipBack: Bool {
+        get { settings.replaySubtitlesOnSkipBack }
+        set { settings.replaySubtitlesOnSkipBack = newValue }
     }
 
     var audioLanguageOptions: [PlaybackLanguageOption] { PlaybackChoices.audioOptions(current: audioLanguage) }

@@ -195,6 +195,8 @@ extension PlayerViewModel {
             return
         }
         let epoch = activeVividLoadEpoch
+        // The receiver shows the viewer's own subtitles, never a replay's.
+        endReplaySubtitles(restoringSelection: true, reason: "airplay")
         airPlayRequestSelections[request] = (AirPlayReceiverSelection(of: self), restarting ? airPlayChangeKind : .seek)
         Task { @MainActor [weak self] in
             await self?.freshLoadTask?.value

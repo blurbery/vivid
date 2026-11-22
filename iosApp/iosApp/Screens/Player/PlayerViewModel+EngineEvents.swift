@@ -132,6 +132,7 @@ extension PlayerViewModel {
         updateNextUpPresentation(for: movieTime)
         autoSkipIntroIfNeeded(at: movieTime)
         autoSkipCreditsIfNeeded(at: movieTime)
+        updateReplaySubtitles(at: movieTime)
         pushNowPlayingIfDue()
         refreshPlaybackStats()
     }
@@ -154,6 +155,12 @@ extension PlayerViewModel {
             supportsExternalPlayback = supported
             isExternalPlaybackActive = active
             isAirPlayVideoHandedOff = vividPlaybackController.isAirPlayHandOffEngaged
+            if isAirPlayVideoHandedOff {
+                // A replay started while the receiver stream was being
+                // prepared ends here, so Lucid never takes the title back
+                // with subtitles the viewer didn't choose.
+                endReplaySubtitles(restoringSelection: true, reason: "airplay")
+            }
             if !isAirPlayVideoHandedOff {
                 airPlayReceiverSessionId = nil
                 #if os(iOS)

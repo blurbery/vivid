@@ -57857,6 +57857,41 @@
         }
       }
     },
+    "Show Subtitles on Skip Back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untertitel beim Zurückspringen zeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar subtítulos al retroceder"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher les sous-titres au retour en arrière"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキップで戻ったときに字幕を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后退时显示字幕"
+          }
+        }
+      }
+    },
     "Show Who's Watching when you've been away from Vivid for 1 hour." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -70557,6 +70592,7 @@
       }
     },
     "Try again" : {
+      "comment" : "Player button: identifies the song playing again",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -75387,6 +75423,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭后，“下载”标签会建议移除你已看完的项目以释放空间。"
+          }
+        }
+      }
+    },
+    "When subtitles are off, skipping back up to a minute shows them until playback returns to where you were." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn Untertitel aus sind, werden sie beim Zurückspringen um bis zu einer Minute eingeblendet, bis die Wiedergabe wieder an der vorherigen Stelle ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando los subtítulos están desactivados, al retroceder hasta un minuto se muestran hasta que la reproducción vuelve al punto donde estabas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lorsque les sous-titres sont désactivés, revenir en arrière jusqu’à une minute les affiche jusqu’à ce que la lecture revienne là où vous étiez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字幕がオフのとき、1分以内のスキップで戻ると、元の位置に戻るまで字幕を表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字幕关闭时，后退不超过一分钟会显示字幕，直到播放回到原来的位置。"
           }
         }
       }

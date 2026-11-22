@@ -409,6 +409,8 @@ final class PlayerSettingsTests: XCTestCase {
         settings.preferredSubtitleLanguage = "ja"
         settings.preferredSubtitleMode = "always"
         settings.showForcedSubtitles = false
+        XCTAssertTrue(settings.replaySubtitlesOnSkipBack)
+        settings.replaySubtitlesOnSkipBack = false
         await settings.reloadForCurrentProfile()
         let restored = PlayerSettings(defaults: harness.defaults)
         XCTAssertTrue(restored.preferLosslessAudio)
@@ -420,6 +422,7 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertEqual(restored.preferredSubtitleLanguage, "ja")
         XCTAssertEqual(restored.preferredSubtitleMode, "always")
         XCTAssertFalse(restored.showForcedSubtitles)
+        XCTAssertFalse(restored.replaySubtitlesOnSkipBack)
     }
 
     func testResetRestoresLocalPlaybackDefaults() async throws {
@@ -430,10 +433,12 @@ final class PlayerSettingsTests: XCTestCase {
         harness.settings.preferredSubtitleLanguage = "ja"
         harness.settings.setSubtitleMatchesSystemAppearance(true)
         harness.settings.hideFutureEpisodeSpoilers = true
+        harness.settings.replaySubtitlesOnSkipBack = false
         await harness.settings.resetAllDeviceSettings()
         let restored = PlayerSettings(defaults: harness.defaults)
         XCTAssertFalse(restored.preferLosslessAudio)
         XCTAssertFalse(restored.hideFutureEpisodeSpoilers)
+        XCTAssertTrue(restored.replaySubtitlesOnSkipBack)
         XCTAssertEqual(restored.bufferAhead, .automatic)
         XCTAssertEqual(restored.playbackSpeed, 1)
         XCTAssertEqual(restored.preferredSubtitleLanguage, PlaybackPrefSentinel.none)

@@ -267,7 +267,8 @@ Vivid prefers a compatible non-commentary track in the selected language, maps i
 It preserves an explicit manual choice and falls back to the original choice when no same-language alternative exists.
 No separate media probe is added.
 The selected language is Settings > Playback > Audio Language, or the language of a track picked earlier in the viewing; Emby's own default audio stream and Vivid's old per-series audio picks are no longer used, and picks aren't saved.
-Progress reports (`/Sessions/Playing`, `/Sessions/Playing/Progress` and the stop) send the stream indexes of the audio and subtitles playing: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file.
+Progress reports (`/Sessions/Playing`, `/Sessions/Playing/Progress` and the stop) send the stream indexes of the playing audio and of the viewer's subtitle selection: the audio track switched to, a server subtitle file's stream index, an embedded subtitle's index when the file plays directly, or -1 for none or an OpenSubtitles file.
+A skip-back replay's track isn't reported: while one is showing, the report is what it would be for the selection the replay goes back to (-1 for Off).
 On a transcode, the audio (its single track can't be matched to the file's) and an embedded subtitle keep the indexes the session started with; a server subtitle file, Off and an OpenSubtitles file are still reported as they are.
 Whether Emby keeps these for its other clients hasn't been checked against a live server.
 

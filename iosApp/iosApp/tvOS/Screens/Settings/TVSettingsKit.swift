@@ -245,6 +245,7 @@ struct TVSettingsRowLabel: View {
         case "Language": Text("Prefer a matching subtitle track when available.")
         case "Behavior": Text("Choose when subtitles should appear.")
         case "Show Forced Subtitles": Text("Allow forced subtitles for translated dialogue and signs. Not used when Behavior is Off.")
+        case "Show Subtitles on Skip Back": Text("When subtitles are off, skipping back up to a minute shows them until playback returns to where you were.")
         case "Use Device Settings": Text("Follow this Apple TV’s Accessibility caption settings.")
         case "Custom Subtitle Appearance": Text("Use a custom subtitle style on this Apple TV.")
         case "Font Size": Text("Adjust subtitle text size.")

@@ -261,6 +261,9 @@ extension TVSettingsView {
                     model.showsForcedSubtitles.toggle()
                 }
                 .disabled(followsDevice || model.subtitleMode == SubtitleMode.off.rawValue)
+                TVSettingsToggleRow(title: "Show Subtitles on Skip Back", isOn: model.replaysSubtitlesOnSkipBack) {
+                    model.replaysSubtitlesOnSkipBack.toggle()
+                }
             }
         }
 

@@ -141,6 +141,7 @@ targets:
       # Automatic subtitle choice: Auto, forced subtitles and audio language.
       - path: Tests/SubtitleAutoResolverTests.swift
       - path: Tests/SubtitleAutoSelectionTests.swift
+      - path: Tests/ReplaySubtitlesTests.swift
       # Bitmap subtitles that Emby and Jellyfin transcodes draw in.
       - path: Tests/ServerSubtitleBurnInTests.swift
       # The detail page's subtitle row, from the same settings and resolver.

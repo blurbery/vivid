@@ -180,6 +180,12 @@ final class PlayerSettings {
         didSet { store(showForcedSubtitles, Keys.subtitleForced) }
     }
 
+    /// With subtitles off, or showing only a forced track, a short skip
+    /// back shows them until playback is back where the skip started.
+    var replaySubtitlesOnSkipBack: Bool = true {
+        didSet { store(replaySubtitlesOnSkipBack, Keys.replaySubtitlesOnSkipBack) }
+    }
+
     // MARK: - Skipping and Next Up
 
     /// IntroDB and TheIntroDB marker lookups. Saved under
@@ -336,6 +342,7 @@ final class PlayerSettings {
             Keys.subtitleUsesDeviceAppearanceOverride: false,
             Keys.subtitleMatchesSystemAppearance: false,
             Keys.subtitleSyncMs: 0,
+            Keys.replaySubtitlesOnSkipBack: true,
             Keys.playbackSpeed: 1.0,
             Keys.videoGravity: VideoGravity.fit.rawValue,
             Keys.playerOrientationMode: PlayerOrientationMode.landscapeLocked.rawValue,
@@ -495,6 +502,7 @@ final class PlayerSettings {
         preferredSubtitleBackupLanguage = savedString(Keys.subtitleBackupLanguage) ?? PlaybackPrefSentinel.none
         preferredSubtitleMode = savedString(Keys.subtitleMode) ?? "auto"
         showForcedSubtitles = savedBool(Keys.subtitleForced, default: true)
+        replaySubtitlesOnSkipBack = savedBool(Keys.replaySubtitlesOnSkipBack, default: true)
 
         // Builds that stored a tier id wrote `1080p-high` and the like into
         // this key. Normalising keeps the resolution; the separate bitrate key
@@ -544,6 +552,7 @@ final class PlayerSettings {
         defaults.set(30, forKey: key(Keys.nextUpPromptSeconds))
         defaults.set(1.0, forKey: key(Keys.playbackSpeed))
         defaults.set(0, forKey: key(Keys.subtitleSyncMs))
+        defaults.set(true, forKey: key(Keys.replaySubtitlesOnSkipBack))
         defaults.set(VideoGravity.fit.rawValue, forKey: key(Keys.videoGravity))
         defaults.set(PlayerOrientationMode.landscapeLocked.rawValue, forKey: key(Keys.playerOrientationMode))
         defaults.set(SubtitleAppearance.default.jsonString, forKey: key(Keys.subtitleAppearance))
@@ -657,6 +666,7 @@ final class PlayerSettings {
         static let subtitleUsesDeviceAppearanceOverride = "player.subtitleUsesDeviceAppearanceOverride"
         static let subtitleMatchesSystemAppearance = "player.subtitleMatchesSystemAppearance"
         static let subtitleSyncMs = "player.subtitleSyncMs"
+        static let replaySubtitlesOnSkipBack = "player.replaySubtitlesOnSkipBack"
         static let playbackSpeed = "player.playbackSpeed"
         static let videoGravity = "player.videoGravity"
         static let playerOrientationMode = "player.playerOrientationMode"
